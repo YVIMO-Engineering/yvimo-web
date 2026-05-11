@@ -103,19 +103,140 @@ const gatewayFeatures = [
 
 function App() {
   const [menuOpen, setMenuOpen] = React.useState(false);
+  const [scrollProgress, setScrollProgress] = React.useState(0);
+  const [viewportWidth, setViewportWidth] = React.useState(() =>
+    typeof window === 'undefined' ? 1440 : window.innerWidth,
+  );
 
   const closeMenu = () => setMenuOpen(false);
+  const compactViewport = viewportWidth < 760;
+  const tinyViewport = viewportWidth < 480;
+  const expandedHeaderHeight = compactViewport ? 104 : 128;
+  const compactHeaderHeight = compactViewport ? 82 : 94;
+  const expandedWaveDepth = compactViewport ? 34 : 48;
+  const expandedBrandWidth = tinyViewport ? 82 : compactViewport ? 330 : viewportWidth < 1040 ? 372 : 420;
+  const headerHeight =
+    expandedHeaderHeight - scrollProgress * (expandedHeaderHeight - compactHeaderHeight);
+  const waveDepth = expandedWaveDepth * (1 - scrollProgress);
+  const startBrandCenter = tinyViewport
+    ? Math.min(Math.max(viewportWidth * 0.22, 86), 114)
+    : compactViewport
+      ? Math.min(Math.max(viewportWidth * 0.28, 190), 254)
+      : Math.min(Math.max(viewportWidth * 0.2, 305), 370);
+  const brandLeft =
+    startBrandCenter + (viewportWidth / 2 - startBrandCenter) * scrollProgress;
+  const expandedBrandTop = expandedHeaderHeight / 2 + expandedWaveDepth * 0.34;
+  const brandTop =
+    expandedBrandTop + (headerHeight / 2 - expandedBrandTop) * scrollProgress;
+  const expandedNavTop = expandedHeaderHeight / 2 + expandedWaveDepth * 0.42;
+  const navTop = expandedNavTop + (headerHeight / 2 - expandedNavTop) * scrollProgress;
+  const expandedNavRight = Math.max(viewportWidth * 0.22, 300);
+  const compactNavRight = Math.min(Math.max(viewportWidth * 0.04, 18), 54);
+  const navRight =
+    expandedNavRight + (compactNavRight - expandedNavRight) * scrollProgress;
+  const expandedSloganCenter = viewportWidth * 0.84;
+  const sloganLeft =
+    expandedSloganCenter + (viewportWidth - compactNavRight - 260 - expandedSloganCenter) * scrollProgress;
+  const expandedMenuLeft = Math.min(
+    expandedSloganCenter + Math.min(230, viewportWidth * 0.15) + 34,
+    viewportWidth - 160,
+  );
+  const compactMenuLeft = viewportWidth - compactNavRight - 62;
+  const expandedMenuLeftPosition =
+    expandedMenuLeft + (compactMenuLeft - expandedMenuLeft) * scrollProgress;
+  const navScale = 1.08 - scrollProgress * 0.08;
+  const navRevealProgress = Math.min(Math.max((scrollProgress - 0.34) / 0.42, 0), 1);
+  const sloganProgress = 1 - Math.min(Math.max(scrollProgress / 0.42, 0), 1);
+  const expandedMenuProgress = Math.max(sloganProgress, 0);
+  const expandedMenuActive = expandedMenuProgress > 0.08;
+  const brandScale = 1 - scrollProgress * 0.46;
+  const logoRotation = scrollProgress * 360;
+  const edgeStraightProgress = Math.min(Math.max((scrollProgress - 0.82) / 0.18, 0), 1);
+  const edgeShape = 1 - scrollProgress;
+  const orangeEdgePath =
+    `M0 0 C80 ${62 * edgeShape} 210 ${80 * edgeShape} 360 ${56 * edgeShape} ` +
+    `C500 ${34 * edgeShape} 570 0 710 0 ` +
+    `C850 0 930 ${46 * edgeShape} 1080 ${76 * edgeShape} ` +
+    `C1225 ${105 * edgeShape} 1410 ${84 * edgeShape} 1600 ${28 * edgeShape}`;
+
+  React.useEffect(() => {
+    let frame = 0;
+
+    const update = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const progress = Math.min(window.scrollY / 260, 1);
+        setScrollProgress(progress);
+        setViewportWidth(window.innerWidth);
+      });
+    };
+
+    update();
+    window.addEventListener('scroll', update, { passive: true });
+    window.addEventListener('resize', update);
+
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener('scroll', update);
+      window.removeEventListener('resize', update);
+    };
+  }, []);
 
   return (
-    <div className="site-shell">
+    <div
+      className="site-shell"
+      style={
+        {
+          '--header-height': `${headerHeight}px`,
+          '--wave-depth': `${waveDepth}px`,
+          '--brand-left': `${brandLeft}px`,
+          '--brand-top': `${brandTop}px`,
+          '--nav-top': `${navTop}px`,
+          '--nav-right': `${navRight}px`,
+          '--expanded-menu-left': `${expandedMenuLeftPosition}px`,
+          '--slogan-left': `${sloganLeft}px`,
+          '--nav-scale': navScale,
+          '--nav-reveal-progress': navRevealProgress,
+          '--slogan-progress': sloganProgress,
+          '--expanded-menu-progress': expandedMenuProgress,
+          '--brand-scale': brandScale,
+          '--logo-rotation': `${logoRotation}deg`,
+          '--scroll-progress': scrollProgress,
+          '--edge-straight-progress': edgeStraightProgress,
+        } as React.CSSProperties
+      }
+    >
       <header className="topbar">
         <a className="brand" href="#home" onClick={closeMenu} aria-label="YVIMO home">
-          <span className="brand-mark">Y</span>
-          <span>
-            <strong>YVIMO</strong>
-            <small>Controls + Software</small>
+          <img
+            className="brand-logo brand-logo-square"
+            src="/assets/logos/yvimo-square-logo-2024.png"
+            alt=""
+            aria-hidden="true"
+          />
+          <span className="brand-letters-wrap">
+            <img
+              className="brand-logo brand-logo-letters"
+              src="/assets/logos/yvimo-logo-letters-holding.png"
+          alt="YVIMO"
+            />
           </span>
         </a>
+        <div className="header-slogan" aria-hidden="true">
+          <span>Engineering Automation</span>
+          <span>
+            that <strong>delivers results</strong>
+          </span>
+        </div>
+        <button
+          className={expandedMenuActive ? 'expanded-menu-button active' : 'expanded-menu-button'}
+          type="button"
+          aria-label={menuOpen ? 'Close navigation' : 'Open navigation'}
+          aria-expanded={menuOpen}
+          onClick={() => setMenuOpen((value) => !value)}
+        >
+          {menuOpen ? <X size={24} /> : <Menu size={24} />}
+        </button>
         <button
           className="icon-button menu-button"
           type="button"
@@ -124,6 +245,19 @@ function App() {
         >
           {menuOpen ? <X size={20} /> : <Menu size={20} />}
         </button>
+        <div
+          className={
+            menuOpen && expandedMenuActive
+              ? 'expanded-menu-panel open'
+              : 'expanded-menu-panel'
+          }
+        >
+          <a href="#lines" onClick={closeMenu}>Business lines</a>
+          <a href="#gateway" onClick={closeMenu}>Gateway</a>
+          <a href="#solutions" onClick={closeMenu}>Solutions</a>
+          <a href="#platform" onClick={closeMenu}>Platform</a>
+          <a className="panel-cta" href="#contact" onClick={closeMenu}>Start a project</a>
+        </div>
         <nav className={menuOpen ? 'nav-links open' : 'nav-links'} aria-label="Primary navigation">
           <a href="#lines" onClick={closeMenu}>Business lines</a>
           <a href="#gateway" onClick={closeMenu}>Gateway</a>
@@ -131,6 +265,20 @@ function App() {
           <a href="#platform" onClick={closeMenu}>Platform</a>
           <a className="nav-cta" href="#contact" onClick={closeMenu}>Start a project</a>
         </nav>
+        <svg
+          className="header-wave"
+          viewBox="0 0 1600 120"
+          preserveAspectRatio="none"
+          aria-hidden="true"
+          focusable="false"
+        >
+          <path d="M0 0 C80 62 210 80 360 56 C500 34 570 0 710 0 C850 0 930 46 1080 76 C1225 105 1410 84 1600 28 L1600 0 Z" />
+        </svg>
+        <div className="header-orange-edge" aria-hidden="true">
+          <svg viewBox="0 0 1600 120" preserveAspectRatio="none" focusable="false">
+            <path d={orangeEdgePath} />
+          </svg>
+        </div>
       </header>
 
       <main>
@@ -251,7 +399,7 @@ function App() {
               <div className="dash-card tall">
                 <Network size={22} />
                 <span>Routes</span>
-                <strong>Connect → Process → Output</strong>
+                <strong>{'Connect -> Process -> Output'}</strong>
                 <div className="mini-flow">
                   <i />
                   <b />
