@@ -6,6 +6,8 @@ import {
   Blocks,
   Cable,
   ChartNoAxesCombined,
+  ChevronLeft,
+  ChevronRight,
   Check,
   CircuitBoard,
   Cloud,
@@ -15,6 +17,7 @@ import {
   Factory,
   FileKey2,
   Gauge,
+  GraduationCap,
   KeyRound,
   Layers3,
   LockKeyhole,
@@ -36,6 +39,8 @@ type BusinessLine = {
   description: string;
   icon: React.ComponentType<{ size?: number }>;
   points: string[];
+  slug: string;
+  detail: string;
 };
 
 type Solution = {
@@ -44,30 +49,108 @@ type Solution = {
   icon: React.ComponentType<{ size?: number }>;
 };
 
+type ServiceShowcaseItem = {
+  title: string;
+  eyebrow: string;
+  description: string;
+  image: string;
+};
+
 const businessLines: BusinessLine[] = [
   {
     title: 'Industrial Automation',
     eyebrow: 'Controls and field systems',
     description:
-      'PLC programming, HMI/SCADA, electrical integration, commissioning, and support for production environments.',
+      'The core of YVIMO: controls engineering, plant-floor systems, automation design, commissioning, and production support.',
     icon: Factory,
-    points: ['PLC and HMI engineering', 'Machine integration', 'Controls troubleshooting'],
+    points: ['PLC and HMI engineering', 'Machine integration', 'Commissioning and support'],
+    slug: 'industrial-automation',
+    detail:
+      'Industrial Automation is the technical core of YVIMO. This division covers PLC and HMI engineering, machine integration, commissioning, troubleshooting, and automation support for production environments that need reliable execution on the plant floor.',
   },
   {
     title: 'Software Services',
     eyebrow: 'Apps, APIs, and data systems',
     description:
-      'Custom web apps, operational dashboards, backend APIs, and internal tools built around real business workflows.',
+      'Custom software for manufacturers and teams that need useful dashboards, reliable APIs, and operational tools.',
     icon: Code2,
-    points: ['Web applications', 'API development', 'Operational dashboards'],
+    points: ['Web applications', 'Backend APIs', 'Operational dashboards'],
+    slug: 'software-services',
+    detail:
+      'Software Services turns industrial and business workflows into practical digital tools: web apps, APIs, dashboards, internal platforms, and data systems designed around how teams actually operate.',
   },
   {
     title: 'YVIMO Products',
-    eyebrow: 'Gateway, apps, and platform services',
+    eyebrow: 'Physical and digital proprietary products',
     description:
-      'A growing product line for industrial data, account services, license management, and connected operations.',
+      'Physical and digital products created by YVIMO to solve specific problems for industry, operations, and users.',
     icon: Blocks,
-    points: ['YVIMO Gateway', 'Account platform', 'License server roadmap'],
+    points: ['YVIMO Gateway', 'Industrial tools', 'Digital platforms'],
+    slug: 'yvimo-products',
+    detail:
+      'YVIMO Products is our proprietary product division for physical and digital tools. These products are created to solve specific industry problems, improve user workflows, and package repeatable solutions into scalable offerings.',
+  },
+  {
+    title: 'YVIMO Academy',
+    eyebrow: 'Online academy and professional guidance',
+    description:
+      'An online academy for learning industrial automation, staying current with industry demands, and receiving practical guidance.',
+    icon: GraduationCap,
+    points: ['Automation training', 'Mentoring and reviews', 'Industry updates'],
+    slug: 'yvimo-academy',
+    detail:
+      'YVIMO Academy is our online learning division. It teaches industrial automation, provides mentoring, reviews work, guides learners through real industry expectations, and helps professionals stay current as technology changes.',
+  },
+];
+
+const serviceShowcase: ServiceShowcaseItem[] = [
+  {
+    title: 'Controls',
+    eyebrow: '01',
+    description: 'PLC, HMI, SCADA, commissioning, troubleshooting, and plant-floor integration.',
+    image: '/assets/services/robot-cell-closeup.jpeg',
+  },
+  {
+    title: 'Software',
+    eyebrow: '02',
+    description: 'Modern web applications, backend APIs, dashboards, data workflows, and internal platforms.',
+    image: '/assets/services/software-systems.svg',
+  },
+  {
+    title: 'Products',
+    eyebrow: '03',
+    description: 'YVIMO Gateway, account services, licensing, and tools for connected operations.',
+    image: '/assets/services/yvimo-products.svg',
+  },
+  {
+    title: 'Virtual Commissioning',
+    eyebrow: '04',
+    description: 'Digital manufacturing cells, robot simulations, layout validation, and offline verification.',
+    image: '/assets/services/tx-process-simulate-3.webp',
+  },
+  {
+    title: 'Industrial Engineering',
+    eyebrow: '05',
+    description: 'Process optimization, cycle-time analysis, material flow, bottleneck studies, and improvement roadmaps.',
+    image: '/assets/services/process-manufacturing.jpg',
+  },
+  {
+    title: 'Manufacturing',
+    eyebrow: '06',
+    description: 'Production systems, robotic cells, fixtures, line support, and launch-ready execution.',
+    image: '/assets/services/robot-cell-floor.jpeg',
+  },
+  {
+    title: 'IT/OT Integration',
+    eyebrow: '07',
+    description: 'Connect PLCs, edge devices, APIs, databases, MQTT, cloud services, and reporting layers.',
+    image: '/assets/services/efs1.png',
+  },
+  {
+    title: 'Digital Manufacturing',
+    eyebrow: '08',
+    description: 'Tecnomatix, DELMIA, simulation models, line studies, and connected engineering workflows.',
+    image: '/assets/services/autotech-tecnomatix-11.webp',
   },
 ];
 
@@ -101,9 +184,256 @@ const gatewayFeatures = [
   'Designed for local edge deployments and modern software stacks',
 ];
 
+const repeatedServiceShowcase = [
+  ...serviceShowcase,
+  ...serviceShowcase,
+  ...serviceShowcase,
+];
+
+function ServicesShowcase() {
+  const serviceCount = serviceShowcase.length;
+  const [servicePosition, setServicePosition] = React.useState(serviceCount);
+  const [isPaused, setIsPaused] = React.useState(false);
+  const trackRef = React.useRef<HTMLDivElement | null>(null);
+  const servicePositionRef = React.useRef(serviceCount);
+  const resetTimeoutRef = React.useRef<number | null>(null);
+  const scrollTimeoutRef = React.useRef<number | null>(null);
+
+  const activeIndex =
+    ((servicePosition % serviceCount) + serviceCount) % serviceCount;
+
+  React.useEffect(() => {
+    servicePositionRef.current = servicePosition;
+  }, [servicePosition]);
+
+  const scrollToPosition = React.useCallback((
+    position: number,
+    behavior: ScrollBehavior = 'smooth',
+  ) => {
+    const track = trackRef.current;
+    const card = trackRef.current?.querySelector<HTMLElement>(
+      `[data-service-position="${position}"]`,
+    );
+
+    if (!track || !card) return;
+
+    const targetLeft =
+      card.offsetLeft - (track.clientWidth - card.offsetWidth) / 2;
+
+    setServicePosition(position);
+    track.scrollTo({ left: targetLeft, behavior });
+  }, []);
+
+  const normalizePosition = React.useCallback((position: number) => {
+    if (resetTimeoutRef.current !== null) {
+      window.clearTimeout(resetTimeoutRef.current);
+    }
+
+    const normalizedIndex =
+      ((position % serviceCount) + serviceCount) % serviceCount;
+    const middlePosition = serviceCount + normalizedIndex;
+
+    if (position >= serviceCount && position < serviceCount * 2) return;
+
+    resetTimeoutRef.current = window.setTimeout(() => {
+      scrollToPosition(middlePosition, 'auto');
+    }, 520);
+  }, [scrollToPosition, serviceCount]);
+
+  const moveToPosition = React.useCallback((position: number) => {
+    scrollToPosition(position);
+    normalizePosition(position);
+  }, [normalizePosition, scrollToPosition]);
+
+  const moveToIndex = React.useCallback((index: number) => {
+    moveToPosition(serviceCount + index);
+  }, [moveToPosition, serviceCount]);
+
+  React.useEffect(() => {
+    if (isPaused) return;
+
+    const interval = window.setInterval(() => {
+      moveToPosition(servicePosition + 1);
+    }, 4200);
+
+    return () => window.clearInterval(interval);
+  }, [isPaused, moveToPosition, servicePosition]);
+
+  React.useEffect(() => {
+    scrollToPosition(serviceCount, 'auto');
+
+    const handleResize = () => {
+      scrollToPosition(servicePositionRef.current, 'auto');
+    };
+
+    window.addEventListener('resize', handleResize);
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      if (resetTimeoutRef.current !== null) {
+        window.clearTimeout(resetTimeoutRef.current);
+      }
+      if (scrollTimeoutRef.current !== null) {
+        window.clearTimeout(scrollTimeoutRef.current);
+      }
+    };
+  }, [scrollToPosition, serviceCount]);
+
+  const handleTrackScroll = () => {
+    const track = trackRef.current;
+    if (!track) return;
+
+    if (scrollTimeoutRef.current !== null) {
+      window.clearTimeout(scrollTimeoutRef.current);
+    }
+
+    scrollTimeoutRef.current = window.setTimeout(() => {
+      const cards = Array.from(
+        track.querySelectorAll<HTMLElement>('[data-service-position]'),
+      );
+      const trackCenter = track.scrollLeft + track.clientWidth / 2;
+      const nearestCard = cards.reduce<HTMLElement | null>((nearest, card) => {
+        if (nearest === null) return card;
+
+        const cardCenter = card.offsetLeft + card.offsetWidth / 2;
+        const nearestCenter = nearest.offsetLeft + nearest.offsetWidth / 2;
+
+        return Math.abs(cardCenter - trackCenter) <
+          Math.abs(nearestCenter - trackCenter)
+          ? card
+          : nearest;
+      }, null);
+      const nearestPosition = Number(
+        nearestCard?.dataset.servicePosition ?? serviceCount,
+      );
+
+      if (Number.isNaN(nearestPosition)) return;
+
+      setServicePosition(nearestPosition);
+      normalizePosition(nearestPosition);
+    }, 140);
+  };
+
+  return (
+    <section className="services-showcase" id="services">
+      <div className="services-heading">
+        <p className="eyebrow">Our services</p>
+        <h2>Services for connected manufacturing.</h2>
+        <p>
+          From controls and software to virtual commissioning, process
+          optimization, manufacturing, and IT/OT integration.
+        </p>
+      </div>
+
+      <div
+        className="services-carousel"
+        onMouseEnter={() => setIsPaused(true)}
+        onMouseLeave={() => setIsPaused(false)}
+        onFocus={() => setIsPaused(true)}
+        onBlur={() => setIsPaused(false)}
+      >
+        <button
+          className="service-nav service-nav-left"
+          type="button"
+          aria-label="Previous service"
+          onClick={() => moveToPosition(servicePosition - 1)}
+        >
+          <ChevronLeft size={24} />
+        </button>
+        <div className="services-track" ref={trackRef} onScroll={handleTrackScroll}>
+          {repeatedServiceShowcase.map((service, index) => (
+            <article
+              className={
+                index % serviceCount === activeIndex
+                  ? 'service-panel active'
+                  : 'service-panel'
+              }
+              data-service-position={index}
+              key={`${service.title}-${index}`}
+              onClick={() => moveToPosition(index)}
+            >
+              <img src={service.image} alt="" aria-hidden="true" />
+              <div className="service-panel-shade" />
+              <div className="service-panel-copy">
+                <span>{service.eyebrow}</span>
+                <h3>{service.title}</h3>
+                <p>{service.description}</p>
+              </div>
+            </article>
+          ))}
+        </div>
+        <button
+          className="service-nav service-nav-right"
+          type="button"
+          aria-label="Next service"
+          onClick={() => moveToPosition(servicePosition + 1)}
+        >
+          <ChevronRight size={24} />
+        </button>
+      </div>
+
+      <div className="service-dots" aria-label="Service carousel position">
+        {serviceShowcase.map((service, index) => (
+          <button
+            className={index === activeIndex ? 'active' : ''}
+            type="button"
+            key={service.title}
+            aria-label={`Show ${service.title}`}
+            onClick={() => moveToIndex(index)}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function BusinessLinePage({
+  line,
+  onNavigateHome,
+}: {
+  line: BusinessLine;
+  onNavigateHome: (hash?: string) => void;
+}) {
+  const Icon = line.icon;
+
+  return (
+    <main>
+      <section className="business-detail-page">
+        <button
+          className="business-back-link"
+          type="button"
+          onClick={() => onNavigateHome('#lines')}
+        >
+          <ArrowRight size={17} />
+          Back to business lines
+        </button>
+        <div className="business-detail-layout">
+          <div className="business-detail-copy">
+            <p className="eyebrow">{line.eyebrow}</p>
+            <h1>{line.title}</h1>
+            <p>{line.detail}</p>
+          </div>
+          <div className="business-detail-card">
+            <div className="card-icon"><Icon size={28} /></div>
+            <h2>What this division covers</h2>
+            <ul>
+              {line.points.map((point) => (
+                <li key={point}><Check size={17} /> {point}</li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </section>
+    </main>
+  );
+}
+
 function App() {
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [scrollProgress, setScrollProgress] = React.useState(0);
+  const [currentPath, setCurrentPath] = React.useState(() =>
+    typeof window === 'undefined' ? '/' : window.location.pathname,
+  );
   const [viewportWidth, setViewportWidth] = React.useState(() =>
     typeof window === 'undefined' ? 1440 : window.innerWidth,
   );
@@ -144,6 +474,10 @@ function App() {
   const compactMenuLeft = viewportWidth - compactNavRight - 62;
   const expandedMenuLeftPosition =
     expandedMenuLeft + (compactMenuLeft - expandedMenuLeft) * scrollProgress;
+  const expandedMenuPanelLeft = Math.min(
+    expandedMenuLeftPosition,
+    viewportWidth - 220 - compactNavRight,
+  );
   const navScale = 1.08 - scrollProgress * 0.08;
   const navRevealProgress = Math.min(Math.max((scrollProgress - 0.34) / 0.42, 0), 1);
   const sloganProgress = 1 - Math.min(Math.max(scrollProgress / 0.42, 0), 1);
@@ -153,6 +487,9 @@ function App() {
   const logoRotation = scrollProgress * 360;
   const edgeStraightProgress = Math.min(Math.max((scrollProgress - 0.82) / 0.18, 0), 1);
   const edgeShape = 1 - scrollProgress;
+  const selectedBusinessLine = businessLines.find((line) => {
+    return currentPath === `/business/${line.slug}`;
+  });
   const orangeEdgePath =
     `M0 0 C80 ${62 * edgeShape} 210 ${80 * edgeShape} 360 ${56 * edgeShape} ` +
     `C500 ${34 * edgeShape} 570 0 710 0 ` +
@@ -182,6 +519,34 @@ function App() {
     };
   }, []);
 
+  React.useEffect(() => {
+    const updatePath = () => setCurrentPath(window.location.pathname);
+
+    window.addEventListener('popstate', updatePath);
+    return () => window.removeEventListener('popstate', updatePath);
+  }, []);
+
+  const navigateTo = (path: string) => {
+    window.history.pushState({}, '', path);
+    setCurrentPath(window.location.pathname);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    closeMenu();
+  };
+
+  const navigateHome = (hash = '') => {
+    window.history.pushState({}, '', `/${hash}`);
+    setCurrentPath('/');
+    window.setTimeout(() => {
+      if (!hash) {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
+      }
+
+      document.querySelector(hash)?.scrollIntoView({ behavior: 'smooth' });
+    }, 0);
+    closeMenu();
+  };
+
   return (
     <div
       className="site-shell"
@@ -194,6 +559,7 @@ function App() {
           '--nav-top': `${navTop}px`,
           '--nav-right': `${navRight}px`,
           '--expanded-menu-left': `${expandedMenuLeftPosition}px`,
+          '--expanded-menu-panel-left': `${expandedMenuPanelLeft}px`,
           '--slogan-left': `${sloganLeft}px`,
           '--nav-scale': navScale,
           '--nav-reveal-progress': navRevealProgress,
@@ -207,7 +573,15 @@ function App() {
       }
     >
       <header className="topbar">
-        <a className="brand" href="#home" onClick={closeMenu} aria-label="YVIMO home">
+        <a
+          className="brand"
+          href="/"
+          onClick={(event) => {
+            event.preventDefault();
+            navigateHome();
+          }}
+          aria-label="YVIMO home"
+        >
           <img
             className="brand-logo brand-logo-square"
             src="/assets/logos/yvimo-square-logo-2024.png"
@@ -252,18 +626,18 @@ function App() {
               : 'expanded-menu-panel'
           }
         >
-          <a href="#lines" onClick={closeMenu}>Business lines</a>
-          <a href="#gateway" onClick={closeMenu}>Gateway</a>
-          <a href="#solutions" onClick={closeMenu}>Solutions</a>
-          <a href="#platform" onClick={closeMenu}>Platform</a>
-          <a className="panel-cta" href="#contact" onClick={closeMenu}>Start a project</a>
+          <a href="/#services" onClick={(event) => { event.preventDefault(); navigateHome('#services'); }}>Services</a>
+          <a href="/#gateway" onClick={(event) => { event.preventDefault(); navigateHome('#gateway'); }}>Gateway</a>
+          <a href="/#solutions" onClick={(event) => { event.preventDefault(); navigateHome('#solutions'); }}>Solutions</a>
+          <a href="/#platform" onClick={(event) => { event.preventDefault(); navigateHome('#platform'); }}>Platform</a>
+          <a className="panel-cta" href="/#contact" onClick={(event) => { event.preventDefault(); navigateHome('#contact'); }}>Start a project</a>
         </div>
         <nav className={menuOpen ? 'nav-links open' : 'nav-links'} aria-label="Primary navigation">
-          <a href="#lines" onClick={closeMenu}>Business lines</a>
-          <a href="#gateway" onClick={closeMenu}>Gateway</a>
-          <a href="#solutions" onClick={closeMenu}>Solutions</a>
-          <a href="#platform" onClick={closeMenu}>Platform</a>
-          <a className="nav-cta" href="#contact" onClick={closeMenu}>Start a project</a>
+          <a href="/#services" onClick={(event) => { event.preventDefault(); navigateHome('#services'); }}>Services</a>
+          <a href="/#gateway" onClick={(event) => { event.preventDefault(); navigateHome('#gateway'); }}>Gateway</a>
+          <a href="/#solutions" onClick={(event) => { event.preventDefault(); navigateHome('#solutions'); }}>Solutions</a>
+          <a href="/#platform" onClick={(event) => { event.preventDefault(); navigateHome('#platform'); }}>Platform</a>
+          <a className="nav-cta" href="/#contact" onClick={(event) => { event.preventDefault(); navigateHome('#contact'); }}>Start a project</a>
         </nav>
         <svg
           className="header-wave"
@@ -281,6 +655,12 @@ function App() {
         </div>
       </header>
 
+      {selectedBusinessLine ? (
+        <BusinessLinePage
+          line={selectedBusinessLine}
+          onNavigateHome={navigateHome}
+        />
+      ) : (
       <main>
         <section className="hero-section" id="home">
           <div className="hero-visual" aria-hidden="true">
@@ -288,6 +668,18 @@ function App() {
             <div className="signal-line line-a" />
             <div className="signal-line line-b" />
             <div className="signal-line line-c" />
+            <img
+              className="industrial-robot-layer robot-layer-left"
+              src="/assets/hero/robot-left.png"
+              alt=""
+              aria-hidden="true"
+            />
+            <img
+              className="industrial-robot-layer robot-layer-right"
+              src="/assets/hero/robot-right.png"
+              alt=""
+              aria-hidden="true"
+            />
             <div className="hero-console">
               <div className="console-header">
                 <span className="status-dot" />
@@ -317,50 +709,42 @@ function App() {
           </div>
           <div className="hero-copy">
             <p className="eyebrow">Industrial automation, software services, and connected products</p>
-            <h1>YVIMO builds the bridge between machines, data, and modern software.</h1>
+            <h1>Automation systems built beyond the machine.</h1>
             <p className="hero-lede">
-              We design controls systems, build custom apps and APIs, and develop YVIMO products like Gateway for teams that need industrial reliability with software speed.
+              We build control systems, industrial software, and connected products that help manufacturers modernize machines, move data reliably, and turn operations into scalable digital systems.
             </p>
             <div className="hero-actions">
               <a className="primary-action" href="#contact">
                 Start a project <ArrowRight size={18} />
               </a>
-              <a className="secondary-action" href="#gateway">Explore Gateway</a>
+              <a className="secondary-action" href="#gateway">Explore our solutions</a>
             </div>
           </div>
         </section>
 
-        <section className="section intro-strip" aria-label="YVIMO focus">
-          <div>
-            <span>01</span>
-            <strong>Controls</strong>
-            <p>PLC, HMI, SCADA, commissioning, and plant-floor integration.</p>
-          </div>
-          <div>
-            <span>02</span>
-            <strong>Software</strong>
-            <p>Modern web applications, backend APIs, data workflows, and internal platforms.</p>
-          </div>
-          <div>
-            <span>03</span>
-            <strong>Products</strong>
-            <p>Gateway, account services, licensing, and tools for connected operations.</p>
-          </div>
-        </section>
+        <ServicesShowcase />
 
         <section className="section" id="lines">
-          <div className="section-heading">
-            <p className="eyebrow">What YVIMO is becoming</p>
-            <h2>One company, three connected lines of work.</h2>
+          <div className="section-heading business-heading">
+            <p className="eyebrow">Business lines</p>
+            <h2>The four divisions that move YVIMO forward.</h2>
             <p>
-              The automation work remains core, but the web now reflects the larger direction: industrial systems, software services, and proprietary products that can share accounts, APIs, and licensing.
+              Industrial automation remains our core. Around it, YVIMO grows through software services, proprietary products, and YVIMO Academy: our learning space for the next generation of industrial talent.
             </p>
           </div>
           <div className="business-grid">
             {businessLines.map((line) => {
               const Icon = line.icon;
               return (
-                <article className="business-card" key={line.title}>
+                <a
+                  className="business-card"
+                  href={`/business/${line.slug}`}
+                  key={line.title}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    navigateTo(`/business/${line.slug}`);
+                  }}
+                >
                   <div className="card-icon"><Icon size={24} /></div>
                   <p className="eyebrow">{line.eyebrow}</p>
                   <h3>{line.title}</h3>
@@ -370,7 +754,7 @@ function App() {
                       <li key={point}><Check size={16} /> {point}</li>
                     ))}
                   </ul>
-                </article>
+                </a>
               );
             })}
           </div>
@@ -475,6 +859,7 @@ function App() {
           </a>
         </section>
       </main>
+      )}
     </div>
   );
 }
