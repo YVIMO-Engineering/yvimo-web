@@ -2,7 +2,6 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   ArrowRight,
-  BadgeCheck,
   Blocks,
   Cable,
   ChartNoAxesCombined,
@@ -16,6 +15,8 @@ import {
   Database,
   Factory,
   FileKey2,
+  FileUp,
+  GitBranch,
   Gauge,
   GraduationCap,
   KeyRound,
@@ -27,6 +28,7 @@ import {
   Rocket,
   ServerCog,
   ShieldCheck,
+  Star,
   TerminalSquare,
   Workflow,
   X,
@@ -44,6 +46,12 @@ type BusinessLine = {
 };
 
 type Solution = {
+  title: string;
+  description: string;
+  icon: React.ComponentType<{ size?: number }>;
+};
+
+type GatewayFeature = {
   title: string;
   description: string;
   icon: React.ComponentType<{ size?: number }>;
@@ -177,11 +185,27 @@ const solutions: Solution[] = [
   },
 ];
 
-const gatewayFeatures = [
-  'Siemens S7 first, expandable driver model',
-  'Tag catalog, import workflow, and route builder',
-  'REST API, WebSocket path, and future MQTT outputs',
-  'Designed for local edge deployments and modern software stacks',
+const gatewayFeatures: GatewayFeature[] = [
+  {
+    title: 'PLC and edge drivers',
+    description: 'Siemens S7 first, expanding to Allen Bradley, Mitsubishi, and TCP devices.',
+    icon: Cable,
+  },
+  {
+    title: 'TIA tag import',
+    description: 'Auto-import tags from TIA Portal into a live gateway catalog.',
+    icon: FileUp,
+  },
+  {
+    title: 'Flow Builder logic',
+    description: 'Create routes, conditions, branches, transformations, and custom logic.',
+    icon: GitBranch,
+  },
+  {
+    title: 'Runtime outputs',
+    description: 'Expose data through APIs, MQTT, databases, reports, and PLC writeback.',
+    icon: TerminalSquare,
+  },
 ];
 
 const repeatedServiceShowcase = [
@@ -762,28 +786,42 @@ function App() {
 
         <section className="product-section" id="gateway">
           <div className="product-copy">
-            <p className="eyebrow">Featured product</p>
-            <h2>YVIMO Gateway</h2>
-            <p>
-              A lightweight industrial data gateway for connecting PLCs and edge devices to APIs, dashboards, databases, cloud systems, and custom software.
-            </p>
-            <div className="feature-list">
-              {gatewayFeatures.map((feature) => (
-                <span key={feature}><BadgeCheck size={17} /> {feature}</span>
-              ))}
+            <div className="product-title">
+              <img src="/assets/logos/gateway-logo.png" alt="" />
+              <div className="product-title-copy">
+                <p className="eyebrow featured-eyebrow"><Star size={15} fill="currentColor" /> Featured product</p>
+                <h2>YVIMO Gateway</h2>
+              </div>
             </div>
-            <a className="text-link" href="#contact">Talk about a Gateway deployment <ArrowRight size={17} /></a>
+            <p>
+              The industrial data layer for turning PLCs, edge devices, and shop-floor tags into clean routes, APIs, dashboards, and outputs.
+            </p>
+            <div className="feature-area">
+              <div className="feature-list">
+                {gatewayFeatures.map((feature) => {
+                  const Icon = feature.icon;
+                  return (
+                    <article className="feature-card" key={feature.title}>
+                      <Icon size={18} />
+                      <strong>{feature.title}</strong>
+                      <span>{feature.description}</span>
+                    </article>
+                  );
+                })}
+              </div>
+              <a className="primary-action gateway-demo-button" href="/gateway-demo">Try Online Demo <Rocket size={17} /></a>
+            </div>
           </div>
           <div className="gateway-panel" aria-label="YVIMO Gateway preview">
             <div className="panel-toolbar">
-              <span>Gateway dashboard</span>
+              <span>Gateway runtime console</span>
               <strong>Edge node: Line 04</strong>
             </div>
             <div className="dashboard-grid">
               <div className="dash-card tall">
                 <Network size={22} />
-                <span>Routes</span>
-                <strong>{'Connect -> Process -> Output'}</strong>
+                <span>Live routes</span>
+                <strong>{'Sources -> Gateway core -> Destinations'}</strong>
                 <div className="mini-flow">
                   <i />
                   <b />
@@ -794,18 +832,18 @@ function App() {
               </div>
               <div className="dash-card">
                 <TerminalSquare size={22} />
-                <span>API</span>
-                <strong>/tags/live</strong>
+                <span>Runtime API</span>
+                <strong>/api/tags/live</strong>
               </div>
               <div className="dash-card">
                 <ShieldCheck size={22} />
-                <span>Status</span>
-                <strong>Running</strong>
+                <span>Node status</span>
+                <strong>Running local</strong>
               </div>
               <div className="dash-card wide">
                 <Workflow size={22} />
-                <span>Destinations</span>
-                <strong>Database, MQTT, Webhook, Reports</strong>
+                <span>Output destinations</span>
+                <strong>Database, MQTT, Webhook, Reports, PLC writeback</strong>
               </div>
             </div>
           </div>

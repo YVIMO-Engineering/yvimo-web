@@ -540,6 +540,18 @@ button {
   text-transform: uppercase;
 }
 
+.featured-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.featured-eyebrow svg {
+  flex: 0 0 auto;
+  color: #ff8a1f;
+  filter: drop-shadow(0 0 7px rgba(255, 138, 31, 0.86)) drop-shadow(0 0 16px rgba(255, 138, 31, 0.34));
+}
+
 .hero-copy h1,
 .section-heading h2,
 .product-copy h2,
@@ -977,8 +989,7 @@ button {
   list-style: none;
 }
 
-.business-card li,
-.feature-list span {
+.business-card li {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -987,8 +998,7 @@ button {
   font-weight: 750;
 }
 
-.business-card li svg,
-.feature-list svg {
+.business-card li svg {
   flex: 0 0 auto;
   color: var(--green);
 }
@@ -1095,7 +1105,30 @@ button {
   color: #ffffff;
 }
 
-.product-copy h2 {
+.product-title {
+  display: flex;
+  align-items: center;
+  gap: 26px;
+}
+
+.product-title img {
+  width: clamp(132px, 11vw, 174px);
+  height: clamp(132px, 11vw, 174px);
+  object-fit: contain;
+  filter: drop-shadow(0 0 22px rgba(255, 138, 31, 0.28));
+}
+
+.product-title-copy {
+  display: grid;
+  gap: 10px;
+  padding-bottom: 0;
+}
+
+.product-title-copy .eyebrow {
+  margin: 0;
+}
+
+.product-title h2 {
   color: #ffffff;
 }
 
@@ -1105,18 +1138,61 @@ button {
   color: #c8d0da;
 }
 
-.feature-list {
+.feature-area {
   display: grid;
-  gap: 12px;
-  margin: 28px 0;
+  max-width: 660px;
+  margin-top: 26px;
+  justify-items: center;
 }
 
-.feature-list span {
-  color: #edf1f5;
+.feature-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  width: 100%;
+  margin: 0 0 28px;
+}
+
+.feature-card {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 10px;
+  align-items: start;
+  min-height: 112px;
+  border: 1px solid rgba(255, 138, 31, 0.34);
+  border-radius: var(--radius);
+  padding: 14px;
+  background:
+    linear-gradient(135deg, rgba(255, 138, 31, 0.18), rgba(255, 138, 31, 0.06)),
+    rgba(255, 255, 255, 0.035);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+.feature-card svg {
+  grid-row: span 2;
+  color: #ff9b3f;
+  filter: drop-shadow(0 0 10px rgba(255, 138, 31, 0.38));
+}
+
+.feature-card strong {
+  color: #ffffff;
+  font-size: 14px;
+  line-height: 1.15;
+}
+
+.feature-card span {
+  color: #c8d0da;
+  font-size: 13px;
+  line-height: 1.38;
 }
 
 .text-link {
   color: #ffd1a5;
+}
+
+.gateway-demo-button {
+  width: fit-content;
+  box-shadow: 0 16px 34px rgba(255, 138, 31, 0.24);
 }
 
 .gateway-panel {
@@ -1412,6 +1488,7 @@ button {
   .services-heading,
   .section-heading,
   .business-grid,
+  .feature-list,
   .solution-grid,
   .platform-steps,
   .contact-section {
@@ -1514,6 +1591,21 @@ button {
   .primary-action,
   .secondary-action {
     width: 100%;
+  }
+
+  .product-title {
+    align-items: center;
+    gap: 14px;
+  }
+
+  .product-title img {
+    width: 90px;
+    height: 90px;
+  }
+
+  .product-title-copy {
+    gap: 6px;
+    padding-bottom: 0;
   }
 
   .route-connector {
