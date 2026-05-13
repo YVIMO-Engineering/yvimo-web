@@ -17,9 +17,10 @@ import {
   GitBranch,
   Gauge,
   GraduationCap,
-  KeyRound,
-  Layers3,
+  Languages,
   LockKeyhole,
+  LogIn,
+  Mail,
   Menu,
   Network,
   RadioTower,
@@ -65,12 +66,366 @@ type GatewayFeature = {
   icon: React.ComponentType<{ size?: number }>;
 };
 
+type ProcessStep = {
+  title: string;
+  description: string;
+  icon: React.ComponentType<{ size?: number }>;
+};
+
 type ServiceShowcaseItem = {
   title: string;
   eyebrow: string;
   description: string;
   image: string;
 };
+
+type LanguageCode = 'en' | 'es' | 'zh';
+
+type Translator = (text: string) => string;
+
+const languages: Array<{
+  code: LanguageCode;
+  label: string;
+  flagClass: string;
+}> = [
+  { code: 'en', label: 'English', flagClass: 'flag-us' },
+  { code: 'es', label: 'Español', flagClass: 'flag-mx' },
+  { code: 'zh', label: '简体中文', flagClass: 'flag-cn' },
+];
+
+const translations: Record<Exclude<LanguageCode, 'en'>, Record<string, string>> = {
+  es: {
+    'Engineering Automation': 'Ingeniería de automatización',
+    'that': 'que',
+    'delivers results': 'entrega resultados',
+    Services: 'Servicios',
+    Gateway: 'Gateway',
+    Solutions: 'Soluciones',
+    Platform: 'Plataforma',
+    'Sign in': 'Iniciar sesión',
+    'Open sign in': 'Abrir inicio de sesión',
+    'Sign up': 'Registrarse',
+    'Create account': 'Crear cuenta',
+    'Create your YVIMO account': 'Crea tu cuenta YVIMO',
+    'Already have an account?': '¿Ya tienes una cuenta?',
+    'Continue with Apple Passkey': 'Continuar con Apple Passkey',
+    'Full name': 'Nombre completo',
+    Company: 'Empresa',
+    'Access your YVIMO workspace': 'Accede a tu espacio YVIMO',
+    'Sign in to manage Gateway online access, licenses, learning, orders, and quotations as the platform grows.':
+      'Inicia sesión para administrar acceso online a Gateway, licencias, aprendizaje, órdenes y cotizaciones conforme crece la plataforma.',
+    'Create an account to start using YVIMO platform services as they become available.':
+      'Crea una cuenta para comenzar a usar los servicios de la plataforma YVIMO conforme estén disponibles.',
+    'Email address': 'Correo electrónico',
+    Password: 'Contraseña',
+    'Remember me': 'Recordarme',
+    'Forgot password?': '¿Olvidaste tu contraseña?',
+    'Continue': 'Continuar',
+    'Platform preview': 'Vista previa de plataforma',
+    'Gateway Online Access': 'Acceso online a Gateway',
+    'Use Gateway demos, downloads, connected services, and future web tools from one account.':
+      'Usa demos de Gateway, descargas, servicios conectados y futuras herramientas web desde una sola cuenta.',
+    'Licensing': 'Licenciamiento',
+    'Manage product seats, activations, renewals, and customer entitlements.':
+      'Administra puestos de producto, activaciones, renovaciones y permisos de cliente.',
+    'Access training, professional guidance, and industrial learning resources.':
+      'Accede a capacitación, guía profesional y recursos de aprendizaje industrial.',
+    'Orders and Quotation Management': 'Gestión de órdenes y cotizaciones',
+    'Track quotations, purchase requests, project orders, and commercial follow-up.':
+      'Da seguimiento a cotizaciones, solicitudes de compra, órdenes de proyecto y seguimiento comercial.',
+    'Start a project': 'Iniciar un proyecto',
+    'Select language': 'Seleccionar idioma',
+    'Open navigation': 'Abrir navegación',
+    'Close navigation': 'Cerrar navegación',
+    'Industrial automation, software services, and connected products':
+      'Automatización industrial, servicios de software y productos conectados',
+    'Automation systems built beyond the machine.':
+      'Sistemas de automatización construidos más allá de la máquina.',
+    'We build control systems, industrial software, and connected products that help manufacturers modernize machines, move data reliably, and turn operations into scalable digital systems.':
+      'Construimos sistemas de control, software industrial y productos conectados que ayudan a fabricantes a modernizar máquinas, mover datos de forma confiable y convertir operaciones en sistemas digitales escalables.',
+    'Explore our solutions': 'Explorar nuestras soluciones',
+    'Our services': 'Nuestros servicios',
+    'Services for connected manufacturing.': 'Servicios para manufactura conectada.',
+    'From controls and software to virtual commissioning, process optimization, manufacturing, and IT/OT integration.':
+      'Desde controles y software hasta comisionamiento virtual, optimización de procesos, manufactura e integración IT/OT.',
+    'Business lines': 'Líneas de negocio',
+    'The four divisions that move YVIMO forward.':
+      'Las cuatro divisiones que impulsan a YVIMO.',
+    'Industrial automation remains our core. Around it, YVIMO grows through software services, proprietary products, and YVIMO Academy: our learning space for the next generation of industrial talent.':
+      'La automatización industrial sigue siendo nuestro núcleo. Alrededor de ella, YVIMO crece mediante servicios de software, productos propios y YVIMO Academy: nuestro espacio de aprendizaje para la siguiente generación de talento industrial.',
+    'Compatible & flexible': 'Compatible y flexible',
+    'Built to work with the technologies you already use.':
+      'Diseñado para trabajar con las tecnologías que ya usas.',
+    'YVIMO integrates controls, robotics, software, and data systems across modern industrial environments.':
+      'YVIMO integra controles, robótica, software y sistemas de datos en entornos industriales modernos.',
+    'How we work': 'Cómo trabajamos',
+    'A clear path from concept to working system.':
+      'Un camino claro desde el concepto hasta un sistema funcionando.',
+    'YVIMO combines industrial experience, software development, and commissioning discipline to move projects from technical need to real operation.':
+      'YVIMO combina experiencia industrial, desarrollo de software y disciplina de puesta en marcha para llevar proyectos desde una necesidad técnica hasta la operación real.',
+    Result: 'Resultado',
+    'A working automation, software, or integration system ready for real operations.':
+      'Un sistema de automatización, software o integración funcionando y listo para operaciones reales.',
+    'Tell us what you want to connect, automate, or improve.':
+      'Cuéntanos qué quieres conectar, automatizar o mejorar.',
+    'Share the machine, process, data flow, or operational challenge you have in mind. YVIMO can help define the right path-from controls and software to integration, validation, and deployment.':
+      'Comparte la máquina, proceso, flujo de datos o reto operativo que tienes en mente. YVIMO puede ayudar a definir el camino correcto: desde controles y software hasta integración, validación y despliegue.',
+    'Explore YVIMO Gateway': 'Explorar YVIMO Gateway',
+    'Project input': 'Entrada del proyecto',
+    Ready: 'Listo',
+    'Machine / process': 'Máquina / proceso',
+    'Data / automation need': 'Necesidad de datos / automatización',
+    'Expected output': 'Resultado esperado',
+    'Working system': 'Sistema funcionando',
+    'Featured product': 'Producto destacado',
+    'The industrial data layer for turning PLCs, edge devices, and shop-floor tags into clean routes, APIs, dashboards, and outputs.':
+      'La capa de datos industriales para convertir PLCs, dispositivos edge y tags de planta en rutas, APIs, dashboards y salidas limpias.',
+    'Try Online Demo': 'Probar demo online',
+    Discover: 'Descubrir',
+    Architect: 'Arquitectar',
+    Build: 'Construir',
+    Validate: 'Validar',
+    'Deploy & Support': 'Desplegar y soportar',
+    'We understand the machine, process, data, pain points, and business objective.':
+      'Entendemos la máquina, el proceso, los datos, los puntos de dolor y el objetivo de negocio.',
+    'We define the controls, software, data flow, hardware, interfaces, and deployment strategy.':
+      'Definimos controles, software, flujo de datos, hardware, interfaces y estrategia de despliegue.',
+    'We develop the PLC logic, applications, dashboards, integrations, or connected product features.':
+      'Desarrollamos lógica PLC, aplicaciones, dashboards, integraciones o funciones de producto conectado.',
+    'We test the system through simulation, offline checks, FAT-style reviews, and controlled startup.':
+      'Probamos el sistema mediante simulación, revisiones offline, validaciones tipo FAT y arranque controlado.',
+    'We commission, train, support, and improve the solution under real production conditions.':
+      'Comisionamos, capacitamos, damos soporte y mejoramos la solución bajo condiciones reales de producción.',
+    'Controls & PLCs': 'Controles y PLCs',
+    'Robotics & Motion': 'Robótica y movimiento',
+    'Software Engineering': 'Ingeniería de software',
+    'IT/OT & Cloud': 'IT/OT y nube',
+    'PLC programming, machine control, field devices, industrial networks, and troubleshooting.':
+      'Programación PLC, control de máquinas, dispositivos de campo, redes industriales y diagnóstico.',
+    'Robot cells, motion systems, safety integration, simulation, and commissioning.':
+      'Celdas robóticas, sistemas de movimiento, integración de seguridad, simulación y comisionamiento.',
+    'Web apps, mobile tools, APIs, dashboards, and industrial software platforms.':
+      'Apps web, herramientas móviles, APIs, dashboards y plataformas de software industrial.',
+    'Secure data routing from machines to databases, cloud systems, and reports.':
+      'Ruteo seguro de datos desde máquinas hacia bases de datos, sistemas cloud y reportes.',
+    Controls: 'Controles',
+    Software: 'Software',
+    Products: 'Productos',
+    'Virtual Commissioning': 'Comisionamiento virtual',
+    'Industrial Engineering': 'Ingeniería industrial',
+    Manufacturing: 'Manufactura',
+    'IT/OT Integration': 'Integración IT/OT',
+    'Digital Manufacturing': 'Manufactura digital',
+    'PLC, HMI, SCADA, commissioning, troubleshooting, and plant-floor integration.':
+      'PLC, HMI, SCADA, comisionamiento, diagnóstico e integración en planta.',
+    'Modern web applications, backend APIs, dashboards, data workflows, and internal platforms.':
+      'Aplicaciones web modernas, APIs backend, dashboards, flujos de datos y plataformas internas.',
+    'YVIMO Gateway, account services, licensing, and tools for connected operations.':
+      'YVIMO Gateway, servicios de cuentas, licenciamiento y herramientas para operaciones conectadas.',
+    'Digital manufacturing cells, robot simulations, layout validation, and offline verification.':
+      'Celdas de manufactura digital, simulaciones robóticas, validación de layouts y verificación offline.',
+    'Process optimization, cycle-time analysis, material flow, bottleneck studies, and improvement roadmaps.':
+      'Optimización de procesos, análisis de ciclo, flujo de materiales, estudios de cuellos de botella y planes de mejora.',
+    'Production systems, robotic cells, fixtures, line support, and launch-ready execution.':
+      'Sistemas de producción, celdas robóticas, herramentales, soporte de línea y ejecución para arranque.',
+    'Connect PLCs, edge devices, APIs, databases, MQTT, cloud services, and reporting layers.':
+      'Conecta PLCs, dispositivos edge, APIs, bases de datos, MQTT, servicios cloud y capas de reporte.',
+    'Tecnomatix, DELMIA, simulation models, line studies, and connected engineering workflows.':
+      'Tecnomatix, DELMIA, modelos de simulación, estudios de línea y flujos de ingeniería conectados.',
+    'Industrial Automation': 'Automatización industrial',
+    'Software Services': 'Servicios de software',
+    'YVIMO Products': 'Productos YVIMO',
+    'YVIMO Academy': 'YVIMO Academy',
+    'Controls and field systems': 'Controles y sistemas de campo',
+    'Apps, APIs, and data systems': 'Apps, APIs y sistemas de datos',
+    'Physical and digital proprietary products': 'Productos físicos y digitales propios',
+    'Online academy and professional guidance': 'Academia online y guía profesional',
+    'PLC and HMI engineering': 'Ingeniería PLC y HMI',
+    'Machine integration': 'Integración de máquinas',
+    'Commissioning and support': 'Comisionamiento y soporte',
+    'Web applications': 'Aplicaciones web',
+    'Backend APIs': 'APIs backend',
+    'Operational dashboards': 'Dashboards operativos',
+    'YVIMO Gateway': 'YVIMO Gateway',
+    'Industrial tools': 'Herramientas industriales',
+    'Digital platforms': 'Plataformas digitales',
+    'Automation training': 'Capacitación en automatización',
+    'Mentoring and reviews': 'Mentoría y revisiones',
+    'Industry updates': 'Actualizaciones de la industria',
+    'PLC and edge drivers': 'Drivers PLC y edge',
+    'TIA tag import': 'Importación de tags TIA',
+    'Flow Builder logic': 'Lógica Flow Builder',
+    'Runtime outputs': 'Salidas runtime',
+  },
+  zh: {
+    'Engineering Automation': '自动化工程',
+    'that': '交付',
+    'delivers results': '真实成果',
+    Services: '服务',
+    Gateway: 'Gateway',
+    Solutions: '解决方案',
+    Platform: '平台',
+    'Sign in': '登录',
+    'Open sign in': '打开登录',
+    'Sign up': '注册',
+    'Create account': '创建账户',
+    'Create your YVIMO account': '创建你的 YVIMO 账户',
+    'Already have an account?': '已经有账户？',
+    'Continue with Apple Passkey': '使用 Apple Passkey 继续',
+    'Full name': '全名',
+    Company: '公司',
+    'Access your YVIMO workspace': '访问你的 YVIMO 工作区',
+    'Sign in to manage Gateway online access, licenses, learning, orders, and quotations as the platform grows.':
+      '登录后可管理 Gateway 在线访问、许可、学习、订单和报价。',
+    'Create an account to start using YVIMO platform services as they become available.':
+      '创建账户以开始使用即将推出的 YVIMO 平台服务。',
+    'Email address': '电子邮箱',
+    Password: '密码',
+    'Remember me': '记住我',
+    'Forgot password?': '忘记密码？',
+    'Continue': '继续',
+    'Platform preview': '平台预览',
+    'Gateway Online Access': 'Gateway 在线访问',
+    'Use Gateway demos, downloads, connected services, and future web tools from one account.':
+      '通过一个账户使用 Gateway 演示、下载、连接服务和未来的 Web 工具。',
+    'Licensing': '许可',
+    'Manage product seats, activations, renewals, and customer entitlements.':
+      '管理产品席位、激活、续订和客户权益。',
+    'Access training, professional guidance, and industrial learning resources.':
+      '访问培训、专业指导和工业学习资源。',
+    'Orders and Quotation Management': '订单和报价管理',
+    'Track quotations, purchase requests, project orders, and commercial follow-up.':
+      '跟踪报价、采购请求、项目订单和商务跟进。',
+    'Start a project': '启动项目',
+    'Select language': '选择语言',
+    'Open navigation': '打开导航',
+    'Close navigation': '关闭导航',
+    'Industrial automation, software services, and connected products':
+      '工业自动化、软件服务与连接产品',
+    'Automation systems built beyond the machine.':
+      '超越单机的自动化系统。',
+    'We build control systems, industrial software, and connected products that help manufacturers modernize machines, move data reliably, and turn operations into scalable digital systems.':
+      '我们构建控制系统、工业软件和连接产品，帮助制造团队升级设备、可靠传输数据，并将运营转化为可扩展的数字系统。',
+    'Explore our solutions': '探索解决方案',
+    'Our services': '我们的服务',
+    'Services for connected manufacturing.': '面向连接制造的服务。',
+    'From controls and software to virtual commissioning, process optimization, manufacturing, and IT/OT integration.':
+      '从控制与软件，到虚拟调试、流程优化、制造支持以及 IT/OT 集成。',
+    'Business lines': '业务方向',
+    'The four divisions that move YVIMO forward.':
+      '推动 YVIMO 前进的四个业务板块。',
+    'Industrial automation remains our core. Around it, YVIMO grows through software services, proprietary products, and YVIMO Academy: our learning space for the next generation of industrial talent.':
+      '工业自动化始终是我们的核心。在此基础上，YVIMO 通过软件服务、自有产品和 YVIMO Academy 持续发展，培养下一代工业人才。',
+    'Compatible & flexible': '兼容且灵活',
+    'Built to work with the technologies you already use.':
+      '为配合你已在使用的技术而构建。',
+    'YVIMO integrates controls, robotics, software, and data systems across modern industrial environments.':
+      'YVIMO 在现代工业环境中集成控制、机器人、软件与数据系统。',
+    'How we work': '工作方式',
+    'A clear path from concept to working system.':
+      '从概念到可运行系统的清晰路径。',
+    'YVIMO combines industrial experience, software development, and commissioning discipline to move projects from technical need to real operation.':
+      'YVIMO 结合工业经验、软件开发与调试纪律，将项目从技术需求推进到真实运行。',
+    Result: '结果',
+    'A working automation, software, or integration system ready for real operations.':
+      '一个可用于真实运营的自动化、软件或集成系统。',
+    'Tell us what you want to connect, automate, or improve.':
+      '告诉我们你想连接、自动化或改进什么。',
+    'Share the machine, process, data flow, or operational challenge you have in mind. YVIMO can help define the right path-from controls and software to integration, validation, and deployment.':
+      '分享你正在考虑的设备、流程、数据流或运营挑战。YVIMO 可以帮助定义正确路径：从控制与软件到集成、验证和部署。',
+    'Explore YVIMO Gateway': '探索 YVIMO Gateway',
+    'Project input': '项目输入',
+    Ready: '就绪',
+    'Machine / process': '设备 / 流程',
+    'Data / automation need': '数据 / 自动化需求',
+    'Expected output': '预期输出',
+    'Working system': '运行系统',
+    'Featured product': '精选产品',
+    'The industrial data layer for turning PLCs, edge devices, and shop-floor tags into clean routes, APIs, dashboards, and outputs.':
+      '工业数据层，用于将 PLC、边缘设备和车间标签转化为清晰的路由、API、仪表板和输出。',
+    'Try Online Demo': '试用在线演示',
+    Discover: '发现',
+    Architect: '架构',
+    Build: '构建',
+    Validate: '验证',
+    'Deploy & Support': '部署与支持',
+    'We understand the machine, process, data, pain points, and business objective.':
+      '我们理解设备、流程、数据、痛点和业务目标。',
+    'We define the controls, software, data flow, hardware, interfaces, and deployment strategy.':
+      '我们定义控制、软件、数据流、硬件、接口和部署策略。',
+    'We develop the PLC logic, applications, dashboards, integrations, or connected product features.':
+      '我们开发 PLC 逻辑、应用、仪表板、集成或连接产品功能。',
+    'We test the system through simulation, offline checks, FAT-style reviews, and controlled startup.':
+      '我们通过仿真、离线检查、FAT 式评审和受控启动来测试系统。',
+    'We commission, train, support, and improve the solution under real production conditions.':
+      '我们在真实生产条件下完成调试、培训、支持并持续改进方案。',
+    'Controls & PLCs': '控制与 PLC',
+    'Robotics & Motion': '机器人与运动',
+    'Software Engineering': '软件工程',
+    'IT/OT & Cloud': 'IT/OT 与云',
+    'PLC programming, machine control, field devices, industrial networks, and troubleshooting.':
+      'PLC 编程、机器控制、现场设备、工业网络和故障排查。',
+    'Robot cells, motion systems, safety integration, simulation, and commissioning.':
+      '机器人单元、运动系统、安全集成、仿真和调试。',
+    'Web apps, mobile tools, APIs, dashboards, and industrial software platforms.':
+      'Web 应用、移动工具、API、仪表板和工业软件平台。',
+    'Secure data routing from machines to databases, cloud systems, and reports.':
+      '将机器数据安全路由到数据库、云系统和报表。',
+    Controls: '控制',
+    Software: '软件',
+    Products: '产品',
+    'Virtual Commissioning': '虚拟调试',
+    'Industrial Engineering': '工业工程',
+    Manufacturing: '制造',
+    'IT/OT Integration': 'IT/OT 集成',
+    'Digital Manufacturing': '数字化制造',
+    'PLC, HMI, SCADA, commissioning, troubleshooting, and plant-floor integration.':
+      'PLC、HMI、SCADA、调试、故障排查和车间集成。',
+    'Modern web applications, backend APIs, dashboards, data workflows, and internal platforms.':
+      '现代 Web 应用、后端 API、仪表板、数据流程和内部平台。',
+    'YVIMO Gateway, account services, licensing, and tools for connected operations.':
+      'YVIMO Gateway、账户服务、许可和连接运营工具。',
+    'Digital manufacturing cells, robot simulations, layout validation, and offline verification.':
+      '数字制造单元、机器人仿真、布局验证和离线检查。',
+    'Process optimization, cycle-time analysis, material flow, bottleneck studies, and improvement roadmaps.':
+      '流程优化、节拍分析、物流、瓶颈研究和改进路线图。',
+    'Production systems, robotic cells, fixtures, line support, and launch-ready execution.':
+      '生产系统、机器人单元、工装夹具、产线支持和投产执行。',
+    'Connect PLCs, edge devices, APIs, databases, MQTT, cloud services, and reporting layers.':
+      '连接 PLC、边缘设备、API、数据库、MQTT、云服务和报表层。',
+    'Tecnomatix, DELMIA, simulation models, line studies, and connected engineering workflows.':
+      'Tecnomatix、DELMIA、仿真模型、产线研究和连接工程流程。',
+    'Industrial Automation': '工业自动化',
+    'Software Services': '软件服务',
+    'YVIMO Products': 'YVIMO 产品',
+    'YVIMO Academy': 'YVIMO Academy',
+    'Controls and field systems': '控制与现场系统',
+    'Apps, APIs, and data systems': '应用、API 与数据系统',
+    'Physical and digital proprietary products': '自有实体与数字产品',
+    'Online academy and professional guidance': '在线学院与专业指导',
+    'PLC and HMI engineering': 'PLC 与 HMI 工程',
+    'Machine integration': '机器集成',
+    'Commissioning and support': '调试与支持',
+    'Web applications': 'Web 应用',
+    'Backend APIs': '后端 API',
+    'Operational dashboards': '运营仪表板',
+    'YVIMO Gateway': 'YVIMO Gateway',
+    'Industrial tools': '工业工具',
+    'Digital platforms': '数字平台',
+    'Automation training': '自动化培训',
+    'Mentoring and reviews': '指导与评审',
+    'Industry updates': '行业更新',
+    'PLC and edge drivers': 'PLC 与边缘驱动',
+    'TIA tag import': 'TIA 标签导入',
+    'Flow Builder logic': 'Flow Builder 逻辑',
+    'Runtime outputs': '运行时输出',
+  },
+};
+
+function translate(language: LanguageCode, text: string) {
+  if (language === 'en') return text;
+  return translations[language][text] ?? text;
+}
 
 const businessLines: BusinessLine[] = [
   {
@@ -328,13 +683,48 @@ const gatewayFeatures: GatewayFeature[] = [
   },
 ];
 
+const processSteps: ProcessStep[] = [
+  {
+    title: 'Discover',
+    description:
+      'We understand the machine, process, data, pain points, and business objective.',
+    icon: Gauge,
+  },
+  {
+    title: 'Architect',
+    description:
+      'We define the controls, software, data flow, hardware, interfaces, and deployment strategy.',
+    icon: Network,
+  },
+  {
+    title: 'Build',
+    description:
+      'We develop the PLC logic, applications, dashboards, integrations, or connected product features.',
+    icon: Code2,
+  },
+  {
+    title: 'Validate',
+    description:
+      'We test the system through simulation, offline checks, FAT-style reviews, and controlled startup.',
+    icon: ShieldCheck,
+  },
+  {
+    title: 'Deploy & Support',
+    description:
+      'We commission, train, support, and improve the solution under real production conditions.',
+    icon: Rocket,
+  },
+];
+
 const repeatedServiceShowcase = [
   ...serviceShowcase,
   ...serviceShowcase,
   ...serviceShowcase,
 ];
 
-function ServicesShowcase() {
+const processParticles = Array.from({ length: 26 }, (_, index) => index);
+
+function ServicesShowcase({ t }: { t: Translator }) {
   const serviceCount = serviceShowcase.length;
   const [servicePosition, setServicePosition] = React.useState(serviceCount);
   const [isPaused, setIsPaused] = React.useState(false);
@@ -461,11 +851,10 @@ function ServicesShowcase() {
   return (
     <section className="services-showcase" id="services">
       <div className="services-heading">
-        <p className="eyebrow">Our services</p>
-        <h2>Services for connected manufacturing.</h2>
+        <p className="eyebrow">{t('Our services')}</p>
+        <h2>{t('Services for connected manufacturing.')}</h2>
         <p>
-          From controls and software to virtual commissioning, process
-          optimization, manufacturing, and IT/OT integration.
+          {t('From controls and software to virtual commissioning, process optimization, manufacturing, and IT/OT integration.')}
         </p>
       </div>
 
@@ -500,8 +889,8 @@ function ServicesShowcase() {
               <div className="service-panel-shade" />
               <div className="service-panel-copy">
                 <span>{service.eyebrow}</span>
-                <h3>{service.title}</h3>
-                <p>{service.description}</p>
+                <h3>{t(service.title)}</h3>
+                <p>{t(service.description)}</p>
               </div>
             </article>
           ))}
@@ -522,7 +911,7 @@ function ServicesShowcase() {
             className={index === activeIndex ? 'active' : ''}
             type="button"
             key={service.title}
-            aria-label={`Show ${service.title}`}
+            aria-label={`Show ${t(service.title)}`}
             onClick={() => moveToIndex(index)}
           />
         ))}
@@ -534,9 +923,11 @@ function ServicesShowcase() {
 function BusinessLinePage({
   line,
   onNavigateHome,
+  t,
 }: {
   line: BusinessLine;
   onNavigateHome: (hash?: string) => void;
+  t: Translator;
 }) {
   const Icon = line.icon;
 
@@ -549,20 +940,20 @@ function BusinessLinePage({
           onClick={() => onNavigateHome('#lines')}
         >
           <ArrowRight size={17} />
-          Back to business lines
+          {t('Back to business lines')}
         </button>
         <div className="business-detail-layout">
           <div className="business-detail-copy">
-            <p className="eyebrow">{line.eyebrow}</p>
-            <h1>{line.title}</h1>
-            <p>{line.detail}</p>
+            <p className="eyebrow">{t(line.eyebrow)}</p>
+            <h1>{t(line.title)}</h1>
+            <p>{t(line.detail)}</p>
           </div>
           <div className="business-detail-card">
             <div className="card-icon"><Icon size={28} /></div>
-            <h2>What this division covers</h2>
+            <h2>{t('What this division covers')}</h2>
             <ul>
               {line.points.map((point) => (
-                <li key={point}><Check size={17} /> {point}</li>
+                <li key={point}><Check size={17} /> {t(point)}</li>
               ))}
             </ul>
           </div>
@@ -572,8 +963,231 @@ function BusinessLinePage({
   );
 }
 
+function LoginPage({
+  onNavigateSignUp,
+  t,
+}: {
+  onNavigateSignUp: () => void;
+  t: Translator;
+}) {
+  return (
+    <main>
+      <section className="login-page">
+        <div className="login-background-grid" aria-hidden="true" />
+        <div className="login-orbit login-orbit-a" aria-hidden="true" />
+        <div className="login-orbit login-orbit-b" aria-hidden="true" />
+        <div className="login-layout">
+          <div className="login-copy">
+            <p className="eyebrow">{t('Platform preview')}</p>
+            <h1>{t('Access your YVIMO workspace')}</h1>
+            <p>
+              {t('Sign in to manage Gateway online access, licenses, learning, orders, and quotations as the platform grows.')}
+            </p>
+            <div className="login-feature-list">
+              <article>
+                <ServerCog size={20} />
+                <div>
+                  <strong>{t('Gateway Online Access')}</strong>
+                  <span>{t('Use Gateway demos, downloads, connected services, and future web tools from one account.')}</span>
+                </div>
+              </article>
+              <article>
+                <ShieldCheck size={20} />
+                <div>
+                  <strong>{t('Licensing')}</strong>
+                  <span>{t('Manage product seats, activations, renewals, and customer entitlements.')}</span>
+                </div>
+              </article>
+              <article>
+                <GraduationCap size={20} />
+                <div>
+                  <strong>{t('YVIMO Academy')}</strong>
+                  <span>{t('Access training, professional guidance, and industrial learning resources.')}</span>
+                </div>
+              </article>
+              <article>
+                <FileUp size={20} />
+                <div>
+                  <strong>{t('Orders and Quotation Management')}</strong>
+                  <span>{t('Track quotations, purchase requests, project orders, and commercial follow-up.')}</span>
+                </div>
+              </article>
+            </div>
+          </div>
+
+          <form className="login-card" onSubmit={(event) => event.preventDefault()}>
+            <div className="login-card-header">
+              <div className="login-card-icon">
+                <LockKeyhole size={24} />
+              </div>
+              <div>
+                <p className="eyebrow">{t('Sign in')}</p>
+                <h2>YVIMO</h2>
+              </div>
+            </div>
+
+            <label className="login-field">
+              <span>{t('Email address')}</span>
+              <div>
+                <Mail size={18} />
+                <input type="email" name="email" autoComplete="email" placeholder="name@company.com" />
+              </div>
+            </label>
+
+            <label className="login-field">
+              <span>{t('Password')}</span>
+              <div>
+                <LockKeyhole size={18} />
+                <input type="password" name="password" autoComplete="current-password" placeholder="••••••••" />
+              </div>
+            </label>
+
+            <div className="login-options">
+              <label>
+                <input type="checkbox" name="remember" />
+                <span>{t('Remember me')}</span>
+              </label>
+              <a href="/login">{t('Forgot password?')}</a>
+            </div>
+
+            <button className="primary-action login-submit" type="submit">
+              {t('Continue')} <ArrowRight size={18} />
+            </button>
+
+            <button className="passkey-button" type="button">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M16.37 1.43c.05 1.06-.31 2.07-1.09 3.02-.84 1.02-1.83 1.6-2.95 1.52-.08-1.03.33-2.08 1.11-2.99.86-.99 1.95-1.55 2.93-1.55ZM20.3 17.44c-.46 1.04-.68 1.51-1.27 2.43-.82 1.25-1.98 2.82-3.42 2.83-1.28.01-1.61-.83-3.35-.82-1.74.01-2.1.84-3.38.83-1.43-.01-2.52-1.43-3.34-2.68-2.3-3.51-2.54-7.64-1.12-9.83 1.01-1.55 2.6-2.46 4.1-2.46 1.53 0 2.49.84 3.75.84 1.22 0 1.97-.84 3.73-.84 1.33 0 2.74.72 3.74 1.96-3.28 1.8-2.75 6.48.56 7.74Z" />
+              </svg>
+              {t('Continue with Apple Passkey')}
+            </button>
+
+            <div className="login-auth-switch">
+              <span>{t('Create account')}</span>
+              <button type="button" onClick={onNavigateSignUp}>
+                {t('Sign up')}
+              </button>
+            </div>
+          </form>
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function SignUpPage({
+  onNavigateLogin,
+  t,
+}: {
+  onNavigateLogin: () => void;
+  t: Translator;
+}) {
+  return (
+    <main>
+      <section className="login-page signup-page">
+        <div className="login-background-grid" aria-hidden="true" />
+        <div className="login-orbit login-orbit-a" aria-hidden="true" />
+        <div className="login-orbit login-orbit-b" aria-hidden="true" />
+        <div className="login-layout">
+          <div className="login-copy">
+            <p className="eyebrow">{t('Platform preview')}</p>
+            <h1>{t('Create your YVIMO account')}</h1>
+            <p>{t('Create an account to start using YVIMO platform services as they become available.')}</p>
+            <div className="login-feature-list">
+              <article>
+                <ServerCog size={20} />
+                <div>
+                  <strong>{t('Gateway Online Access')}</strong>
+                  <span>{t('Use Gateway demos, downloads, connected services, and future web tools from one account.')}</span>
+                </div>
+              </article>
+              <article>
+                <ShieldCheck size={20} />
+                <div>
+                  <strong>{t('Licensing')}</strong>
+                  <span>{t('Manage product seats, activations, renewals, and customer entitlements.')}</span>
+                </div>
+              </article>
+              <article>
+                <GraduationCap size={20} />
+                <div>
+                  <strong>{t('YVIMO Academy')}</strong>
+                  <span>{t('Access training, professional guidance, and industrial learning resources.')}</span>
+                </div>
+              </article>
+              <article>
+                <FileUp size={20} />
+                <div>
+                  <strong>{t('Orders and Quotation Management')}</strong>
+                  <span>{t('Track quotations, purchase requests, project orders, and commercial follow-up.')}</span>
+                </div>
+              </article>
+            </div>
+          </div>
+
+          <form className="login-card" onSubmit={(event) => event.preventDefault()}>
+            <div className="login-card-header">
+              <div className="login-card-icon">
+                <LogIn size={24} />
+              </div>
+              <div>
+                <p className="eyebrow">{t('Sign up')}</p>
+                <h2>YVIMO</h2>
+              </div>
+            </div>
+
+            <label className="login-field">
+              <span>{t('Full name')}</span>
+              <div>
+                <LogIn size={18} />
+                <input type="text" name="name" autoComplete="name" placeholder="Jane Smith" />
+              </div>
+            </label>
+
+            <label className="login-field">
+              <span>{t('Company')}</span>
+              <div>
+                <Factory size={18} />
+                <input type="text" name="company" autoComplete="organization" placeholder="Company name" />
+              </div>
+            </label>
+
+            <label className="login-field">
+              <span>{t('Email address')}</span>
+              <div>
+                <Mail size={18} />
+                <input type="email" name="email" autoComplete="email" placeholder="name@company.com" />
+              </div>
+            </label>
+
+            <label className="login-field">
+              <span>{t('Password')}</span>
+              <div>
+                <LockKeyhole size={18} />
+                <input type="password" name="password" autoComplete="new-password" placeholder="••••••••" />
+              </div>
+            </label>
+
+            <button className="primary-action login-submit" type="submit">
+              {t('Create account')} <ArrowRight size={18} />
+            </button>
+
+            <div className="login-auth-switch">
+              <span>{t('Already have an account?')}</span>
+              <button type="button" onClick={onNavigateLogin}>
+                {t('Sign in')}
+              </button>
+            </div>
+          </form>
+        </div>
+      </section>
+    </main>
+  );
+}
+
 function App() {
   const [menuOpen, setMenuOpen] = React.useState(false);
+  const [languageMenuOpen, setLanguageMenuOpen] = React.useState(false);
+  const [language, setLanguage] = React.useState<LanguageCode>('en');
   const [activeSolution, setActiveSolution] = React.useState<string | null>(null);
   const [scrollProgress, setScrollProgress] = React.useState(0);
   const [currentPath, setCurrentPath] = React.useState(() =>
@@ -584,6 +1198,12 @@ function App() {
   );
 
   const closeMenu = () => setMenuOpen(false);
+  const t = React.useCallback((text: string) => translate(language, text), [language]);
+  const currentLanguage = languages.find((item) => item.code === language) ?? languages[0];
+  const isLoginPage = currentPath === '/login';
+  const isSignUpPage = currentPath === '/signup';
+  const isAuthPage = isLoginPage || isSignUpPage;
+  const headerProgress = isAuthPage ? 1 : scrollProgress;
   const compactViewport = viewportWidth < 760;
   const tinyViewport = viewportWidth < 480;
   const expandedHeaderHeight = compactViewport ? 104 : 128;
@@ -591,47 +1211,47 @@ function App() {
   const expandedWaveDepth = compactViewport ? 34 : 48;
   const expandedBrandWidth = tinyViewport ? 82 : compactViewport ? 330 : viewportWidth < 1040 ? 372 : 420;
   const headerHeight =
-    expandedHeaderHeight - scrollProgress * (expandedHeaderHeight - compactHeaderHeight);
-  const waveDepth = expandedWaveDepth * (1 - scrollProgress);
+    expandedHeaderHeight - headerProgress * (expandedHeaderHeight - compactHeaderHeight);
+  const waveDepth = expandedWaveDepth * (1 - headerProgress);
   const startBrandCenter = tinyViewport
     ? Math.min(Math.max(viewportWidth * 0.22, 86), 114)
     : compactViewport
       ? Math.min(Math.max(viewportWidth * 0.28, 190), 254)
       : Math.min(Math.max(viewportWidth * 0.2, 305), 370);
   const brandLeft =
-    startBrandCenter + (viewportWidth / 2 - startBrandCenter) * scrollProgress;
+    startBrandCenter + (viewportWidth / 2 - startBrandCenter) * headerProgress;
   const expandedBrandTop = expandedHeaderHeight / 2 + expandedWaveDepth * 0.34;
   const brandTop =
-    expandedBrandTop + (headerHeight / 2 - expandedBrandTop) * scrollProgress;
+    expandedBrandTop + (headerHeight / 2 - expandedBrandTop) * headerProgress;
   const expandedNavTop = expandedHeaderHeight / 2 + expandedWaveDepth * 0.42;
-  const navTop = expandedNavTop + (headerHeight / 2 - expandedNavTop) * scrollProgress;
+  const navTop = expandedNavTop + (headerHeight / 2 - expandedNavTop) * headerProgress;
   const expandedNavRight = Math.max(viewportWidth * 0.22, 300);
   const compactNavRight = Math.min(Math.max(viewportWidth * 0.04, 18), 54);
   const navRight =
-    expandedNavRight + (compactNavRight - expandedNavRight) * scrollProgress;
-  const expandedSloganCenter = viewportWidth * 0.84;
+    expandedNavRight + (compactNavRight - expandedNavRight) * headerProgress;
+  const expandedSloganCenter = viewportWidth * 0.78;
   const sloganLeft =
-    expandedSloganCenter + (viewportWidth - compactNavRight - 260 - expandedSloganCenter) * scrollProgress;
+    expandedSloganCenter + (viewportWidth - compactNavRight - 260 - expandedSloganCenter) * headerProgress;
   const expandedMenuLeft = Math.min(
-    expandedSloganCenter + Math.min(230, viewportWidth * 0.15) + 34,
-    viewportWidth - 160,
+    expandedSloganCenter + Math.min(210, viewportWidth * 0.14) + 30,
+    viewportWidth - 240,
   );
   const compactMenuLeft = viewportWidth - compactNavRight - 62;
   const expandedMenuLeftPosition =
-    expandedMenuLeft + (compactMenuLeft - expandedMenuLeft) * scrollProgress;
+    expandedMenuLeft + (compactMenuLeft - expandedMenuLeft) * headerProgress;
   const expandedMenuPanelLeft = Math.min(
     expandedMenuLeftPosition,
     viewportWidth - 220 - compactNavRight,
   );
-  const navScale = 1.08 - scrollProgress * 0.08;
-  const navRevealProgress = Math.min(Math.max((scrollProgress - 0.34) / 0.42, 0), 1);
-  const sloganProgress = 1 - Math.min(Math.max(scrollProgress / 0.42, 0), 1);
+  const navScale = 1.08 - headerProgress * 0.08;
+  const navRevealProgress = Math.min(Math.max((headerProgress - 0.34) / 0.42, 0), 1);
+  const sloganProgress = 1 - Math.min(Math.max(headerProgress / 0.42, 0), 1);
   const expandedMenuProgress = Math.max(sloganProgress, 0);
   const expandedMenuActive = expandedMenuProgress > 0.08;
-  const brandScale = 1 - scrollProgress * 0.46;
-  const logoRotation = scrollProgress * 360;
-  const edgeStraightProgress = Math.min(Math.max((scrollProgress - 0.82) / 0.18, 0), 1);
-  const edgeShape = 1 - scrollProgress;
+  const brandScale = 1 - headerProgress * 0.46;
+  const logoRotation = headerProgress * 360;
+  const edgeStraightProgress = Math.min(Math.max((headerProgress - 0.82) / 0.18, 0), 1);
+  const edgeShape = 1 - headerProgress;
   const selectedBusinessLine = businessLines.find((line) => {
     return currentPath === `/business/${line.slug}`;
   });
@@ -676,6 +1296,7 @@ function App() {
     setCurrentPath(window.location.pathname);
     window.scrollTo({ top: 0, behavior: 'smooth' });
     closeMenu();
+    setLanguageMenuOpen(false);
   };
 
   const navigateHome = (hash = '') => {
@@ -690,6 +1311,23 @@ function App() {
       document.querySelector(hash)?.scrollIntoView({ behavior: 'smooth' });
     }, 0);
     closeMenu();
+    setLanguageMenuOpen(false);
+  };
+
+  const navigateLogin = () => {
+    window.history.pushState({}, '', '/login');
+    setCurrentPath('/login');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    closeMenu();
+    setLanguageMenuOpen(false);
+  };
+
+  const navigateSignUp = () => {
+    window.history.pushState({}, '', '/signup');
+    setCurrentPath('/signup');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    closeMenu();
+    setLanguageMenuOpen(false);
   };
 
   return (
@@ -712,7 +1350,7 @@ function App() {
           '--expanded-menu-progress': expandedMenuProgress,
           '--brand-scale': brandScale,
           '--logo-rotation': `${logoRotation}deg`,
-          '--scroll-progress': scrollProgress,
+          '--scroll-progress': headerProgress,
           '--edge-straight-progress': edgeStraightProgress,
         } as React.CSSProperties
       }
@@ -742,28 +1380,108 @@ function App() {
           </span>
         </a>
         <div className="header-slogan" aria-hidden="true">
-          <span>Engineering Automation</span>
+          <span>{t('Engineering Automation')}</span>
           <span>
-            that <strong>delivers results</strong>
+            {t('that')} <strong>{t('delivers results')}</strong>
           </span>
         </div>
         <button
           className={expandedMenuActive ? 'expanded-menu-button active' : 'expanded-menu-button'}
           type="button"
-          aria-label={menuOpen ? 'Close navigation' : 'Open navigation'}
+          aria-label={menuOpen ? t('Close navigation') : t('Open navigation')}
           aria-expanded={menuOpen}
-          onClick={() => setMenuOpen((value) => !value)}
+          onClick={() => {
+            setLanguageMenuOpen(false);
+            setMenuOpen((value) => !value);
+          }}
         >
           {menuOpen ? <X size={24} /> : <Menu size={24} />}
         </button>
         <button
+          className={
+            expandedMenuActive
+              ? 'language-circle-button expanded-language-button active'
+              : 'language-circle-button expanded-language-button'
+          }
+          type="button"
+          aria-label={t('Select language')}
+          aria-expanded={languageMenuOpen}
+          onClick={() => {
+            setMenuOpen(false);
+            setLanguageMenuOpen((value) => !value);
+          }}
+        >
+          <Languages size={24} />
+        </button>
+        <button
           className="icon-button menu-button"
           type="button"
-          aria-label={menuOpen ? 'Close navigation' : 'Open navigation'}
-          onClick={() => setMenuOpen((value) => !value)}
+          aria-label={menuOpen ? t('Close navigation') : t('Open navigation')}
+          onClick={() => {
+            setLanguageMenuOpen(false);
+            setMenuOpen((value) => !value);
+          }}
         >
           {menuOpen ? <X size={20} /> : <Menu size={20} />}
         </button>
+        <button
+          className={
+            expandedMenuActive
+              ? 'language-circle-button compact-language-button'
+              : 'language-circle-button compact-language-button active'
+          }
+          type="button"
+          aria-label={t('Select language')}
+          aria-expanded={languageMenuOpen}
+          onClick={() => {
+            setMenuOpen(false);
+            setLanguageMenuOpen((value) => !value);
+          }}
+        >
+          <Languages size={19} />
+        </button>
+        {!isAuthPage && (
+          <a
+            className={
+              expandedMenuActive
+                ? 'compact-login-button'
+                : 'compact-login-button active'
+            }
+            href="/login"
+            aria-label={t('Open sign in')}
+            onClick={(event) => {
+              event.preventDefault();
+              navigateLogin();
+            }}
+          >
+            <LogIn size={18} />
+            <span>{t('Sign in')}</span>
+          </a>
+        )}
+        <div
+          className={
+            [
+              'language-menu-panel',
+              languageMenuOpen ? 'open' : '',
+              expandedMenuActive ? 'expanded' : 'compact',
+            ].filter(Boolean).join(' ')
+          }
+        >
+          {languages.map((item) => (
+            <button
+              className={item.code === currentLanguage.code ? 'active' : ''}
+              type="button"
+              key={item.code}
+              onClick={() => {
+                setLanguage(item.code);
+                setLanguageMenuOpen(false);
+              }}
+            >
+              <span className={`language-flag ${item.flagClass}`} aria-hidden="true" />
+              {item.label}
+            </button>
+          ))}
+        </div>
         <div
           className={
             menuOpen && expandedMenuActive
@@ -771,18 +1489,19 @@ function App() {
               : 'expanded-menu-panel'
           }
         >
-          <a href="/#services" onClick={(event) => { event.preventDefault(); navigateHome('#services'); }}>Services</a>
-          <a href="/#gateway" onClick={(event) => { event.preventDefault(); navigateHome('#gateway'); }}>Gateway</a>
-          <a href="/#solutions" onClick={(event) => { event.preventDefault(); navigateHome('#solutions'); }}>Solutions</a>
-          <a href="/#platform" onClick={(event) => { event.preventDefault(); navigateHome('#platform'); }}>Platform</a>
-          <a className="panel-cta" href="/#contact" onClick={(event) => { event.preventDefault(); navigateHome('#contact'); }}>Start a project</a>
+          <a href="/#services" onClick={(event) => { event.preventDefault(); navigateHome('#services'); }}>{t('Services')}</a>
+          <a href="/#gateway" onClick={(event) => { event.preventDefault(); navigateHome('#gateway'); }}>{t('Gateway')}</a>
+          <a href="/#solutions" onClick={(event) => { event.preventDefault(); navigateHome('#solutions'); }}>{t('Solutions')}</a>
+          <a href="/#platform" onClick={(event) => { event.preventDefault(); navigateHome('#platform'); }}>{t('Platform')}</a>
+          <a className="panel-login" href="/login" onClick={(event) => { event.preventDefault(); navigateLogin(); }}><LogIn size={16} />{t('Sign in')}</a>
+          <a className="panel-cta" href="/#contact" onClick={(event) => { event.preventDefault(); navigateHome('#contact'); }}>{t('Start a project')}</a>
         </div>
         <nav className={menuOpen ? 'nav-links open' : 'nav-links'} aria-label="Primary navigation">
-          <a href="/#services" onClick={(event) => { event.preventDefault(); navigateHome('#services'); }}>Services</a>
-          <a href="/#gateway" onClick={(event) => { event.preventDefault(); navigateHome('#gateway'); }}>Gateway</a>
-          <a href="/#solutions" onClick={(event) => { event.preventDefault(); navigateHome('#solutions'); }}>Solutions</a>
-          <a href="/#platform" onClick={(event) => { event.preventDefault(); navigateHome('#platform'); }}>Platform</a>
-          <a className="nav-cta" href="/#contact" onClick={(event) => { event.preventDefault(); navigateHome('#contact'); }}>Start a project</a>
+          <a href="/#services" onClick={(event) => { event.preventDefault(); navigateHome('#services'); }}>{t('Services')}</a>
+          <a href="/#gateway" onClick={(event) => { event.preventDefault(); navigateHome('#gateway'); }}>{t('Gateway')}</a>
+          <a href="/#solutions" onClick={(event) => { event.preventDefault(); navigateHome('#solutions'); }}>{t('Solutions')}</a>
+          <a href="/#platform" onClick={(event) => { event.preventDefault(); navigateHome('#platform'); }}>{t('Platform')}</a>
+          <a className="nav-cta" href="/#contact" onClick={(event) => { event.preventDefault(); navigateHome('#contact'); }}>{t('Start a project')}</a>
         </nav>
         <svg
           className="header-wave"
@@ -800,10 +1519,21 @@ function App() {
         </div>
       </header>
 
-      {selectedBusinessLine ? (
+      {isLoginPage ? (
+        <LoginPage
+          onNavigateSignUp={navigateSignUp}
+          t={t}
+        />
+      ) : isSignUpPage ? (
+        <SignUpPage
+          onNavigateLogin={navigateLogin}
+          t={t}
+        />
+      ) : selectedBusinessLine ? (
         <BusinessLinePage
           line={selectedBusinessLine}
           onNavigateHome={navigateHome}
+          t={t}
         />
       ) : (
       <main>
@@ -853,28 +1583,28 @@ function App() {
             </div>
           </div>
           <div className="hero-copy">
-            <p className="eyebrow">Industrial automation, software services, and connected products</p>
-            <h1>Automation systems built beyond the machine.</h1>
+            <p className="eyebrow">{t('Industrial automation, software services, and connected products')}</p>
+            <h1>{t('Automation systems built beyond the machine.')}</h1>
             <p className="hero-lede">
-              We build control systems, industrial software, and connected products that help manufacturers modernize machines, move data reliably, and turn operations into scalable digital systems.
+              {t('We build control systems, industrial software, and connected products that help manufacturers modernize machines, move data reliably, and turn operations into scalable digital systems.')}
             </p>
             <div className="hero-actions">
               <a className="primary-action" href="#contact">
-                Start a project <ArrowRight size={18} />
+                {t('Start a project')} <ArrowRight size={18} />
               </a>
-              <a className="secondary-action" href="#gateway">Explore our solutions</a>
+              <a className="secondary-action" href="#gateway">{t('Explore our solutions')}</a>
             </div>
           </div>
         </section>
 
-        <ServicesShowcase />
+        <ServicesShowcase t={t} />
 
         <section className="section" id="lines">
           <div className="section-heading business-heading">
-            <p className="eyebrow">Business lines</p>
-            <h2>The four divisions that move YVIMO forward.</h2>
+            <p className="eyebrow">{t('Business lines')}</p>
+            <h2>{t('The four divisions that move YVIMO forward.')}</h2>
             <p>
-              Industrial automation remains our core. Around it, YVIMO grows through software services, proprietary products, and YVIMO Academy: our learning space for the next generation of industrial talent.
+              {t('Industrial automation remains our core. Around it, YVIMO grows through software services, proprietary products, and YVIMO Academy: our learning space for the next generation of industrial talent.')}
             </p>
           </div>
           <div className="business-grid">
@@ -891,12 +1621,12 @@ function App() {
                   }}
                 >
                   <div className="card-icon"><Icon size={24} /></div>
-                  <p className="eyebrow">{line.eyebrow}</p>
-                  <h3>{line.title}</h3>
-                  <p>{line.description}</p>
+                  <p className="eyebrow">{t(line.eyebrow)}</p>
+                  <h3>{t(line.title)}</h3>
+                  <p>{t(line.description)}</p>
                   <ul>
                     {line.points.map((point) => (
-                      <li key={point}><Check size={16} /> {point}</li>
+                      <li key={point}><Check size={16} /> {t(point)}</li>
                     ))}
                   </ul>
                 </a>
@@ -910,12 +1640,12 @@ function App() {
             <div className="product-title">
               <img src="/assets/logos/gateway-logo.png" alt="" />
               <div className="product-title-copy">
-                <p className="eyebrow featured-eyebrow"><Star size={15} fill="currentColor" /> Featured product</p>
+                <p className="eyebrow featured-eyebrow"><Star size={15} fill="currentColor" /> {t('Featured product')}</p>
                 <h2>YVIMO Gateway</h2>
               </div>
             </div>
             <p>
-              The industrial data layer for turning PLCs, edge devices, and shop-floor tags into clean routes, APIs, dashboards, and outputs.
+              {t('The industrial data layer for turning PLCs, edge devices, and shop-floor tags into clean routes, APIs, dashboards, and outputs.')}
             </p>
             <div className="feature-area">
               <div className="feature-list">
@@ -924,25 +1654,25 @@ function App() {
                   return (
                     <article className="feature-card" key={feature.title}>
                       <Icon size={18} />
-                      <strong>{feature.title}</strong>
-                      <span>{feature.description}</span>
+                      <strong>{t(feature.title)}</strong>
+                      <span>{t(feature.description)}</span>
                     </article>
                   );
                 })}
               </div>
-              <a className="primary-action gateway-demo-button" href="/gateway-demo">Try Online Demo <Rocket size={17} /></a>
+              <a className="primary-action gateway-demo-button" href="/gateway-demo">{t('Try Online Demo')} <Rocket size={17} /></a>
             </div>
           </div>
           <div className="gateway-panel" aria-label="YVIMO Gateway preview">
             <div className="panel-toolbar">
-              <span>Gateway runtime console</span>
-              <strong>Edge node: Line 04</strong>
+              <span>{t('Gateway runtime console')}</span>
+              <strong>{t('Edge node: Line 04')}</strong>
             </div>
             <div className="dashboard-grid">
               <div className="dash-card tall">
                 <Network size={22} />
-                <span>Live routes</span>
-                <strong>{'Sources -> Gateway core -> Destinations'}</strong>
+                <span>{t('Live routes')}</span>
+                <strong>{t('Sources -> Gateway core -> Destinations')}</strong>
                 <div className="mini-flow">
                   <i />
                   <b />
@@ -953,18 +1683,18 @@ function App() {
               </div>
               <div className="dash-card">
                 <TerminalSquare size={22} />
-                <span>Runtime API</span>
+                <span>{t('Runtime API')}</span>
                 <strong>/api/tags/live</strong>
               </div>
               <div className="dash-card">
                 <ShieldCheck size={22} />
-                <span>Node status</span>
-                <strong>Running local</strong>
+                <span>{t('Node status')}</span>
+                <strong>{t('Running local')}</strong>
               </div>
               <div className="dash-card wide">
                 <Workflow size={22} />
-                <span>Output destinations</span>
-                <strong>Database, MQTT, Webhook, Reports, PLC writeback</strong>
+                <span>{t('Output destinations')}</span>
+                <strong>{t('Database, MQTT, Webhook, Reports, PLC writeback')}</strong>
               </div>
             </div>
           </div>
@@ -1015,11 +1745,10 @@ function App() {
             ))}
           </div>
           <div className="section-heading compact solutions-heading">
-            <p className="eyebrow">Compatible & flexible</p>
-            <h2>Built to work with the technologies you already use.</h2>
+            <p className="eyebrow">{t('Compatible & flexible')}</p>
+            <h2>{t('Built to work with the technologies you already use.')}</h2>
             <p>
-              YVIMO integrates controls, robotics, software, and data systems
-              across modern industrial environments.
+              {t('YVIMO integrates controls, robotics, software, and data systems across modern industrial environments.')}
             </p>
           </div>
           <div className="solution-grid">
@@ -1038,7 +1767,7 @@ function App() {
                   <div className="solution-icon">
                     <Icon size={24} />
                   </div>
-                  <h3>{solution.title}</h3>
+                  <h3>{t(solution.title)}</h3>
                   <div className="technology-tags" aria-label={`${solution.title} technology examples`}>
                     {solution.tags.map((tag) => (
                       <span
@@ -1049,40 +1778,81 @@ function App() {
                       </span>
                     ))}
                   </div>
-                  <p>{solution.description}</p>
+                  <p>{t(solution.description)}</p>
                 </article>
               );
             })}
           </div>
         </section>
 
-        <section className="platform-section" id="platform">
-          <div className="platform-content">
-            <p className="eyebrow">Platform foundation</p>
-            <h2>Ready for accounts, APIs, and licensing.</h2>
+        <section className="process-section" id="platform">
+          <div className="process-particles" aria-hidden="true">
+            {processParticles.map((particle) => (
+              <span key={particle} />
+            ))}
+          </div>
+          <div className="process-heading">
+            <p className="eyebrow">{t('How we work')}</p>
+            <h2>{t('A clear path from concept to working system.')}</h2>
             <p>
-              This new website is also the front door for the future YVIMO platform: user accounts, API keys, product access, license validation, customer portals, and developer-facing services.
+              {t('YVIMO combines industrial experience, software development, and commissioning discipline to move projects from technical need to real operation.')}
             </p>
           </div>
-          <div className="platform-steps">
-            <div><KeyRound size={20} /><span>Accounts</span></div>
-            <div><LockKeyhole size={20} /><span>Licenses</span></div>
-            <div><Layers3 size={20} /><span>APIs</span></div>
-            <div><Rocket size={20} /><span>Apps</span></div>
+          <div className="process-pipeline" aria-label="YVIMO execution pipeline">
+            {processSteps.map((step, index) => {
+              const Icon = step.icon;
+              return (
+                <article className="process-node" key={step.title}>
+                  <span className="process-port process-port-in" />
+                  <span className="process-port process-port-out" />
+                  <div className="process-node-header">
+                    <span>{String(index + 1).padStart(2, '0')}</span>
+                    <div className="process-node-icon">
+                      <Icon size={21} />
+                    </div>
+                  </div>
+                  <h3>{t(step.title)}</h3>
+                  <p>{t(step.description)}</p>
+                </article>
+              );
+            })}
+          </div>
+          <div className="process-result">
+            <span>{t('Result')}</span>
+            <strong>
+              {t('A working automation, software, or integration system ready for real operations.')}
+            </strong>
           </div>
         </section>
 
         <section className="contact-section" id="contact">
-          <div>
-            <p className="eyebrow">Start here</p>
-            <h2>Tell us what you want to connect, automate, or build.</h2>
+          <div className="contact-copy">
+            <p className="eyebrow">{t('Start here')}</p>
+            <h2>{t('Tell us what you want to connect, automate, or improve.')}</h2>
             <p>
-              Use this first version as the base. Next we can connect real forms, case studies, account flows, product pages, and the GitHub deployment pipeline.
+              {t('Share the machine, process, data flow, or operational challenge you have in mind. YVIMO can help define the right path-from controls and software to integration, validation, and deployment.')}
             </p>
+            <div className="contact-actions">
+              <a className="primary-action" href="mailto:info@yvimo.com">
+                {t('Start a project')} <ArrowRight size={18} />
+              </a>
+              <a className="contact-secondary-action" href="#gateway">
+                {t('Explore YVIMO Gateway')}
+              </a>
+            </div>
           </div>
-          <a className="primary-action" href="mailto:info@yvimo.com">
-            Contact YVIMO <ArrowRight size={18} />
-          </a>
+          <div className="project-intake-card" aria-label="Project intake preview">
+            <div className="intake-toolbar">
+              <span>{t('Project input')}</span>
+              <strong>{t('Ready')}</strong>
+            </div>
+            <div className="intake-flow">
+              <div><Factory size={18} /><span>{t('Machine / process')}</span></div>
+              <div><Database size={18} /><span>{t('Data / automation need')}</span></div>
+              <div><Workflow size={18} /><span>{t('Expected output')}</span></div>
+              <div><Rocket size={18} /><span>{t('Working system')}</span></div>
+            </div>
+          </div>
         </section>
       </main>
       )}
