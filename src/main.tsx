@@ -4,7 +4,6 @@ import {
   ArrowRight,
   Blocks,
   Cable,
-  ChartNoAxesCombined,
   ChevronLeft,
   ChevronRight,
   Check,
@@ -14,7 +13,6 @@ import {
   Cpu,
   Database,
   Factory,
-  FileKey2,
   FileUp,
   GitBranch,
   Gauge,
@@ -47,6 +45,16 @@ type BusinessLine = {
 
 type Solution = {
   title: string;
+  tags: Array<{
+    name: string;
+    color: string;
+    tileColor?: string;
+    tileSize?: 'square' | 'wide';
+    logoWidth?: string;
+    logoMaxHeight?: string;
+    logoSlug?: string;
+    logoSrc?: string;
+  }>;
   description: string;
   icon: React.ComponentType<{ size?: number }>;
 };
@@ -164,26 +172,138 @@ const serviceShowcase: ServiceShowcaseItem[] = [
 
 const solutions: Solution[] = [
   {
-    title: 'PLC to API',
-    description: 'Expose live PLC tags through clean REST and WebSocket interfaces.',
-    icon: Cable,
+    title: 'Controls & PLCs',
+    tags: [
+      { name: 'Siemens', color: '#009999', logoSlug: 'siemens' },
+      {
+        name: 'Allen-Bradley',
+        color: '#c8102e',
+        tileColor: '#284c9b',
+        logoSrc: '/assets/logos/ecosystem/allen-bradley.png',
+      },
+      { name: 'Mitsubishi', color: '#e60012', logoSlug: 'mitsubishi' },
+      {
+        name: 'Omron',
+        color: '#0069b4',
+        tileColor: '#0069b4',
+        logoSrc: '/assets/logos/ecosystem/omron.svg',
+      },
+      { name: 'Schneider', color: '#3dcd58', logoSlug: 'schneiderelectric' },
+      {
+        name: 'Inovance',
+        color: '#0088c7',
+        tileColor: '#0088c7',
+        logoSrc: '/assets/logos/ecosystem/inovance.jpg',
+      },
+    ],
+    description:
+      'PLC programming, machine control, field devices, industrial networks, and troubleshooting.',
+    icon: CircuitBoard,
   },
   {
-    title: 'Production Dashboards',
-    description: 'Turn machine and process data into screens teams can actually use.',
-    icon: ChartNoAxesCombined,
+    title: 'Robotics & Motion',
+    tags: [
+      {
+        name: 'FANUC',
+        color: '#f6d300',
+        tileColor: '#f6d300',
+        logoSrc: '/assets/logos/ecosystem/fanuc.png',
+      },
+      { name: 'ABB', color: '#ff0000', logoSlug: 'abb' },
+      {
+        name: 'Universal Robots',
+        color: '#00a6d6',
+        logoSrc: '/assets/logos/ecosystem/universal-robots.png',
+      },
+      {
+        name: 'KUKA',
+        color: '#ff5800',
+        tileSize: 'wide',
+        logoWidth: '74px',
+        logoMaxHeight: '36px',
+        logoSrc: '/assets/logos/ecosystem/kuka.png',
+      },
+      {
+        name: 'Yaskawa',
+        color: '#004f9f',
+        tileColor: '#004f9f',
+        logoSrc: '/assets/logos/ecosystem/yaskawa.jpg',
+      },
+    ],
+    description:
+      'Robot cells, motion systems, safety integration, simulation, and commissioning.',
+    icon: Workflow,
   },
   {
-    title: 'Cloud and Edge',
-    description: 'Route selected data to databases, MQTT, cloud systems, and reports.',
+    title: 'Software Engineering',
+    tags: [
+      { name: 'React', color: '#149eca', logoSlug: 'react' },
+      { name: 'Flutter', color: '#027dfd', logoSlug: 'flutter' },
+      { name: 'Python', color: '#3776ab', logoSlug: 'python' },
+      { name: 'Node.js', color: '#5fa04e', logoSlug: 'nodedotjs' },
+      { name: '.NET', color: '#512bd4', logoSlug: 'dotnet' },
+      { name: 'Swift', color: '#f05138', logoSlug: 'swift' },
+    ],
+    description:
+      'Web apps, mobile tools, APIs, dashboards, and industrial software platforms.',
+    icon: Code2,
+  },
+  {
+    title: 'IT/OT & Cloud',
+    tags: [
+      { name: 'MQTT', color: '#660066', logoSlug: 'mqtt' },
+      {
+        name: 'OPC UA',
+        color: '#1f7a8c',
+        tileColor: '#1f7a8c',
+        tileSize: 'wide',
+        logoSrc: '/assets/logos/ecosystem/opc-ua.png',
+      },
+      {
+        name: 'SQL',
+        color: '#336791',
+        tileColor: '#2b78b8',
+        logoSrc: '/assets/logos/ecosystem/sql-server.png',
+      },
+      {
+        name: 'REST APIs',
+        color: '#ff8a1f',
+        tileColor: '#6aa84f',
+        logoSrc: '/assets/logos/ecosystem/openapi.webp',
+      },
+      {
+        name: 'AWS',
+        color: '#ff9900',
+        tileSize: 'wide',
+        logoWidth: '74px',
+        logoMaxHeight: '38px',
+        logoSrc: '/assets/logos/ecosystem/aws.png',
+      },
+      {
+        name: 'Azure',
+        color: '#0078d4',
+        logoSrc: '/assets/logos/ecosystem/azure.png',
+      },
+    ],
+    description:
+      'Secure data routing from machines to databases, cloud systems, and reports.',
     icon: Cloud,
   },
-  {
-    title: 'Secure Licensing',
-    description: 'Prepare commercial apps with accounts, API keys, entitlements, and license checks.',
-    icon: FileKey2,
-  },
 ];
+
+const ecosystemTiles = solutions.flatMap((solution) =>
+  solution.tags.map((tag) => ({
+    ...tag,
+    group: solution.title,
+    label: tag.name
+      .split(/[\s.-]+/)
+      .filter(Boolean)
+      .map((word) => word[0])
+      .join('')
+      .slice(0, 3)
+      .toUpperCase(),
+  })),
+);
 
 const gatewayFeatures: GatewayFeature[] = [
   {
@@ -454,6 +574,7 @@ function BusinessLinePage({
 
 function App() {
   const [menuOpen, setMenuOpen] = React.useState(false);
+  const [activeSolution, setActiveSolution] = React.useState<string | null>(null);
   const [scrollProgress, setScrollProgress] = React.useState(0);
   const [currentPath, setCurrentPath] = React.useState(() =>
     typeof window === 'undefined' ? '/' : window.location.pathname,
@@ -850,17 +971,84 @@ function App() {
         </section>
 
         <section className="section" id="solutions">
-          <div className="section-heading compact">
-            <p className="eyebrow">Solutions</p>
-            <h2>Built around real operations.</h2>
+          <div
+            className={
+              activeSolution
+                ? 'ecosystem-background has-active-solution'
+                : 'ecosystem-background'
+            }
+            aria-hidden="true"
+          >
+            {ecosystemTiles.map((tile, index) => (
+              <span
+                className={[
+                  'ecosystem-tile',
+                  tile.tileSize === 'wide' ? 'wide' : '',
+                  activeSolution && activeSolution === tile.group ? 'active' : '',
+                  activeSolution && activeSolution !== tile.group ? 'dimmed' : '',
+                ].filter(Boolean).join(' ')}
+                key={`${tile.name}-${index}`}
+                style={
+                  {
+                    '--tag-color': tile.tileColor ?? tile.color,
+                    '--tile-index': index,
+                    '--logo-width': tile.logoWidth,
+                    '--logo-max-height': tile.logoMaxHeight,
+                  } as React.CSSProperties
+                }
+              >
+                {tile.logoSrc || tile.logoSlug ? (
+                  <img
+                    src={
+                      tile.logoSrc ??
+                      `https://cdn.simpleicons.org/${tile.logoSlug}/${tile.color.replace('#', '')}`
+                    }
+                    alt=""
+                    aria-hidden="true"
+                    loading="lazy"
+                    onError={(event) => {
+                      event.currentTarget.closest('.ecosystem-tile')?.remove();
+                    }}
+                  />
+                ) : null}
+              </span>
+            ))}
+          </div>
+          <div className="section-heading compact solutions-heading">
+            <p className="eyebrow">Compatible & flexible</p>
+            <h2>Built to work with the technologies you already use.</h2>
+            <p>
+              YVIMO integrates controls, robotics, software, and data systems
+              across modern industrial environments.
+            </p>
           </div>
           <div className="solution-grid">
             {solutions.map((solution) => {
               const Icon = solution.icon;
               return (
-                <article className="solution-card" key={solution.title}>
-                  <Icon size={24} />
+                <article
+                  className="solution-card"
+                  key={solution.title}
+                  onMouseEnter={() => setActiveSolution(solution.title)}
+                  onMouseLeave={() => setActiveSolution(null)}
+                  onFocus={() => setActiveSolution(solution.title)}
+                  onBlur={() => setActiveSolution(null)}
+                  tabIndex={0}
+                >
+                  <div className="solution-icon">
+                    <Icon size={24} />
+                  </div>
                   <h3>{solution.title}</h3>
+                  <div className="technology-tags" aria-label={`${solution.title} technology examples`}>
+                    {solution.tags.map((tag) => (
+                      <span
+                        key={tag.name}
+                        style={{ '--tag-color': tag.color } as React.CSSProperties}
+                      >
+                        {tag.name}
+                      </span>
+                    ))}
+                  </div>
                   <p>{solution.description}</p>
                 </article>
               );
