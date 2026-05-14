@@ -3100,6 +3100,260 @@ button {
   }
 }
 
+@media (min-width: 1181px) and (max-width: 1440px) {
+  .hero-section {
+    min-height: 720px;
+    padding-right: 48px;
+    padding-left: 48px;
+  }
+
+  .hero-copy {
+    width: min(700px, 54vw);
+    min-width: 0;
+  }
+
+  .hero-copy h1 {
+    max-width: 700px;
+    font-size: clamp(52px, 4.8vw, 66px);
+  }
+
+  .hero-lede {
+    max-width: 640px;
+    font-size: 19px;
+  }
+
+  .industrial-robot-layer {
+    display: none;
+  }
+
+  .hero-console {
+    right: 48px;
+    bottom: 74px;
+    width: min(440px, 33vw);
+  }
+
+  .console-header {
+    padding: 12px 14px;
+  }
+
+  .console-body {
+    gap: 10px;
+    padding: 12px;
+  }
+
+  .metric-panel {
+    padding: 14px;
+  }
+
+  .route-map {
+    gap: 10px;
+    padding: 14px;
+  }
+
+  .node {
+    padding: 9px 10px;
+    font-size: 12px;
+  }
+
+  .route-connector {
+    min-width: 32px;
+  }
+
+  #solutions.section {
+    padding-right: 64px;
+    padding-left: 64px;
+  }
+
+  .solutions-heading {
+    max-width: 760px;
+    margin-bottom: 34px;
+  }
+
+  .solutions-heading h2 {
+    max-width: 760px;
+    font-size: clamp(42px, 4.4vw, 56px);
+  }
+
+  .section-heading.solutions-heading p:last-child {
+    max-width: 620px;
+    margin-top: 16px;
+  }
+
+  .solution-grid {
+    max-width: 1080px;
+    gap: 12px;
+  }
+
+  .solution-card {
+    min-height: 250px;
+    padding: 18px;
+  }
+
+  .solution-card h3 {
+    font-size: 21px;
+  }
+
+  .technology-tags {
+    min-height: 64px;
+    gap: 6px;
+  }
+
+  .technology-tags span {
+    min-height: 22px;
+    padding: 4px 8px;
+    font-size: 11px;
+  }
+
+  .ecosystem-tile {
+    width: 58px;
+    height: 58px;
+    border-radius: 12px;
+  }
+
+  .ecosystem-tile.wide {
+    width: 78px;
+    height: 52px;
+  }
+
+  .ecosystem-tile:nth-child(odd) {
+    left: 28px;
+  }
+
+  .ecosystem-tile:nth-child(even),
+  .ecosystem-tile:nth-child(23) {
+    right: 28px;
+    left: auto;
+  }
+
+  .ecosystem-tile:nth-child(1) { top: 12%; left: 26px; }
+  .ecosystem-tile:nth-child(2) { top: 12%; right: 26px; }
+  .ecosystem-tile:nth-child(3) { top: 28%; left: 100px; }
+  .ecosystem-tile:nth-child(4) { top: 28%; right: 100px; }
+  .ecosystem-tile:nth-child(5) { top: 47%; left: 28px; }
+  .ecosystem-tile:nth-child(6) { top: 47%; right: 28px; }
+  .ecosystem-tile:nth-child(7) { top: 64%; left: 86px; }
+  .ecosystem-tile:nth-child(8) { top: 64%; right: 86px; }
+
+  .ecosystem-tile:nth-child(9),
+  .ecosystem-tile:nth-child(11) {
+    left: clamp(204px, 17vw, 250px);
+  }
+
+  .ecosystem-tile:nth-child(10),
+  .ecosystem-tile:nth-child(12) {
+    right: clamp(204px, 17vw, 250px);
+  }
+
+  .ecosystem-tile:nth-child(9),
+  .ecosystem-tile:nth-child(10) {
+    top: 20%;
+  }
+
+  .ecosystem-tile:nth-child(11),
+  .ecosystem-tile:nth-child(12) {
+    top: 38%;
+  }
+}
+
+@media (min-width: 1441px) and (max-width: 1880px) {
+  .hero-section {
+    min-height: 760px;
+  }
+
+  .hero-copy {
+    width: min(930px, 54vw);
+  }
+
+  .hero-copy h1 {
+    max-width: 930px;
+    font-size: clamp(64px, 4.7vw, 82px);
+  }
+
+  .hero-lede {
+    max-width: 680px;
+  }
+
+  .industrial-robot-layer {
+    display: none;
+  }
+
+  .hero-console {
+    right: clamp(58px, 7vw, 120px);
+    bottom: 72px;
+    width: min(520px, 34vw);
+  }
+
+  .route-connector {
+    min-width: 48px;
+  }
+}
+
+@media (min-width: 1660px) and (max-width: 1880px) {
+  .robot-layer-right {
+    display: block;
+    right: clamp(72px, 7vw, 132px);
+    bottom: 300px;
+    width: min(330px, 18vw);
+  }
+
+  .hero-console {
+    width: min(560px, 33vw);
+  }
+}
+
+@media (min-width: 761px) and (max-width: 1180px) {
+  .hero-copy h1 {
+    max-width: 760px;
+    font-size: clamp(52px, 7vw, 66px);
+  }
+
+  .hero-lede {
+    max-width: 660px;
+  }
+
+  .industrial-robot-layer {
+    display: none;
+  }
+
+  .hero-console {
+    width: min(580px, 100%);
+    margin-top: 42px;
+  }
+
+  #solutions.section {
+    padding-right: 52px;
+    padding-left: 52px;
+  }
+
+  .solutions-heading {
+    max-width: 760px;
+  }
+
+  .ecosystem-tile:nth-child(odd) {
+    left: 8px;
+  }
+
+  .ecosystem-tile:nth-child(even),
+  .ecosystem-tile:nth-child(23) {
+    right: 8px;
+    left: auto;
+  }
+}
+
+@media (min-width: 1181px) and (max-width: 1440px) and (max-height: 920px) {
+  .hero-section {
+    min-height: 780px;
+  }
+
+  .hero-console {
+    bottom: 72px;
+  }
+
+  .hero-actions {
+    margin-top: 28px;
+  }
+}
+
 @media (max-width: 760px) {
   :root {
     --header-height: 104px;
