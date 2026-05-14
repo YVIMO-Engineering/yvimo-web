@@ -32,6 +32,8 @@ import {
   Workflow,
   X,
 } from 'lucide-react';
+import type { Session, User } from '@supabase/supabase-js';
+import { supabase } from './lib/supabaseClient';
 import './styles.css';
 
 type BusinessLine = {
@@ -83,6 +85,73 @@ type LanguageCode = 'en' | 'es' | 'zh';
 
 type Translator = (text: string) => string;
 
+type SubscriptionTier = 'Explorer' | 'Professional' | 'Enterprise';
+
+type UserProfile = {
+  id: string;
+  full_name: string | null;
+  company_name: string | null;
+  role: string | null;
+  subscription_tier: SubscriptionTier;
+  created_at?: string;
+  updated_at?: string | null;
+};
+
+type AppUser = {
+  id: string;
+  email: string;
+  name: string;
+  company?: string;
+  subscription: SubscriptionTier;
+};
+
+function getProfileInitials(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  const initials = parts.slice(0, 2).map((part) => part[0]?.toUpperCase()).join('');
+  return initials || 'Y';
+}
+
+function getSubscriptionClass(subscription: SubscriptionTier) {
+  return `subscription-pill subscription-${subscription.toLowerCase()}`;
+}
+
+function profileToAppUser(user: User, profile: UserProfile | null): AppUser {
+  const fullName = profile?.full_name?.trim()
+    || String(user.user_metadata?.full_name ?? '').trim()
+    || user.email?.split('@')[0]
+    || 'YVIMO User';
+
+  return {
+    id: user.id,
+    email: user.email ?? '',
+    name: fullName,
+    company: profile?.company_name ?? undefined,
+    subscription: profile?.subscription_tier ?? 'Explorer',
+  };
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timeout = window.setTimeout(() => {
+      reject(new Error(`${label} timed out`));
+    }, timeoutMs);
+
+    promise
+      .then((value) => resolve(value))
+      .catch((error) => reject(error))
+      .finally(() => window.clearTimeout(timeout));
+  });
+}
+
+function getAuthMessageTone(message: string) {
+  const normalized = message.toLowerCase();
+  const isPositive = normalized.includes('created')
+    || normalized.includes('redirecting')
+    || normalized.includes('check your email');
+
+  return isPositive ? 'auth-form-message success' : 'auth-form-message error';
+}
+
 const languages: Array<{
   code: LanguageCode;
   label: string;
@@ -111,6 +180,29 @@ const translations: Record<Exclude<LanguageCode, 'en'>, Record<string, string>> 
     'Continue with Apple Passkey': 'Continuar con Apple Passkey',
     'Full name': 'Nombre completo',
     Company: 'Empresa',
+    Dashboard: 'Dashboard',
+    Workspace: 'Espacio de trabajo',
+    'Welcome back': 'Bienvenido de nuevo',
+    'Your YVIMO workspace is ready.': 'Tu espacio YVIMO está listo.',
+    'Gateway Online': 'Gateway Online',
+    'Licenses': 'Licencias',
+    'Orders': 'Órdenes',
+    'Quotations': 'Cotizaciones',
+    'Academy': 'Academy',
+    'Settings': 'Configuración',
+    'Sign out': 'Cerrar sesión',
+    'Account created. Redirecting to dashboard.': 'Cuenta creada. Redirigiendo al dashboard.',
+    'Account created. Check your email to confirm your account.':
+      'Cuenta creada. Revisa tu correo para confirmar tu cuenta.',
+    'Signed in. Redirecting to dashboard.': 'Sesión iniciada. Redirigiendo al dashboard.',
+    'This email is already registered.': 'Este correo ya está registrado.',
+    'Invalid email or password.': 'Correo o contraseña inválidos.',
+    'Apple account ready. Redirecting to dashboard.': 'Cuenta Apple lista. Redirigiendo al dashboard.',
+    'Create a first project, manage access, or review platform modules from the navigation.':
+      'Crea un primer proyecto, administra accesos o revisa módulos de plataforma desde la navegación.',
+    'Go to Dashboard': 'Ir al dashboard',
+    'Loading workspace...': 'Cargando espacio de trabajo...',
+    'Loading dashboard...': 'Cargando dashboard...',
     'Access your YVIMO workspace': 'Accede a tu espacio YVIMO',
     'Sign in to manage Gateway online access, licenses, learning, orders, and quotations as the platform grows.':
       'Inicia sesión para administrar acceso online a Gateway, licencias, aprendizaje, órdenes y cotizaciones conforme crece la plataforma.',
@@ -274,6 +366,29 @@ const translations: Record<Exclude<LanguageCode, 'en'>, Record<string, string>> 
     'Continue with Apple Passkey': '使用 Apple Passkey 继续',
     'Full name': '全名',
     Company: '公司',
+    Dashboard: '仪表板',
+    Workspace: '工作区',
+    'Welcome back': '欢迎回来',
+    'Your YVIMO workspace is ready.': '你的 YVIMO 工作区已准备就绪。',
+    'Gateway Online': 'Gateway 在线',
+    'Licenses': '许可证',
+    'Orders': '订单',
+    'Quotations': '报价',
+    'Academy': '学院',
+    'Settings': '设置',
+    'Sign out': '退出登录',
+    'Account created. Redirecting to dashboard.': '账户已创建，正在跳转到仪表板。',
+    'Account created. Check your email to confirm your account.':
+      '账户已创建。请检查邮箱以确认账户。',
+    'Signed in. Redirecting to dashboard.': '已登录，正在跳转到仪表板。',
+    'This email is already registered.': '此邮箱已注册。',
+    'Invalid email or password.': '邮箱或密码无效。',
+    'Apple account ready. Redirecting to dashboard.': 'Apple 账户已准备就绪，正在跳转到仪表板。',
+    'Create a first project, manage access, or review platform modules from the navigation.':
+      '从导航中创建第一个项目、管理访问权限或查看平台模块。',
+    'Go to Dashboard': '前往仪表板',
+    'Loading workspace...': '正在加载工作区...',
+    'Loading dashboard...': '正在加载仪表板...',
     'Access your YVIMO workspace': '访问你的 YVIMO 工作区',
     'Sign in to manage Gateway online access, licenses, learning, orders, and quotations as the platform grows.':
       '登录后可管理 Gateway 在线访问、许可、学习、订单和报价。',
@@ -965,11 +1080,39 @@ function BusinessLinePage({
 
 function LoginPage({
   onNavigateSignUp,
+  onSignIn,
+  onAppleSignIn,
   t,
 }: {
   onNavigateSignUp: () => void;
+  onSignIn: (email: string, password: string) => Promise<string | null>;
+  onAppleSignIn: () => Promise<string | null>;
   t: Translator;
 }) {
+  const [formMessage, setFormMessage] = React.useState<string | null>(null);
+  const [authBusy, setAuthBusy] = React.useState(false);
+
+  const submitSignIn = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setAuthBusy(true);
+    console.log('[auth] signIn start');
+
+    try {
+      const formData = new FormData(event.currentTarget);
+      const email = String(formData.get('email') ?? '');
+      const password = String(formData.get('password') ?? '');
+      const message = await onSignIn(email, password);
+      console.log('[auth] signIn result', message);
+      setFormMessage(message);
+    } catch (error) {
+      console.error('[auth] signIn unexpected error', error);
+      setFormMessage(error instanceof Error ? error.message : 'Invalid email or password.');
+    } finally {
+      console.log('[auth] signIn loading reset');
+      setAuthBusy(false);
+    }
+  };
+
   return (
     <main>
       <section className="login-page">
@@ -1015,7 +1158,7 @@ function LoginPage({
             </div>
           </div>
 
-          <form className="login-card" onSubmit={(event) => event.preventDefault()}>
+          <form className="login-card" onSubmit={submitSignIn}>
             <div className="login-card-header">
               <div className="login-card-icon">
                 <LockKeyhole size={24} />
@@ -1030,7 +1173,7 @@ function LoginPage({
               <span>{t('Email address')}</span>
               <div>
                 <Mail size={18} />
-                <input type="email" name="email" autoComplete="email" placeholder="name@company.com" />
+                <input type="email" name="email" autoComplete="email" placeholder="name@company.com" required />
               </div>
             </label>
 
@@ -1038,7 +1181,7 @@ function LoginPage({
               <span>{t('Password')}</span>
               <div>
                 <LockKeyhole size={18} />
-                <input type="password" name="password" autoComplete="current-password" placeholder="••••••••" />
+                <input type="password" name="password" autoComplete="current-password" placeholder="••••••••" required />
               </div>
             </label>
 
@@ -1050,11 +1193,29 @@ function LoginPage({
               <a href="/login">{t('Forgot password?')}</a>
             </div>
 
-            <button className="primary-action login-submit" type="submit">
+            <button className="primary-action login-submit" type="submit" disabled={authBusy}>
               {t('Continue')} <ArrowRight size={18} />
             </button>
 
-            <button className="passkey-button" type="button">
+            <button
+              className="passkey-button"
+              type="button"
+              disabled={authBusy}
+              onClick={async () => {
+                setAuthBusy(true);
+                console.log('[auth] apple signIn start');
+
+                try {
+                  setFormMessage(await onAppleSignIn());
+                } catch (error) {
+                  console.error('[auth] apple signIn unexpected error', error);
+                  setFormMessage(error instanceof Error ? error.message : 'Invalid email or password.');
+                } finally {
+                  console.log('[auth] apple signIn loading reset');
+                  setAuthBusy(false);
+                }
+              }}
+            >
               <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                 <path d="M16.37 1.43c.05 1.06-.31 2.07-1.09 3.02-.84 1.02-1.83 1.6-2.95 1.52-.08-1.03.33-2.08 1.11-2.99.86-.99 1.95-1.55 2.93-1.55ZM20.3 17.44c-.46 1.04-.68 1.51-1.27 2.43-.82 1.25-1.98 2.82-3.42 2.83-1.28.01-1.61-.83-3.35-.82-1.74.01-2.1.84-3.38.83-1.43-.01-2.52-1.43-3.34-2.68-2.3-3.51-2.54-7.64-1.12-9.83 1.01-1.55 2.6-2.46 4.1-2.46 1.53 0 2.49.84 3.75.84 1.22 0 1.97-.84 3.73-.84 1.33 0 2.74.72 3.74 1.96-3.28 1.8-2.75 6.48.56 7.74Z" />
               </svg>
@@ -1067,6 +1228,7 @@ function LoginPage({
                 {t('Sign up')}
               </button>
             </div>
+            {formMessage ? <p className={getAuthMessageTone(formMessage)}>{t(formMessage)}</p> : null}
           </form>
         </div>
       </section>
@@ -1076,11 +1238,39 @@ function LoginPage({
 
 function SignUpPage({
   onNavigateLogin,
+  onSignUp,
   t,
 }: {
   onNavigateLogin: () => void;
+  onSignUp: (name: string, company: string, email: string, password: string) => Promise<string | null>;
   t: Translator;
 }) {
+  const [formMessage, setFormMessage] = React.useState<string | null>(null);
+  const [authBusy, setAuthBusy] = React.useState(false);
+
+  const submitSignUp = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setAuthBusy(true);
+    console.log('[auth] signUp start');
+
+    try {
+      const formData = new FormData(event.currentTarget);
+      const name = String(formData.get('name') ?? '');
+      const company = String(formData.get('company') ?? '');
+      const email = String(formData.get('email') ?? '');
+      const password = String(formData.get('password') ?? '');
+      const message = await onSignUp(name, company, email, password);
+      console.log('[auth] signUp result', message);
+      setFormMessage(message);
+    } catch (error) {
+      console.error('[auth] signUp unexpected error', error);
+      setFormMessage(error instanceof Error ? error.message : 'Invalid email or password.');
+    } finally {
+      console.log('[auth] signUp loading reset');
+      setAuthBusy(false);
+    }
+  };
+
   return (
     <main>
       <section className="login-page signup-page">
@@ -1124,7 +1314,7 @@ function SignUpPage({
             </div>
           </div>
 
-          <form className="login-card" onSubmit={(event) => event.preventDefault()}>
+          <form className="login-card" onSubmit={submitSignUp}>
             <div className="login-card-header">
               <div className="login-card-icon">
                 <LogIn size={24} />
@@ -1139,7 +1329,7 @@ function SignUpPage({
               <span>{t('Full name')}</span>
               <div>
                 <LogIn size={18} />
-                <input type="text" name="name" autoComplete="name" placeholder="Jane Smith" />
+                <input type="text" name="name" autoComplete="name" placeholder="Jane Smith" required />
               </div>
             </label>
 
@@ -1155,7 +1345,7 @@ function SignUpPage({
               <span>{t('Email address')}</span>
               <div>
                 <Mail size={18} />
-                <input type="email" name="email" autoComplete="email" placeholder="name@company.com" />
+                <input type="email" name="email" autoComplete="email" placeholder="name@company.com" required />
               </div>
             </label>
 
@@ -1163,11 +1353,11 @@ function SignUpPage({
               <span>{t('Password')}</span>
               <div>
                 <LockKeyhole size={18} />
-                <input type="password" name="password" autoComplete="new-password" placeholder="••••••••" />
+                <input type="password" name="password" autoComplete="new-password" placeholder="••••••••" required />
               </div>
             </label>
 
-            <button className="primary-action login-submit" type="submit">
+            <button className="primary-action login-submit" type="submit" disabled={authBusy}>
               {t('Create account')} <ArrowRight size={18} />
             </button>
 
@@ -1177,9 +1367,104 @@ function SignUpPage({
                 {t('Sign in')}
               </button>
             </div>
+            {formMessage ? <p className={getAuthMessageTone(formMessage)}>{t(formMessage)}</p> : null}
           </form>
         </div>
       </section>
+    </main>
+  );
+}
+
+function LoggedDashboardPage({
+  user,
+  onSignOut,
+  t,
+}: {
+  user: AppUser;
+  onSignOut: () => void;
+  t: Translator;
+}) {
+  const navItems = [
+    { label: 'Workspace', icon: Blocks, featured: false },
+    { label: 'Gateway Online', icon: ServerCog, featured: true },
+    { label: 'Academy', icon: GraduationCap, featured: true },
+    { label: 'Licenses', icon: ShieldCheck, featured: false },
+    { label: 'Orders', icon: FileUp, featured: false },
+    { label: 'Quotations', icon: Database, featured: false },
+    { label: 'Settings', icon: Gauge, featured: false },
+  ];
+
+  return (
+    <main className="logged-shell">
+      <aside className="logged-sidebar">
+        <div className="logged-sidebar-title">
+          <span>YVIMO</span>
+          <strong>{t('Dashboard')}</strong>
+        </div>
+        <nav aria-label="Dashboard navigation">
+          {navItems.map((item, index) => {
+            const Icon = item.icon;
+            return (
+              <button
+                className={[index === 0 ? 'active' : '', item.featured ? 'featured' : ''].filter(Boolean).join(' ')}
+                type="button"
+                key={item.label}
+              >
+                <Icon size={18} />
+                {t(item.label)}
+              </button>
+            );
+          })}
+        </nav>
+        <button className="logged-signout" type="button" onClick={onSignOut}>
+          <LogIn size={18} />
+          {t('Sign out')}
+        </button>
+      </aside>
+
+      <section className="logged-workspace">
+        <div className="workspace-heading">
+          <p className="eyebrow">{t('Workspace')}</p>
+          <h1>{t('Welcome back')}, {user.name}</h1>
+          <p>{t('Your YVIMO workspace is ready.')}</p>
+        </div>
+        <div className="workspace-grid">
+          <article>
+            <ServerCog size={24} />
+            <strong>{t('Gateway Online')}</strong>
+            <span>{t('Create a first project, manage access, or review platform modules from the navigation.')}</span>
+          </article>
+          <article>
+            <ShieldCheck size={24} />
+            <strong>{t('Licenses')}</strong>
+            <span>{t('Manage product seats, activations, renewals, and customer entitlements.')}</span>
+          </article>
+          <article>
+            <FileUp size={24} />
+            <strong>{t('Orders and Quotation Management')}</strong>
+            <span>{t('Track quotations, purchase requests, project orders, and commercial follow-up.')}</span>
+          </article>
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function DashboardLoadingPage({ t }: { t: Translator }) {
+  return (
+    <main className="dashboard-loading-page">
+      <div className="dashboard-loading-particles" aria-hidden="true">
+        {Array.from({ length: 18 }, (_, index) => (
+          <span key={index} />
+        ))}
+      </div>
+      <div className="dashboard-loading-content">
+        <img src="/assets/logos/yvimo-square-logo-2024.png" alt="YVIMO" />
+        <strong>{t('Loading dashboard...')}</strong>
+        <div className="dashboard-loading-progress" aria-hidden="true">
+          <span />
+        </div>
+      </div>
     </main>
   );
 }
@@ -1193,6 +1478,10 @@ function App() {
   const [currentPath, setCurrentPath] = React.useState(() =>
     typeof window === 'undefined' ? '/' : window.location.pathname,
   );
+  const [authSession, setAuthSession] = React.useState<Session | null>(null);
+  const [authUser, setAuthUser] = React.useState<AppUser | null>(null);
+  const [authLoading, setAuthLoading] = React.useState(true);
+  const [dashboardTransition, setDashboardTransition] = React.useState(false);
   const [viewportWidth, setViewportWidth] = React.useState(() =>
     typeof window === 'undefined' ? 1440 : window.innerWidth,
   );
@@ -1202,8 +1491,9 @@ function App() {
   const currentLanguage = languages.find((item) => item.code === language) ?? languages[0];
   const isLoginPage = currentPath === '/login';
   const isSignUpPage = currentPath === '/signup';
+  const isDashboardPage = currentPath === '/dashboard';
   const isAuthPage = isLoginPage || isSignUpPage;
-  const headerProgress = isAuthPage ? 1 : scrollProgress;
+  const headerProgress = isAuthPage || isDashboardPage ? 1 : scrollProgress;
   const compactViewport = viewportWidth < 760;
   const tinyViewport = viewportWidth < 480;
   const expandedHeaderHeight = compactViewport ? 104 : 128;
@@ -1261,6 +1551,74 @@ function App() {
     `C850 0 930 ${46 * edgeShape} 1080 ${76 * edgeShape} ` +
     `C1225 ${105 * edgeShape} 1410 ${84 * edgeShape} 1600 ${28 * edgeShape}`;
 
+  const fetchOrCreateProfile = React.useCallback(async (user: User) => {
+    console.log('[auth] profile fetch start', user.id);
+
+    try {
+      const { data, error } = await withTimeout(
+        supabase
+          .from('profiles')
+          .select('id, full_name, company_name, role, subscription_tier, created_at, updated_at')
+          .eq('id', user.id)
+          .maybeSingle<UserProfile>(),
+        7000,
+        'Profile fetch',
+      );
+
+      if (error) {
+        throw error;
+      }
+
+      if (data) {
+        console.log('[auth] profile fetch result', data);
+        return data;
+      }
+
+      const fallbackProfile = {
+        id: user.id,
+        full_name: String(user.user_metadata?.full_name ?? '').trim()
+          || user.email?.split('@')[0]
+          || 'YVIMO User',
+        company_name: String(user.user_metadata?.company_name ?? '').trim(),
+        role: String(user.user_metadata?.role ?? '').trim(),
+        subscription_tier: 'Explorer' as SubscriptionTier,
+      };
+
+      const { data: insertedProfile, error: insertError } = await withTimeout(
+        supabase
+          .from('profiles')
+          .insert(fallbackProfile)
+          .select('id, full_name, company_name, role, subscription_tier, created_at, updated_at')
+          .single<UserProfile>(),
+        7000,
+        'Profile insert',
+      );
+
+      if (insertError) {
+        throw insertError;
+      }
+
+      console.log('[auth] profile fetch result', insertedProfile);
+      return insertedProfile;
+    } catch (error) {
+      console.error('[auth] profile fetch error', error);
+      return null;
+    }
+  }, []);
+
+  const syncSessionUser = React.useCallback(async (session: Session | null) => {
+    console.log('[auth] session value', session);
+    setAuthSession(session);
+
+    if (!session?.user) {
+      setAuthUser(null);
+      return;
+    }
+
+    const profile = await fetchOrCreateProfile(session.user);
+    setAuthUser(profileToAppUser(session.user, profile));
+  }, [fetchOrCreateProfile]);
+
   React.useEffect(() => {
     let frame = 0;
 
@@ -1290,6 +1648,57 @@ function App() {
     window.addEventListener('popstate', updatePath);
     return () => window.removeEventListener('popstate', updatePath);
   }, []);
+
+  React.useEffect(() => {
+    let active = true;
+
+    console.log('[auth] getSession start');
+
+    supabase.auth.getSession().then(async ({ data, error }) => {
+      if (!active) return;
+
+      if (error) {
+        console.error('[auth] getSession error', error);
+        setAuthSession(null);
+        setAuthUser(null);
+        setAuthLoading(false);
+        return;
+      }
+
+      try {
+        console.log('[auth] getSession result', data.session);
+        await syncSessionUser(data.session);
+      } catch (error) {
+        console.error('[auth] getSession sync error', error);
+        setAuthSession(data.session);
+        setAuthUser(data.session?.user ? profileToAppUser(data.session.user, null) : null);
+      } finally {
+        console.log('[auth] getSession loading reset');
+        if (active) setAuthLoading(false);
+      }
+    });
+
+    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log('[auth] state change', event, session);
+      window.setTimeout(() => {
+        syncSessionUser(session).catch(() => {
+          setAuthSession(null);
+          setAuthUser(null);
+        });
+      }, 0);
+    });
+
+    return () => {
+      active = false;
+      listener.subscription.unsubscribe();
+    };
+  }, [syncSessionUser]);
+
+  React.useEffect(() => {
+    if (!authLoading && isDashboardPage && !authSession) {
+      navigateLogin();
+    }
+  }, [authLoading, authSession, isDashboardPage]);
 
   const navigateTo = (path: string) => {
     window.history.pushState({}, '', path);
@@ -1330,6 +1739,127 @@ function App() {
     setLanguageMenuOpen(false);
   };
 
+  const navigateDashboard = () => {
+    console.log('[auth] redirect start', '/dashboard');
+    window.history.pushState({}, '', '/dashboard');
+    setCurrentPath('/dashboard');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    closeMenu();
+    setLanguageMenuOpen(false);
+  };
+
+  const completeAuth = async (session: Session | null, message: string) => {
+    if (session) {
+      setAuthSession(session);
+      setAuthUser(profileToAppUser(session.user, null));
+      window.setTimeout(() => {
+        setDashboardTransition(true);
+        window.setTimeout(() => {
+          navigateDashboard();
+          setDashboardTransition(false);
+        }, 4000);
+      }, 1050);
+      syncSessionUser(session).catch((error) => {
+        console.error('[auth] post-redirect profile sync error', error);
+      });
+    }
+    return message;
+  };
+
+  const formatAuthError = (message: string) => {
+    const normalized = message.toLowerCase();
+
+    if (normalized.includes('invalid login')) return 'Invalid email or password.';
+    if (normalized.includes('already registered') || normalized.includes('already exists')) {
+      return 'This email is already registered.';
+    }
+    if (normalized.includes('password')) return message;
+
+    return message || 'Invalid email or password.';
+  };
+
+  const handleSignUp = async (name: string, company: string, email: string, password: string) => {
+    console.log('[auth] signUp action start');
+    const normalizedEmail = email.trim().toLowerCase();
+
+    const { data, error } = await supabase.auth.signUp({
+      email: normalizedEmail,
+      password,
+      options: {
+        data: {
+          full_name: name.trim(),
+          company_name: company.trim(),
+          role: '',
+        },
+      },
+    });
+
+    console.log('[auth] signUp action result', { data, error });
+
+    if (error) {
+      console.error('[auth] signUp action error', error);
+      return formatAuthError(error.message);
+    }
+
+    if (data.session) {
+      return completeAuth(data.session, 'Account created. Redirecting to dashboard.');
+    }
+
+    if (data.user) {
+      console.log('[auth] signUp user exists without session', data.user);
+    }
+
+    return 'Account created. Check your email to confirm your account.';
+  };
+
+  const handleSignIn = async (email: string, password: string) => {
+    console.log('[auth] signIn action start');
+    const normalizedEmail = email.trim().toLowerCase();
+
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: normalizedEmail,
+      password,
+    });
+
+    console.log('[auth] signIn action result', { data, error });
+
+    if (error) {
+      console.error('[auth] signIn action error', error);
+      return formatAuthError(error.message);
+    }
+
+    if (!data.session) {
+      console.error('[auth] signIn missing session');
+      return 'Signed in, but no session was returned.';
+    }
+
+    return completeAuth(data.session, 'Signed in. Redirecting to dashboard.');
+  };
+
+  const handleAppleSignIn = async () => {
+    console.log('[auth] apple signIn action start');
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'apple',
+      options: {
+        redirectTo: `${window.location.origin}/dashboard`,
+      },
+    });
+
+    if (error) {
+      console.error('[auth] apple signIn action error', error);
+      return formatAuthError(error.message);
+    }
+
+    return null;
+  };
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    setAuthSession(null);
+    setAuthUser(null);
+    navigateLogin();
+  };
+
   return (
     <div
       className="site-shell"
@@ -1355,7 +1885,7 @@ function App() {
         } as React.CSSProperties
       }
     >
-      <header className="topbar">
+      <header className={authUser ? 'topbar topbar-authenticated' : 'topbar'}>
         <a
           className="brand"
           href="/"
@@ -1440,7 +1970,7 @@ function App() {
         >
           <Languages size={19} />
         </button>
-        {!isAuthPage && (
+        {!isAuthPage && !authUser && (
           <a
             className={
               expandedMenuActive
@@ -1457,6 +1987,19 @@ function App() {
             <LogIn size={18} />
             <span>{t('Sign in')}</span>
           </a>
+        )}
+        {!isAuthPage && authUser && (
+          <button className="compact-user-card" type="button" onClick={navigateDashboard}>
+            <span className="compact-user-avatar" aria-hidden="true">
+              {getProfileInitials(authUser.name)}
+            </span>
+            <span className="compact-user-copy">
+              <strong>{authUser.name}</strong>
+              <span className={getSubscriptionClass(authUser.subscription)}>
+                {authUser.subscription}
+              </span>
+            </span>
+          </button>
         )}
         <div
           className={
@@ -1493,7 +2036,22 @@ function App() {
           <a href="/#gateway" onClick={(event) => { event.preventDefault(); navigateHome('#gateway'); }}>{t('Gateway')}</a>
           <a href="/#solutions" onClick={(event) => { event.preventDefault(); navigateHome('#solutions'); }}>{t('Solutions')}</a>
           <a href="/#platform" onClick={(event) => { event.preventDefault(); navigateHome('#platform'); }}>{t('Platform')}</a>
-          <a className="panel-login" href="/login" onClick={(event) => { event.preventDefault(); navigateLogin(); }}><LogIn size={16} />{t('Sign in')}</a>
+          {authUser ? (
+            <button className="panel-user-card" type="button" onClick={navigateDashboard}>
+              <span className="compact-user-avatar" aria-hidden="true">
+                {getProfileInitials(authUser.name)}
+              </span>
+              <span className="compact-user-copy">
+                <strong>{authUser.name}</strong>
+                <span className={getSubscriptionClass(authUser.subscription)}>
+                  {authUser.subscription}
+                </span>
+                <em>{t('Go to Dashboard')}</em>
+              </span>
+            </button>
+          ) : (
+            <a className="panel-login" href="/login" onClick={(event) => { event.preventDefault(); navigateLogin(); }}><LogIn size={16} />{t('Sign in')}</a>
+          )}
           <a className="panel-cta" href="/#contact" onClick={(event) => { event.preventDefault(); navigateHome('#contact'); }}>{t('Start a project')}</a>
         </div>
         <nav className={menuOpen ? 'nav-links open' : 'nav-links'} aria-label="Primary navigation">
@@ -1519,16 +2077,43 @@ function App() {
         </div>
       </header>
 
-      {isLoginPage ? (
+      {authLoading ? (
+        <main className="auth-loading-page">
+          <div className="auth-loading-card">
+            <span className="status-dot" />
+            {t('Loading workspace...')}
+          </div>
+        </main>
+      ) : dashboardTransition ? (
+        <DashboardLoadingPage t={t} />
+      ) : isLoginPage ? (
         <LoginPage
           onNavigateSignUp={navigateSignUp}
+          onSignIn={handleSignIn}
+          onAppleSignIn={handleAppleSignIn}
           t={t}
         />
       ) : isSignUpPage ? (
         <SignUpPage
           onNavigateLogin={navigateLogin}
+          onSignUp={handleSignUp}
           t={t}
         />
+      ) : isDashboardPage ? (
+        authUser ? (
+        <LoggedDashboardPage
+          user={authUser}
+          onSignOut={handleSignOut}
+          t={t}
+        />
+        ) : (
+          <LoginPage
+            onNavigateSignUp={navigateSignUp}
+            onSignIn={handleSignIn}
+            onAppleSignIn={handleAppleSignIn}
+            t={t}
+          />
+        )
       ) : selectedBusinessLine ? (
         <BusinessLinePage
           line={selectedBusinessLine}
