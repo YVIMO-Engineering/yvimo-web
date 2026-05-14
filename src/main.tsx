@@ -34,6 +34,7 @@ import {
 } from 'lucide-react';
 import type { Session, User } from '@supabase/supabase-js';
 import { supabase } from './lib/supabaseClient';
+import { AcademyCatalogPage, AcademyCoursePage, AcademyHomePage, AcademyLessonPage } from './pages/AcademyPages';
 import './styles.css';
 
 type BusinessLine = {
@@ -1378,20 +1379,24 @@ function SignUpPage({
 function LoggedDashboardPage({
   user,
   onSignOut,
+  onNavigate,
+  activePath,
   t,
 }: {
   user: AppUser;
   onSignOut: () => void;
+  onNavigate: (path: string) => void;
+  activePath: string;
   t: Translator;
 }) {
   const navItems = [
-    { label: 'Workspace', icon: Blocks, featured: false },
-    { label: 'Gateway Online', icon: ServerCog, featured: true },
-    { label: 'Academy', icon: GraduationCap, featured: true },
-    { label: 'Licenses', icon: ShieldCheck, featured: false },
-    { label: 'Orders', icon: FileUp, featured: false },
-    { label: 'Quotations', icon: Database, featured: false },
-    { label: 'Settings', icon: Gauge, featured: false },
+    { label: 'Workspace', icon: Blocks, featured: false, path: '/dashboard' },
+    { label: 'Gateway Online', icon: ServerCog, featured: true, path: '/dashboard/gateway' },
+    { label: 'Academy', icon: GraduationCap, featured: true, path: '/academy' },
+    { label: 'Licenses', icon: ShieldCheck, featured: false, path: '/dashboard/licenses' },
+    { label: 'Orders', icon: FileUp, featured: false, path: '/dashboard/orders' },
+    { label: 'Quotations', icon: Database, featured: false, path: '/dashboard/quotations' },
+    { label: 'Settings', icon: Gauge, featured: false, path: '/dashboard/settings' },
   ];
 
   return (
@@ -1404,11 +1409,13 @@ function LoggedDashboardPage({
         <nav aria-label="Dashboard navigation">
           {navItems.map((item, index) => {
             const Icon = item.icon;
+            const active = activePath === item.path || (item.path === '/academy' && activePath.startsWith('/academy'));
             return (
               <button
-                className={[index === 0 ? 'active' : '', item.featured ? 'featured' : ''].filter(Boolean).join(' ')}
+                className={[active || (index === 0 && activePath === '/dashboard') ? 'active' : '', item.featured ? 'featured' : ''].filter(Boolean).join(' ')}
                 type="button"
                 key={item.label}
+                onClick={() => onNavigate(item.path)}
               >
                 <Icon size={18} />
                 {t(item.label)}
@@ -1492,8 +1499,9 @@ function App() {
   const isLoginPage = currentPath === '/login';
   const isSignUpPage = currentPath === '/signup';
   const isDashboardPage = currentPath === '/dashboard';
+  const isAcademyPage = currentPath === '/academy' || currentPath.startsWith('/academy/');
   const isAuthPage = isLoginPage || isSignUpPage;
-  const headerProgress = isAuthPage || isDashboardPage ? 1 : scrollProgress;
+  const headerProgress = isAuthPage || isDashboardPage || isAcademyPage ? 1 : scrollProgress;
   const compactViewport = viewportWidth < 760;
   const tinyViewport = viewportWidth < 480;
   const expandedHeaderHeight = compactViewport ? 104 : 128;
@@ -1545,6 +1553,13 @@ function App() {
   const selectedBusinessLine = businessLines.find((line) => {
     return currentPath === `/business/${line.slug}`;
   });
+  const academyPathParts = currentPath.split('/').filter(Boolean);
+  const academyCourseSlug = academyPathParts[0] === 'academy' ? academyPathParts[1] : undefined;
+  const academyLessonSlug =
+    academyPathParts[0] === 'academy' && academyPathParts[2] === 'lessons'
+      ? academyPathParts[3]
+      : undefined;
+  const isAcademyCatalogPage = currentPath === '/academy/courses';
   const orangeEdgePath =
     `M0 0 C80 ${62 * edgeShape} 210 ${80 * edgeShape} 360 ${56 * edgeShape} ` +
     `C500 ${34 * edgeShape} 570 0 710 0 ` +
@@ -2104,6 +2119,8 @@ function App() {
         <LoggedDashboardPage
           user={authUser}
           onSignOut={handleSignOut}
+          onNavigate={navigateTo}
+          activePath={currentPath}
           t={t}
         />
         ) : (
@@ -2113,6 +2130,25 @@ function App() {
             onAppleSignIn={handleAppleSignIn}
             t={t}
           />
+        )
+      ) : isAcademyPage ? (
+        isAcademyCatalogPage ? (
+          <AcademyCatalogPage user={authUser} navigateTo={navigateTo} />
+        ) : academyCourseSlug && academyLessonSlug ? (
+          <AcademyLessonPage
+            user={authUser}
+            navigateTo={navigateTo}
+            courseSlug={academyCourseSlug}
+            lessonSlug={academyLessonSlug}
+          />
+        ) : academyCourseSlug ? (
+          <AcademyCoursePage
+            user={authUser}
+            navigateTo={navigateTo}
+            courseSlug={academyCourseSlug}
+          />
+        ) : (
+          <AcademyHomePage user={authUser} navigateTo={navigateTo} />
         )
       ) : selectedBusinessLine ? (
         <BusinessLinePage
