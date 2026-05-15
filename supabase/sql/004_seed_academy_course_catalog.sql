@@ -205,6 +205,7 @@ lesson_seed as (
   from (
     values
       (
+        null,
         'overview',
         'Course Overview',
         'Understand what this course covers and how to approach the learning path.',
@@ -214,6 +215,7 @@ lesson_seed as (
         true
       ),
       (
+        null,
         'core-concepts',
         'Core Concepts',
         'Learn the core terms, patterns, and decisions behind this topic.',
@@ -223,6 +225,7 @@ lesson_seed as (
         false
       ),
       (
+        null,
         'practice-lab',
         'Practice Lab',
         'Apply the topic with a practical scenario and review checklist.',
@@ -230,8 +233,78 @@ lesson_seed as (
         420,
         3,
         false
+      ),
+      (
+        'industrial-automation-fundamentals',
+        'what-is-industrial-automation',
+        'What Is Industrial Automation?',
+        'See how controllers, sensors, actuators, machines, and operators fit into one production system.',
+        'dQw4w9WgXcQ',
+        300,
+        4,
+        false
+      ),
+      (
+        'industrial-automation-fundamentals',
+        'plc-role-in-automation',
+        'The PLC Role in Automation',
+        'Understand why PLCs are used, what they control, and how they coordinate machine behavior.',
+        'ysz5S6PUM-U',
+        360,
+        5,
+        false
+      ),
+      (
+        'industrial-automation-fundamentals',
+        'digital-inputs-and-outputs',
+        'Digital Inputs and Outputs',
+        'Learn how push buttons, sensors, solenoids, lamps, and relays appear in automation logic.',
+        'jNQXAC9IVRw',
+        420,
+        6,
+        false
+      ),
+      (
+        'industrial-automation-fundamentals',
+        'analog-signals-basics',
+        'Analog Signals Basics',
+        'Build intuition around 4-20 mA, 0-10 V, scaling, and values that change continuously.',
+        'dQw4w9WgXcQ',
+        390,
+        7,
+        false
+      ),
+      (
+        'industrial-automation-fundamentals',
+        'ladder-logic-first-look',
+        'First Look at Ladder Logic',
+        'Read simple rungs and connect contacts, coils, and scan behavior to machine states.',
+        'ysz5S6PUM-U',
+        450,
+        8,
+        false
+      ),
+      (
+        'industrial-automation-fundamentals',
+        'hmi-operator-view',
+        'The HMI Operator View',
+        'Explore how operators use screens, status, commands, and alarms to run equipment.',
+        'jNQXAC9IVRw',
+        360,
+        9,
+        false
+      ),
+      (
+        'industrial-automation-fundamentals',
+        'automation-safety-and-next-steps',
+        'Automation Safety and Next Steps',
+        'Close the path with safety basics, troubleshooting mindset, and where to go after fundamentals.',
+        'dQw4w9WgXcQ',
+        480,
+        10,
+        false
       )
-  ) as seed(slug, title, description, video_id, duration_seconds, order_index, is_preview)
+  ) as seed(course_slug, slug, title, description, video_id, duration_seconds, order_index, is_preview)
 )
 insert into public.academy_lessons (
   course_id,
@@ -263,7 +336,8 @@ select
   lesson_seed.is_preview,
   'published'
 from module_pick
-cross join lesson_seed
+join all_courses on all_courses.id = module_pick.course_id
+join lesson_seed on lesson_seed.course_slug is null or lesson_seed.course_slug = all_courses.slug
 on conflict (course_id, slug) do update
 set
   module_id = excluded.module_id,

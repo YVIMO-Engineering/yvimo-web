@@ -34,7 +34,7 @@ import {
 } from 'lucide-react';
 import type { Session, User } from '@supabase/supabase-js';
 import { supabase } from './lib/supabaseClient';
-import { AcademyCatalogPage, AcademyCoursePage, AcademyHomePage, AcademyLessonPage } from './pages/AcademyPages';
+import { AcademyCatalogPage, AcademyCertificatesPage, AcademyCoursePage, AcademyHomePage, AcademyLessonPage, AcademyProgressPage } from './pages/AcademyPages';
 import './styles.css';
 
 type BusinessLine = {
@@ -104,6 +104,7 @@ type AppUser = {
   name: string;
   company?: string;
   subscription: SubscriptionTier;
+  avatarUrl?: string;
 };
 
 function getProfileInitials(name: string) {
@@ -128,6 +129,7 @@ function profileToAppUser(user: User, profile: UserProfile | null): AppUser {
     name: fullName,
     company: profile?.company_name ?? undefined,
     subscription: profile?.subscription_tier ?? 'Explorer',
+    avatarUrl: typeof user.user_metadata?.avatar_url === 'string' ? user.user_metadata.avatar_url : undefined,
   };
 }
 
@@ -1560,6 +1562,12 @@ function App() {
       ? academyPathParts[3]
       : undefined;
   const isAcademyCatalogPage = currentPath === '/academy/courses';
+  const isAcademyProgressPage = currentPath === '/academy/progress';
+  const isAcademyCertificatesPage = currentPath === '/academy/certificates' || currentPath.startsWith('/academy/certificates/');
+  const academyCertificateId =
+    academyPathParts[0] === 'academy' && academyPathParts[1] === 'certificates'
+      ? academyPathParts[2]
+      : undefined;
   const orangeEdgePath =
     `M0 0 C80 ${62 * edgeShape} 210 ${80 * edgeShape} 360 ${56 * edgeShape} ` +
     `C500 ${34 * edgeShape} 570 0 710 0 ` +
@@ -2134,6 +2142,14 @@ function App() {
       ) : isAcademyPage ? (
         isAcademyCatalogPage ? (
           <AcademyCatalogPage user={authUser} navigateTo={navigateTo} />
+        ) : isAcademyProgressPage ? (
+          <AcademyProgressPage user={authUser} navigateTo={navigateTo} />
+        ) : isAcademyCertificatesPage ? (
+          <AcademyCertificatesPage
+            user={authUser}
+            navigateTo={navigateTo}
+            certificateId={academyCertificateId}
+          />
         ) : academyCourseSlug && academyLessonSlug ? (
           <AcademyLessonPage
             user={authUser}

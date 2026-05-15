@@ -1,10 +1,12 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabaseClient';
 import type {
+  AcademyCertificate,
   AcademyCourse,
   AcademyCourseProgressSummary,
   AcademyEnrollment,
   AcademyLesson,
+  AcademyLessonNote,
   AcademyLessonProgress,
   AcademyModule,
   AcademyModuleWithLessons,
@@ -12,6 +14,15 @@ import type {
 } from './types';
 
 type AcademyClient = SupabaseClient;
+
+export type CreateCertificateInput = {
+  userId: string;
+  course: AcademyCourse;
+  studentName: string;
+  studentEmail: string;
+  completedLessons: number;
+  totalLessons: number;
+};
 
 export type AcademyCourseBundle = {
   course: AcademyCourse;
@@ -356,6 +367,57 @@ export async function updateLessonProgress(
   return data;
 }
 
+export async function resetLessonProgress(
+  {
+    userId,
+    courseId,
+    lessonId,
+  }: {
+    userId: string;
+    courseId: string;
+    lessonId: string;
+  },
+  client: AcademyClient = supabase,
+) {
+  const { data: sessionData } = await client.auth.getSession();
+  if (sessionData.session?.user.id !== userId) {
+    throw new Error('Users can only update their own lesson progress.');
+  }
+
+  const { data: certificate, error: certificateError } = await client
+    .from('academy_certificates')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('course_id', courseId)
+    .maybeSingle<{ id: string }>();
+
+  if (certificateError) throw certificateError;
+  if (certificate) {
+    throw new Error('This course already has a certificate, so lesson progress cannot be reset.');
+  }
+
+  const { data, error } = await client
+    .from('academy_lesson_progress')
+    .upsert(
+      {
+        user_id: userId,
+        course_id: courseId,
+        lesson_id: lessonId,
+        progress_seconds: 0,
+        progress_percent: 0,
+        completed: false,
+        completed_at: null,
+        last_watched_at: new Date().toISOString(),
+      },
+      { onConflict: 'user_id,lesson_id' },
+    )
+    .select('*')
+    .single<AcademyLessonProgress>();
+
+  if (error) throw error;
+  return data;
+}
+
 export async function fetchLessonProgressForCourse(
   userId: string | null,
   courseId: string,
@@ -372,6 +434,180 @@ export async function fetchLessonProgressForCourse(
 
   if (error) throw error;
   return data ?? [];
+}
+
+export async function fetchLessonProgressForLesson(
+  userId: string | null,
+  lessonId: string,
+  client: AcademyClient = supabase,
+) {
+  if (!userId) return null;
+
+  const { data, error } = await client
+    .from('academy_lesson_progress')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('lesson_id', lessonId)
+    .maybeSingle<AcademyLessonProgress>();
+
+  if (error) throw error;
+  return data;
+}
+
+export async function fetchLessonNote(
+  userId: string | null,
+  lessonId: string,
+  client: AcademyClient = supabase,
+) {
+  if (!userId) return null;
+
+  const { data, error } = await client
+    .from('academy_lesson_notes')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('lesson_id', lessonId)
+    .maybeSingle<AcademyLessonNote>();
+
+  if (error) throw error;
+  return data;
+}
+
+export async function saveLessonNote(
+  {
+    userId,
+    courseId,
+    lessonId,
+    content,
+  }: {
+    userId: string;
+    courseId: string;
+    lessonId: string;
+    content: string;
+  },
+  client: AcademyClient = supabase,
+) {
+  const { data: sessionData } = await client.auth.getSession();
+  if (sessionData.session?.user.id !== userId) {
+    throw new Error('Users can only update their own lesson notes.');
+  }
+
+  const { data, error } = await client
+    .from('academy_lesson_notes')
+    .upsert(
+      {
+        user_id: userId,
+        course_id: courseId,
+        lesson_id: lessonId,
+        content,
+      },
+      { onConflict: 'user_id,lesson_id' },
+    )
+    .select('*')
+    .single<AcademyLessonNote>();
+
+  if (error) throw error;
+  return data;
+}
+
+function createCertificateCode() {
+  const year = new Date().getFullYear();
+  const random = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID().slice(0, 8)
+    : Math.random().toString(36).slice(2, 10);
+  return `YVIMO-${year}-${random.toUpperCase()}`;
+}
+
+export async function fetchCertificatesForUser(
+  userId: string | null,
+  client: AcademyClient = supabase,
+) {
+  if (!userId) return [];
+
+  const { data, error } = await client
+    .from('academy_certificates')
+    .select('*')
+    .eq('user_id', userId)
+    .order('issued_at', { ascending: false })
+    .returns<AcademyCertificate[]>();
+
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function fetchCertificateById(
+  userId: string | null,
+  certificateId: string,
+  client: AcademyClient = supabase,
+) {
+  if (!userId) return null;
+
+  const { data, error } = await client
+    .from('academy_certificates')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('id', certificateId)
+    .maybeSingle<AcademyCertificate>();
+
+  if (error) throw error;
+  return data;
+}
+
+export async function fetchCertificateForCourse(
+  userId: string | null,
+  courseId: string,
+  client: AcademyClient = supabase,
+) {
+  if (!userId) return null;
+
+  const { data, error } = await client
+    .from('academy_certificates')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('course_id', courseId)
+    .maybeSingle<AcademyCertificate>();
+
+  if (error) throw error;
+  return data;
+}
+
+export async function createCertificateForCourse(
+  {
+    userId,
+    course,
+    studentName,
+    studentEmail,
+    completedLessons,
+    totalLessons,
+  }: CreateCertificateInput,
+  client: AcademyClient = supabase,
+) {
+  const { data: sessionData } = await client.auth.getSession();
+  if (sessionData.session?.user.id !== userId) {
+    throw new Error('Users can only create their own certificates.');
+  }
+
+  const existing = await fetchCertificateForCourse(userId, course.id, client);
+  if (existing) return existing;
+
+  const { data, error } = await client
+    .from('academy_certificates')
+    .insert({
+      user_id: userId,
+      course_id: course.id,
+      certificate_code: createCertificateCode(),
+      student_name: studentName,
+      student_email: studentEmail,
+      course_title: course.title,
+      course_slug: course.slug,
+      course_category: course.category,
+      completed_lessons: completedLessons,
+      total_lessons: totalLessons,
+    })
+    .select('*')
+    .single<AcademyCertificate>();
+
+  if (error) throw error;
+  return data;
 }
 
 export async function getCourseProgressSummary(

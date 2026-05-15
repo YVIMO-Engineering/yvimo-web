@@ -84,6 +84,33 @@ export type AcademyLessonProgress = {
   updated_at: string;
 };
 
+export type AcademyLessonNote = {
+  id: string;
+  user_id: string;
+  course_id: string;
+  lesson_id: string;
+  content: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AcademyCertificate = {
+  id: string;
+  user_id: string;
+  course_id: string;
+  certificate_code: string;
+  student_name: string;
+  student_email: string;
+  course_title: string;
+  course_slug: string;
+  course_category: string | null;
+  completed_lessons: number;
+  total_lessons: number;
+  issued_at: string;
+  created_at: string;
+  updated_at: string;
+};
+
 export type AcademyModuleWithLessons = AcademyModule & {
   lessons: AcademyLesson[];
 };
