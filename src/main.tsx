@@ -540,6 +540,217 @@ const translations: Record<Exclude<LanguageCode, 'en'>, Record<string, string>> 
   },
 };
 
+Object.assign(translations.es, {
+  Courses: 'Cursos',
+  'Continue watching': 'Continuar viendo',
+  'My progress': 'Mi progreso',
+  'My certificates': 'Mis certificados',
+  News: 'Noticias',
+  Resources: 'Recursos',
+  'Industrial learning for connected manufacturing.': 'Aprendizaje industrial para manufactura conectada.',
+  'Courses, guided paths, and professional training for people building real automation, robotics, and industrial software systems.':
+    'Cursos, rutas guiadas y capacitaciÃ³n profesional para personas que construyen automatizaciÃ³n, robÃ³tica y software industrial real.',
+  'PLC Programming': 'ProgramaciÃ³n PLC',
+  Robotics: 'RobÃ³tica',
+  'Industrial Software': 'Software industrial',
+  'Career Growth': 'Crecimiento profesional',
+  'Control logic, signals, troubleshooting': 'LÃ³gica de control, seÃ±ales, diagnÃ³stico',
+  'Cells, motion, integration, safety': 'Celdas, movimiento, integraciÃ³n, seguridad',
+  'Dashboards, APIs, plant-floor data': 'Dashboards, APIs, datos de planta',
+  'Guidance, practice, certifications': 'GuÃ­a, prÃ¡ctica, certificaciones',
+  'View all courses': 'Ver todos los cursos',
+  Featured: 'Destacado',
+  'Featured learning paths': 'Rutas de aprendizaje destacadas',
+  'Start with the Academy tracks we are prioritizing first.': 'Empieza con las rutas de Academy que estamos priorizando primero.',
+  Catalog: 'CatÃ¡logo',
+  'Academy home': 'Inicio de Academy',
+  'All Academy courses': 'Todos los cursos de Academy',
+  'Browse the full published catalog in a compact view.': 'Explora el catÃ¡logo publicado en una vista compacta.',
+  course: 'curso',
+  courses: 'cursos',
+  lesson: 'lecciÃ³n',
+  lessons: 'lecciones',
+  of: 'de',
+  'lesson completed': 'lecciÃ³n completada',
+  'lessons completed': 'lecciones completadas',
+  Beginner: 'Principiante',
+  Intermediate: 'Intermedio',
+  Advanced: 'Avanzado',
+  Completed: 'Completado',
+  'In progress': 'En progreso',
+  'Not started': 'Sin iniciar',
+  Preview: 'Vista previa',
+  Locked: 'Bloqueado',
+  Done: 'Hecho',
+  'View course': 'Ver curso',
+  Course: 'Curso',
+  'Loading courses...': 'Cargando cursos...',
+  'Unable to load Academy': 'No se pudo cargar Academy',
+  'Unable to load catalog': 'No se pudo cargar el catÃ¡logo',
+  'No published courses yet.': 'AÃºn no hay cursos publicados.',
+  'Loading course...': 'Cargando curso...',
+  'Course not found.': 'Curso no encontrado.',
+  'Admin access': 'Acceso de administrador',
+  Enrolled: 'Inscrito',
+  'Course access': 'Acceso al curso',
+  'You can access all Academy content.': 'Puedes acceder a todo el contenido de Academy.',
+  complete: 'completado',
+  'Free course enrollment is available.': 'La inscripciÃ³n gratuita estÃ¡ disponible.',
+  'Enrollment required for protected lessons.': 'Se requiere inscripciÃ³n para lecciones protegidas.',
+  'View progress route': 'Ver ruta de progreso',
+  'Get my certificate': 'Obtener mi certificado',
+  'View my certificate': 'Ver mi certificado',
+  'Enroll free': 'Inscribirme gratis',
+  'Request access': 'Solicitar acceso',
+  Overview: 'Resumen',
+  'Course description coming soon.': 'DescripciÃ³n del curso prÃ³ximamente.',
+  Lessons: 'Lecciones',
+  'Loading lesson...': 'Cargando lecciÃ³n...',
+  'Lesson not found.': 'LecciÃ³n no encontrada.',
+  'Preview lesson': 'LecciÃ³n de vista previa',
+  Lesson: 'LecciÃ³n',
+  'Marking...': 'Marcando...',
+  'Mark complete': 'Marcar completado',
+  'Resetting...': 'Reiniciando...',
+  'Re-take lesson': 'Retomar lecciÃ³n',
+  'Certificate issued': 'Certificado emitido',
+  'Lesson notes': 'Notas de la lecciÃ³n',
+  'Write your notes for this lesson...': 'Escribe tus notas de esta lecciÃ³n...',
+  characters: 'caracteres',
+  Save: 'Guardar',
+  Saving: 'Guardando',
+  Saved: 'Guardado',
+  'Lesson locked': 'LecciÃ³n bloqueada',
+  'Sign in to access this lesson.': 'Inicia sesiÃ³n para acceder a esta lecciÃ³n.',
+  'Enroll in this course to access the lesson.': 'InscrÃ­bete en este curso para acceder a la lecciÃ³n.',
+  'View course access': 'Ver acceso del curso',
+  'Course routes': 'Rutas de curso',
+  'Follow every lesson path and see how far your completed route is glowing behind you.':
+    'Sigue la ruta completa de lecciones y mira cuÃ¡nto camino completado queda iluminado detrÃ¡s de ti.',
+  'Sign in to view your progress.': 'Inicia sesiÃ³n para ver tu progreso.',
+  'Your Academy routes are attached to your account.': 'Tus rutas de Academy estÃ¡n vinculadas a tu cuenta.',
+  'Loading progress...': 'Cargando progreso...',
+  'Unable to load progress': 'No se pudo cargar el progreso',
+  'No course progress yet.': 'AÃºn no hay progreso de cursos.',
+  'Open a lesson to start lighting up your route.': 'Abre una lecciÃ³n para empezar a iluminar tu ruta.',
+  'Creating...': 'Creando...',
+  'View Certificate': 'Ver certificado',
+  'Completion inventory': 'Inventario de certificados',
+  'Your completed Academy courses and issued certificates stay here.': 'Tus cursos completados y certificados emitidos viven aquÃ­.',
+  'Sign in to view your certificates.': 'Inicia sesiÃ³n para ver tus certificados.',
+  'Certificates are attached to your Academy account.': 'Los certificados estÃ¡n vinculados a tu cuenta de Academy.',
+  'Loading certificates...': 'Cargando certificados...',
+  'Unable to load certificates': 'No se pudieron cargar los certificados',
+  'No certificates yet.': 'AÃºn no tienes certificados.',
+  'Complete a course and claim its certificate to add it here.': 'Completa un curso y reclama su certificado para agregarlo aquÃ­.',
+  Issued: 'Emitido',
+  'Loading certificate...': 'Cargando certificado...',
+  'Unable to load certificate': 'No se pudo cargar el certificado',
+  'Certificate of Completion': 'Certificado de finalizaciÃ³n',
+  'Presented to': 'Otorgado a',
+  'Certificate ID': 'ID del certificado',
+  'Lessons completed': 'Lecciones completadas',
+  'Completed route': 'Ruta completada',
+  'Historical path completed before this certificate was issued.': 'Ruta histÃ³rica completada antes de emitir este certificado.',
+});
+
+Object.assign(translations.zh, {
+  Courses: '课程',
+  'Continue watching': '继续观看',
+  'My progress': '我的进度',
+  'My certificates': '我的证书',
+  News: '新闻',
+  Resources: '资源',
+  'View all courses': '查看所有课程',
+  Featured: '精选',
+  'Featured learning paths': '精选学习路径',
+  Catalog: '目录',
+  'Academy home': 'Academy 首页',
+  'All Academy courses': '所有 Academy 课程',
+  course: '课程',
+  courses: '课程',
+  lesson: '课',
+  lessons: '课',
+  of: '共',
+  'lesson completed': '课已完成',
+  'lessons completed': '课已完成',
+  Beginner: '初级',
+  Intermediate: '中级',
+  Advanced: '高级',
+  Completed: '已完成',
+  'In progress': '进行中',
+  'Not started': '未开始',
+  Preview: '预览',
+  Locked: '已锁定',
+  Done: '完成',
+  'View course': '查看课程',
+  Course: '课程',
+  'Loading courses...': '正在加载课程...',
+  'No published courses yet.': '暂无已发布课程。',
+  Enrolled: '已报名',
+  complete: '完成',
+  'View progress route': '查看进度路线',
+  'Get my certificate': '获取我的证书',
+  'View my certificate': '查看我的证书',
+  Overview: '概览',
+  Lesson: '课程',
+  'Mark complete': '标记完成',
+  'Re-take lesson': '重学课程',
+  'Certificate issued': '证书已签发',
+  'Lesson notes': '课程笔记',
+  Save: '保存',
+  'Course routes': '课程路线',
+  'Completion inventory': '证书库',
+  'Certificate of Completion': '结业证书',
+  'Presented to': '颁发给',
+  'Certificate ID': '证书 ID',
+  Issued: '签发',
+  'Lessons completed': '已完成课程',
+  'Completed route': '已完成路线',
+});
+
+Object.assign(translations.es, {
+  'Courses, guided paths, and professional training for people building real automation, robotics, and industrial software systems.':
+    'Cursos, rutas guiadas y capacitaci\u00f3n profesional para personas que construyen automatizaci\u00f3n, rob\u00f3tica y software industrial real.',
+  'PLC Programming': 'Programaci\u00f3n PLC',
+  Robotics: 'Rob\u00f3tica',
+  'Control logic, signals, troubleshooting': 'L\u00f3gica de control, se\u00f1ales, diagn\u00f3stico',
+  'Cells, motion, integration, safety': 'Celdas, movimiento, integraci\u00f3n, seguridad',
+  'Guidance, practice, certifications': 'Gu\u00eda, pr\u00e1ctica, certificaciones',
+  Catalog: 'Cat\u00e1logo',
+  'Browse the full published catalog in a compact view.': 'Explora el cat\u00e1logo publicado en una vista compacta.',
+  lesson: 'lecci\u00f3n',
+  'lesson completed': 'lecci\u00f3n completada',
+  'Unable to load catalog': 'No se pudo cargar el cat\u00e1logo',
+  'No published courses yet.': 'A\u00fan no hay cursos publicados.',
+  'Free course enrollment is available.': 'La inscripci\u00f3n gratuita est\u00e1 disponible.',
+  'Enrollment required for protected lessons.': 'Se requiere inscripci\u00f3n para lecciones protegidas.',
+  'Course description coming soon.': 'Descripci\u00f3n del curso pr\u00f3ximamente.',
+  'Loading lesson...': 'Cargando lecci\u00f3n...',
+  'Lesson not found.': 'Lecci\u00f3n no encontrada.',
+  'Preview lesson': 'Lecci\u00f3n de vista previa',
+  Lesson: 'Lecci\u00f3n',
+  'Re-take lesson': 'Retomar lecci\u00f3n',
+  'Lesson notes': 'Notas de la lecci\u00f3n',
+  'Write your notes for this lesson...': 'Escribe tus notas de esta lecci\u00f3n...',
+  'Lesson locked': 'Lecci\u00f3n bloqueada',
+  'Sign in to access this lesson.': 'Inicia sesi\u00f3n para acceder a esta lecci\u00f3n.',
+  'Enroll in this course to access the lesson.': 'Inscr\u00edbete en este curso para acceder a la lecci\u00f3n.',
+  'Follow every lesson path and see how far your completed route is glowing behind you.':
+    'Sigue la ruta completa de lecciones y mira cu\u00e1nto camino completado queda iluminado detr\u00e1s de ti.',
+  'Sign in to view your progress.': 'Inicia sesi\u00f3n para ver tu progreso.',
+  'Your Academy routes are attached to your account.': 'Tus rutas de Academy est\u00e1n vinculadas a tu cuenta.',
+  'No course progress yet.': 'A\u00fan no hay progreso de cursos.',
+  'Open a lesson to start lighting up your route.': 'Abre una lecci\u00f3n para empezar a iluminar tu ruta.',
+  'Your completed Academy courses and issued certificates stay here.': 'Tus cursos completados y certificados emitidos viven aqu\u00ed.',
+  'Sign in to view your certificates.': 'Inicia sesi\u00f3n para ver tus certificados.',
+  'Certificates are attached to your Academy account.': 'Los certificados est\u00e1n vinculados a tu cuenta de Academy.',
+  'No certificates yet.': 'A\u00fan no tienes certificados.',
+  'Complete a course and claim its certificate to add it here.': 'Completa un curso y reclama su certificado para agregarlo aqu\u00ed.',
+  'Certificate of Completion': 'Certificado de finalizaci\u00f3n',
+  'Historical path completed before this certificate was issued.': 'Ruta hist\u00f3rica completada antes de emitir este certificado.',
+});
+
 function translate(language: LanguageCode, text: string) {
   if (language === 'en') return text;
   return translations[language][text] ?? text;
@@ -2141,14 +2352,16 @@ function App() {
         )
       ) : isAcademyPage ? (
         isAcademyCatalogPage ? (
-          <AcademyCatalogPage user={authUser} navigateTo={navigateTo} />
+          <AcademyCatalogPage user={authUser} navigateTo={navigateTo} t={t} languageCode={language} />
         ) : isAcademyProgressPage ? (
-          <AcademyProgressPage user={authUser} navigateTo={navigateTo} />
+          <AcademyProgressPage user={authUser} navigateTo={navigateTo} t={t} languageCode={language} />
         ) : isAcademyCertificatesPage ? (
           <AcademyCertificatesPage
             user={authUser}
             navigateTo={navigateTo}
             certificateId={academyCertificateId}
+            t={t}
+            languageCode={language}
           />
         ) : academyCourseSlug && academyLessonSlug ? (
           <AcademyLessonPage
@@ -2156,15 +2369,19 @@ function App() {
             navigateTo={navigateTo}
             courseSlug={academyCourseSlug}
             lessonSlug={academyLessonSlug}
+            t={t}
+            languageCode={language}
           />
         ) : academyCourseSlug ? (
           <AcademyCoursePage
             user={authUser}
             navigateTo={navigateTo}
             courseSlug={academyCourseSlug}
+            t={t}
+            languageCode={language}
           />
         ) : (
-          <AcademyHomePage user={authUser} navigateTo={navigateTo} />
+          <AcademyHomePage user={authUser} navigateTo={navigateTo} t={t} languageCode={language} />
         )
       ) : selectedBusinessLine ? (
         <BusinessLinePage

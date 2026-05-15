@@ -29,12 +29,35 @@ export type AcademyCourse = {
   updated_at: string;
 };
 
+export type AcademyCourseTranslation = {
+  id: string;
+  course_id: string;
+  language_code: string;
+  title: string | null;
+  subtitle: string | null;
+  description: string | null;
+  category: string | null;
+  difficulty_level: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type AcademyModule = {
   id: string;
   course_id: string;
   title: string;
   description: string | null;
   order_index: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AcademyModuleTranslation = {
+  id: string;
+  module_id: string;
+  language_code: string;
+  title: string | null;
+  description: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -54,6 +77,16 @@ export type AcademyLesson = {
   order_index: number;
   is_preview: boolean;
   status: AcademyLessonStatus;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AcademyLessonTranslation = {
+  id: string;
+  lesson_id: string;
+  language_code: string;
+  title: string | null;
+  description: string | null;
   created_at: string;
   updated_at: string;
 };

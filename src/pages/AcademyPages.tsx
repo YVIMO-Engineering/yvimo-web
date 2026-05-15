@@ -62,10 +62,16 @@ type AcademyUser = {
   avatarUrl?: string;
 };
 
+type AcademyTranslator = (text: string) => string;
+
 type AcademyPageProps = {
   user: AcademyUser | null;
   navigateTo: (path: string) => void;
+  t?: AcademyTranslator;
+  languageCode?: string;
 };
+
+const defaultT: AcademyTranslator = (text) => text;
 
 function formatPrice(course: AcademyCourse) {
   if (course.price === null || Number(course.price) === 0) return 'Free';
@@ -78,16 +84,28 @@ function formatDuration(seconds: number | null) {
   return `${minutes} min`;
 }
 
+function formatLessonCount(count: number, t: AcademyTranslator) {
+  return `${count} ${count === 1 ? t('lesson') : t('lessons')}`;
+}
+
+function formatCourseCount(count: number, t: AcademyTranslator) {
+  return `${count} ${count === 1 ? t('course') : t('courses')}`;
+}
+
+function formatCompletedCount(completed: number, total: number, t: AcademyTranslator) {
+  return `${completed} ${t('of')} ${total} ${total === 1 ? t('lesson completed') : t('lessons completed')}`;
+}
+
 function getProgressState(progress?: AcademyLessonProgress): AcademyLessonProgressState {
   if (progress?.completed) return 'completed';
   if (progress && progress.progress_percent > 0) return 'in_progress';
   return 'not_started';
 }
 
-function getProgressLabel(state: AcademyLessonProgressState) {
-  if (state === 'completed') return 'Completed';
-  if (state === 'in_progress') return 'In progress';
-  return 'Not started';
+function getProgressLabel(state: AcademyLessonProgressState, t: AcademyTranslator) {
+  if (state === 'completed') return t('Completed');
+  if (state === 'in_progress') return t('In progress');
+  return t('Not started');
 }
 
 function isFreeCourse(course: AcademyCourse) {
@@ -132,10 +150,12 @@ const academyNavItems = [
 function AcademyShell({
   children,
   navigateTo,
+  t = defaultT,
   activeSection = 'courses',
 }: {
   children: React.ReactNode;
   navigateTo: (path: string) => void;
+  t?: AcademyTranslator;
   activeSection?: string;
 }) {
   return (
@@ -143,7 +163,7 @@ function AcademyShell({
       <aside className="academy-sidebar">
         <button className="academy-sidebar-back" type="button" onClick={() => navigateTo('/dashboard')}>
           <ArrowRight size={16} />
-          Dashboard
+          {t('Dashboard')}
         </button>
         <div className="academy-sidebar-title">
           <span>YVIMO</span>
@@ -160,7 +180,7 @@ function AcademyShell({
                 onClick={() => navigateTo(item.path)}
               >
                 <Icon size={18} />
-                {item.label}
+                {t(item.label)}
               </button>
             );
           })}
@@ -184,7 +204,7 @@ function getVisibleCategories(courses: AcademyCourse[]) {
   ];
 }
 
-export function AcademyHomePage({ user, navigateTo }: AcademyPageProps) {
+export function AcademyHomePage({ user, navigateTo, t = defaultT, languageCode = 'en' }: AcademyPageProps) {
   const [courses, setCourses] = React.useState<AcademyCourse[]>([]);
   const [completion, setCompletion] = React.useState<CourseCompletionMap>({});
   const [loading, setLoading] = React.useState(true);
@@ -194,7 +214,7 @@ export function AcademyHomePage({ user, navigateTo }: AcademyPageProps) {
     let active = true;
     setLoading(true);
 
-    fetchPublishedCourses()
+    fetchPublishedCourses(languageCode)
       .then(async (items) => {
         const nextCompletion = await fetchCourseCompletionMap(user?.id ?? null, items);
         if (active) {
@@ -212,17 +232,16 @@ export function AcademyHomePage({ user, navigateTo }: AcademyPageProps) {
     return () => {
       active = false;
     };
-  }, [user]);
+  }, [languageCode, user]);
 
   return (
-    <AcademyShell navigateTo={navigateTo}>
+    <AcademyShell navigateTo={navigateTo} t={t}>
       <section className="academy-home-hero">
         <div className="academy-hero-copy">
-          <p className="eyebrow">YVIMO Academy</p>
-          <h1>Industrial learning for connected manufacturing.</h1>
+          <p className="eyebrow">{t('YVIMO Academy')}</p>
+          <h1>{t('Industrial learning for connected manufacturing.')}</h1>
           <p>
-            Courses, guided paths, and professional training for people building real automation,
-            robotics, and industrial software systems.
+            {t('Courses, guided paths, and professional training for people building real automation, robotics, and industrial software systems.')}
           </p>
         </div>
         <div className="academy-domain-grid" aria-label="Academy learning areas">
@@ -234,26 +253,26 @@ export function AcademyHomePage({ user, navigateTo }: AcademyPageProps) {
           ].map(([title, detail]) => (
             <article key={title}>
               <GraduationCap size={18} />
-              <strong>{title}</strong>
-              <span>{detail}</span>
+              <strong>{t(title)}</strong>
+              <span>{t(detail)}</span>
             </article>
           ))}
         </div>
         <button className="academy-view-all-button" type="button" onClick={() => navigateTo('/academy/courses')}>
-          View all courses <ArrowRight size={17} />
+          {t('View all courses')} <ArrowRight size={17} />
         </button>
       </section>
 
       <section className="academy-content">
-        {loading ? <AcademyEmptyState title="Loading courses..." /> : null}
-        {error ? <AcademyEmptyState title="Unable to load Academy" detail={error} /> : null}
+        {loading ? <AcademyEmptyState title={t('Loading courses...')} /> : null}
+        {error ? <AcademyEmptyState title={t('Unable to load Academy')} detail={error} /> : null}
 
         {!loading && !error ? (
           <section className="academy-featured-section">
             <div className="academy-featured-heading">
-              <p className="eyebrow">Featured</p>
-              <h2>Featured learning paths</h2>
-              <span>Start with the Academy tracks we are prioritizing first.</span>
+              <p className="eyebrow">{t('Featured')}</p>
+              <h2>{t('Featured learning paths')}</h2>
+              <span>{t('Start with the Academy tracks we are prioritizing first.')}</span>
             </div>
             <div className="academy-carousel-stack">
               {getVisibleCategories(courses).slice(0, 2).map((category) => (
@@ -263,6 +282,7 @@ export function AcademyHomePage({ user, navigateTo }: AcademyPageProps) {
                   courses={courses.filter((course) => getCourseCategory(course) === category)}
                   completion={completion}
                   navigateTo={navigateTo}
+                  t={t}
                 />
               ))}
             </div>
@@ -270,14 +290,14 @@ export function AcademyHomePage({ user, navigateTo }: AcademyPageProps) {
         ) : null}
 
         {!loading && !error && courses.length === 0 ? (
-          <AcademyEmptyState title="No published courses yet." />
+          <AcademyEmptyState title={t('No published courses yet.')} />
         ) : null}
       </section>
     </AcademyShell>
   );
 }
 
-export function AcademyCatalogPage({ user, navigateTo }: AcademyPageProps) {
+export function AcademyCatalogPage({ user, navigateTo, t = defaultT, languageCode = 'en' }: AcademyPageProps) {
   const [courses, setCourses] = React.useState<AcademyCourse[]>([]);
   const [completion, setCompletion] = React.useState<CourseCompletionMap>({});
   const [loading, setLoading] = React.useState(true);
@@ -287,7 +307,7 @@ export function AcademyCatalogPage({ user, navigateTo }: AcademyPageProps) {
     let active = true;
     setLoading(true);
 
-    fetchPublishedCourses()
+    fetchPublishedCourses(languageCode)
       .then(async (items) => {
         const nextCompletion = await fetchCourseCompletionMap(user?.id ?? null, items);
         if (active) {
@@ -305,32 +325,32 @@ export function AcademyCatalogPage({ user, navigateTo }: AcademyPageProps) {
     return () => {
       active = false;
     };
-  }, [user]);
+  }, [languageCode, user]);
 
   const categories = getVisibleCategories(courses);
 
   return (
-    <AcademyShell navigateTo={navigateTo}>
+    <AcademyShell navigateTo={navigateTo} t={t}>
       <section className="academy-catalog-page">
         <div className="academy-catalog-header">
           <button className="academy-back-button" type="button" onClick={() => navigateTo('/academy')}>
-            Academy home
+            {t('Academy home')}
           </button>
-          <p className="eyebrow">Catalog</p>
-          <h1>All Academy courses</h1>
-          <p>Browse the full published catalog in a compact view.</p>
+          <p className="eyebrow">{t('Catalog')}</p>
+          <h1>{t('All Academy courses')}</h1>
+          <p>{t('Browse the full published catalog in a compact view.')}</p>
         </div>
 
-        {loading ? <AcademyEmptyState title="Loading courses..." /> : null}
-        {error ? <AcademyEmptyState title="Unable to load catalog" detail={error} /> : null}
+        {loading ? <AcademyEmptyState title={t('Loading courses...')} /> : null}
+        {error ? <AcademyEmptyState title={t('Unable to load catalog')} detail={error} /> : null}
 
         {!loading && !error ? (
           <div className="academy-catalog-stack">
             {categories.map((category) => (
               <section className="academy-catalog-category" key={category}>
                 <div className="academy-catalog-category-heading">
-                  <h2>{category}</h2>
-                  <span>{courses.filter((course) => getCourseCategory(course) === category).length} courses</span>
+                  <h2>{t(category)}</h2>
+                  <span>{formatCourseCount(courses.filter((course) => getCourseCategory(course) === category).length, t)}</span>
                 </div>
                 <div className="academy-catalog-grid">
                   {courses
@@ -347,11 +367,11 @@ export function AcademyCatalogPage({ user, navigateTo }: AcademyPageProps) {
                         </span>
                         <span className="academy-catalog-course-copy">
                           <strong>{course.title}</strong>
-                          <span>{course.subtitle ?? course.description ?? 'Course details coming soon.'}</span>
+                          <span>{course.subtitle ?? course.description ?? t('Course details coming soon.')}</span>
                         </span>
                         <span className="academy-catalog-course-meta">
-                          {completion[course.id] ? <em className="completed">Completed</em> : null}
-                          {course.difficulty_level ? <em>{course.difficulty_level}</em> : null}
+                          {completion[course.id] ? <em className="completed">{t('Completed')}</em> : null}
+                          {course.difficulty_level ? <em>{t(course.difficulty_level)}</em> : null}
                           <b>{formatPrice(course)}</b>
                         </span>
                       </button>
@@ -363,7 +383,7 @@ export function AcademyCatalogPage({ user, navigateTo }: AcademyPageProps) {
         ) : null}
 
         {!loading && !error && courses.length === 0 ? (
-          <AcademyEmptyState title="No published courses yet." />
+          <AcademyEmptyState title={t('No published courses yet.')} />
         ) : null}
       </section>
     </AcademyShell>
@@ -375,11 +395,13 @@ function AcademyCourseCarousel({
   courses,
   completion,
   navigateTo,
+  t = defaultT,
 }: {
   title: string;
   courses: AcademyCourse[];
   completion: CourseCompletionMap;
   navigateTo: (path: string) => void;
+  t?: AcademyTranslator;
 }) {
   const trackRef = React.useRef<HTMLDivElement | null>(null);
 
@@ -409,8 +431,8 @@ function AcademyCourseCarousel({
     <section className="academy-carousel-section">
       <div className="academy-carousel-heading">
         <div>
-          <p className="eyebrow">Courses</p>
-          <h2>{title}</h2>
+          <p className="eyebrow">{t('Courses')}</p>
+          <h2>{t(title)}</h2>
         </div>
         <div className="academy-carousel-actions">
           <button type="button" onClick={() => move('previous')} aria-label={`Previous ${title} courses`}>
@@ -427,6 +449,7 @@ function AcademyCourseCarousel({
             course={course}
             completed={completion[course.id] ?? false}
             navigateTo={navigateTo}
+            t={t}
             key={course.id}
           />
         ))}
@@ -439,10 +462,12 @@ function AcademyCourseCard({
   course,
   completed,
   navigateTo,
+  t = defaultT,
 }: {
   course: AcademyCourse;
   completed?: boolean;
   navigateTo: (path: string) => void;
+  t?: AcademyTranslator;
 }) {
   return (
     <article className={completed ? 'academy-course-card completed' : 'academy-course-card'}>
@@ -460,16 +485,16 @@ function AcademyCourseCard({
         </span>
         <span className="academy-course-card-body">
           <span className="academy-meta-row">
-            {course.category ? <span>{course.category}</span> : null}
-            {course.difficulty_level ? <span>{course.difficulty_level}</span> : null}
-            {completed ? <span className="completed">Completed</span> : null}
+            {course.category ? <span>{t(course.category)}</span> : null}
+            {course.difficulty_level ? <span>{t(course.difficulty_level)}</span> : null}
+            {completed ? <span className="completed">{t('Completed')}</span> : null}
           </span>
           <strong>{course.title}</strong>
           {course.subtitle ? <span className="academy-course-summary">{course.subtitle}</span> : null}
           <span className="academy-card-footer">
             <em>{formatPrice(course)}</em>
             <span>
-              View course <ArrowRight size={16} />
+              {t('View course')} <ArrowRight size={16} />
             </span>
           </span>
         </span>
@@ -478,7 +503,7 @@ function AcademyCourseCard({
   );
 }
 
-export function AcademyCoursePage({ user, navigateTo, courseSlug }: AcademyPageProps & { courseSlug: string }) {
+export function AcademyCoursePage({ user, navigateTo, courseSlug, t = defaultT, languageCode = 'en' }: AcademyPageProps & { courseSlug: string }) {
   const [bundle, setBundle] = React.useState<AcademyCourseBundle | null>(null);
   const [enrollment, setEnrollment] = React.useState<AcademyEnrollment | null>(null);
   const [progress, setProgress] = React.useState<AcademyLessonProgress[]>([]);
@@ -493,7 +518,7 @@ export function AcademyCoursePage({ user, navigateTo, courseSlug }: AcademyPageP
     setMessage(null);
 
     try {
-      const nextBundle = await fetchCourseBundle(courseSlug);
+      const nextBundle = await fetchCourseBundle(courseSlug, languageCode);
       setBundle(nextBundle);
 
       if (nextBundle && user) {
@@ -521,7 +546,7 @@ export function AcademyCoursePage({ user, navigateTo, courseSlug }: AcademyPageP
     } finally {
       setLoading(false);
     }
-  }, [courseSlug, user]);
+  }, [courseSlug, languageCode, user]);
 
   React.useEffect(() => {
     void loadCourse();
@@ -544,11 +569,11 @@ export function AcademyCoursePage({ user, navigateTo, courseSlug }: AcademyPageP
   };
 
   if (loading) {
-    return <AcademyShellState title="Loading course..." navigateTo={navigateTo} />;
+    return <AcademyShellState title={t('Loading course...')} navigateTo={navigateTo} t={t} />;
   }
 
   if (!bundle) {
-    return <AcademyShellState title="Course not found." detail={message ?? undefined} navigateTo={navigateTo} />;
+    return <AcademyShellState title={t('Course not found.')} detail={message ?? undefined} navigateTo={navigateTo} t={t} />;
   }
 
   const allLessons = [
@@ -566,11 +591,11 @@ export function AcademyCoursePage({ user, navigateTo, courseSlug }: AcademyPageP
     : `/academy/progress?course=${bundle.course.slug}`;
 
   return (
-    <AcademyShell navigateTo={navigateTo}>
+    <AcademyShell navigateTo={navigateTo} t={t}>
       <section className="academy-course-hero">
         <div>
           <button className="academy-back-button" type="button" onClick={() => navigateTo('/academy')}>
-            Courses
+            {t('Courses')}
           </button>
           <p className="eyebrow">{bundle.course.category ?? 'YVIMO Academy'}</p>
           <h1>{bundle.course.title}</h1>
@@ -578,20 +603,20 @@ export function AcademyCoursePage({ user, navigateTo, courseSlug }: AcademyPageP
           <div className="academy-meta-row">
             {bundle.course.difficulty_level ? <span>{bundle.course.difficulty_level}</span> : null}
             <span>{formatPrice(bundle.course)}</span>
-            <span>{allLessons.length} lessons</span>
+            <span>{formatLessonCount(allLessons.length, t)}</span>
           </div>
         </div>
         <aside className="academy-enrollment-panel">
           <ShieldCheck size={24} />
-          <strong>{admin ? 'Admin access' : activeEnrollment ? 'Enrolled' : 'Course access'}</strong>
+          <strong>{admin ? t('Admin access') : activeEnrollment ? t('Enrolled') : t('Course access')}</strong>
           <span>
             {admin
-              ? 'You can access all Academy content.'
+              ? t('You can access all Academy content.')
               : activeEnrollment
-                ? `${courseProgress}% complete`
+                ? `${courseProgress}% ${t('complete')}`
                 : isFreeCourse(bundle.course)
-                  ? 'Free course enrollment is available.'
-                  : 'Enrollment required for protected lessons.'}
+                  ? t('Free course enrollment is available.')
+                  : t('Enrollment required for protected lessons.')}
           </span>
           {user && activeEnrollment ? (
             <div className="academy-progress-bar" aria-label="Course progress">
@@ -605,12 +630,12 @@ export function AcademyCoursePage({ user, navigateTo, courseSlug }: AcademyPageP
               onClick={() => navigateTo(progressButtonTarget)}
             >
               {courseCompleted || certificate ? <Trophy size={17} /> : <Route size={17} />}
-              {progressButtonLabel}
+              {t(progressButtonLabel)}
             </button>
           ) : null}
           {!activeEnrollment && !admin ? (
             <button type="button" onClick={handleEnroll}>
-              {user ? (isFreeCourse(bundle.course) ? 'Enroll free' : 'Request access') : 'Sign in'}
+              {user ? (isFreeCourse(bundle.course) ? t('Enroll free') : t('Request access')) : t('Sign in')}
             </button>
           ) : null}
         </aside>
@@ -620,8 +645,8 @@ export function AcademyCoursePage({ user, navigateTo, courseSlug }: AcademyPageP
 
       <section className="academy-course-layout">
         <div className="academy-course-description">
-          <p className="eyebrow">Overview</p>
-          <p>{bundle.course.description ?? 'Course description coming soon.'}</p>
+          <p className="eyebrow">{t('Overview')}</p>
+          <p>{bundle.course.description ?? t('Course description coming soon.')}</p>
         </div>
         <div className="academy-module-stack">
           {bundle.modules.map((module) => (
@@ -632,6 +657,7 @@ export function AcademyCoursePage({ user, navigateTo, courseSlug }: AcademyPageP
               canOpenProtected={activeEnrollment || admin}
               navigateTo={navigateTo}
               courseSlug={bundle.course.slug}
+              t={t}
             />
           ))}
           {bundle.ungroupedLessons.length > 0 ? (
@@ -650,6 +676,7 @@ export function AcademyCoursePage({ user, navigateTo, courseSlug }: AcademyPageP
               canOpenProtected={activeEnrollment || admin}
               navigateTo={navigateTo}
               courseSlug={bundle.course.slug}
+              t={t}
             />
           ) : null}
         </div>
@@ -664,12 +691,14 @@ function AcademyModuleBlock({
   canOpenProtected,
   navigateTo,
   courseSlug,
+  t = defaultT,
 }: {
   module: AcademyModuleWithLessons;
   progress: AcademyLessonProgress[];
   canOpenProtected: boolean;
   navigateTo: (path: string) => void;
   courseSlug: string;
+  t?: AcademyTranslator;
 }) {
   return (
     <article className="academy-module">
@@ -709,11 +738,11 @@ function AcademyModuleBlock({
               <span>
                 <strong>{lesson.title}</strong>
                 <em>
-                  {lesson.is_preview ? 'Preview' : locked ? 'Locked' : getProgressLabel(progressState)}
+                  {lesson.is_preview ? t('Preview') : locked ? t('Locked') : getProgressLabel(progressState, t)}
                   {formatDuration(lesson.duration_seconds) ? ` · ${formatDuration(lesson.duration_seconds)}` : ''}
                 </em>
               </span>
-              {progressState === 'completed' ? <span className="academy-lesson-done">Done</span> : <ArrowRight size={16} />}
+              {progressState === 'completed' ? <span className="academy-lesson-done">{t('Done')}</span> : <ArrowRight size={16} />}
             </button>
           );
         })}
@@ -727,6 +756,8 @@ export function AcademyLessonPage({
   navigateTo,
   courseSlug,
   lessonSlug,
+  t = defaultT,
+  languageCode = 'en',
 }: AcademyPageProps & { courseSlug: string; lessonSlug: string }) {
   const [bundle, setBundle] = React.useState<AcademyCourseBundle | null>(null);
   const [lesson, setLesson] = React.useState<AcademyLesson | null>(null);
@@ -748,7 +779,7 @@ export function AcademyLessonPage({
 
     async function loadLesson() {
       try {
-        const nextBundle = await fetchCourseBundle(courseSlug);
+        const nextBundle = await fetchCourseBundle(courseSlug, languageCode);
         if (!active) return;
         setBundle(nextBundle);
 
@@ -760,8 +791,8 @@ export function AcademyLessonPage({
 
         const admin = user ? await isAdminUser(user.id) : false;
         const nextLesson = admin
-          ? await fetchPlayableLessonBySlug(nextBundle.course.id, lessonSlug)
-          : await fetchLessonBySlug(nextBundle.course.id, lessonSlug);
+          ? await fetchPlayableLessonBySlug(nextBundle.course.id, lessonSlug, languageCode)
+          : await fetchLessonBySlug(nextBundle.course.id, lessonSlug, languageCode);
         if (!active) return;
         setLesson(nextLesson);
 
@@ -776,7 +807,7 @@ export function AcademyLessonPage({
 
           if (nextAccess.allowed) {
             const [playableLesson, nextProgress, nextNote, nextCertificate] = await Promise.all([
-              fetchPlayableLessonBySlug(nextBundle.course.id, lessonSlug),
+              fetchPlayableLessonBySlug(nextBundle.course.id, lessonSlug, languageCode),
               fetchLessonProgressForLesson(user?.id ?? null, nextLesson.id),
               fetchLessonNote(user?.id ?? null, nextLesson.id),
               fetchCertificateForCourse(user?.id ?? null, nextBundle.course.id),
@@ -803,7 +834,7 @@ export function AcademyLessonPage({
     return () => {
       active = false;
     };
-  }, [courseSlug, lessonSlug, user]);
+  }, [courseSlug, languageCode, lessonSlug, user]);
 
   const persistProgress = React.useCallback(
     async (progressSeconds: number, durationSeconds: number | null) => {
@@ -877,11 +908,11 @@ export function AcademyLessonPage({
   }, [bundle, lesson, notes, user]);
 
   if (loading) {
-    return <AcademyShellState title="Loading lesson..." navigateTo={navigateTo} />;
+    return <AcademyShellState title={t('Loading lesson...')} navigateTo={navigateTo} t={t} />;
   }
 
   if (!bundle || !lesson) {
-    return <AcademyShellState title="Lesson not found." detail={message ?? undefined} navigateTo={navigateTo} />;
+    return <AcademyShellState title={t('Lesson not found.')} detail={message ?? undefined} navigateTo={navigateTo} t={t} />;
   }
 
   const allowed = access?.allowed ?? false;
@@ -889,7 +920,7 @@ export function AcademyLessonPage({
   const certificateIssued = Boolean(courseCertificate);
 
   return (
-    <AcademyShell navigateTo={navigateTo}>
+    <AcademyShell navigateTo={navigateTo} t={t}>
     <div className="academy-lesson-page">
       <section className="academy-lesson-header">
         <button
@@ -899,7 +930,7 @@ export function AcademyLessonPage({
         >
           {bundle.course.title}
         </button>
-        <p className="eyebrow">{access?.isPreview ? 'Preview lesson' : 'Lesson'}</p>
+        <p className="eyebrow">{access?.isPreview ? t('Preview lesson') : t('Lesson')}</p>
         <h1>{lesson.title}</h1>
         {lesson.description ? <p>{lesson.description}</p> : null}
       </section>
@@ -924,7 +955,7 @@ export function AcademyLessonPage({
                 {completed ? (
                   <div className="academy-completed-box" role="status">
                     <CheckCircle2 size={18} />
-                    Completed
+                    {t('Completed')}
                   </div>
                 ) : (
                   <button
@@ -934,7 +965,7 @@ export function AcademyLessonPage({
                     disabled={completeBusy}
                   >
                     <CheckCircle2 size={18} />
-                    {completeBusy ? 'Marking...' : 'Mark complete'}
+                    {completeBusy ? t('Marking...') : t('Mark complete')}
                   </button>
                 )}
                 {completed && !certificateIssued ? (
@@ -945,13 +976,13 @@ export function AcademyLessonPage({
                     disabled={retakeBusy}
                   >
                     <RotateCcw size={18} />
-                    {retakeBusy ? 'Resetting...' : 'Re-take lesson'}
+                    {retakeBusy ? t('Resetting...') : t('Re-take lesson')}
                   </button>
                 ) : null}
                 {completed && certificateIssued ? (
                   <div className="academy-certificate-locked-progress" role="status">
                     <Trophy size={17} />
-                    Certificate issued
+                    {t('Certificate issued')}
                   </div>
                 ) : null}
               </div>
@@ -961,7 +992,7 @@ export function AcademyLessonPage({
             <aside className="academy-notes-panel">
               <div>
                 <StickyNote size={19} />
-                <strong>Lesson notes</strong>
+                <strong>{t('Lesson notes')}</strong>
               </div>
               <textarea
                 value={notes}
@@ -969,13 +1000,13 @@ export function AcademyLessonPage({
                   setNotes(event.target.value);
                   setNotesStatus(null);
                 }}
-                placeholder="Write your notes for this lesson..."
+                placeholder={t('Write your notes for this lesson...')}
               />
               <div className="academy-notes-footer">
-                <span>{notesStatus ?? `${notes.length} characters`}</span>
+                <span>{notesStatus ? t(notesStatus) : `${notes.length} ${t('characters')}`}</span>
                 <button type="button" onClick={() => saveNotes()}>
                   <Save size={16} />
-                  Save
+                  {t('Save')}
                 </button>
               </div>
             </aside>
@@ -984,11 +1015,11 @@ export function AcademyLessonPage({
       ) : (
         <section className="academy-locked-state">
           <LockKeyhole size={30} />
-          <h2>Lesson locked</h2>
-          <p>{access?.reason ?? 'Enroll in this course to access the lesson.'}</p>
+          <h2>{t('Lesson locked')}</h2>
+          <p>{t(access?.reason ?? 'Enroll in this course to access the lesson.')}</p>
           <div>
             <button type="button" onClick={() => (user ? navigateTo(`/academy/${bundle.course.slug}`) : navigateTo('/login'))}>
-              {user ? 'View course access' : 'Sign in'}
+              {user ? t('View course access') : t('Sign in')}
             </button>
           </div>
         </section>
@@ -1004,7 +1035,7 @@ type ProgressCourse = {
   certificate: AcademyCertificate | null;
 };
 
-export function AcademyProgressPage({ user, navigateTo }: AcademyPageProps) {
+export function AcademyProgressPage({ user, navigateTo, t = defaultT, languageCode = 'en' }: AcademyPageProps) {
   const [items, setItems] = React.useState<ProgressCourse[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [message, setMessage] = React.useState<string | null>(null);
@@ -1026,13 +1057,13 @@ export function AcademyProgressPage({ user, navigateTo }: AcademyPageProps) {
         }
 
         const [courses, certificates] = await Promise.all([
-          fetchPublishedCourses(),
+          fetchPublishedCourses(languageCode),
           fetchCertificatesForUser(user.id),
         ]);
         const certificateByCourse = new Map(certificates.map((certificate) => [certificate.course_id, certificate]));
         const nextItems = await Promise.all(
           courses.map(async (course) => {
-            const bundle = await fetchCourseBundle(course.slug);
+            const bundle = await fetchCourseBundle(course.slug, languageCode);
             if (!bundle) return null;
             const progress = await fetchLessonProgressForCourse(user.id, course.id);
             return { bundle, progress, certificate: certificateByCourse.get(course.id) ?? null };
@@ -1060,7 +1091,7 @@ export function AcademyProgressPage({ user, navigateTo }: AcademyPageProps) {
     return () => {
       active = false;
     };
-  }, [user]);
+  }, [languageCode, user]);
 
   React.useEffect(() => {
     if (loading || !focusedCourseSlug || items.length === 0) return;
@@ -1076,21 +1107,21 @@ export function AcademyProgressPage({ user, navigateTo }: AcademyPageProps) {
   }, [focusedCourseSlug, items.length, loading]);
 
   return (
-    <AcademyShell navigateTo={navigateTo} activeSection="progress">
+    <AcademyShell navigateTo={navigateTo} activeSection="progress" t={t}>
       <section className="academy-progress-page">
         <div className="academy-progress-heading">
-          <p className="eyebrow">My progress</p>
-          <h1>Course routes</h1>
-          <p>Follow every lesson path and see how far your completed route is glowing behind you.</p>
+          <p className="eyebrow">{t('My progress')}</p>
+          <h1>{t('Course routes')}</h1>
+          <p>{t('Follow every lesson path and see how far your completed route is glowing behind you.')}</p>
         </div>
 
         {!user ? (
-          <AcademyEmptyState title="Sign in to view your progress." detail="Your Academy routes are attached to your account." />
+          <AcademyEmptyState title={t('Sign in to view your progress.')} detail={t('Your Academy routes are attached to your account.')} />
         ) : null}
-        {loading ? <AcademyEmptyState title="Loading progress..." /> : null}
-        {message ? <AcademyEmptyState title="Unable to load progress" detail={message} /> : null}
+        {loading ? <AcademyEmptyState title={t('Loading progress...')} /> : null}
+        {message ? <AcademyEmptyState title={t('Unable to load progress')} detail={message} /> : null}
         {!loading && user && !message && items.length === 0 ? (
-          <AcademyEmptyState title="No course progress yet." detail="Open a lesson to start lighting up your route." />
+          <AcademyEmptyState title={t('No course progress yet.')} detail={t('Open a lesson to start lighting up your route.')} />
         ) : null}
 
         {!loading && user && !message ? (
@@ -1101,6 +1132,7 @@ export function AcademyProgressPage({ user, navigateTo }: AcademyPageProps) {
                 item={item}
                 user={user}
                 navigateTo={navigateTo}
+                t={t}
               />
             ))}
           </div>
@@ -1114,10 +1146,12 @@ function AcademyProgressRouteCard({
   item,
   user,
   navigateTo,
+  t = defaultT,
 }: {
   item: ProgressCourse;
   user: AcademyUser;
   navigateTo: (path: string) => void;
+  t?: AcademyTranslator;
 }) {
   const lessons = [
     ...item.bundle.modules.flatMap((module) => module.lessons),
@@ -1160,12 +1194,12 @@ function AcademyProgressRouteCard({
         <div>
           <p className="eyebrow">{item.bundle.course.category ?? 'Academy route'}</p>
           <h2>{item.bundle.course.title}</h2>
-          <span>{completedCount} of {lessons.length} lessons completed</span>
+          <span>{formatCompletedCount(completedCount, lessons.length, t)}</span>
         </div>
         <div className="academy-route-card-actions">
           <button type="button" onClick={() => navigateTo(`/academy/${item.bundle.course.slug}`)}>
             <Route size={17} />
-            Course
+            {t('Course')}
           </button>
           {allCompleted ? (
             <button
@@ -1175,7 +1209,7 @@ function AcademyProgressRouteCard({
               disabled={certificateBusy}
             >
               <Trophy size={17} />
-              {certificateBusy ? 'Creating...' : 'View Certificate'}
+              {certificateBusy ? t('Creating...') : t('View Certificate')}
             </button>
           ) : null}
         </div>
@@ -1288,6 +1322,8 @@ export function AcademyCertificatesPage({
   user,
   navigateTo,
   certificateId,
+  t = defaultT,
+  languageCode = 'en',
 }: AcademyPageProps & { certificateId?: string }) {
   const [certificates, setCertificates] = React.useState<AcademyCertificate[]>([]);
   const [detail, setDetail] = React.useState<{
@@ -1323,7 +1359,7 @@ export function AcademyCertificatesPage({
             return;
           }
 
-          const bundle = await fetchCourseBundle(certificate.course_slug);
+          const bundle = await fetchCourseBundle(certificate.course_slug, languageCode);
           if (!bundle) {
             setDetail(null);
             setMessage('Certificate course not found.');
@@ -1349,7 +1385,7 @@ export function AcademyCertificatesPage({
     return () => {
       active = false;
     };
-  }, [certificateId, user]);
+  }, [certificateId, languageCode, user]);
 
   React.useEffect(() => {
     if (!highlightNew || loading || !detail) return;
@@ -1361,18 +1397,19 @@ export function AcademyCertificatesPage({
 
   if (certificateId) {
     return (
-      <AcademyShell navigateTo={navigateTo} activeSection="certificates">
+      <AcademyShell navigateTo={navigateTo} activeSection="certificates" t={t}>
         <section className="academy-certificates-page">
           <button className="academy-back-button" type="button" onClick={() => navigateTo('/academy/certificates')}>
-            My certificates
+            {t('My certificates')}
           </button>
-          {loading ? <AcademyEmptyState title="Loading certificate..." /> : null}
-          {message ? <AcademyEmptyState title="Unable to load certificate" detail={message} /> : null}
+          {loading ? <AcademyEmptyState title={t('Loading certificate...')} /> : null}
+          {message ? <AcademyEmptyState title={t('Unable to load certificate')} detail={message} /> : null}
           {!loading && detail ? (
             <AcademyCertificateDetail
               detail={detail}
               user={user}
               navigateTo={navigateTo}
+              t={t}
             />
           ) : null}
         </section>
@@ -1381,21 +1418,21 @@ export function AcademyCertificatesPage({
   }
 
   return (
-    <AcademyShell navigateTo={navigateTo} activeSection="certificates">
+    <AcademyShell navigateTo={navigateTo} activeSection="certificates" t={t}>
       <section className="academy-certificates-page">
         <div className="academy-progress-heading">
-          <p className="eyebrow">My certificates</p>
-          <h1>Completion inventory</h1>
-          <p>Your completed Academy courses and issued certificates stay here.</p>
+          <p className="eyebrow">{t('My certificates')}</p>
+          <h1>{t('Completion inventory')}</h1>
+          <p>{t('Your completed Academy courses and issued certificates stay here.')}</p>
         </div>
 
         {!user ? (
-          <AcademyEmptyState title="Sign in to view your certificates." detail="Certificates are attached to your Academy account." />
+          <AcademyEmptyState title={t('Sign in to view your certificates.')} detail={t('Certificates are attached to your Academy account.')} />
         ) : null}
-        {loading ? <AcademyEmptyState title="Loading certificates..." /> : null}
-        {message ? <AcademyEmptyState title="Unable to load certificates" detail={message} /> : null}
+        {loading ? <AcademyEmptyState title={t('Loading certificates...')} /> : null}
+        {message ? <AcademyEmptyState title={t('Unable to load certificates')} detail={message} /> : null}
         {!loading && user && !message && certificates.length === 0 ? (
-          <AcademyEmptyState title="No certificates yet." detail="Complete a course and claim its certificate to add it here." />
+          <AcademyEmptyState title={t('No certificates yet.')} detail={t('Complete a course and claim its certificate to add it here.')} />
         ) : null}
 
         {!loading && user && !message && certificates.length > 0 ? (
@@ -1413,7 +1450,7 @@ export function AcademyCertificatesPage({
                 <span>
                   <em>{certificate.course_category ?? 'YVIMO Academy'}</em>
                   <strong>{certificate.course_title}</strong>
-                  <small>Issued {formatCertificateDate(certificate.issued_at)}</small>
+                  <small>{t('Issued')} {formatCertificateDate(certificate.issued_at)}</small>
                 </span>
                 <b>{certificate.certificate_code}</b>
               </button>
@@ -1429,6 +1466,7 @@ function AcademyCertificateDetail({
   detail,
   user,
   navigateTo,
+  t = defaultT,
 }: {
   detail: {
     certificate: AcademyCertificate;
@@ -1437,6 +1475,7 @@ function AcademyCertificateDetail({
   };
   user: AcademyUser | null;
   navigateTo: (path: string) => void;
+  t?: AcademyTranslator;
 }) {
   const lessons = [
     ...detail.bundle.modules.flatMap((module) => module.lessons),
@@ -1451,27 +1490,27 @@ function AcademyCertificateDetail({
             <Trophy size={30} />
           </span>
           <div>
-            <p className="eyebrow">Certificate of Completion</p>
+            <p className="eyebrow">{t('Certificate of Completion')}</p>
             <h1>{detail.certificate.course_title}</h1>
           </div>
         </div>
         <div className="academy-certificate-recipient">
-          <span>Presented to</span>
+          <span>{t('Presented to')}</span>
           <strong>{detail.certificate.student_name}</strong>
           <em>{detail.certificate.student_email}</em>
         </div>
         <div className="academy-certificate-meta">
           <span>
-            <b>Certificate ID</b>
+            <b>{t('Certificate ID')}</b>
             {detail.certificate.certificate_code}
           </span>
           <span>
-            <b>Issued</b>
+            <b>{t('Issued')}</b>
             {formatCertificateDate(detail.certificate.issued_at)}
           </span>
           <span>
-            <b>Lessons completed</b>
-            {detail.certificate.completed_lessons} of {detail.certificate.total_lessons}
+            <b>{t('Lessons completed')}</b>
+            {formatCompletedCount(detail.certificate.completed_lessons, detail.certificate.total_lessons, t)}
           </span>
         </div>
       </section>
@@ -1479,13 +1518,13 @@ function AcademyCertificateDetail({
       <section className="academy-certificate-route">
         <div className="academy-route-card-header">
           <div>
-            <p className="eyebrow">Completed route</p>
+            <p className="eyebrow">{t('Completed route')}</p>
             <h2>{detail.certificate.course_title}</h2>
-            <span>Historical path completed before this certificate was issued.</span>
+            <span>{t('Historical path completed before this certificate was issued.')}</span>
           </div>
           <button type="button" onClick={() => navigateTo(`/academy/${detail.certificate.course_slug}`)}>
             <Route size={17} />
-            Course
+            {t('Course')}
           </button>
         </div>
         <AcademyRouteMap
@@ -1537,13 +1576,15 @@ function AcademyShellState({
   title,
   detail,
   navigateTo,
+  t = defaultT,
 }: {
   title: string;
   detail?: string;
   navigateTo: (path: string) => void;
+  t?: AcademyTranslator;
 }) {
   return (
-    <AcademyShell navigateTo={navigateTo}>
+    <AcademyShell navigateTo={navigateTo} t={t}>
       <AcademyEmptyState title={title} detail={detail} />
     </AcademyShell>
   );

@@ -4,12 +4,15 @@ import type {
   AcademyCertificate,
   AcademyCourse,
   AcademyCourseProgressSummary,
+  AcademyCourseTranslation,
   AcademyEnrollment,
   AcademyLesson,
   AcademyLessonNote,
   AcademyLessonProgress,
   AcademyModule,
+  AcademyModuleTranslation,
   AcademyModuleWithLessons,
+  AcademyLessonTranslation,
   LessonAccessResult,
 } from './types';
 
@@ -29,6 +32,49 @@ export type AcademyCourseBundle = {
   modules: AcademyModuleWithLessons[];
   ungroupedLessons: AcademyLesson[];
 };
+
+function shouldTranslate(languageCode?: string | null) {
+  return Boolean(languageCode && languageCode !== 'en');
+}
+
+function applyCourseTranslation(
+  course: AcademyCourse,
+  translation?: AcademyCourseTranslation | null,
+): AcademyCourse {
+  if (!translation) return course;
+  return {
+    ...course,
+    title: translation.title ?? course.title,
+    subtitle: translation.subtitle ?? course.subtitle,
+    description: translation.description ?? course.description,
+    category: translation.category ?? course.category,
+    difficulty_level: translation.difficulty_level ?? course.difficulty_level,
+  };
+}
+
+function applyModuleTranslation(
+  module: AcademyModule,
+  translation?: AcademyModuleTranslation | null,
+): AcademyModule {
+  if (!translation) return module;
+  return {
+    ...module,
+    title: translation.title ?? module.title,
+    description: translation.description ?? module.description,
+  };
+}
+
+function applyLessonTranslation(
+  lesson: AcademyLesson,
+  translation?: AcademyLessonTranslation | null,
+): AcademyLesson {
+  if (!translation) return lesson;
+  return {
+    ...lesson,
+    title: translation.title ?? lesson.title,
+    description: translation.description ?? lesson.description,
+  };
+}
 
 export function isEnrollmentActive(enrollment: AcademyEnrollment | null) {
   if (!enrollment) return false;
@@ -51,7 +97,7 @@ export async function isAdminUser(userId: string, client: AcademyClient = supaba
   return role === 'admin' || role === 'owner' || tier === 'enterprise-admin';
 }
 
-export async function fetchPublishedCourses(client: AcademyClient = supabase) {
+export async function fetchPublishedCourses(languageCode = 'en', client: AcademyClient = supabase) {
   const { data, error } = await client
     .from('academy_courses')
     .select('*')
@@ -60,10 +106,23 @@ export async function fetchPublishedCourses(client: AcademyClient = supabase) {
     .returns<AcademyCourse[]>();
 
   if (error) throw error;
-  return data ?? [];
+  const courses = data ?? [];
+  if (!shouldTranslate(languageCode) || courses.length === 0) return courses;
+
+  const { data: translations, error: translationsError } = await client
+    .from('academy_course_translations')
+    .select('*')
+    .eq('language_code', languageCode)
+    .in('course_id', courses.map((course) => course.id))
+    .returns<AcademyCourseTranslation[]>();
+
+  if (translationsError) throw translationsError;
+
+  const translationByCourse = new Map((translations ?? []).map((item) => [item.course_id, item]));
+  return courses.map((course) => applyCourseTranslation(course, translationByCourse.get(course.id)));
 }
 
-export async function fetchCourseBySlug(courseSlug: string, client: AcademyClient = supabase) {
+export async function fetchCourseBySlug(courseSlug: string, languageCode = 'en', client: AcademyClient = supabase) {
   const { data, error } = await client
     .from('academy_courses')
     .select('*')
@@ -71,14 +130,25 @@ export async function fetchCourseBySlug(courseSlug: string, client: AcademyClien
     .maybeSingle<AcademyCourse>();
 
   if (error) throw error;
-  return data;
+  if (!data || !shouldTranslate(languageCode)) return data;
+
+  const { data: translation, error: translationError } = await client
+    .from('academy_course_translations')
+    .select('*')
+    .eq('course_id', data.id)
+    .eq('language_code', languageCode)
+    .maybeSingle<AcademyCourseTranslation>();
+
+  if (translationError) throw translationError;
+  return applyCourseTranslation(data, translation);
 }
 
 export async function fetchCourseBundle(
   courseSlug: string,
+  languageCode = 'en',
   client: AcademyClient = supabase,
 ): Promise<AcademyCourseBundle | null> {
-  const course = await fetchCourseBySlug(courseSlug, client);
+  const course = await fetchCourseBySlug(courseSlug, languageCode, client);
   if (!course) return null;
 
   const [{ data: modules, error: modulesError }, { data: lessons, error: lessonsError }] =
@@ -101,12 +171,47 @@ export async function fetchCourseBundle(
   if (modulesError) throw modulesError;
   if (lessonsError) throw lessonsError;
 
-  const publishedLessons = lessons ?? [];
-  const modulesWithLessons = (modules ?? []).map((module) => ({
+  let localizedModules = modules ?? [];
+  let publishedLessons = lessons ?? [];
+
+  if (shouldTranslate(languageCode)) {
+    const [moduleTranslationResult, lessonTranslationResult] =
+      await Promise.all([
+        localizedModules.length > 0
+          ? client
+            .from('academy_module_translations')
+            .select('*')
+            .eq('language_code', languageCode)
+            .in('module_id', localizedModules.map((module) => module.id))
+            .returns<AcademyModuleTranslation[]>()
+          : Promise.resolve({ data: [], error: null }),
+        publishedLessons.length > 0
+          ? client
+            .from('academy_lesson_translations')
+            .select('*')
+            .eq('language_code', languageCode)
+            .in('lesson_id', publishedLessons.map((lesson) => lesson.id))
+            .returns<AcademyLessonTranslation[]>()
+          : Promise.resolve({ data: [], error: null }),
+      ]);
+    const { data: moduleTranslations, error: moduleTranslationsError } = moduleTranslationResult;
+    const { data: lessonTranslations, error: lessonTranslationsError } = lessonTranslationResult;
+
+    if (moduleTranslationsError) throw moduleTranslationsError;
+    if (lessonTranslationsError) throw lessonTranslationsError;
+
+    const moduleTranslationById = new Map((moduleTranslations ?? []).map((item) => [item.module_id, item]));
+    const lessonTranslationById = new Map((lessonTranslations ?? []).map((item) => [item.lesson_id, item]));
+
+    localizedModules = localizedModules.map((module) => applyModuleTranslation(module, moduleTranslationById.get(module.id)));
+    publishedLessons = publishedLessons.map((lesson) => applyLessonTranslation(lesson, lessonTranslationById.get(lesson.id)));
+  }
+
+  const modulesWithLessons = localizedModules.map((module) => ({
     ...module,
     lessons: publishedLessons.filter((lesson) => lesson.module_id === module.id),
   }));
-  const moduleIds = new Set((modules ?? []).map((module) => module.id));
+  const moduleIds = new Set(localizedModules.map((module) => module.id));
   const ungroupedLessons = publishedLessons.filter(
     (lesson) => !lesson.module_id || !moduleIds.has(lesson.module_id),
   );
@@ -121,6 +226,7 @@ export async function fetchCourseBundle(
 export async function fetchLessonBySlug(
   courseId: string,
   lessonSlug: string,
+  languageCode = 'en',
   client: AcademyClient = supabase,
 ) {
   const { data, error } = await client
@@ -131,12 +237,23 @@ export async function fetchLessonBySlug(
     .maybeSingle<AcademyLesson>();
 
   if (error) throw error;
-  return data;
+  if (!data || !shouldTranslate(languageCode)) return data;
+
+  const { data: translation, error: translationError } = await client
+    .from('academy_lesson_translations')
+    .select('*')
+    .eq('lesson_id', data.id)
+    .eq('language_code', languageCode)
+    .maybeSingle<AcademyLessonTranslation>();
+
+  if (translationError) throw translationError;
+  return applyLessonTranslation(data, translation);
 }
 
 export async function fetchPlayableLessonBySlug(
   courseId: string,
   lessonSlug: string,
+  languageCode = 'en',
   client: AcademyClient = supabase,
 ) {
   const { data, error } = await client
@@ -147,7 +264,17 @@ export async function fetchPlayableLessonBySlug(
     .maybeSingle<AcademyLesson>();
 
   if (error) throw error;
-  return data;
+  if (!data || !shouldTranslate(languageCode)) return data;
+
+  const { data: translation, error: translationError } = await client
+    .from('academy_lesson_translations')
+    .select('*')
+    .eq('lesson_id', data.id)
+    .eq('language_code', languageCode)
+    .maybeSingle<AcademyLessonTranslation>();
+
+  if (translationError) throw translationError;
+  return applyLessonTranslation(data, translation);
 }
 
 export async function getEnrollmentStatus(
