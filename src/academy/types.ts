@@ -12,6 +12,8 @@ export type AcademyLessonStatus = 'draft' | 'published' | 'archived';
 export type AcademyAccessType = 'free' | 'manual' | 'paid' | 'corporate' | 'trial' | 'admin';
 export type AcademyEnrollmentStatus = 'active' | 'inactive' | 'expired' | 'revoked';
 export type AcademyLessonProgressState = 'not_started' | 'in_progress' | 'completed';
+export type AcademyTrackStatus = 'draft' | 'published' | 'archived';
+export type AcademyTrackEnrollmentStatus = 'active' | 'inactive' | 'completed' | 'revoked';
 
 export type AcademyCourse = {
   id: string;
@@ -144,6 +146,58 @@ export type AcademyCertificate = {
   updated_at: string;
 };
 
+export type AcademyTrack = {
+  id: string;
+  slug: string;
+  title: string;
+  short_title: string;
+  description: string | null;
+  subtitle: string | null;
+  level: string | null;
+  certificate_type: string;
+  estimated_duration: string | null;
+  status: AcademyTrackStatus;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AcademyTrackCourse = {
+  id: string;
+  track_id: string;
+  course_id: string;
+  step: number;
+  required_for_certificate: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AcademyTrackEnrollment = {
+  id: string;
+  user_id: string;
+  track_id: string;
+  status: AcademyTrackEnrollmentStatus;
+  started_at: string;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AcademyTrackCertificate = {
+  id: string;
+  user_id: string;
+  track_id: string;
+  certificate_code: string;
+  student_name: string;
+  student_email: string;
+  track_title: string;
+  track_slug: string;
+  completed_courses: number;
+  total_courses: number;
+  issued_at: string;
+  created_at: string;
+  updated_at: string;
+};
+
 export type AcademyModuleWithLessons = AcademyModule & {
   lessons: AcademyLesson[];
 };
@@ -154,6 +208,15 @@ export type AcademyCourseProgressSummary = {
   total_lessons: number;
   completed_lessons: number;
   course_progress_percent: number;
+};
+
+export type AcademyTrackProgressSummary = {
+  user_id: string;
+  track_id: string;
+  track_slug: string;
+  total_courses: number;
+  completed_courses: number;
+  track_progress_percent: number;
 };
 
 export type LessonAccessResult = {

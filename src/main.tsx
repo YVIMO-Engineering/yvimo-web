@@ -34,7 +34,7 @@ import {
 } from 'lucide-react';
 import type { Session, User } from '@supabase/supabase-js';
 import { supabase } from './lib/supabaseClient';
-import { AcademyCatalogPage, AcademyCertificatesPage, AcademyCoursePage, AcademyHomePage, AcademyLessonPage, AcademyProgressPage } from './pages/AcademyPages';
+import { AcademyCatalogPage, AcademyCertificatesPage, AcademyCoursePage, AcademyHomePage, AcademyLessonPage, AcademyProgressPage, AcademyTrackPage } from './pages/AcademyPages';
 import './styles.css';
 
 type BusinessLine = {
@@ -560,6 +560,33 @@ Object.assign(translations.es, {
   'Guidance, practice, certifications': 'GuÃ­a, prÃ¡ctica, certificaciones',
   'View all courses': 'Ver todos los cursos',
   Featured: 'Destacado',
+  FEATURED: 'DESTACADO',
+  'Featured courses': 'Cursos destacados',
+  'Start with the courses we recommend first for each industrial learning area.':
+    'Empieza con los cursos que recomendamos primero para cada area de aprendizaje industrial.',
+  'HOW YOU LEARN': 'COMO APRENDES',
+  'A clear path from lesson to real industrial skill.': 'Un camino claro desde la leccion hasta una habilidad industrial real.',
+  'YVIMO Academy turns industrial automation concepts into structured learning paths, practical exercises, and progress you can track.':
+    'YVIMO Academy convierte conceptos de automatizacion industrial en rutas de aprendizaje estructuradas, ejercicios practicos y progreso que puedes medir.',
+  'How YVIMO Academy works': 'Como funciona YVIMO Academy',
+  Explore: 'Explorar',
+  Learn: 'Aprender',
+  Practice: 'Practicar',
+  'Track progress': 'Medir progreso',
+  'Apply at work': 'Aplicar en el trabajo',
+  'Explore courses by topic: PLCs, robotics, industrial software, and career growth.':
+    'Explora cursos por tema: PLCs, robotica, software industrial y crecimiento profesional.',
+  'Follow focused lessons built around real automation and manufacturing scenarios.':
+    'Sigue lecciones enfocadas en escenarios reales de automatizacion y manufactura.',
+  'Apply concepts through guided examples, troubleshooting cases, simulations, or project-style exercises.':
+    'Aplica conceptos con ejemplos guiados, casos de diagnostico, simulaciones o ejercicios tipo proyecto.',
+  'Monitor completed lessons, course progress, certificates, and recommended next steps.':
+    'Monitorea lecciones completadas, avance del curso, certificados y siguientes pasos recomendados.',
+  'Use what you learned in real machines, production systems, projects, or your professional portfolio.':
+    'Usa lo aprendido en maquinas reales, sistemas de produccion, proyectos o tu portafolio profesional.',
+  RESULT: 'RESULTADO',
+  'A structured learning path that turns industrial knowledge into practical automation capability.':
+    'Una ruta de aprendizaje estructurada que convierte conocimiento industrial en capacidad practica de automatizacion.',
   'Featured learning paths': 'Rutas de aprendizaje destacadas',
   'Start with the Academy tracks we are prioritizing first.': 'Empieza con las rutas de Academy que estamos priorizando primero.',
   Catalog: 'CatÃ¡logo',
@@ -1768,6 +1795,10 @@ function App() {
   });
   const academyPathParts = currentPath.split('/').filter(Boolean);
   const academyCourseSlug = academyPathParts[0] === 'academy' ? academyPathParts[1] : undefined;
+  const academyTrackSlug =
+    academyPathParts[0] === 'academy' && academyPathParts[1] === 'tracks'
+      ? academyPathParts[2]
+      : undefined;
   const academyLessonSlug =
     academyPathParts[0] === 'academy' && academyPathParts[2] === 'lessons'
       ? academyPathParts[3]
@@ -2360,6 +2391,14 @@ function App() {
             user={authUser}
             navigateTo={navigateTo}
             certificateId={academyCertificateId}
+            t={t}
+            languageCode={language}
+          />
+        ) : academyTrackSlug ? (
+          <AcademyTrackPage
+            user={authUser}
+            navigateTo={navigateTo}
+            trackSlug={academyTrackSlug}
             t={t}
             languageCode={language}
           />

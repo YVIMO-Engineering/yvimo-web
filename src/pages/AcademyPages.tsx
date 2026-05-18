@@ -1,11 +1,16 @@
 import React from 'react';
 import {
   ArrowRight,
+  Award,
+  Bot,
   BookOpen,
+  BriefcaseBusiness,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
   Clock3,
+  Code2,
+  Cpu,
   FileText,
   GraduationCap,
   LockKeyhole,
@@ -15,14 +20,18 @@ import {
   RotateCcw,
   Route,
   Save,
+  Search,
   ShieldCheck,
   StickyNote,
+  TrendingUp,
   Trophy,
   UserRound,
+  Wrench,
 } from 'lucide-react';
 import {
   canAccessLesson,
   createCertificateForCourse,
+  createCertificateForTrack,
   enrollInFreeCourse,
   fetchCertificateForCourse,
   fetchCertificateById,
@@ -34,6 +43,9 @@ import {
   fetchLessonProgressForCourse,
   fetchPlayableLessonBySlug,
   fetchPublishedCourses,
+  fetchPublishedTrackBundles,
+  fetchTrackCertificatesForUser,
+  fetchTrackProgressSummaries,
   getCourseProgressSummary,
   getEnrollmentStatus,
   isAdminUser,
@@ -42,6 +54,7 @@ import {
   saveLessonNote,
   updateLessonProgress,
   type AcademyCourseBundle,
+  type AcademyTrackBundle,
 } from '../academy/academyApi';
 import type {
   AcademyCertificate,
@@ -51,6 +64,8 @@ import type {
   AcademyLessonProgress,
   AcademyLessonProgressState,
   AcademyModuleWithLessons,
+  AcademyTrackCertificate,
+  AcademyTrackProgressSummary,
   LessonAccessResult,
 } from '../academy/types';
 import { VideoPlayer } from '../components/academy/VideoPlayer';
@@ -69,6 +84,33 @@ type AcademyPageProps = {
   navigateTo: (path: string) => void;
   t?: AcademyTranslator;
   languageCode?: string;
+};
+
+type AcademyTrackCourse = {
+  step: number;
+  slug: string;
+  title: string;
+  shortTitle: string;
+  description: string;
+  level: string;
+  estimatedTime: string;
+  status: 'not-started' | 'in-progress' | 'completed';
+  skills: string[];
+};
+
+type AcademyTrack = {
+  slug: string;
+  title: string;
+  shortTitle: string;
+  description: string;
+  subtitle: string;
+  level: string;
+  courseCount: number;
+  certificateType: string;
+  estimatedDuration: string;
+  icon: React.ComponentType<{ size?: number }>;
+  badgeSrc?: string;
+  courses: AcademyTrackCourse[];
 };
 
 const defaultT: AcademyTranslator = (text) => text;
@@ -113,6 +155,7 @@ function isFreeCourse(course: AcademyCourse) {
 }
 
 type CourseCompletionMap = Record<string, boolean>;
+type TrackCompletionMap = Record<string, boolean>;
 
 async function fetchCourseCompletionMap(userId: string | null, courses: AcademyCourse[]) {
   if (!userId || courses.length === 0) return {};
@@ -133,6 +176,14 @@ async function fetchCourseCompletionMap(userId: string | null, courses: AcademyC
   return Object.fromEntries(entries);
 }
 
+async function fetchCourseCertificateMap(userId: string | null, courses: AcademyCourse[]) {
+  if (!userId || courses.length === 0) return {};
+
+  const certificates = await fetchCertificatesForUser(userId);
+  const certifiedCourseIds = new Set(certificates.map((certificate) => certificate.course_id));
+  return Object.fromEntries(courses.map((course) => [course.id, certifiedCourseIds.has(course.id)]));
+}
+
 function getProfileInitials(name: string) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   return parts.slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || 'Y';
@@ -146,6 +197,264 @@ const academyNavItems = [
   { label: 'News', icon: Newspaper, path: '/academy', section: 'news' },
   { label: 'Resources', icon: FileText, path: '/academy', section: 'resources' },
 ];
+
+const academyHowSteps = [
+  {
+    title: 'Explore',
+    description: 'Explore courses by topic: PLCs, robotics, industrial software, and career growth.',
+    icon: Search,
+  },
+  {
+    title: 'Learn',
+    description: 'Follow focused lessons built around real automation and manufacturing scenarios.',
+    icon: GraduationCap,
+  },
+  {
+    title: 'Practice',
+    description: 'Apply concepts through guided examples, troubleshooting cases, simulations, or project-style exercises.',
+    icon: Wrench,
+  },
+  {
+    title: 'Track progress',
+    description: 'Monitor completed lessons, course progress, certificates, and recommended next steps.',
+    icon: CheckCircle2,
+  },
+  {
+    title: 'Apply at work',
+    description: 'Use what you learned in real machines, production systems, projects, or your professional portfolio.',
+    icon: BriefcaseBusiness,
+  },
+];
+
+const academyTracks: AcademyTrack[] = [
+  {
+    slug: 'plc-technician',
+    title: 'PLC Technician Track',
+    shortTitle: 'PLC Technician',
+    description: 'Build a strong foundation in PLC logic, machine control, field signals, and troubleshooting.',
+    subtitle: 'A structured learning path for building practical PLC, machine control, and troubleshooting skills.',
+    level: 'Beginner to Intermediate',
+    courseCount: 4,
+    certificateType: 'Certificate track',
+    estimatedDuration: 'Self-paced',
+    icon: Cpu,
+    badgeSrc: '/assets/academy/plc-tech-track-logo.png',
+    courses: [
+      {
+        step: 1,
+        slug: 'industrial-automation-fundamentals',
+        title: 'Industrial Automation Fundamentals',
+        shortTitle: 'Automation Fundamentals',
+        description: 'A beginner-friendly introduction to PLCs, signals, and ladder logic.',
+        level: 'Beginner',
+        estimatedTime: 'TBD',
+        status: 'not-started',
+        skills: ['PLC basics', 'Industrial signals', 'Machine control concepts', 'Ladder logic introduction'],
+      },
+      {
+        step: 2,
+        slug: 'plc-programming-fundamentals',
+        title: 'PLC Programming Fundamentals',
+        shortTitle: 'PLC Programming',
+        description: 'Start writing and reading PLC logic with confidence.',
+        level: 'Beginner',
+        estimatedTime: 'TBD',
+        status: 'not-started',
+        skills: ['PLC program structure', 'Basic logic', 'Inputs and outputs', 'Online monitoring concepts'],
+      },
+      {
+        step: 3,
+        slug: 'ladder-logic-for-machine-control',
+        title: 'Ladder Logic for Machine Control',
+        shortTitle: 'Machine Control',
+        description: 'Build control sequences that match real machine behavior.',
+        level: 'Intermediate',
+        estimatedTime: 'TBD',
+        status: 'not-started',
+        skills: ['Machine sequences', 'Interlocks', 'Start and stop logic', 'Control behavior'],
+      },
+      {
+        step: 4,
+        slug: 'plc-troubleshooting-field-signals',
+        title: 'PLC Troubleshooting: Field Signals',
+        shortTitle: 'Field Signals',
+        description: 'Diagnose sensors, outputs, wiring, and logic from the PLC outward.',
+        level: 'Intermediate',
+        estimatedTime: 'TBD',
+        status: 'not-started',
+        skills: ['Sensor diagnostics', 'Output troubleshooting', 'Wiring checks', 'PLC-based fault analysis'],
+      },
+    ],
+  },
+  {
+    slug: 'robotics-integration',
+    title: 'Robotics Technician Track',
+    shortTitle: 'Robotics Technician',
+    description: 'Learn robot cells, motion, safety, and robot-to-PLC coordination for real automation systems.',
+    subtitle: 'A structured learning path for robot cells, motion, safety, and robot-to-PLC coordination.',
+    level: 'Beginner to Intermediate',
+    courseCount: 4,
+    certificateType: 'Certificate track',
+    estimatedDuration: 'Self-paced',
+    icon: Bot,
+    badgeSrc: '/assets/academy/robotics-tech-track-logo.png',
+    courses: [
+      {
+        step: 1,
+        slug: 'robotics-cell-fundamentals',
+        title: 'Robotics Cell Fundamentals',
+        shortTitle: 'Cell Fundamentals',
+        description: 'Understand robot cells, fixtures, safety, and production flow.',
+        level: 'Beginner',
+        estimatedTime: 'TBD',
+        status: 'not-started',
+        skills: ['Robot cell basics', 'Fixtures', 'Safety zones', 'Production flow'],
+      },
+      {
+        step: 2,
+        slug: 'robot-motion-and-frames',
+        title: 'Robot Motion and Frames',
+        shortTitle: 'Motion and Frames',
+        description: 'Learn positions, frames, paths, and motion behavior.',
+        level: 'Beginner',
+        estimatedTime: 'TBD',
+        status: 'not-started',
+        skills: ['Robot frames', 'Positions', 'Paths', 'Motion behavior'],
+      },
+      {
+        step: 3,
+        slug: 'robot-and-plc-handshaking',
+        title: 'Robot and PLC Handshaking',
+        shortTitle: 'PLC Handshaking',
+        description: 'Connect robot programs with machine control logic.',
+        level: 'Intermediate',
+        estimatedTime: 'TBD',
+        status: 'not-started',
+        skills: ['Handshake signals', 'Robot ready logic', 'Cycle coordination', 'Fault handling'],
+      },
+      {
+        step: 4,
+        slug: 'robot-safety-and-recovery',
+        title: 'Robot Safety and Recovery',
+        shortTitle: 'Safety Recovery',
+        description: 'Handle stops, faults, and safe restart conditions.',
+        level: 'Intermediate',
+        estimatedTime: 'TBD',
+        status: 'not-started',
+        skills: ['Safety states', 'Fault recovery', 'Restart logic', 'Operator interaction'],
+      },
+    ],
+  },
+  {
+    slug: 'industrial-software',
+    title: 'Industrial Software Track',
+    shortTitle: 'Industrial Software',
+    description: 'Develop practical skills in dashboards, APIs, plant-floor data, and connected manufacturing systems.',
+    subtitle: 'A structured learning path for dashboards, APIs, plant-floor data, and connected manufacturing systems.',
+    level: 'Intermediate',
+    courseCount: 4,
+    certificateType: 'Certificate track',
+    estimatedDuration: 'Self-paced',
+    icon: Code2,
+    courses: [
+      {
+        step: 1,
+        slug: 'industrial-software-fundamentals',
+        title: 'Industrial Software Fundamentals',
+        shortTitle: 'Software Fundamentals',
+        description: 'Understand how software connects machines, operators, and production data.',
+        level: 'Intermediate',
+        estimatedTime: 'TBD',
+        status: 'not-started',
+        skills: ['Industrial software basics', 'IT/OT concepts', 'Data flow', 'Connected systems'],
+      },
+      {
+        step: 2,
+        slug: 'plant-floor-data-architecture',
+        title: 'Plant-Floor Data Architecture',
+        shortTitle: 'Data Architecture',
+        description: 'Learn how production data moves from machines to dashboards and systems.',
+        level: 'Intermediate',
+        estimatedTime: 'TBD',
+        status: 'not-started',
+        skills: ['Machine data', 'Tags', 'APIs', 'Data architecture'],
+      },
+      {
+        step: 3,
+        slug: 'dashboards-and-apis',
+        title: 'Dashboards and APIs',
+        shortTitle: 'Dashboards APIs',
+        description: 'Build interfaces and integrations that make industrial data useful.',
+        level: 'Intermediate',
+        estimatedTime: 'TBD',
+        status: 'not-started',
+        skills: ['Dashboards', 'APIs', 'Data visualization', 'System integration'],
+      },
+      {
+        step: 4,
+        slug: 'connected-manufacturing-applications',
+        title: 'Connected Manufacturing Applications',
+        shortTitle: 'Connected Apps',
+        description: 'Apply software concepts to real connected manufacturing workflows.',
+        level: 'Intermediate',
+        estimatedTime: 'TBD',
+        status: 'not-started',
+        skills: ['Connected workflows', 'Production visibility', 'Integration patterns', 'Industrial applications'],
+      },
+    ],
+  },
+  {
+    slug: 'automation-career-growth',
+    title: 'Automation Career Growth Track',
+    shortTitle: 'Career Growth',
+    description: 'Strengthen your professional path with guided learning, certifications, and practical development.',
+    subtitle: 'A structured learning path for professional growth, certifications, and practical automation development.',
+    level: 'All levels',
+    courseCount: 3,
+    certificateType: 'Professional development',
+    estimatedDuration: 'Self-paced',
+    icon: TrendingUp,
+    courses: [
+      {
+        step: 1,
+        slug: 'automation-career-foundations',
+        title: 'Automation Career Foundations',
+        shortTitle: 'Career Foundations',
+        description: 'Understand the skills, roles, and growth paths in industrial automation.',
+        level: 'All levels',
+        estimatedTime: 'TBD',
+        status: 'not-started',
+        skills: ['Automation roles', 'Skill planning', 'Career direction', 'Technical positioning'],
+      },
+      {
+        step: 2,
+        slug: 'industrial-project-communication',
+        title: 'Industrial Project Communication',
+        shortTitle: 'Project Communication',
+        description: 'Learn how to communicate technical ideas, project updates, and automation value.',
+        level: 'All levels',
+        estimatedTime: 'TBD',
+        status: 'not-started',
+        skills: ['Technical communication', 'Project updates', 'Stakeholder alignment', 'Professional writing'],
+      },
+      {
+        step: 3,
+        slug: 'portfolio-and-certification-readiness',
+        title: 'Portfolio and Certification Readiness',
+        shortTitle: 'Portfolio Readiness',
+        description: 'Prepare your learning evidence, project portfolio, and certification path.',
+        level: 'All levels',
+        estimatedTime: 'TBD',
+        status: 'not-started',
+        skills: ['Portfolio building', 'Certification readiness', 'Skill documentation', 'Professional presentation'],
+      },
+    ],
+  },
+];
+
+function getTrackBadgeSrc(trackSlug: string) {
+  return academyTracks.find((track) => track.slug === trackSlug)?.badgeSrc ?? '/assets/academy/academy-track-logo.png';
+}
 
 function AcademyShell({
   children,
@@ -196,12 +505,623 @@ function getCourseCategory(course: AcademyCourse) {
 }
 
 function getVisibleCategories(courses: AcademyCourse[]) {
-  const preferred = ['PLC Programming', 'Robotics'];
+  const preferred = ['PLC Programming', 'Robotics', 'Industrial Software', 'Career Growth'];
   const existing = Array.from(new Set(courses.map(getCourseCategory)));
   return [
     ...preferred.filter((category) => existing.includes(category)),
     ...existing.filter((category) => !preferred.includes(category)),
   ];
+}
+
+function getTrackCourseStatus(course: AcademyTrackCourse, completion: CourseCompletionMap) {
+  return completion[course.slug] ? 'completed' : 'not-started';
+}
+
+function getTrackStatusLabel(status: AcademyTrackCourse['status'], t: AcademyTranslator) {
+  if (status === 'completed') return t('Completed');
+  if (status === 'in-progress') return t('In progress');
+  return t('Not started');
+}
+
+function AcademyTrackCards({
+  navigateTo,
+  t,
+}: {
+  navigateTo: (path: string) => void;
+  t: AcademyTranslator;
+}) {
+  return (
+    <section className="academy-tracks-section" aria-labelledby="academy-tracks-title">
+      <div className="academy-tracks-heading">
+        <p className="eyebrow">{t('YVIMO ACADEMY TRACKS')}</p>
+        <h2 id="academy-tracks-title">{t('Choose your technical track')}</h2>
+        <p>
+          {t('Follow structured learning paths built from real industrial courses, practical progression, and applied automation skills.')}
+        </p>
+      </div>
+      <div className="academy-track-grid">
+        {academyTracks.map((track) => {
+          const Icon = track.icon;
+          return (
+            <button
+              className="academy-track-card"
+              type="button"
+              key={track.slug}
+              onClick={() => navigateTo(`/academy/tracks/${track.slug}`)}
+            >
+              {track.badgeSrc ? (
+                <span className="academy-track-card-badge" aria-hidden="true">
+                  <img src={track.badgeSrc} alt="" />
+                </span>
+              ) : null}
+              <span className="academy-track-card-top">
+                {!track.badgeSrc ? (
+                  <span className="academy-track-icon" aria-hidden="true">
+                    <Icon size={22} />
+                  </span>
+                ) : null}
+                <span className="academy-track-title">
+                  <strong>{t(track.title)}</strong>
+                  <em>{t(track.shortTitle)}</em>
+                </span>
+              </span>
+              <span className="academy-track-description">{t(track.description)}</span>
+              <span className="academy-track-chip-row">
+                <span>{t(`${track.courseCount} courses`)}</span>
+                <span>{t(track.level)}</span>
+                <span>{t(track.certificateType)}</span>
+              </span>
+              <span className="academy-track-preview" aria-label={`${track.title} curriculum preview`}>
+                {track.courses.map((course) => (
+                  <span key={course.slug}>
+                    <b>{String(course.step).padStart(2, '0')}</b>
+                    {t(course.title)}
+                  </span>
+                ))}
+              </span>
+              <span className="academy-track-card-action">
+                {t('View track')} <ArrowRight size={16} />
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function buildTrackCompletionMap(courses: AcademyCourse[], completion: CourseCompletionMap): TrackCompletionMap {
+  return Object.fromEntries(
+    courses.map((course) => [course.slug, Boolean(completion[course.id])]),
+  );
+}
+
+function getTrackCoursePath(course: AcademyTrackCourse) {
+  return `/academy/${course.slug}`;
+}
+
+function buildLocalTrackBundles(courses: AcademyCourse[]): AcademyTrackBundle[] {
+  const courseBySlug = new Map(courses.map((course) => [course.slug, course]));
+  const now = new Date().toISOString();
+
+  return academyTracks.flatMap((track) => {
+    const trackCourses = track.courses.flatMap((trackCourse) => {
+      const course = courseBySlug.get(trackCourse.slug);
+      if (!course) return [];
+
+      return [{
+        id: `${track.slug}-${course.id}`,
+        track_id: track.slug,
+        course_id: course.id,
+        step: trackCourse.step,
+        required_for_certificate: true,
+        created_at: now,
+        updated_at: now,
+        course,
+      }];
+    });
+
+    if (trackCourses.length === 0) return [];
+
+    return [{
+      track: {
+        id: track.slug,
+        slug: track.slug,
+        title: track.title,
+        short_title: track.shortTitle,
+        description: track.description,
+        subtitle: track.subtitle,
+        level: track.level,
+        certificate_type: track.certificateType,
+        estimated_duration: track.estimatedDuration,
+        status: 'published',
+        created_at: now,
+        updated_at: now,
+      },
+      trackCourses,
+    }];
+  });
+}
+
+function mergeTrackBundlesWithLocalFallback(
+  loadedTrackBundles: AcademyTrackBundle[],
+  localTrackBundles: AcademyTrackBundle[],
+) {
+  if (loadedTrackBundles.length === 0) return localTrackBundles;
+
+  const localBySlug = new Map(localTrackBundles.map((bundle) => [bundle.track.slug, bundle]));
+  const loadedBySlug = new Map(loadedTrackBundles.map((bundle) => [bundle.track.slug, bundle]));
+  const slugs = Array.from(new Set([...localBySlug.keys(), ...loadedBySlug.keys()]));
+
+  return slugs.flatMap((slug) => {
+    const loaded = loadedBySlug.get(slug);
+    const local = localBySlug.get(slug);
+
+    if (!loaded) return local ? [local] : [];
+    if (loaded.trackCourses.length > 0) {
+      return [{
+        ...loaded,
+        track: local ? {
+          ...loaded.track,
+          title: local.track.title,
+          short_title: local.track.short_title,
+          description: local.track.description,
+          subtitle: local.track.subtitle,
+          level: local.track.level,
+          certificate_type: local.track.certificate_type,
+          estimated_duration: local.track.estimated_duration,
+        } : loaded.track,
+      }];
+    }
+    return local ? [{ ...loaded, trackCourses: local.trackCourses }] : [loaded];
+  });
+}
+
+function polarToCartesian(centerX: number, centerY: number, radius: number, angleInDegrees: number) {
+  const angleInRadians = ((angleInDegrees - 90) * Math.PI) / 180;
+  return {
+    x: centerX + radius * Math.cos(angleInRadians),
+    y: centerY + radius * Math.sin(angleInRadians),
+  };
+}
+
+function describeAnnularSegment(
+  centerX: number,
+  centerY: number,
+  innerRadius: number,
+  outerRadius: number,
+  startAngle: number,
+  endAngle: number,
+) {
+  const outerStart = polarToCartesian(centerX, centerY, outerRadius, endAngle);
+  const outerEnd = polarToCartesian(centerX, centerY, outerRadius, startAngle);
+  const innerStart = polarToCartesian(centerX, centerY, innerRadius, endAngle);
+  const innerEnd = polarToCartesian(centerX, centerY, innerRadius, startAngle);
+  const largeArcFlag = endAngle - startAngle <= 180 ? '0' : '1';
+
+  return [
+    `M ${outerStart.x} ${outerStart.y}`,
+    `A ${outerRadius} ${outerRadius} 0 ${largeArcFlag} 0 ${outerEnd.x} ${outerEnd.y}`,
+    `L ${innerEnd.x} ${innerEnd.y}`,
+    `A ${innerRadius} ${innerRadius} 0 ${largeArcFlag} 1 ${innerStart.x} ${innerStart.y}`,
+    'Z',
+  ].join(' ');
+}
+
+export function AcademyTrackPage({
+  user,
+  navigateTo,
+  trackSlug,
+  t = defaultT,
+  languageCode = 'en',
+}: AcademyPageProps & { trackSlug: string }) {
+  const track = academyTracks.find((item) => item.slug === trackSlug);
+  const [publishedCourses, setPublishedCourses] = React.useState<AcademyCourse[]>([]);
+  const [completion, setCompletion] = React.useState<CourseCompletionMap>({});
+  const [trackCertificate, setTrackCertificate] = React.useState<AcademyTrackCertificate | null>(null);
+  const [trackCourseProgress, setTrackCourseProgress] = React.useState<Record<string, number>>({});
+  const [selectedSlug, setSelectedSlug] = React.useState(track?.courses[0]?.slug ?? '');
+  const [hoveredSlug, setHoveredSlug] = React.useState<string | null>(null);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+  const curriculumRef = React.useRef<HTMLElement | null>(null);
+
+  React.useEffect(() => {
+    setSelectedSlug(track?.courses[0]?.slug ?? '');
+  }, [track?.slug]);
+
+  React.useEffect(() => {
+    let active = true;
+    setLoading(true);
+
+    fetchPublishedCourses(languageCode)
+      .then(async (items) => {
+        const [nextCompletion, trackCertificates] = await Promise.all([
+          fetchCourseCertificateMap(user?.id ?? null, items),
+          user ? fetchTrackCertificatesForUser(user.id).catch(() => [] as AcademyTrackCertificate[]) : Promise.resolve([]),
+        ]);
+        const progressEntries = await Promise.all(
+          (track?.courses ?? []).map(async (trackCourse) => {
+            const publishedCourse = items.find((item) => item.slug === trackCourse.slug);
+            if (!user || !publishedCourse) return [trackCourse.slug, 0] as const;
+            if (nextCompletion[publishedCourse.id]) return [trackCourse.slug, 100] as const;
+
+            const bundle = await fetchCourseBundle(publishedCourse.slug, languageCode);
+            if (!bundle) return [trackCourse.slug, 0] as const;
+
+            const lessons = [
+              ...bundle.modules.flatMap((module) => module.lessons),
+              ...bundle.ungroupedLessons,
+            ];
+            const progress = await fetchLessonProgressForCourse(user.id, publishedCourse.id);
+            const completedLessons = progress.filter((item) => item.completed).length;
+            const percent = lessons.length > 0 ? Math.round((completedLessons / lessons.length) * 100) : 0;
+            return [trackCourse.slug, percent] as const;
+          }),
+        );
+        if (active) {
+          setPublishedCourses(items);
+          setCompletion(nextCompletion);
+          setTrackCertificate(trackCertificates.find((certificate) => certificate.track_slug === trackSlug) ?? null);
+          setTrackCourseProgress(Object.fromEntries(progressEntries));
+        }
+      })
+      .catch((caught) => {
+        if (active) setError(caught instanceof Error ? caught.message : 'Unable to load track progress.');
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [languageCode, track, trackSlug, user]);
+
+  if (!track) {
+    return (
+      <AcademyShell navigateTo={navigateTo} t={t}>
+        <AcademyEmptyState title={t('Track not found.')} detail={t('Choose another Academy Track to continue.')} />
+      </AcademyShell>
+    );
+  }
+
+  const trackCompletion = buildTrackCompletionMap(publishedCourses, completion);
+  const selectedCourse = track.courses.find((course) => course.slug === selectedSlug) ?? track.courses[0];
+  const hoveredCourse = hoveredSlug ? track.courses.find((course) => course.slug === hoveredSlug) ?? null : null;
+  const completedCount = track.courses.filter((course) => getTrackCourseStatus(course, trackCompletion) === 'completed').length;
+  const progressPercent = Math.round((completedCount / track.courses.length) * 100);
+  const nextCourse = track.courses.find((course) => getTrackCourseStatus(course, trackCompletion) !== 'completed') ?? track.courses[0];
+  const relatedTracks = academyTracks.filter((item) => item.slug !== track.slug);
+  const trackComplete = completedCount === track.courses.length;
+
+  const selectCourse = (course: AcademyTrackCourse) => {
+    setSelectedSlug(course.slug);
+  };
+
+  const scrollToCurriculum = () => {
+    curriculumRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  const viewTrackProgress = () => {
+    if (trackComplete && trackCertificate) {
+      navigateTo(`/academy/certificates/${trackCertificate.id}`);
+      return;
+    }
+
+    navigateTo(`/academy/progress?track=${track.slug}#academy-track-${track.slug}`);
+  };
+
+  return (
+    <AcademyShell navigateTo={navigateTo} t={t}>
+      <section className="academy-track-detail-page">
+        <section className="academy-track-hero">
+          <div className="academy-track-hero-copy">
+            <button className="academy-back-button" type="button" onClick={() => navigateTo('/academy')}>
+              {t('Academy home')}
+            </button>
+            <p className="eyebrow">ACADEMY TRACK</p>
+            <h1>{t(track.title)}</h1>
+            <p>{t(track.subtitle)}</p>
+            <div className="academy-track-chip-row">
+              <span>{t(`${track.courseCount} courses`)}</span>
+              <span>{t(track.level)}</span>
+              <span>{t(track.certificateType)}</span>
+              <span>{t(track.estimatedDuration)}</span>
+            </div>
+            <div className="academy-track-hero-actions">
+              <button type="button" onClick={() => navigateTo(getTrackCoursePath(track.courses[0]))}>
+                {t('Start track')} <ArrowRight size={17} />
+              </button>
+              <button className="secondary" type="button" onClick={scrollToCurriculum}>
+                {t('View curriculum')}
+              </button>
+            </div>
+          </div>
+          <div className="academy-track-hero-panel">
+            <img className="academy-track-hero-badge" src={getTrackBadgeSrc(track.slug)} alt="" />
+            <span>Study Plan</span>
+            <strong>{t(track.shortTitle)}</strong>
+            <div className="academy-track-hero-steps">
+              {track.courses.map((course) => {
+                const completed = getTrackCourseStatus(course, trackCompletion) === 'completed'
+                  || (trackCourseProgress[course.slug] ?? 0) >= 100;
+                const inProgress = !completed && (trackCourseProgress[course.slug] ?? 0) > 0;
+                return (
+                  <i
+                    className={[
+                      completed ? 'completed' : '',
+                      inProgress ? 'in-progress' : '',
+                      !completed && !inProgress ? 'not-started' : '',
+                    ].filter(Boolean).join(' ')}
+                    key={course.slug}
+                    title={`${course.title}: ${completed ? 'Completed' : inProgress ? 'In progress' : 'Not started'}`}
+                  >
+                    {String(course.step).padStart(2, '0')}
+                  </i>
+                );
+              })}
+            </div>
+            <button type="button" onClick={viewTrackProgress}>
+              {trackComplete && trackCertificate ? t('View Certificate') : t('View progress')}
+              <ArrowRight size={17} />
+            </button>
+          </div>
+        </section>
+
+        <section className="academy-curriculum-section" ref={curriculumRef}>
+          <div className="academy-featured-heading academy-curriculum-heading">
+            <p className="eyebrow">CURRICULUM MAP</p>
+            <h2>{t('Explore the complete study plan')}</h2>
+            <span>
+              {t('Hover over each course to preview what you will learn, then open the course when you are ready to continue.')}
+            </span>
+          </div>
+
+          {error ? <AcademyEmptyState title={t('Unable to load progress')} detail={error} /> : null}
+
+          <div className="academy-curriculum-layout">
+            <div
+              className="academy-radial-map"
+              aria-label={`${track.title} Curriculum Map`}
+              onMouseLeave={() => setHoveredSlug(null)}
+              onMouseMove={(event) => {
+                const target = event.target as Element;
+                if (!target.closest('.academy-study-segment') && !target.closest('.academy-course-tooltip')) {
+                  setHoveredSlug(null);
+                }
+              }}
+            >
+              <div className="academy-radial-center" onMouseEnter={() => setHoveredSlug(null)}>
+                <span>Track Map</span>
+                <strong>{t(track.shortTitle)}</strong>
+                <em>{progressPercent}% complete</em>
+              </div>
+              <svg className="academy-study-wheel" viewBox="0 0 640 640" role="img" aria-label={`${track.title} Study Plan`}>
+                <circle className="academy-study-wheel-guide" cx="320" cy="320" r="279" />
+                <circle className="academy-study-wheel-guide inner" cx="320" cy="320" r="114" />
+                {track.courses.map((course, index) => {
+                  const slice = 360 / track.courses.length;
+                  const gap = 3;
+                  const startAngle = index * slice + gap;
+                  const endAngle = (index + 1) * slice - gap;
+                  const midAngle = startAngle + (endAngle - startAngle) / 2;
+                  const labelPoint = polarToCartesian(320, 320, 205, midAngle);
+                  const hovered = hoveredSlug === course.slug;
+                  const faded = Boolean(hoveredSlug && hoveredSlug !== course.slug);
+                  const status = getTrackCourseStatus(course, trackCompletion);
+                  return (
+                    <g
+                      className={[
+                        'academy-study-segment',
+                        hovered ? 'hovered' : '',
+                        faded ? 'faded' : '',
+                        status === 'completed' ? 'completed' : '',
+                      ].filter(Boolean).join(' ')}
+                      key={course.slug}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`${course.step}. ${course.title}`}
+                      onMouseEnter={() => {
+                        setHoveredSlug(course.slug);
+                        selectCourse(course);
+                      }}
+                      onFocus={() => {
+                        setHoveredSlug(course.slug);
+                        selectCourse(course);
+                      }}
+                      onBlur={() => setHoveredSlug(null)}
+                      onClick={() => selectCourse(course)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          selectCourse(course);
+                        }
+                      }}
+                    >
+                      <path d={describeAnnularSegment(320, 320, 116, 278, startAngle, endAngle)} />
+                      <foreignObject x={labelPoint.x - 72} y={labelPoint.y - 48} width="144" height="96">
+                        <div className="academy-study-segment-label">
+                          <span>{String(course.step).padStart(2, '0')}</span>
+                          <strong>{t(course.shortTitle)}</strong>
+                          <em>{getTrackStatusLabel(status, t)}</em>
+                        </div>
+                      </foreignObject>
+                    </g>
+                  );
+                })}
+              </svg>
+              {hoveredCourse ? (
+                <div
+                  className="academy-course-tooltip"
+                  style={
+                    {
+                      '--tooltip-x': `${50 + Math.cos(((-90 + (360 / track.courses.length) * (hoveredCourse.step - 1)) * Math.PI) / 180) * 27}%`,
+                      '--tooltip-y': `${50 + Math.sin(((-90 + (360 / track.courses.length) * (hoveredCourse.step - 1)) * Math.PI) / 180) * 27}%`,
+                    } as React.CSSProperties
+                  }
+                >
+                  <strong>{t(hoveredCourse.title)}</strong>
+                  <p>{t(hoveredCourse.description)}</p>
+                  <span>{t('Level')}: {t(hoveredCourse.level)}</span>
+                  <span>{t('Estimated time')}: {t(hoveredCourse.estimatedTime)}</span>
+                  <span>{t('Status')}: {getTrackStatusLabel(getTrackCourseStatus(hoveredCourse, trackCompletion), t)}</span>
+                  <button type="button" onClick={() => navigateTo(getTrackCoursePath(hoveredCourse))}>
+                    {t('View course')}
+                  </button>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="academy-mobile-roadmap">
+              {track.courses.map((course) => {
+                const status = getTrackCourseStatus(course, trackCompletion);
+                const active = selectedCourse.slug === course.slug;
+                return (
+                  <article
+                    className={active ? 'academy-mobile-track-step active' : 'academy-mobile-track-step'}
+                    key={course.slug}
+                    onClick={() => selectCourse(course)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        selectCourse(course);
+                      }
+                    }}
+                    tabIndex={0}
+                  >
+                    <span>{String(course.step).padStart(2, '0')}</span>
+                    <strong>{t(course.title)}</strong>
+                    <p>{t(course.description)}</p>
+                    <em>{t(course.level)} · {t(course.estimatedTime)} · {getTrackStatusLabel(status, t)}</em>
+                    <button type="button" onClick={(event) => {
+                      event.stopPropagation();
+                      navigateTo(getTrackCoursePath(course));
+                    }}>
+                      {t('Open course')} <ArrowRight size={15} />
+                    </button>
+                  </article>
+                );
+              })}
+            </div>
+
+            <SelectedTrackCoursePanel
+              course={selectedCourse}
+              status={getTrackCourseStatus(selectedCourse, trackCompletion)}
+              navigateTo={navigateTo}
+              t={t}
+            />
+          </div>
+        </section>
+
+        <section className="academy-track-progress-section">
+          <div className="academy-track-progress-card">
+            <div>
+              <p className="eyebrow">TRACK PROGRESS</p>
+              <h2>{t('Track progress')}</h2>
+            </div>
+            {loading ? <span className="academy-track-loading">{t('Loading progress...')}</span> : null}
+            <div className="academy-track-progress-meter">
+              <strong>{progressPercent}%</strong>
+              <span><i style={{ width: `${progressPercent}%` }} /></span>
+            </div>
+            <div className="academy-track-progress-grid">
+              <article>
+                <span>{t('Completed courses')}</span>
+                <strong>{completedCount} / {track.courses.length}</strong>
+              </article>
+              <article>
+                <span>{t('Next course')}</span>
+                <strong>{t(nextCourse.title)}</strong>
+              </article>
+              <article>
+                <span>{t('Certificate status')}</span>
+                <strong>{completedCount === track.courses.length ? t('Unlocked') : t('Locked')}</strong>
+              </article>
+            </div>
+          </div>
+          <div className="academy-certificate-track-card">
+            <Award size={28} />
+            <h2>{t('Earn your YVIMO Academy certificate')}</h2>
+            <p>
+              {t('Complete every course in this track to unlock your certificate and document your progress in industrial automation.')}
+            </p>
+            <button type="button" onClick={() => navigateTo(getTrackCoursePath(nextCourse))}>
+              {t('Start learning')} <ArrowRight size={17} />
+            </button>
+          </div>
+        </section>
+
+        <section className="academy-related-tracks">
+          <div className="academy-carousel-heading">
+            <h2>{t('Related tracks')}</h2>
+          </div>
+          <div className="academy-related-track-grid">
+            {relatedTracks.map((item) => {
+              const Icon = item.icon;
+              return (
+                <button
+                  className="academy-related-track-card"
+                  type="button"
+                  key={item.slug}
+                  onClick={() => navigateTo(`/academy/tracks/${item.slug}`)}
+                >
+                  <Icon size={20} />
+                  <strong>{t(item.title)}</strong>
+                  <span>{t(item.level)} · {t(`${item.courseCount} courses`)}</span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      </section>
+    </AcademyShell>
+  );
+}
+
+function SelectedTrackCoursePanel({
+  course,
+  status,
+  navigateTo,
+  t,
+}: {
+  course: AcademyTrackCourse;
+  status: AcademyTrackCourse['status'];
+  navigateTo: (path: string) => void;
+  t: AcademyTranslator;
+}) {
+  return (
+    <aside className="academy-selected-course-panel">
+      <span>{String(course.step).padStart(2, '0')}</span>
+      <h2>{t(course.title)}</h2>
+      <p>{t(course.description)}</p>
+      <div className="academy-selected-course-facts">
+        <article>
+          <em>{t('Level')}</em>
+          <strong>{t(course.level)}</strong>
+        </article>
+        <article>
+          <em>{t('Estimated time')}</em>
+          <strong>{t(course.estimatedTime)}</strong>
+        </article>
+        <article>
+          <em>{t('Status')}</em>
+          <strong>{getTrackStatusLabel(status, t)}</strong>
+        </article>
+      </div>
+      <div className="academy-selected-skills">
+        <strong>{t('Skills covered')}</strong>
+        <ul>
+          {course.skills.map((skill) => (
+            <li key={skill}><CheckCircle2 size={15} /> {t(skill)}</li>
+          ))}
+        </ul>
+      </div>
+      <button type="button" onClick={() => navigateTo(getTrackCoursePath(course))}>
+        {t('Open course')} <ArrowRight size={17} />
+      </button>
+    </aside>
+  );
 }
 
 export function AcademyHomePage({ user, navigateTo, t = defaultT, languageCode = 'en' }: AcademyPageProps) {
@@ -244,24 +1164,12 @@ export function AcademyHomePage({ user, navigateTo, t = defaultT, languageCode =
             {t('Courses, guided paths, and professional training for people building real automation, robotics, and industrial software systems.')}
           </p>
         </div>
-        <div className="academy-domain-grid" aria-label="Academy learning areas">
-          {[
-            ['PLC Programming', 'Control logic, signals, troubleshooting'],
-            ['Robotics', 'Cells, motion, integration, safety'],
-            ['Industrial Software', 'Dashboards, APIs, plant-floor data'],
-            ['Career Growth', 'Guidance, practice, certifications'],
-          ].map(([title, detail]) => (
-            <article key={title}>
-              <GraduationCap size={18} />
-              <strong>{t(title)}</strong>
-              <span>{t(detail)}</span>
-            </article>
-          ))}
-        </div>
         <button className="academy-view-all-button" type="button" onClick={() => navigateTo('/academy/courses')}>
           {t('View all courses')} <ArrowRight size={17} />
         </button>
       </section>
+
+      <AcademyTrackCards navigateTo={navigateTo} t={t} />
 
       <section className="academy-content">
         {loading ? <AcademyEmptyState title={t('Loading courses...')} /> : null}
@@ -270,12 +1178,12 @@ export function AcademyHomePage({ user, navigateTo, t = defaultT, languageCode =
         {!loading && !error ? (
           <section className="academy-featured-section">
             <div className="academy-featured-heading">
-              <p className="eyebrow">{t('Featured')}</p>
-              <h2>{t('Featured learning paths')}</h2>
-              <span>{t('Start with the Academy tracks we are prioritizing first.')}</span>
+              <p className="eyebrow">{t('FEATURED')}</p>
+              <h2>{t('Featured courses')}</h2>
+              <span>{t('Start with the courses we recommend first for each industrial learning area.')}</span>
             </div>
             <div className="academy-carousel-stack">
-              {getVisibleCategories(courses).slice(0, 2).map((category) => (
+              {getVisibleCategories(courses).slice(0, 4).map((category) => (
                 <AcademyCourseCarousel
                   key={category}
                   title={category}
@@ -285,6 +1193,43 @@ export function AcademyHomePage({ user, navigateTo, t = defaultT, languageCode =
                   t={t}
                 />
               ))}
+            </div>
+          </section>
+        ) : null}
+
+        {!loading && !error ? (
+          <section className="academy-how-section" aria-labelledby="academy-how-title">
+            <div className="academy-how-heading">
+              <p className="eyebrow">{t('HOW YOU LEARN')}</p>
+              <h2 id="academy-how-title">{t('A clear path from lesson to real industrial skill.')}</h2>
+              <p>
+                {t('YVIMO Academy turns industrial automation concepts into structured learning paths, practical exercises, and progress you can track.')}
+              </p>
+            </div>
+            <div className="academy-how-flow" aria-label={t('How YVIMO Academy works')}>
+              {academyHowSteps.map((step, index) => {
+                const Icon = step.icon;
+                return (
+                  <article className="academy-how-card" key={step.title}>
+                    <span className="academy-how-port academy-how-port-in" />
+                    <span className="academy-how-port academy-how-port-out" />
+                    <div className="academy-how-card-header">
+                      <span>{String(index + 1).padStart(2, '0')}</span>
+                      <div className="academy-how-icon">
+                        <Icon size={21} />
+                      </div>
+                    </div>
+                    <h3>{t(step.title)}</h3>
+                    <p>{t(step.description)}</p>
+                  </article>
+                );
+              })}
+            </div>
+            <div className="academy-how-result">
+              <span>{t('RESULT')}</span>
+              <strong>
+                {t('A structured learning path that turns industrial knowledge into practical automation capability.')}
+              </strong>
             </div>
           </section>
         ) : null}
@@ -1035,13 +1980,28 @@ type ProgressCourse = {
   certificate: AcademyCertificate | null;
 };
 
+type ProgressTrack = {
+  bundle: AcademyTrackBundle;
+  summary: AcademyTrackProgressSummary | null;
+  certificate: AcademyTrackCertificate | null;
+  nextCourse: AcademyCourse | null;
+  completedCourseIds: Set<string>;
+  activeCourseIds: Set<string>;
+  courseProgressPercent: Map<string, number>;
+};
+
 export function AcademyProgressPage({ user, navigateTo, t = defaultT, languageCode = 'en' }: AcademyPageProps) {
   const [items, setItems] = React.useState<ProgressCourse[]>([]);
+  const [trackItems, setTrackItems] = React.useState<ProgressTrack[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [message, setMessage] = React.useState<string | null>(null);
   const focusedCourseSlug = React.useMemo(() => {
     if (typeof window === 'undefined') return null;
     return new URLSearchParams(window.location.search).get('course');
+  }, []);
+  const focusedTrackSlug = React.useMemo(() => {
+    if (typeof window === 'undefined') return null;
+    return new URLSearchParams(window.location.search).get('track');
   }, []);
 
   React.useEffect(() => {
@@ -1053,6 +2013,7 @@ export function AcademyProgressPage({ user, navigateTo, t = defaultT, languageCo
       try {
         if (!user) {
           setItems([]);
+          setTrackItems([]);
           return;
         }
 
@@ -1060,7 +2021,14 @@ export function AcademyProgressPage({ user, navigateTo, t = defaultT, languageCo
           fetchPublishedCourses(languageCode),
           fetchCertificatesForUser(user.id),
         ]);
+        const [loadedTrackBundles, trackSummaries, trackCertificates] = await Promise.all([
+          fetchPublishedTrackBundles().catch(() => [] as AcademyTrackBundle[]),
+          fetchTrackProgressSummaries(user.id).catch(() => [] as AcademyTrackProgressSummary[]),
+          fetchTrackCertificatesForUser(user.id).catch(() => [] as AcademyTrackCertificate[]),
+        ]);
         const certificateByCourse = new Map(certificates.map((certificate) => [certificate.course_id, certificate]));
+        const summaryByTrack = new Map(trackSummaries.map((summary) => [summary.track_id, summary]));
+        const certificateByTrack = new Map(trackCertificates.map((certificate) => [certificate.track_id, certificate]));
         const nextItems = await Promise.all(
           courses.map(async (course) => {
             const bundle = await fetchCourseBundle(course.slug, languageCode);
@@ -1069,8 +2037,57 @@ export function AcademyProgressPage({ user, navigateTo, t = defaultT, languageCo
             return { bundle, progress, certificate: certificateByCourse.get(course.id) ?? null };
           }),
         );
+        const trackBundles = mergeTrackBundlesWithLocalFallback(
+          loadedTrackBundles,
+          buildLocalTrackBundles(courses),
+        );
 
         if (active) {
+          const activeCourseIds = new Set<string>();
+          const completedCourseIds = new Set<string>();
+          certificates.forEach((certificate) => {
+            activeCourseIds.add(certificate.course_id);
+            completedCourseIds.add(certificate.course_id);
+          });
+          nextItems.forEach((item) => {
+            if (item?.progress.length) activeCourseIds.add(item.bundle.course.id);
+          });
+          const courseProgressPercent = new Map<string, number>();
+          nextItems.forEach((item) => {
+            if (!item) return;
+            const lessons = [
+              ...item.bundle.modules.flatMap((module) => module.lessons),
+              ...item.bundle.ungroupedLessons,
+            ];
+            const completedLessons = item.progress.filter((progress) => progress.completed).length;
+            const percent = lessons.length > 0 ? Math.round((completedLessons / lessons.length) * 100) : 0;
+            courseProgressPercent.set(item.bundle.course.id, percent);
+          });
+          certificates.forEach((certificate) => {
+            courseProgressPercent.set(certificate.course_id, 100);
+          });
+
+          setTrackItems(
+            trackBundles.flatMap((bundle) => {
+              const summary = summaryByTrack.get(bundle.track.id) ?? null;
+              const hasTrackActivity = bundle.trackCourses.some((link) => activeCourseIds.has(link.course_id))
+                || certificateByTrack.has(bundle.track.id);
+              if (!hasTrackActivity || bundle.trackCourses.length === 0) return [];
+
+              const nextCourse = bundle.trackCourses.find((link) => !completedCourseIds.has(link.course_id))?.course
+                ?? bundle.trackCourses[0]?.course
+                ?? null;
+              return [{
+                bundle,
+                summary,
+                certificate: certificateByTrack.get(bundle.track.id) ?? null,
+                nextCourse,
+                completedCourseIds,
+                activeCourseIds,
+                courseProgressPercent,
+              }];
+            }),
+          );
           setItems(
             nextItems.filter((item): item is ProgressCourse => {
               if (!item) return false;
@@ -1106,13 +2123,26 @@ export function AcademyProgressPage({ user, navigateTo, t = defaultT, languageCo
     }, 120);
   }, [focusedCourseSlug, items.length, loading]);
 
+  React.useEffect(() => {
+    if (loading || !focusedTrackSlug || trackItems.length === 0) return;
+
+    const target = document.getElementById(`academy-track-${focusedTrackSlug}`);
+    if (!target) return;
+
+    window.setTimeout(() => {
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      target.classList.add('focus-route');
+      window.setTimeout(() => target.classList.remove('focus-route'), 1600);
+    }, 120);
+  }, [focusedTrackSlug, loading, trackItems.length]);
+
   return (
     <AcademyShell navigateTo={navigateTo} activeSection="progress" t={t}>
       <section className="academy-progress-page">
         <div className="academy-progress-heading">
           <p className="eyebrow">{t('My progress')}</p>
-          <h1>{t('Course routes')}</h1>
-          <p>{t('Follow every lesson path and see how far your completed route is glowing behind you.')}</p>
+          <h1>{t('Academy progress')}</h1>
+          <p>{t('Track your Academy programs first, then continue individual course routes as you learn.')}</p>
         </div>
 
         {!user ? (
@@ -1120,12 +2150,40 @@ export function AcademyProgressPage({ user, navigateTo, t = defaultT, languageCo
         ) : null}
         {loading ? <AcademyEmptyState title={t('Loading progress...')} /> : null}
         {message ? <AcademyEmptyState title={t('Unable to load progress')} detail={message} /> : null}
-        {!loading && user && !message && items.length === 0 ? (
-          <AcademyEmptyState title={t('No course progress yet.')} detail={t('Open a lesson to start lighting up your route.')} />
+        {!loading && user && !message && items.length === 0 && trackItems.length === 0 ? (
+          <AcademyEmptyState title={t('No progress yet.')} detail={t('Open a track or lesson to start lighting up your route.')} />
         ) : null}
 
-        {!loading && user && !message ? (
+        {!loading && user && !message && trackItems.length > 0 ? (
+          <section className="academy-progress-tracks-section">
+            <div className="academy-carousel-heading academy-progress-section-heading">
+              <h2 className="academy-section-title-with-logo academy-section-title-featured">
+                <img src="/assets/academy/academy-track-logo.png" alt="" />
+                <span>{t('Academy Tracks')}</span>
+              </h2>
+            </div>
+            <div className="academy-progress-track-grid">
+              {trackItems.map((item) => (
+                <AcademyProgressTrackCard
+                  key={item.bundle.track.id}
+                  item={item}
+                  user={user}
+                  navigateTo={navigateTo}
+                  t={t}
+                />
+              ))}
+            </div>
+          </section>
+        ) : null}
+
+        {!loading && user && !message && items.length > 0 ? (
           <div className="academy-route-stack">
+            <div className="academy-carousel-heading academy-progress-section-heading">
+              <h2 className="academy-section-title-with-logo academy-section-title-featured">
+                <img src="/assets/academy/academy-course-logo.png" alt="" />
+                <span>{t('Active courses')}</span>
+              </h2>
+            </div>
             {items.map((item) => (
               <AcademyProgressRouteCard
                 key={item.bundle.course.id}
@@ -1228,6 +2286,125 @@ function AcademyProgressRouteCard({
   );
 }
 
+function AcademyProgressTrackCard({
+  item,
+  user,
+  navigateTo,
+  t = defaultT,
+}: {
+  item: ProgressTrack;
+  user: AcademyUser;
+  navigateTo: (path: string) => void;
+  t?: AcademyTranslator;
+}) {
+  const totalCourses = item.summary && item.summary.total_courses > 0
+    ? item.summary.total_courses
+    : item.bundle.trackCourses.length;
+  const completedCourses = item.certificate?.completed_courses
+    ?? item.bundle.trackCourses.filter((link) => item.completedCourseIds.has(link.course_id)).length;
+  const progressPercent = item.certificate ? 100 : Math.round((completedCourses / Math.max(totalCourses, 1)) * 100);
+  const allCompleted = totalCourses > 0 && completedCourses >= totalCourses;
+  const [certificateBusy, setCertificateBusy] = React.useState(false);
+
+  const handleCertificate = async () => {
+    if (!allCompleted || certificateBusy) return;
+    setCertificateBusy(true);
+    try {
+      const certificate = await createCertificateForTrack({
+        userId: user.id,
+        track: item.bundle.track,
+        studentName: user.name,
+        studentEmail: user.email,
+        completedCourses,
+        totalCourses,
+      });
+      navigateTo('/academy/certificates');
+    } finally {
+      setCertificateBusy(false);
+    }
+  };
+
+  return (
+    <article
+      className={allCompleted ? 'academy-progress-track-card complete' : 'academy-progress-track-card'}
+      id={`academy-track-${item.bundle.track.slug}`}
+    >
+      <div className="academy-progress-track-header">
+        <div>
+          <p className="eyebrow">{t('Academy Track')}</p>
+          <h3>{item.bundle.track.title}</h3>
+          <span>{completedCourses} {t('of')} {totalCourses} {t(totalCourses === 1 ? 'course' : 'courses')} {t('completed')}</span>
+        </div>
+        <strong>{progressPercent}%</strong>
+      </div>
+      <div className={allCompleted ? 'academy-progress-track-program complete' : 'academy-progress-track-program'}>
+        <div className="academy-progress-track-emblem">
+          <img src={getTrackBadgeSrc(item.bundle.track.slug)} alt="" />
+          <span>{progressPercent}%</span>
+        </div>
+        <div
+          className="academy-progress-track-wheel-mini"
+          style={{ '--track-course-count': item.bundle.trackCourses.length } as React.CSSProperties}
+          aria-label={`${item.bundle.track.title} course map`}
+        >
+          {item.bundle.trackCourses.map((link, index) => {
+            const completed = Boolean(item.certificate) || item.completedCourseIds.has(link.course_id);
+            const active = !completed && item.activeCourseIds.has(link.course_id);
+            const coursePercent = completed ? 100 : item.courseProgressPercent.get(link.course_id) ?? 0;
+            return (
+              <button
+                className={[
+                  'academy-progress-track-segment',
+                  completed ? 'completed' : '',
+                  active ? 'active' : '',
+                ].filter(Boolean).join(' ')}
+                type="button"
+                key={link.id}
+                style={
+                  {
+                    '--segment-index': index,
+                    '--segment-rotation': `${index * (360 / Math.max(item.bundle.trackCourses.length, 1))}deg`,
+                  } as React.CSSProperties
+                }
+                onClick={() => navigateTo(`/academy/${link.course.slug}`)}
+              >
+                <span>{String(link.step).padStart(2, '0')}</span>
+                <em className={completed ? 'done' : ''}>
+                  {completed ? <CheckCircle2 size={40} /> : `${coursePercent}%`}
+                </em>
+                <strong>{link.course.title}</strong>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      <div className="academy-progress-track-actions">
+        <button type="button" onClick={() => navigateTo(`/academy/tracks/${item.bundle.track.slug}`)}>
+          <Route size={17} />
+          {t('View track')}
+        </button>
+        {item.nextCourse ? (
+          <button type="button" onClick={() => navigateTo(`/academy/${item.nextCourse?.slug}`)}>
+            <PlayCircle size={17} />
+            {t(allCompleted ? 'Review courses' : 'Next course')}
+          </button>
+        ) : null}
+        {allCompleted ? (
+          <button
+            className="certificate"
+            type="button"
+            onClick={handleCertificate}
+            disabled={certificateBusy}
+          >
+            <Trophy size={17} />
+            {item.certificate ? t('Track certificate issued') : certificateBusy ? t('Creating...') : t('Claim track certificate')}
+          </button>
+        ) : null}
+      </div>
+    </article>
+  );
+}
+
 function AcademyRouteMap({
   lessons,
   progress,
@@ -1326,11 +2503,13 @@ export function AcademyCertificatesPage({
   languageCode = 'en',
 }: AcademyPageProps & { certificateId?: string }) {
   const [certificates, setCertificates] = React.useState<AcademyCertificate[]>([]);
+  const [trackCertificates, setTrackCertificates] = React.useState<AcademyTrackCertificate[]>([]);
   const [detail, setDetail] = React.useState<{
     certificate: AcademyCertificate;
     bundle: AcademyCourseBundle;
     progress: AcademyLessonProgress[];
   } | null>(null);
+  const [trackDetail, setTrackDetail] = React.useState<AcademyTrackCertificate | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [message, setMessage] = React.useState<string | null>(null);
   const highlightNew = React.useMemo(() => {
@@ -1347,32 +2526,50 @@ export function AcademyCertificatesPage({
       try {
         if (!user) {
           setCertificates([]);
+          setTrackCertificates([]);
           setDetail(null);
+          setTrackDetail(null);
           return;
         }
 
         if (certificateId) {
           const certificate = await fetchCertificateById(user.id, certificateId);
           if (!certificate) {
-            setDetail(null);
-            setMessage('Certificate not found.');
+            const nextTrackCertificates = await fetchTrackCertificatesForUser(user.id).catch(() => [] as AcademyTrackCertificate[]);
+            const nextTrackDetail = nextTrackCertificates.find((item) => item.id === certificateId) ?? null;
+            if (active) {
+              setTrackDetail(nextTrackDetail);
+              setDetail(null);
+              if (!nextTrackDetail) setMessage('Certificate not found.');
+            }
             return;
           }
 
           const bundle = await fetchCourseBundle(certificate.course_slug, languageCode);
           if (!bundle) {
             setDetail(null);
+            setTrackDetail(null);
             setMessage('Certificate course not found.');
             return;
           }
 
           const progress = await fetchLessonProgressForCourse(user.id, certificate.course_id);
-          if (active) setDetail({ certificate, bundle, progress });
+          if (active) {
+            setDetail({ certificate, bundle, progress });
+            setTrackDetail(null);
+          }
           return;
         }
 
-        const nextCertificates = await fetchCertificatesForUser(user.id);
-        if (active) setCertificates(nextCertificates);
+        const [nextCertificates, nextTrackCertificates] = await Promise.all([
+          fetchCertificatesForUser(user.id),
+          fetchTrackCertificatesForUser(user.id).catch(() => [] as AcademyTrackCertificate[]),
+        ]);
+        if (active) {
+          setCertificates(nextCertificates);
+          setTrackCertificates(nextTrackCertificates);
+          setTrackDetail(null);
+        }
       } catch (caught) {
         if (active) setMessage(caught instanceof Error ? caught.message : 'Unable to load certificates.');
       } finally {
@@ -1388,12 +2585,12 @@ export function AcademyCertificatesPage({
   }, [certificateId, languageCode, user]);
 
   React.useEffect(() => {
-    if (!highlightNew || loading || !detail) return;
+    if (!highlightNew || loading || (!detail && !trackDetail)) return;
     const target = document.querySelector('.academy-certificate-detail');
     if (!target) return;
     target.classList.add('focus-certificate');
     window.setTimeout(() => target.classList.remove('focus-certificate'), 1800);
-  }, [detail, highlightNew, loading]);
+  }, [detail, highlightNew, loading, trackDetail]);
 
   if (certificateId) {
     return (
@@ -1404,6 +2601,13 @@ export function AcademyCertificatesPage({
           </button>
           {loading ? <AcademyEmptyState title={t('Loading certificate...')} /> : null}
           {message ? <AcademyEmptyState title={t('Unable to load certificate')} detail={message} /> : null}
+          {!loading && trackDetail ? (
+            <AcademyTrackCertificateDetail
+              certificate={trackDetail}
+              navigateTo={navigateTo}
+              t={t}
+            />
+          ) : null}
           {!loading && detail ? (
             <AcademyCertificateDetail
               detail={detail}
@@ -1431,12 +2635,30 @@ export function AcademyCertificatesPage({
         ) : null}
         {loading ? <AcademyEmptyState title={t('Loading certificates...')} /> : null}
         {message ? <AcademyEmptyState title={t('Unable to load certificates')} detail={message} /> : null}
-        {!loading && user && !message && certificates.length === 0 ? (
+        {!loading && user && !message && certificates.length === 0 && trackCertificates.length === 0 ? (
           <AcademyEmptyState title={t('No certificates yet.')} detail={t('Complete a course and claim its certificate to add it here.')} />
         ) : null}
 
-        {!loading && user && !message && certificates.length > 0 ? (
+        {!loading && user && !message && (certificates.length > 0 || trackCertificates.length > 0) ? (
           <div className="academy-certificate-grid">
+            {trackCertificates.map((certificate) => (
+              <button
+                className="academy-certificate-card"
+                type="button"
+                key={certificate.id}
+                onClick={() => navigateTo(`/academy/tracks/${certificate.track_slug}`)}
+              >
+                <span className="academy-certificate-medal">
+                  <Award size={24} />
+                </span>
+                <span>
+                  <em>{t('Academy Track Certificate')}</em>
+                  <strong>{certificate.track_title}</strong>
+                  <small>{t('Issued')} {formatCertificateDate(certificate.issued_at)}</small>
+                </span>
+                <b>{certificate.certificate_code}</b>
+              </button>
+            ))}
             {certificates.map((certificate) => (
               <button
                 className="academy-certificate-card"
@@ -1459,6 +2681,54 @@ export function AcademyCertificatesPage({
         ) : null}
       </section>
     </AcademyShell>
+  );
+}
+
+function AcademyTrackCertificateDetail({
+  certificate,
+  navigateTo,
+  t = defaultT,
+}: {
+  certificate: AcademyTrackCertificate;
+  navigateTo: (path: string) => void;
+  t?: AcademyTranslator;
+}) {
+  return (
+    <article className="academy-certificate-detail academy-track-certificate-detail">
+      <section className="academy-certificate-document">
+        <div className="academy-certificate-document-top">
+          <span className="academy-certificate-medal">
+            <Award size={30} />
+          </span>
+          <div>
+            <p className="eyebrow">{t('Academy Track Certificate')}</p>
+            <h1>{certificate.track_title}</h1>
+          </div>
+        </div>
+        <div className="academy-certificate-recipient">
+          <span>{t('Presented to')}</span>
+          <strong>{certificate.student_name}</strong>
+          <em>{certificate.student_email}</em>
+        </div>
+        <div className="academy-certificate-meta">
+          <span>
+            <b>{t('Certificate ID')}</b>
+            {certificate.certificate_code}
+          </span>
+          <span>
+            <b>{t('Issued')}</b>
+            {formatCertificateDate(certificate.issued_at)}
+          </span>
+          <span>
+            <b>{t('Completed courses')}</b>
+            {certificate.completed_courses} / {certificate.total_courses}
+          </span>
+        </div>
+        <button type="button" onClick={() => navigateTo(`/academy/tracks/${certificate.track_slug}`)}>
+          {t('Back to track')} <ArrowRight size={17} />
+        </button>
+      </section>
+    </article>
   );
 }
 

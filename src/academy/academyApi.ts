@@ -13,6 +13,10 @@ import type {
   AcademyModuleTranslation,
   AcademyModuleWithLessons,
   AcademyLessonTranslation,
+  AcademyTrack,
+  AcademyTrackCertificate,
+  AcademyTrackCourse,
+  AcademyTrackProgressSummary,
   LessonAccessResult,
 } from './types';
 
@@ -27,10 +31,24 @@ export type CreateCertificateInput = {
   totalLessons: number;
 };
 
+export type CreateTrackCertificateInput = {
+  userId: string;
+  track: AcademyTrack;
+  studentName: string;
+  studentEmail: string;
+  completedCourses: number;
+  totalCourses: number;
+};
+
 export type AcademyCourseBundle = {
   course: AcademyCourse;
   modules: AcademyModuleWithLessons[];
   ungroupedLessons: AcademyLesson[];
+};
+
+export type AcademyTrackBundle = {
+  track: AcademyTrack;
+  trackCourses: Array<AcademyTrackCourse & { course: AcademyCourse }>;
 };
 
 function shouldTranslate(languageCode?: string | null) {
@@ -563,6 +581,66 @@ export async function fetchLessonProgressForCourse(
   return data ?? [];
 }
 
+export async function fetchPublishedTrackBundles(client: AcademyClient = supabase): Promise<AcademyTrackBundle[]> {
+  const [{ data: tracks, error: tracksError }, { data: links, error: linksError }] =
+    await Promise.all([
+      client
+        .from('academy_tracks')
+        .select('*')
+        .eq('status', 'published')
+        .order('created_at', { ascending: true })
+        .returns<AcademyTrack[]>(),
+      client
+        .from('academy_track_courses')
+        .select('*')
+        .order('step', { ascending: true })
+        .returns<AcademyTrackCourse[]>(),
+    ]);
+
+  if (tracksError) throw tracksError;
+  if (linksError) throw linksError;
+
+  const courseIds = Array.from(new Set((links ?? []).map((link) => link.course_id)));
+  const { data: courses, error: coursesError } = courseIds.length
+    ? await client
+      .from('academy_courses')
+      .select('*')
+      .in('id', courseIds)
+      .eq('status', 'published')
+      .returns<AcademyCourse[]>()
+    : { data: [], error: null };
+
+  if (coursesError) throw coursesError;
+
+  const courseById = new Map((courses ?? []).map((course) => [course.id, course]));
+  return (tracks ?? []).map((track) => ({
+    track,
+    trackCourses: (links ?? [])
+      .filter((link) => link.track_id === track.id)
+      .sort((left, right) => left.step - right.step)
+      .flatMap((link) => {
+        const course = courseById.get(link.course_id);
+        return course ? [{ ...link, course }] : [];
+      }),
+  }));
+}
+
+export async function fetchTrackProgressSummaries(
+  userId: string | null,
+  client: AcademyClient = supabase,
+) {
+  if (!userId) return [];
+
+  const { data, error } = await client
+    .from('academy_track_progress_summary')
+    .select('*')
+    .eq('user_id', userId)
+    .returns<AcademyTrackProgressSummary[]>();
+
+  if (error) throw error;
+  return data ?? [];
+}
+
 export async function fetchLessonProgressForLesson(
   userId: string | null,
   lessonId: string,
@@ -697,6 +775,41 @@ export async function fetchCertificateForCourse(
   return data;
 }
 
+export async function fetchTrackCertificatesForUser(
+  userId: string | null,
+  client: AcademyClient = supabase,
+) {
+  if (!userId) return [];
+
+  const { data, error } = await client
+    .from('academy_track_certificates')
+    .select('*')
+    .eq('user_id', userId)
+    .order('issued_at', { ascending: false })
+    .returns<AcademyTrackCertificate[]>();
+
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function fetchTrackCertificateForTrack(
+  userId: string | null,
+  trackId: string,
+  client: AcademyClient = supabase,
+) {
+  if (!userId) return null;
+
+  const { data, error } = await client
+    .from('academy_track_certificates')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('track_id', trackId)
+    .maybeSingle<AcademyTrackCertificate>();
+
+  if (error) throw error;
+  return data;
+}
+
 export async function createCertificateForCourse(
   {
     userId,
@@ -732,6 +845,45 @@ export async function createCertificateForCourse(
     })
     .select('*')
     .single<AcademyCertificate>();
+
+  if (error) throw error;
+  return data;
+}
+
+export async function createCertificateForTrack(
+  {
+    userId,
+    track,
+    studentName,
+    studentEmail,
+    completedCourses,
+    totalCourses,
+  }: CreateTrackCertificateInput,
+  client: AcademyClient = supabase,
+) {
+  const { data: sessionData } = await client.auth.getSession();
+  if (sessionData.session?.user.id !== userId) {
+    throw new Error('Users can only create their own certificates.');
+  }
+
+  const existing = await fetchTrackCertificateForTrack(userId, track.id, client);
+  if (existing) return existing;
+
+  const { data, error } = await client
+    .from('academy_track_certificates')
+    .insert({
+      user_id: userId,
+      track_id: track.id,
+      certificate_code: createCertificateCode().replace('YVIMO-', 'YVIMO-TRACK-'),
+      student_name: studentName,
+      student_email: studentEmail,
+      track_title: track.title,
+      track_slug: track.slug,
+      completed_courses: completedCourses,
+      total_courses: totalCourses,
+    })
+    .select('*')
+    .single<AcademyTrackCertificate>();
 
   if (error) throw error;
   return data;
