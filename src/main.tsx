@@ -2760,11 +2760,28 @@ function App() {
           <a href="/#platform" onClick={(event) => { event.preventDefault(); navigateHome('#platform'); }}>{t('Platform')}</a>
           {authUser ? (
             <button className="panel-user-card" type="button" onClick={navigateDashboard}>
-              <UserAvatar user={authUser} className="compact-user-avatar" />
+              <span
+                className="compact-user-avatar-stack"
+                style={{ '--compact-profile-progress': `${headerProfileLevelProgress}%` } as React.CSSProperties}
+                aria-hidden="true"
+              >
+                <span className="compact-user-ring">
+                  <UserAvatar user={authUser} className="compact-user-avatar" />
+                </span>
+                <span className="compact-user-level">
+                  LV <strong>{headerProfileLevel}</strong>
+                </span>
+              </span>
               <span className="compact-user-copy">
                 <strong>{authUser.name}</strong>
-                <span className={getSubscriptionClass(authUser.subscription)}>
-                  {authUser.subscription}
+                <span className="compact-user-meta">
+                  <span className={getSubscriptionClass(authUser.subscription)}>
+                    {authUser.subscription}
+                  </span>
+                  <span className="compact-user-points">
+                    <Star size={15} fill="currentColor" />
+                    <strong>{headerYvimoPoints.toLocaleString()}</strong>
+                  </span>
                 </span>
                 <em>{t('Go to Dashboard')}</em>
               </span>

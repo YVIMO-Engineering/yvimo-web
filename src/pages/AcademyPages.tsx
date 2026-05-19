@@ -1,6 +1,7 @@
 import React from 'react';
 import {
   ArrowRight,
+  ArrowLeft,
   Award,
   Bot,
   BookOpen,
@@ -504,6 +505,27 @@ function getCourseCategory(course: AcademyCourse) {
   return course.category?.trim() || 'Courses';
 }
 
+function getCoursePreviewImage(course: AcademyCourse) {
+  if (course.thumbnail_url) return course.thumbnail_url;
+  return `https://picsum.photos/seed/yvimo-course-${encodeURIComponent(course.slug)}/960/540`;
+}
+
+function CertificateQr({ value }: { value: string }) {
+  return (
+    <span
+      className="academy-certificate-qr"
+      style={{ '--qr-seed': `"${value}"` } as React.CSSProperties}
+      aria-label={`Certificate QR ${value}`}
+    >
+      {Array.from({ length: 49 }, (_, index) => {
+        const code = value.charCodeAt(index % value.length) || index;
+        const active = index % 8 === 0 || (code + index * 7) % 5 < 2;
+        return <i className={active ? 'active' : ''} key={index} />;
+      })}
+    </span>
+  );
+}
+
 function getVisibleCategories(courses: AcademyCourse[]) {
   const preferred = ['PLC Programming', 'Robotics', 'Industrial Software', 'Career Growth'];
   const existing = Array.from(new Set(courses.map(getCourseCategory)));
@@ -805,7 +827,7 @@ export function AcademyTrackPage({
 
   const viewTrackProgress = () => {
     if (trackComplete && trackCertificate) {
-      navigateTo(`/academy/certificates/${trackCertificate.id}`);
+      navigateTo(`/academy/certificates?track=${track.slug}`);
       return;
     }
 
@@ -818,7 +840,8 @@ export function AcademyTrackPage({
         <section className="academy-track-hero">
           <div className="academy-track-hero-copy">
             <button className="academy-back-button" type="button" onClick={() => navigateTo('/academy')}>
-              {t('Academy home')}
+              <ArrowLeft size={19} strokeWidth={3} />
+              {t('Go Back')}
             </button>
             <p className="eyebrow">ACADEMY TRACK</p>
             <h1>{t(track.title)}</h1>
@@ -830,8 +853,18 @@ export function AcademyTrackPage({
               <span>{t(track.estimatedDuration)}</span>
             </div>
             <div className="academy-track-hero-actions">
-              <button type="button" onClick={() => navigateTo(getTrackCoursePath(track.courses[0]))}>
-                {t('Start track')} <ArrowRight size={17} />
+              <button
+                className={trackComplete && trackCertificate ? 'completed' : ''}
+                type="button"
+                onClick={() => {
+                  if (trackComplete && trackCertificate) {
+                    navigateTo(`/academy/certificates?track=${track.slug}`);
+                    return;
+                  }
+                  navigateTo(getTrackCoursePath(track.courses[0]));
+                }}
+              >
+                {trackComplete && trackCertificate ? t('Completed') : t('Start track')} <ArrowRight size={17} />
               </button>
               <button className="secondary" type="button" onClick={scrollToCurriculum}>
                 {t('View curriculum')}
@@ -1279,7 +1312,8 @@ export function AcademyCatalogPage({ user, navigateTo, t = defaultT, languageCod
       <section className="academy-catalog-page">
         <div className="academy-catalog-header">
           <button className="academy-back-button" type="button" onClick={() => navigateTo('/academy')}>
-            {t('Academy home')}
+            <ArrowLeft size={19} strokeWidth={3} />
+            {t('Go Back')}
           </button>
           <p className="eyebrow">{t('Catalog')}</p>
           <h1>{t('All Academy courses')}</h1>
@@ -1422,11 +1456,7 @@ function AcademyCourseCard({
         onClick={() => navigateTo(`/academy/${course.slug}`)}
       >
         <span className="academy-course-thumb">
-          {course.thumbnail_url ? (
-            <img src={course.thumbnail_url} alt="" />
-          ) : (
-            <GraduationCap size={34} />
-          )}
+          <img src={getCoursePreviewImage(course)} alt="" />
         </span>
         <span className="academy-course-card-body">
           <span className="academy-meta-row">
@@ -1540,7 +1570,8 @@ export function AcademyCoursePage({ user, navigateTo, courseSlug, t = defaultT, 
       <section className="academy-course-hero">
         <div>
           <button className="academy-back-button" type="button" onClick={() => navigateTo('/academy')}>
-            {t('Courses')}
+            <ArrowLeft size={19} strokeWidth={3} />
+            {t('Go Back')}
           </button>
           <p className="eyebrow">{bundle.course.category ?? 'YVIMO Academy'}</p>
           <h1>{bundle.course.title}</h1>
@@ -1873,7 +1904,8 @@ export function AcademyLessonPage({
           type="button"
           onClick={() => navigateTo(`/academy/${bundle.course.slug}`)}
         >
-          {bundle.course.title}
+          <ArrowLeft size={19} strokeWidth={3} />
+          {t('Go Back')}
         </button>
         <p className="eyebrow">{access?.isPreview ? t('Preview lesson') : t('Lesson')}</p>
         <h1>{lesson.title}</h1>
@@ -2070,8 +2102,10 @@ export function AcademyProgressPage({ user, navigateTo, t = defaultT, languageCo
           setTrackItems(
             trackBundles.flatMap((bundle) => {
               const summary = summaryByTrack.get(bundle.track.id) ?? null;
+              const trackCertificate = certificateByTrack.get(bundle.track.id) ?? null;
+              if (trackCertificate) return [];
               const hasTrackActivity = bundle.trackCourses.some((link) => activeCourseIds.has(link.course_id))
-                || certificateByTrack.has(bundle.track.id);
+                || Boolean(summary && summary.completed_courses > 0);
               if (!hasTrackActivity || bundle.trackCourses.length === 0) return [];
 
               const nextCourse = bundle.trackCourses.find((link) => !completedCourseIds.has(link.course_id))?.course
@@ -2080,7 +2114,7 @@ export function AcademyProgressPage({ user, navigateTo, t = defaultT, languageCo
               return [{
                 bundle,
                 summary,
-                certificate: certificateByTrack.get(bundle.track.id) ?? null,
+                certificate: null,
                 nextCourse,
                 completedCourseIds,
                 activeCourseIds,
@@ -2516,6 +2550,10 @@ export function AcademyCertificatesPage({
     if (typeof window === 'undefined') return false;
     return new URLSearchParams(window.location.search).get('new') === '1';
   }, []);
+  const focusedTrackSlug = React.useMemo(() => {
+    if (typeof window === 'undefined') return null;
+    return new URLSearchParams(window.location.search).get('track');
+  }, []);
 
   React.useEffect(() => {
     let active = true;
@@ -2592,12 +2630,43 @@ export function AcademyCertificatesPage({
     window.setTimeout(() => target.classList.remove('focus-certificate'), 1800);
   }, [detail, highlightNew, loading, trackDetail]);
 
+  React.useEffect(() => {
+    if (loading || !focusedTrackSlug || trackCertificates.length === 0) return;
+    const target = document.getElementById(`academy-certificate-pack-${focusedTrackSlug}`);
+    if (!target) return;
+
+    window.setTimeout(() => {
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      target.classList.add('focus-certificate');
+      window.setTimeout(() => target.classList.remove('focus-certificate'), 1800);
+    }, 120);
+  }, [focusedTrackSlug, loading, trackCertificates.length]);
+
+  const certificatePackages = React.useMemo(() => {
+    return trackCertificates.map((trackCertificate) => {
+      const track = academyTracks.find((item) => item.slug === trackCertificate.track_slug);
+      const courseSlugs = new Set(track?.courses.map((course) => course.slug) ?? []);
+      return {
+        track,
+        certificate: trackCertificate,
+        courseCertificates: certificates.filter((certificate) => courseSlugs.has(certificate.course_slug)),
+      };
+    });
+  }, [certificates, trackCertificates]);
+
+  const packagedCourseIds = React.useMemo(
+    () => new Set(certificatePackages.flatMap((item) => item.courseCertificates.map((certificate) => certificate.id))),
+    [certificatePackages],
+  );
+  const standaloneCertificates = certificates.filter((certificate) => !packagedCourseIds.has(certificate.id));
+
   if (certificateId) {
     return (
       <AcademyShell navigateTo={navigateTo} activeSection="certificates" t={t}>
         <section className="academy-certificates-page">
           <button className="academy-back-button" type="button" onClick={() => navigateTo('/academy/certificates')}>
-            {t('My certificates')}
+            <ArrowLeft size={19} strokeWidth={3} />
+            {t('Go Back')}
           </button>
           {loading ? <AcademyEmptyState title={t('Loading certificate...')} /> : null}
           {message ? <AcademyEmptyState title={t('Unable to load certificate')} detail={message} /> : null}
@@ -2640,43 +2709,87 @@ export function AcademyCertificatesPage({
         ) : null}
 
         {!loading && user && !message && (certificates.length > 0 || trackCertificates.length > 0) ? (
-          <div className="academy-certificate-grid">
-            {trackCertificates.map((certificate) => (
-              <button
-                className="academy-certificate-card"
-                type="button"
-                key={certificate.id}
-                onClick={() => navigateTo(`/academy/tracks/${certificate.track_slug}`)}
+          <div className="academy-certificate-inventory">
+            {certificatePackages.map((item) => (
+              <section
+                className="academy-certificate-pack"
+                id={`academy-certificate-pack-${item.certificate.track_slug}`}
+                key={item.certificate.id}
               >
-                <span className="academy-certificate-medal">
-                  <Award size={24} />
-                </span>
-                <span>
-                  <em>{t('Academy Track Certificate')}</em>
-                  <strong>{certificate.track_title}</strong>
-                  <small>{t('Issued')} {formatCertificateDate(certificate.issued_at)}</small>
-                </span>
-                <b>{certificate.certificate_code}</b>
-              </button>
+                <div className="academy-certificate-pack-top">
+                  <img src={getTrackBadgeSrc(item.certificate.track_slug)} alt="" />
+                  <div>
+                    <p className="eyebrow">{t('Track certificate package')}</p>
+                    <h2>{item.certificate.track_title}</h2>
+                    <span>
+                      {item.courseCertificates.length} {t(item.courseCertificates.length === 1 ? 'course certificate' : 'course certificates')} + {t('Academy Track Certificate')}
+                    </span>
+                  </div>
+                </div>
+                <button
+                  className="academy-certificate-card academy-certificate-card-track"
+                  type="button"
+                  onClick={() => navigateTo(`/academy/tracks/${item.certificate.track_slug}`)}
+                >
+                  <span className="academy-certificate-track-main">
+                    <span className="academy-certificate-medal">
+                      <Award size={30} />
+                    </span>
+                    <span>
+                      <em>{t('Academy Track Certificate')}</em>
+                      <strong>{item.certificate.track_title}</strong>
+                      <small>{t('Issued')} {formatCertificateDate(item.certificate.issued_at)}</small>
+                    </span>
+                  </span>
+                  <b>{item.certificate.certificate_code}</b>
+                  <CertificateQr value={item.certificate.certificate_code} />
+                </button>
+                {item.courseCertificates.length > 0 ? (
+                  <div className="academy-certificate-pack-grid">
+                    {item.courseCertificates.map((certificate) => (
+                      <button
+                        className="academy-certificate-card"
+                        type="button"
+                        key={certificate.id}
+                        onClick={() => navigateTo(`/academy/certificates/${certificate.id}`)}
+                      >
+                        <span className="academy-certificate-medal">
+                          <Trophy size={22} />
+                        </span>
+                        <span>
+                          <em>{certificate.course_category ?? 'YVIMO Academy'}</em>
+                          <strong>{certificate.course_title}</strong>
+                          <small>{t('Issued')} {formatCertificateDate(certificate.issued_at)}</small>
+                        </span>
+                        <b>{certificate.certificate_code}</b>
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </section>
             ))}
-            {certificates.map((certificate) => (
-              <button
-                className="academy-certificate-card"
-                type="button"
-                key={certificate.id}
-                onClick={() => navigateTo(`/academy/certificates/${certificate.id}`)}
-              >
-                <span className="academy-certificate-medal">
-                  <Trophy size={24} />
-                </span>
-                <span>
-                  <em>{certificate.course_category ?? 'YVIMO Academy'}</em>
-                  <strong>{certificate.course_title}</strong>
-                  <small>{t('Issued')} {formatCertificateDate(certificate.issued_at)}</small>
-                </span>
-                <b>{certificate.certificate_code}</b>
-              </button>
-            ))}
+            {standaloneCertificates.length > 0 ? (
+              <div className="academy-certificate-grid">
+                {standaloneCertificates.map((certificate) => (
+                  <button
+                    className="academy-certificate-card"
+                    type="button"
+                    key={certificate.id}
+                    onClick={() => navigateTo(`/academy/certificates/${certificate.id}`)}
+                  >
+                    <span className="academy-certificate-medal">
+                      <Trophy size={24} />
+                    </span>
+                    <span>
+                      <em>{certificate.course_category ?? 'YVIMO Academy'}</em>
+                      <strong>{certificate.course_title}</strong>
+                      <small>{t('Issued')} {formatCertificateDate(certificate.issued_at)}</small>
+                    </span>
+                    <b>{certificate.certificate_code}</b>
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </div>
         ) : null}
       </section>
