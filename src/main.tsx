@@ -133,6 +133,26 @@ function profileToAppUser(user: User, profile: UserProfile | null): AppUser {
   };
 }
 
+function UserAvatar({ user, className }: { user: AppUser; className: string }) {
+  return user.avatarUrl ? (
+    <img className={className} src={user.avatarUrl} alt="" aria-hidden="true" />
+  ) : (
+    <span className={className} aria-hidden="true">
+      {getProfileInitials(user.name)}
+    </span>
+  );
+}
+
+type BillingPeriod = 'monthly' | 'three_months' | 'six_months' | 'annual';
+
+type CheckoutPlan = {
+  product_key: string;
+  plan_key: string;
+  billing_period: BillingPeriod;
+  price_display: string;
+  price_id: string | null;
+};
+
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
   return new Promise((resolve, reject) => {
     const timeout = window.setTimeout(() => {
@@ -185,6 +205,10 @@ const translations: Record<Exclude<LanguageCode, 'en'>, Record<string, string>> 
     Company: 'Empresa',
     Dashboard: 'Dashboard',
     Workspace: 'Espacio de trabajo',
+    'YVIMO PORTAL': 'PORTAL YVIMO',
+    'Workspace overview': 'Resumen del workspace',
+    'Your YVIMO tools, licenses, and learning access in one place.':
+      'Tus herramientas YVIMO, licencias y acceso de aprendizaje en un solo lugar.',
     'Welcome back': 'Bienvenido de nuevo',
     'Your YVIMO workspace is ready.': 'Tu espacio YVIMO está listo.',
     'Gateway Online': 'Gateway Online',
@@ -203,6 +227,20 @@ const translations: Record<Exclude<LanguageCode, 'en'>, Record<string, string>> 
     'Apple account ready. Redirecting to dashboard.': 'Cuenta Apple lista. Redirigiendo al dashboard.',
     'Create a first project, manage access, or review platform modules from the navigation.':
       'Crea un primer proyecto, administra accesos o revisa módulos de plataforma desde la navegación.',
+    'Open connected Gateway tools, demos, downloads, and project modules.':
+      'Abre herramientas conectadas de Gateway, demos, descargas y módulos de proyecto.',
+    'Free access to try YVIMO Academy, explore the platform, and start selected courses before upgrading.':
+      'Acceso gratis para probar YVIMO Academy, explorar la plataforma y comenzar cursos seleccionados antes de mejorar tu plan.',
+    'Continue courses, guided paths, progress, and professional learning.':
+      'Continúa cursos, rutas guiadas, progreso y aprendizaje profesional.',
+    'Review product seats, activations, renewals, and account entitlements.':
+      'Revisa puestos de producto, activaciones, renovaciones y permisos de cuenta.',
+    'Track quotations, purchase requests, project orders, and follow-up.':
+      'Da seguimiento a cotizaciones, solicitudes de compra, órdenes de proyecto y seguimiento.',
+    'YVIMO Points': 'Puntos YVIMO',
+    'Current Plan': 'Plan actual',
+    'Upgrade to this Plan': 'Subir a este plan',
+    'Choose your YVIMO membership': 'Elige tu membresía YVIMO',
     'Go to Dashboard': 'Ir al dashboard',
     'Loading workspace...': 'Cargando espacio de trabajo...',
     'Loading dashboard...': 'Cargando dashboard...',
@@ -371,6 +409,10 @@ const translations: Record<Exclude<LanguageCode, 'en'>, Record<string, string>> 
     Company: '公司',
     Dashboard: '仪表板',
     Workspace: '工作区',
+    'YVIMO PORTAL': 'YVIMO 门户',
+    'Workspace overview': '工作区概览',
+    'Your YVIMO tools, licenses, and learning access in one place.':
+      '你的 YVIMO 工具、许可证和学习访问集中在一处。',
     'Welcome back': '欢迎回来',
     'Your YVIMO workspace is ready.': '你的 YVIMO 工作区已准备就绪。',
     'Gateway Online': 'Gateway 在线',
@@ -389,6 +431,20 @@ const translations: Record<Exclude<LanguageCode, 'en'>, Record<string, string>> 
     'Apple account ready. Redirecting to dashboard.': 'Apple 账户已准备就绪，正在跳转到仪表板。',
     'Create a first project, manage access, or review platform modules from the navigation.':
       '从导航中创建第一个项目、管理访问权限或查看平台模块。',
+    'Open connected Gateway tools, demos, downloads, and project modules.':
+      '打开 Gateway 连接工具、演示、下载和项目模块。',
+    'Free access to try YVIMO Academy, explore the platform, and start selected courses before upgrading.':
+      '免费试用 YVIMO Academy、探索平台，并在升级前开始部分课程。',
+    'Continue courses, guided paths, progress, and professional learning.':
+      '继续课程、引导路径、进度和专业学习。',
+    'Review product seats, activations, renewals, and account entitlements.':
+      '查看产品席位、激活、续订和账户权益。',
+    'Track quotations, purchase requests, project orders, and follow-up.':
+      '跟踪报价、采购请求、项目订单和后续事项。',
+    'YVIMO Points': 'YVIMO 积分',
+    'Current Plan': '当前计划',
+    'Upgrade to this Plan': '升级到此计划',
+    'Choose your YVIMO membership': '选择你的 YVIMO 会员',
     'Go to Dashboard': '前往仪表板',
     'Loading workspace...': '正在加载工作区...',
     'Loading dashboard...': '正在加载仪表板...',
@@ -1629,6 +1685,175 @@ function LoggedDashboardPage({
   activePath: string;
   t: Translator;
 }) {
+  const [billingPeriod, setBillingPeriod] = React.useState<BillingPeriod>('monthly');
+  const [checkoutMessage, setCheckoutMessage] = React.useState<string | null>(null);
+  const membershipRank: Record<SubscriptionTier, number> = {
+    Explorer: 0,
+    Professional: 1,
+    Enterprise: 2,
+  };
+  const profileLevelProgress = 72;
+  const profileLevel = 373;
+  const yvimoPoints = 1280;
+  const academyPlans = [
+    {
+      name: 'Explorer',
+      description: 'Explore the YVIMO portal, preview selected Academy lessons, and experience the platform before upgrading.',
+      badge: null,
+      monthly: {
+        price: 'Free',
+        label: '',
+        cta: 'Start Free',
+        plan_key: 'explorer_free',
+        note: null,
+      },
+      three_months: {
+        price: 'Free',
+        label: '',
+        cta: 'Start Free',
+        plan_key: 'explorer_free',
+        note: null,
+      },
+      six_months: {
+        price: 'Free',
+        label: '',
+        cta: 'Start Free',
+        plan_key: 'explorer_free',
+        note: null,
+      },
+      annual: {
+        price: 'Free',
+        label: '',
+        cta: 'Start Free',
+        plan_key: 'explorer_free',
+        note: null,
+      },
+      features: [
+        'Access to selected free lessons',
+        'Preview selected Academy tracks',
+        'Explore industrial learning paths',
+        'Basic progress tracking',
+        'Limited portal access',
+        'Platform updates',
+        'Upgrade anytime',
+      ],
+    },
+    {
+      name: 'Professional',
+      description: 'For serious learners, technicians, and engineers who want full Academy access, Gateway Online tools, and priority portal benefits.',
+      badge: 'Recommended',
+      monthly: {
+        price: '$1,999 MXN',
+        label: '/ month',
+        cta: 'Start Professional',
+        plan_key: 'professional_monthly',
+        note: null,
+      },
+      three_months: {
+        price: '$5,499 MXN',
+        label: '/ 3 months',
+        cta: 'Start Professional',
+        plan_key: 'professional_3_months',
+        note: 'Save compared to monthly billing',
+      },
+      six_months: {
+        price: '$9,999 MXN',
+        label: '/ 6 months',
+        cta: 'Start Professional',
+        plan_key: 'professional_6_months',
+        note: 'Better value for focused learning blocks',
+      },
+      annual: {
+        price: '$14,999 MXN',
+        label: '/ year',
+        cta: 'Start Professional',
+        plan_key: 'professional_annual',
+        note: 'Best value for committed learners',
+      },
+      features: [
+        'Full access to YVIMO Academy',
+        'Complete Academy tracks and learning paths',
+        'Gateway Online access',
+        'Priority handling for orders and quotation requests',
+        'Certificates of completion',
+        'Downloadable resources and templates',
+        'Advanced project files',
+        'Early access to new tracks',
+        'Professional certificate path',
+      ],
+    },
+    {
+      name: 'Enterprise',
+      description: 'For companies, universities, and teams that need structured industrial automation training, Gateway Online access, and commercial workflow support.',
+      badge: null,
+      monthly: {
+        price: 'Contact sales',
+        label: '',
+        cta: 'Contact sales',
+        plan_key: 'enterprise_contact',
+        note: null,
+      },
+      three_months: {
+        price: 'Custom',
+        label: '/ 3 months',
+        cta: 'Contact sales',
+        plan_key: 'enterprise_contact',
+        note: 'Team and institutional pricing',
+      },
+      six_months: {
+        price: 'Custom',
+        label: '/ 6 months',
+        cta: 'Contact sales',
+        plan_key: 'enterprise_contact',
+        note: 'Team and institutional pricing',
+      },
+      annual: {
+        price: 'Custom',
+        label: '/ year',
+        cta: 'Contact sales',
+        plan_key: 'enterprise_contact',
+        note: 'Team and institutional pricing',
+      },
+      features: [
+        'Team or classroom access',
+        'Multiple users or seats',
+        'Admin and progress visibility',
+        'Custom learning paths',
+        'University or company training programs',
+        'Gateway Online access for approved users',
+        'Priority handling for orders, quotations, and project requests',
+        'Invoice and purchase order support',
+        'Optional private onboarding',
+        'Optional custom training or implementation support',
+      ],
+    },
+  ];
+  const quickAccessItems = [
+    {
+      label: 'Gateway Online',
+      description: 'Open connected Gateway tools, demos, downloads, and project modules.',
+      icon: ServerCog,
+      path: '/dashboard/gateway',
+    },
+    {
+      label: 'YVIMO Academy',
+      description: 'Continue courses, guided paths, progress, and professional learning.',
+      icon: GraduationCap,
+      path: '/academy',
+    },
+    {
+      label: 'Licenses',
+      description: 'Review product seats, activations, renewals, and account entitlements.',
+      icon: ShieldCheck,
+      path: '/dashboard/licenses',
+    },
+    {
+      label: 'Orders and Quotation Management',
+      description: 'Track quotations, purchase requests, project orders, and follow-up.',
+      icon: FileUp,
+      path: '/dashboard/orders',
+    },
+  ];
   const navItems = [
     { label: 'Workspace', icon: Blocks, featured: false, path: '/dashboard' },
     { label: 'Gateway Online', icon: ServerCog, featured: true, path: '/dashboard/gateway' },
@@ -1638,6 +1863,49 @@ function LoggedDashboardPage({
     { label: 'Quotations', icon: Database, featured: false, path: '/dashboard/quotations' },
     { label: 'Settings', icon: Gauge, featured: false, path: '/dashboard/settings' },
   ];
+  const isLicensesPage = activePath === '/dashboard/licenses';
+  const foundingMemberRank = membershipRank.Professional;
+  const foundingMemberIsCurrent = membershipRank[user.subscription] >= foundingMemberRank;
+  const foundingMemberCta = foundingMemberIsCurrent ? 'Current Plan' : 'Become a Founding Member';
+  const foundingMemberPricing: Record<BillingPeriod, { price: string; label: string; plan_key: string; price_display: string }> = {
+    monthly: {
+      price: '$1,000 MXN',
+      label: '/ month',
+      plan_key: 'founding_member_monthly',
+      price_display: '$1,000 MXN / month',
+    },
+    three_months: {
+      price: '$3,000 MXN',
+      label: '/ 3 months',
+      plan_key: 'founding_member_3_months',
+      price_display: '$3,000 MXN / 3 months',
+    },
+    six_months: {
+      price: '$6,000 MXN',
+      label: '/ 6 months',
+      plan_key: 'founding_member_6_months',
+      price_display: '$6,000 MXN / 6 months',
+    },
+    annual: {
+      price: '$12,000 MXN',
+      label: '/ year',
+      plan_key: 'founding_member_annual',
+      price_display: '$12,000 MXN / year',
+    },
+  };
+  const currentFoundingMemberPricing = foundingMemberPricing[billingPeriod];
+  const billingOptions: Array<{ label: string; value: BillingPeriod }> = [
+    { label: 'Monthly', value: 'monthly' },
+    { label: '3 Months', value: 'three_months' },
+    { label: '6 Months', value: 'six_months' },
+    { label: 'Annual', value: 'annual' },
+  ];
+
+  const handleCheckout = (plan: CheckoutPlan) => {
+    console.log('Checkout will be connected soon:', plan);
+    setCheckoutMessage(`${plan.price_display} selected. Checkout will be connected soon.`);
+    window.setTimeout(() => setCheckoutMessage(null), 4200);
+  };
 
   return (
     <main className="logged-shell">
@@ -1670,28 +1938,199 @@ function LoggedDashboardPage({
       </aside>
 
       <section className="logged-workspace">
-        <div className="workspace-heading">
-          <p className="eyebrow">{t('Workspace')}</p>
-          <h1>{t('Welcome back')}, {user.name}</h1>
-          <p>{t('Your YVIMO workspace is ready.')}</p>
+        {isLicensesPage ? (
+          <div className="license-page">
+            <section className="license-pricing-hero">
+              <p className="eyebrow">{t('YVIMO MEMBERSHIP')}</p>
+              <h1>{t('Choose your YVIMO membership')}</h1>
+              <p>
+                {t('Access industrial automation training, Gateway Online tools, and priority commercial support through one YVIMO portal.')}
+              </p>
+              <span>{t('Specialized industrial training, digital tools, and workflow support built for automation professionals.')}</span>
+              <div className="billing-toggle" role="tablist" aria-label="Billing period">
+                {billingOptions.map((option) => (
+                  <button
+                    className={billingPeriod === option.value ? 'active' : ''}
+                    type="button"
+                    role="tab"
+                    aria-selected={billingPeriod === option.value}
+                    key={option.value}
+                    onClick={() => setBillingPeriod(option.value)}
+                  >
+                    {t(option.label)}
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            {checkoutMessage ? (
+              <div className="license-checkout-message" role="status">
+                {checkoutMessage}
+              </div>
+            ) : null}
+
+            <section className="founding-member-card" aria-label="Founding Member offer">
+              <div className="founding-member-copy">
+                <span>{t('Limited early access')}</span>
+                <h2>{t('Founding Member')}</h2>
+                <p>{t('Get Professional-level YVIMO access for $1,000 MXN/month while the platform is being built.')}</p>
+                <p>{t('Join early, help shape the platform, and lock in early-access pricing while your subscription stays active.')}</p>
+                <strong>{currentFoundingMemberPricing.price} <em>{t(currentFoundingMemberPricing.label)}</em></strong>
+              </div>
+              <ul>
+                {[
+                  'Full Academy access',
+                  'Professional-level access at early-user pricing',
+                  'Gateway Online access',
+                  'Priority handling for orders and quotation requests',
+                  'Locked-in pricing while subscription stays active',
+                  'Access to content as it is released',
+                  'Influence future lessons, tools, and tracks',
+                  'Founding Member badge',
+                  'Early access to new Academy tracks',
+                ].map((feature) => (
+                  <li key={feature}>
+                    <Check size={17} />
+                    {t(feature)}
+                  </li>
+                ))}
+              </ul>
+              <button
+                className={foundingMemberIsCurrent ? 'current-plan' : ''}
+                type="button"
+                disabled={foundingMemberIsCurrent}
+                onClick={() => handleCheckout({
+                  product_key: 'yvimo_membership',
+                  plan_key: currentFoundingMemberPricing.plan_key,
+                  billing_period: billingPeriod,
+                  price_display: currentFoundingMemberPricing.price_display,
+                  price_id: null,
+                })}
+              >
+                {t(foundingMemberCta)} {!foundingMemberIsCurrent ? <ArrowRight size={17} /> : null}
+              </button>
+            </section>
+
+            <section className="license-pricing-grid" aria-label="YVIMO membership pricing plans">
+              {academyPlans.map((plan) => {
+                const pricing = plan[billingPeriod];
+                const priceDisplay = `${pricing.price}${pricing.label ? ` ${pricing.label}` : ''}`;
+                const planName = plan.name as SubscriptionTier;
+                const isCurrentPlan = user.subscription === planName;
+                const currentRank = membershipRank[user.subscription];
+                const planRank = membershipRank[planName];
+                const planCta = isCurrentPlan
+                  ? 'Current Plan'
+                  : planName === 'Explorer'
+                    ? 'Start Free'
+                    : planName === 'Enterprise'
+                      ? 'Contact sales'
+                      : planRank > currentRank
+                        ? 'Upgrade to this Plan'
+                        : pricing.cta;
+                return (
+                  <article className={plan.badge ? 'license-plan-card recommended' : 'license-plan-card'} key={plan.name}>
+                    <div className="license-plan-top">
+                      <div>
+                        <h2>
+                          <span className={`license-plan-tier subscription-pill subscription-${plan.name.toLowerCase()}`}>
+                            {t(plan.name)}
+                          </span>
+                        </h2>
+                        <p>{t(plan.description)}</p>
+                      </div>
+                      {plan.badge ? <span>{t(plan.badge)}</span> : null}
+                    </div>
+                    <div className="license-plan-price">
+                      <strong>{pricing.price}</strong>
+                      {pricing.label ? <span>{t(pricing.label)}</span> : null}
+                    </div>
+                    {pricing.note ? <p className="license-plan-note">{t(pricing.note)}</p> : null}
+                    <ul>
+                      {plan.features.map((feature) => (
+                        <li key={feature}>
+                          <Check size={17} />
+                          {t(feature)}
+                        </li>
+                      ))}
+                    </ul>
+                    <button
+                      className={isCurrentPlan ? 'current-plan' : ''}
+                      type="button"
+                      disabled={isCurrentPlan}
+                      onClick={() => handleCheckout({
+                        product_key: 'yvimo_membership',
+                        plan_key: pricing.plan_key,
+                        billing_period: billingPeriod,
+                        price_display: priceDisplay,
+                        price_id: null,
+                      })}
+                    >
+                      {t(planCta)}
+                    </button>
+                  </article>
+                );
+              })}
+            </section>
+          </div>
+        ) : (
+        <div className="workspace-layout">
+          <div className="workspace-main">
+            <div className="workspace-heading">
+              <p className="eyebrow">{t('YVIMO PORTAL')}</p>
+              <h1>{t('Workspace overview')}</h1>
+              <p>{t('Your YVIMO tools, licenses, and learning access in one place.')}</p>
+            </div>
+            <div className="workspace-grid">
+              {quickAccessItems.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <button
+                    className="workspace-access-card"
+                    type="button"
+                    key={item.label}
+                    onClick={() => onNavigate(item.path)}
+                  >
+                    <span className="workspace-access-icon">
+                      <Icon size={22} />
+                    </span>
+                    <span className="workspace-access-copy">
+                      <strong>{t(item.label)}</strong>
+                      <span>{t(item.description)}</span>
+                    </span>
+                    <ArrowRight size={18} />
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <aside className="workspace-profile-card" aria-label="Workspace profile">
+            <div className="workspace-profile-copy">
+              <strong>{user.name}</strong>
+              <span className={getSubscriptionClass(user.subscription)}>
+                {user.subscription}
+              </span>
+            </div>
+            <div
+              className="workspace-profile-ring"
+              style={{ '--profile-progress': `${profileLevelProgress}%` } as React.CSSProperties}
+              aria-label={`${profileLevelProgress}% level progress`}
+            >
+              <UserAvatar user={user} className="workspace-profile-avatar" />
+            </div>
+            <div className="workspace-profile-level" aria-label={`Level ${profileLevel}`}>
+              <span>LV</span>
+              <strong>{profileLevel}</strong>
+            </div>
+            <div className="workspace-profile-points">
+              <Star size={19} fill="currentColor" />
+              <strong>{yvimoPoints.toLocaleString()}</strong>
+              <span>{t('YVIMO Points')}</span>
+            </div>
+          </aside>
         </div>
-        <div className="workspace-grid">
-          <article>
-            <ServerCog size={24} />
-            <strong>{t('Gateway Online')}</strong>
-            <span>{t('Create a first project, manage access, or review platform modules from the navigation.')}</span>
-          </article>
-          <article>
-            <ShieldCheck size={24} />
-            <strong>{t('Licenses')}</strong>
-            <span>{t('Manage product seats, activations, renewals, and customer entitlements.')}</span>
-          </article>
-          <article>
-            <FileUp size={24} />
-            <strong>{t('Orders and Quotation Management')}</strong>
-            <span>{t('Track quotations, purchase requests, project orders, and commercial follow-up.')}</span>
-          </article>
-        </div>
+        )}
       </section>
     </main>
   );
@@ -1738,12 +2177,15 @@ function App() {
   const currentLanguage = languages.find((item) => item.code === language) ?? languages[0];
   const isLoginPage = currentPath === '/login';
   const isSignUpPage = currentPath === '/signup';
-  const isDashboardPage = currentPath === '/dashboard';
+  const isDashboardPage = currentPath === '/dashboard' || currentPath.startsWith('/dashboard/');
   const isAcademyPage = currentPath === '/academy' || currentPath.startsWith('/academy/');
   const isAuthPage = isLoginPage || isSignUpPage;
   const headerProgress = isAuthPage || isDashboardPage || isAcademyPage ? 1 : scrollProgress;
   const compactViewport = viewportWidth < 760;
   const tinyViewport = viewportWidth < 480;
+  const headerProfileLevelProgress = 72;
+  const headerProfileLevel = 373;
+  const headerYvimoPoints = 1280;
   const expandedHeaderHeight = compactViewport ? 104 : 128;
   const compactHeaderHeight = compactViewport ? 82 : 94;
   const expandedWaveDepth = compactViewport ? 34 : 48;
@@ -2255,13 +2697,28 @@ function App() {
         )}
         {!isAuthPage && authUser && (
           <button className="compact-user-card" type="button" onClick={navigateDashboard}>
-            <span className="compact-user-avatar" aria-hidden="true">
-              {getProfileInitials(authUser.name)}
+            <span
+              className="compact-user-avatar-stack"
+              style={{ '--compact-profile-progress': `${headerProfileLevelProgress}%` } as React.CSSProperties}
+              aria-hidden="true"
+            >
+              <span className="compact-user-ring">
+                <UserAvatar user={authUser} className="compact-user-avatar" />
+              </span>
+              <span className="compact-user-level">
+                LV <strong>{headerProfileLevel}</strong>
+              </span>
             </span>
             <span className="compact-user-copy">
               <strong>{authUser.name}</strong>
-              <span className={getSubscriptionClass(authUser.subscription)}>
-                {authUser.subscription}
+              <span className="compact-user-meta">
+                <span className={getSubscriptionClass(authUser.subscription)}>
+                  {authUser.subscription}
+                </span>
+                <span className="compact-user-points">
+                  <Star size={15} fill="currentColor" />
+                  <strong>{headerYvimoPoints.toLocaleString()}</strong>
+                </span>
               </span>
             </span>
           </button>
@@ -2303,9 +2760,7 @@ function App() {
           <a href="/#platform" onClick={(event) => { event.preventDefault(); navigateHome('#platform'); }}>{t('Platform')}</a>
           {authUser ? (
             <button className="panel-user-card" type="button" onClick={navigateDashboard}>
-              <span className="compact-user-avatar" aria-hidden="true">
-                {getProfileInitials(authUser.name)}
-              </span>
+              <UserAvatar user={authUser} className="compact-user-avatar" />
               <span className="compact-user-copy">
                 <strong>{authUser.name}</strong>
                 <span className={getSubscriptionClass(authUser.subscription)}>

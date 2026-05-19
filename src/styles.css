@@ -335,9 +335,9 @@ button {
   z-index: 4;
   display: inline-flex;
   align-items: center;
-  gap: 12px;
-  min-height: 58px;
-  max-width: 260px;
+  gap: 8px;
+  min-height: 62px;
+  max-width: 236px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 8px 14px 8px 8px;
@@ -355,6 +355,28 @@ button {
   border-color: rgba(255, 138, 31, 0.48);
 }
 
+.compact-user-avatar-stack {
+  --compact-profile-progress: 72%;
+  position: relative;
+  display: grid;
+  width: 48px;
+  min-width: 48px;
+  height: 52px;
+  place-items: start center;
+}
+
+.compact-user-ring {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at center, #ffffff 0 61%, transparent 62%),
+    conic-gradient(var(--orange) var(--compact-profile-progress), #e7ebf0 0);
+  box-shadow: 0 0 10px rgba(255, 138, 31, 0.14);
+}
+
 .compact-user-avatar {
   display: inline-grid;
   width: 40px;
@@ -365,11 +387,42 @@ button {
   color: var(--dark-high);
   font-size: 13px;
   font-weight: 950;
+  object-fit: cover;
+}
+
+.compact-user-ring .compact-user-avatar {
+  width: 31px;
+  height: 31px;
+  border: 3px solid #ffffff;
+  font-size: 10px;
+}
+
+.compact-user-level {
+  position: absolute;
+  bottom: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border: 1px solid rgba(255, 138, 31, 0.38);
+  border-radius: 999px;
+  padding: 2px 6px;
+  background: #fff6ee;
+  color: #9a4a0c;
+  font-size: 7px;
+  font-weight: 950;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  box-shadow: 0 5px 12px rgba(255, 138, 31, 0.14);
+}
+
+.compact-user-level strong {
+  color: var(--ink);
+  font-size: 9px;
 }
 
 .compact-user-copy {
   display: grid;
-  gap: 4px;
+  gap: 6px;
   min-width: 0;
   justify-items: start;
 }
@@ -383,6 +436,38 @@ button {
   font-weight: 950;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.compact-user-level strong {
+  max-width: none;
+  overflow: visible;
+  color: var(--ink);
+  font-size: 10px;
+  text-overflow: clip;
+}
+
+.compact-user-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.compact-user-points {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--orange);
+  font-size: 12px;
+  font-weight: 950;
+  line-height: 1;
+}
+
+.compact-user-points strong {
+  max-width: none;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 950;
 }
 
 .topbar-authenticated .compact-user-card {
@@ -1077,15 +1162,20 @@ button {
 }
 
 .logged-sidebar {
-  position: sticky;
+  position: fixed;
   top: var(--header-height);
+  bottom: 0;
+  left: 0;
+  z-index: 8;
   display: flex;
   flex-direction: column;
   gap: 22px;
-  height: calc(100vh - var(--header-height));
+  width: 260px;
+  height: auto;
   padding: 26px 18px;
   background: #252a31;
   color: #dce3ec;
+  overflow-y: auto;
 }
 
 .logged-sidebar-title {
@@ -1158,60 +1248,532 @@ button {
 }
 
 .logged-workspace {
+  grid-column: 2;
   min-width: 0;
   padding: 42px clamp(22px, 4vw, 58px);
 }
 
+.workspace-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 318px);
+  gap: clamp(20px, 2.6vw, 34px);
+  align-items: start;
+}
+
+.workspace-main {
+  min-width: 0;
+}
+
 .workspace-heading {
   display: grid;
-  gap: 10px;
-  max-width: 780px;
+  justify-items: center;
+  gap: 12px;
+  max-width: 880px;
+  margin: 0 auto;
+  text-align: center;
 }
 
 .workspace-heading h1 {
   margin: 0;
   color: var(--ink);
-  font-size: clamp(34px, 5vw, 58px);
-  line-height: 1;
+  font-size: clamp(42px, 6.2vw, 74px);
+  line-height: 0.95;
   letter-spacing: 0;
 }
 
 .workspace-heading p:last-child {
   margin: 0;
+  max-width: 640px;
   color: var(--ink-soft);
   font-size: 18px;
+  line-height: 1.55;
 }
 
 .workspace-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
   margin-top: 34px;
 }
 
-.workspace-grid article {
+.workspace-access-card {
   display: grid;
-  gap: 12px;
-  min-height: 190px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  min-height: 132px;
   border: 1px solid var(--line);
   border-radius: 12px;
   padding: 20px;
   background: #ffffff;
+  color: inherit;
+  cursor: pointer;
   box-shadow: 0 18px 46px rgba(32, 36, 42, 0.06);
+  text-align: left;
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.18s ease;
 }
 
-.workspace-grid svg {
+.workspace-access-card:hover,
+.workspace-access-card:focus-visible {
+  border-color: rgba(255, 138, 31, 0.42);
+  box-shadow: 0 22px 54px rgba(32, 36, 42, 0.1);
+  transform: translateY(-2px);
+}
+
+.workspace-access-card > svg {
+  color: #9aa5b1;
+  transition: transform 0.18s ease, color 0.18s ease;
+}
+
+.workspace-access-card:hover > svg,
+.workspace-access-card:focus-visible > svg {
+  color: var(--orange);
+  transform: translateX(2px);
+}
+
+.workspace-access-icon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border-radius: 10px;
+  background: rgba(255, 138, 31, 0.09);
   color: var(--orange);
 }
 
-.workspace-grid strong {
+.workspace-access-copy {
+  display: grid;
+  gap: 9px;
+  min-width: 0;
+}
+
+.workspace-access-copy strong {
   color: var(--ink);
   font-size: 18px;
 }
 
-.workspace-grid span {
+.workspace-access-copy span {
   color: var(--ink-soft);
   line-height: 1.5;
+}
+
+.workspace-profile-card {
+  position: sticky;
+  top: calc(var(--header-height) + 42px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 20px;
+  border: 1px solid rgba(255, 138, 31, 0.18);
+  border-radius: 12px;
+  padding: 28px 22px 24px;
+  background: #ffffff;
+  box-shadow:
+    0 24px 58px rgba(32, 36, 42, 0.08),
+    0 0 0 1px rgba(255, 255, 255, 0.64) inset;
+}
+
+.workspace-profile-copy {
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+  text-align: center;
+}
+
+.workspace-profile-copy strong {
+  max-width: 230px;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 22px;
+  font-weight: 950;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-profile-ring {
+  --profile-progress: 72%;
+  display: grid;
+  width: 168px;
+  height: 168px;
+  place-items: center;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at center, #ffffff 0 62%, transparent 63%),
+    conic-gradient(var(--orange) var(--profile-progress), #e7ebf0 0);
+  box-shadow:
+    0 0 18px rgba(255, 138, 31, 0.18),
+    0 12px 24px rgba(255, 138, 31, 0.1);
+}
+
+.workspace-profile-avatar {
+  display: grid;
+  width: 126px;
+  height: 126px;
+  place-items: center;
+  border: 6px solid #ffffff;
+  border-radius: 999px;
+  background: #eef1f5;
+  color: var(--dark-high);
+  font-size: 34px;
+  font-weight: 950;
+  object-fit: cover;
+  box-shadow: 0 12px 28px rgba(32, 36, 42, 0.16);
+}
+
+.workspace-profile-level {
+  display: inline-flex;
+  min-width: 92px;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  place-items: center;
+  margin-top: -12px;
+  border: 1px solid rgba(255, 138, 31, 0.34);
+  border-radius: 999px;
+  padding: 6px 14px;
+  background: #fff6ee;
+  color: var(--orange);
+  font-size: 13px;
+  font-weight: 950;
+  line-height: 1;
+  box-shadow: 0 10px 22px rgba(255, 138, 31, 0.14);
+}
+
+.workspace-profile-level span {
+  color: #9a4a0c;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+}
+
+.workspace-profile-level strong {
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 950;
+}
+
+.workspace-profile-points {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  border: 1px solid rgba(255, 138, 31, 0.22);
+  border-radius: 10px;
+  padding: 14px 12px;
+  background: rgba(255, 138, 31, 0.08);
+  color: var(--orange);
+}
+
+.workspace-profile-points strong {
+  color: var(--ink);
+  font-size: 22px;
+  font-weight: 950;
+}
+
+.workspace-profile-points span {
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.license-page {
+  display: grid;
+  gap: 24px;
+}
+
+.license-pricing-hero {
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+  max-width: 940px;
+  margin: 0 auto 8px;
+  text-align: center;
+}
+
+.license-pricing-hero h1 {
+  max-width: 780px;
+  margin: 0;
+  color: var(--ink);
+  font-size: clamp(42px, 5.4vw, 72px);
+  line-height: 0.98;
+  letter-spacing: 0;
+}
+
+.license-pricing-hero p {
+  max-width: 780px;
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 18px;
+  line-height: 1.55;
+}
+
+.license-pricing-hero > span {
+  color: #485463;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.billing-toggle {
+  display: inline-grid;
+  grid-template-columns: repeat(4, minmax(96px, 1fr));
+  gap: 4px;
+  margin-top: 16px;
+  border: 1px solid rgba(255, 138, 31, 0.18);
+  border-radius: 999px;
+  padding: 5px;
+  background: #ffffff;
+  box-shadow: 0 18px 42px rgba(32, 36, 42, 0.08);
+}
+
+.billing-toggle button {
+  min-height: 40px;
+  border: 0;
+  border-radius: 999px;
+  padding: 0 16px;
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+  font-weight: 950;
+}
+
+.billing-toggle button.active {
+  background: var(--orange);
+  color: #ffffff;
+  box-shadow: 0 12px 24px rgba(255, 138, 31, 0.22);
+}
+
+.license-checkout-message {
+  width: min(720px, 100%);
+  margin: 0 auto;
+  border: 1px solid rgba(255, 138, 31, 0.22);
+  border-radius: 10px;
+  padding: 12px 16px;
+  background: #fff6ee;
+  color: #9a4a0c;
+  font-weight: 850;
+  text-align: center;
+}
+
+.founding-member-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(260px, 0.95fr) auto;
+  gap: 22px;
+  align-items: center;
+  border: 1px solid rgba(255, 138, 31, 0.36);
+  border-radius: 14px;
+  padding: clamp(20px, 3vw, 30px);
+  background:
+    linear-gradient(135deg, #1f252c 0%, #2c333c 54%, #1f252c 100%);
+  color: #ffffff;
+  box-shadow: 0 24px 60px rgba(32, 36, 42, 0.16);
+}
+
+.founding-member-copy {
+  display: grid;
+  gap: 10px;
+}
+
+.founding-member-copy > span {
+  width: fit-content;
+  border: 1px solid rgba(255, 138, 31, 0.36);
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: rgba(255, 138, 31, 0.12);
+  color: #ffd1a5;
+  font-size: 12px;
+  font-weight: 950;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.founding-member-copy h2 {
+  margin: 0;
+  color: #ffffff;
+  font-size: clamp(30px, 3vw, 44px);
+  line-height: 1;
+}
+
+.founding-member-copy p {
+  margin: 0;
+  max-width: 560px;
+  color: #d7dee8;
+  line-height: 1.55;
+}
+
+.founding-member-copy strong {
+  color: #ffffff;
+  font-size: 28px;
+  font-weight: 950;
+}
+
+.founding-member-copy em {
+  color: #ffd1a5;
+  font-size: 15px;
+  font-style: normal;
+}
+
+.founding-member-card ul,
+.license-plan-card ul {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.founding-member-card li,
+.license-plan-card li {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  line-height: 1.4;
+}
+
+.founding-member-card li {
+  color: #eef3f8;
+}
+
+.founding-member-card li svg,
+.license-plan-card li svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: var(--orange);
+}
+
+.founding-member-card button,
+.license-plan-card button {
+  display: inline-flex;
+  min-height: 46px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 10px;
+  padding: 0 18px;
+  background: var(--orange);
+  color: #ffffff;
+  cursor: pointer;
+  font-weight: 950;
+  box-shadow: 0 16px 34px rgba(255, 138, 31, 0.22);
+}
+
+.founding-member-card button:hover,
+.license-plan-card button:hover {
+  background: var(--orange-strong);
+}
+
+.license-plan-card button.current-plan,
+.founding-member-card button.current-plan,
+.founding-member-card button:disabled,
+.license-plan-card button.current-plan:hover,
+.license-plan-card button:disabled {
+  background: #1d76d3;
+  color: #ffffff;
+  cursor: default;
+  box-shadow: 0 16px 34px rgba(29, 118, 211, 0.2);
+}
+
+.license-pricing-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.license-plan-card {
+  display: flex;
+  min-height: 620px;
+  flex-direction: column;
+  gap: 18px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 24px;
+  background: #ffffff;
+  box-shadow: 0 18px 46px rgba(32, 36, 42, 0.06);
+}
+
+.license-plan-card.recommended {
+  border-color: rgba(255, 138, 31, 0.42);
+  box-shadow: 0 24px 58px rgba(255, 138, 31, 0.12);
+}
+
+.license-plan-top {
+  display: flex;
+  min-height: 132px;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.license-plan-top h2 {
+  margin: 0 0 8px;
+  font-size: 0;
+  line-height: 1.05;
+}
+
+.license-plan-tier {
+  min-height: 28px;
+  padding: 6px 12px;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.license-plan-top p {
+  margin: 0;
+  color: var(--ink-soft);
+  line-height: 1.5;
+}
+
+.license-plan-top > span {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 6px 9px;
+  background: #fff0e4;
+  color: var(--orange);
+  font-size: 11px;
+  font-weight: 950;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.license-plan-price {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-height: 46px;
+}
+
+.license-plan-price strong {
+  color: var(--ink);
+  font-size: clamp(25px, 2.4vw, 34px);
+  font-weight: 950;
+  line-height: 1;
+}
+
+.license-plan-price span {
+  color: var(--ink-soft);
+  font-weight: 800;
+}
+
+.license-plan-note {
+  min-height: 22px;
+  margin: -8px 0 0;
+  color: #9a4a0c;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.license-plan-card ul {
+  flex: 1;
+}
+
+.license-plan-card li {
+  color: #465366;
 }
 
 .academy-shell {
@@ -6605,6 +7167,26 @@ button {
 }
 
 @media (min-width: 761px) and (max-width: 1180px) {
+  .founding-member-card {
+    grid-template-columns: 1fr;
+  }
+
+  .founding-member-card button {
+    width: fit-content;
+  }
+
+  .workspace-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .workspace-profile-card {
+    position: static;
+  }
+
+  .workspace-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .hero-copy h1 {
     max-width: 760px;
     font-size: clamp(52px, 7vw, 66px);
@@ -6713,11 +7295,23 @@ button {
   .compact-user-card {
     top: calc(var(--header-height) / 2);
     left: 76px;
-    max-width: 188px;
-    min-height: 46px;
-    padding: 6px 10px 6px 6px;
+    max-width: 224px;
+    min-height: 60px;
+    gap: 8px;
+    padding: 5px 9px 5px 5px;
     opacity: 1;
     transform: translateY(-50%);
+  }
+
+  .compact-user-avatar-stack {
+    width: 46px;
+    min-width: 46px;
+    height: 50px;
+  }
+
+  .compact-user-ring {
+    width: 42px;
+    height: 42px;
   }
 
   .compact-user-avatar {
@@ -6726,9 +7320,40 @@ button {
     font-size: 11px;
   }
 
+  .compact-user-ring .compact-user-avatar {
+    width: 30px;
+    height: 30px;
+    border-width: 2px;
+    font-size: 10px;
+  }
+
+  .compact-user-level {
+    padding: 2px 5px;
+    font-size: 7px;
+  }
+
+  .compact-user-level strong,
+  .compact-user-points strong {
+    font-size: 9px;
+  }
+
   .compact-user-card strong {
-    max-width: 108px;
+    max-width: 120px;
     font-size: 12px;
+  }
+
+  .compact-user-level strong,
+  .compact-user-points strong {
+    max-width: none;
+    font-size: 9px;
+  }
+
+  .compact-user-meta {
+    gap: 6px;
+  }
+
+  .compact-user-points {
+    font-size: 9px;
   }
 
   .compact-user-card .subscription-pill {
@@ -6864,7 +7489,57 @@ button {
   }
 
   .logged-workspace {
+    grid-column: auto;
     padding: 32px 18px 62px;
+  }
+
+  .license-pricing-hero h1 {
+    font-size: clamp(38px, 11vw, 56px);
+  }
+
+  .billing-toggle {
+    width: 100%;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    border-radius: 18px;
+  }
+
+  .founding-member-card,
+  .license-pricing-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .founding-member-card button,
+  .license-plan-card button {
+    width: 100%;
+  }
+
+  .license-plan-card {
+    min-height: 0;
+  }
+
+  .license-plan-top {
+    min-height: 0;
+  }
+
+  .workspace-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .workspace-profile-card {
+    position: static;
+    gap: 20px;
+    padding: 24px 18px;
+  }
+
+  .workspace-profile-ring {
+    width: 148px;
+    height: 148px;
+  }
+
+  .workspace-profile-avatar {
+    width: 108px;
+    height: 108px;
+    font-size: 29px;
   }
 
   .workspace-grid,
