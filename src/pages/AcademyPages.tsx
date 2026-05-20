@@ -105,6 +105,18 @@ type AcademyTrackCourse = {
   certificateEligible?: boolean;
 };
 
+type AcademyTrackSpecialization = {
+  slug: string;
+  title: string;
+  shortTitle: string;
+  description: string;
+  platformName: string;
+  progressLabel: string;
+  logoSrc: string;
+  accentColor: string;
+  courses: AcademyTrackCourse[];
+};
+
 type AcademyTrackLesson = {
   slug: string;
   title: string;
@@ -132,6 +144,7 @@ type AcademyTrack = {
   accessStatus?: 'available' | 'preview' | 'coming-soon';
   icon: React.ComponentType<{ size?: number }>;
   badgeSrc?: string;
+  specializations?: AcademyTrackSpecialization[];
   courses: AcademyTrackCourse[];
 };
 
@@ -259,63 +272,276 @@ function makeTrackLessons(titles: string[]): AcademyTrackLesson[] {
   }));
 }
 
+function makeTrackCourse(
+  step: number,
+  slug: string,
+  title: string,
+  shortTitle: string,
+  description: string,
+  level: string,
+  skills: string[],
+  lessons: string[],
+): AcademyTrackCourse {
+  return {
+    step,
+    slug,
+    title,
+    shortTitle,
+    description,
+    level,
+    estimatedTime: 'TBD',
+    status: 'not-started',
+    skills,
+    certificateEligible: true,
+    lessons: makeTrackLessons(lessons),
+  };
+}
+
 const academyTracks: AcademyTrack[] = [
   {
     slug: 'plc-technician',
     title: 'PLC Technician Track',
     shortTitle: 'PLC Technician',
-    description: 'Build a strong foundation in PLC logic, machine control, field signals, and troubleshooting.',
-    subtitle: 'A structured learning path for building practical PLC, machine control, and troubleshooting skills.',
+    description: 'A practical learning path for building real PLC programming, troubleshooting, HMI, networking, and machine control skills. Students learn core PLC concepts first, then choose a Siemens or Rockwell specialization.',
+    subtitle: 'A practical learning path for building real PLC programming, troubleshooting, HMI, networking, and machine control skills.',
     level: 'Beginner to Intermediate',
-    courseCount: 4,
+    courseCount: 9,
     certificateType: 'Certificate track',
-    estimatedDuration: 'Self-paced',
+    estimatedDuration: 'Siemens or Rockwell path',
     icon: Cpu,
     badgeSrc: '/assets/academy/plc-tech-track-logo.png',
     courses: [
+      makeTrackCourse(1, 'industrial-automation-fundamentals', 'Industrial Automation Fundamentals', 'Automation Fundamentals', 'Build the foundation for understanding industrial automation systems, control architecture, sensors, actuators, signals, and basic machine behavior.', 'Beginner', ['Control architecture', 'Sensors and actuators', 'Machine states', 'Troubleshooting mindset'], [
+        'What is a PLC?',
+        'Industrial control architecture',
+        'Inputs, outputs, sensors and actuators',
+        'Digital vs analog signals',
+        'Control panels, power, safety and wiring basics',
+        'Relay logic and ladder thinking',
+        'Machine sequences and states',
+        'Troubleshooting mindset for automation technicians',
+      ]),
+      makeTrackCourse(2, 'plc-programming-fundamentals', 'PLC Programming Fundamentals', 'PLC Programming', 'Learn the universal PLC programming concepts used across major industrial platforms.', 'Beginner', ['PLC scan cycle', 'Ladder logic', 'Timers and counters', 'Machine sequencing'], [
+        'PLC scan cycle',
+        'Tags, variables and memory',
+        'Ladder logic structure',
+        'Contacts, coils and seal-in circuits',
+        'Timers',
+        'Counters',
+        'Comparators',
+        'Math instructions',
+        'Move instructions',
+        'Analog scaling',
+        'Basic machine sequence',
+        'Faults, interlocks and permissives',
+      ]),
+      makeTrackCourse(3, 'electrical-field-signals-plc-technicians', 'Electrical & Field Signals for PLC Technicians', 'Field Signals', 'Learn how PLC logic connects to the real machine through sensors, outputs, wiring, electrical diagrams, and field troubleshooting.', 'Beginner to Intermediate', ['Electrical diagrams', 'Input tracing', 'Output tracing', 'Field troubleshooting'], [
+        'Reading electrical diagrams for PLC troubleshooting',
+        'Tracing an input signal',
+        'Tracing an output signal',
+        'Sensor troubleshooting',
+        'Solenoid and actuator troubleshooting',
+        'Relay and contactor basics',
+        'Analog signal troubleshooting',
+        'Using a multimeter in PLC troubleshooting',
+        'Common field signal failures',
+        'Building a field troubleshooting checklist',
+      ]),
+    ],
+    specializations: [
       {
-        step: 1,
-        slug: 'industrial-automation-fundamentals',
-        title: 'Industrial Automation Fundamentals',
-        shortTitle: 'Automation Fundamentals',
-        description: 'A beginner-friendly introduction to PLCs, signals, and ladder logic.',
-        level: 'Beginner',
-        estimatedTime: 'TBD',
-        status: 'not-started',
-        skills: ['PLC basics', 'Industrial signals', 'Machine control concepts', 'Ladder logic introduction'],
+        slug: 'plc-technician-siemens',
+        title: 'Siemens / TIA Portal',
+        shortTitle: 'Siemens',
+        platformName: 'TIA Portal',
+        progressLabel: 'Siemens Path Progress',
+        logoSrc: 'https://cdn.simpleicons.org/siemens/009999',
+        accentColor: '#009999',
+        description: 'Learn PLC programming, diagnostics, HMI and PROFINET workflows using Siemens automation tools.',
+        courses: [
+          makeTrackCourse(4, 'siemens-plc-platform-fundamentals-tia-portal', 'Siemens PLC Platform Fundamentals: TIA Portal', 'TIA Portal', 'Learn how to create, configure, simulate, download, upload, and monitor Siemens PLC projects using TIA Portal.', 'Beginner to Intermediate', ['TIA Portal', 'S7-1200 and S7-1500', 'Data blocks', 'PLCSIM'], [
+            'TIA Portal environment',
+            'Creating a new Siemens PLC project',
+            'S7-1200 and S7-1500 overview',
+            'Hardware configuration',
+            'Device and network setup',
+            'Tag tables and PLC variables',
+            'Data blocks',
+            'FC and FB structure',
+            'Instance DBs and multi-instance concepts',
+            'Online monitoring',
+            'Downloading and uploading projects',
+            'PLCSIM simulation workflow',
+            'Basic diagnostics in TIA Portal',
+          ]),
+          makeTrackCourse(5, 'siemens-hmi-fundamentals-wincc', 'Siemens HMI Fundamentals: WinCC', 'WinCC HMI', 'Build basic operator interfaces connected to Siemens PLC logic using WinCC concepts.', 'Beginner to Intermediate', ['WinCC', 'HMI tags', 'Alarms', 'Operator panels'], [
+            'What is an HMI?',
+            'UI vs UX for machine operators',
+            'WinCC overview',
+            'HMI tags and PLC connection',
+            'Screen navigation',
+            'Buttons, indicators and numeric displays',
+            'Alarm configuration',
+            'Recipes and setpoints',
+            'Basic diagnostics screens',
+            'Good HMI design practices',
+            'Mini project: operator panel for a Siemens machine sequence',
+          ]),
+          makeTrackCourse(6, 'industrial-networks-siemens-plc-technicians', 'Industrial Networks for Siemens PLC Technicians', 'Siemens Networks', 'Learn the networking concepts required to configure and troubleshoot Siemens PLC systems, PROFINET devices, remote I/O, and basic PLC communication.', 'Intermediate', ['PROFINET', 'ET 200 remote I/O', 'GSDML files', 'Network diagnostics'], [
+            'Industrial Ethernet basics',
+            'IP addresses and subnets',
+            'PROFINET overview',
+            'Device names and IP assignment',
+            'TIA Portal network view',
+            'GSDML files',
+            'ET 200 remote I/O architecture',
+            'Module and device diagnostics',
+            'Basic Profibus overview',
+            'PUT and GET communication overview',
+            'TCON, TSEND and TRCV concepts',
+            'Network troubleshooting checklist',
+            'Mini project: Siemens PLC with remote I/O and HMI',
+          ]),
+          makeTrackCourse(7, 'advanced-siemens-plc-programming-scl-fb-fc-db', 'Advanced Siemens PLC Programming: SCL, FB, FC and DB', 'Advanced Siemens', 'Develop reusable Siemens PLC logic using structured programming concepts, SCL, function blocks, data blocks, UDTs, and modular machine logic.', 'Intermediate', ['SCL', 'Function blocks', 'Data blocks', 'Reusable structures'], [
+            'When to use structured text / SCL',
+            'Variables and assignments',
+            'IF / THEN / ELSE',
+            'CASE statements',
+            'FOR loops',
+            'WHILE loops',
+            'Calling functions',
+            'Timers and counters in SCL',
+            'FC vs FB',
+            'Data blocks and instance DBs',
+            'UDTs and reusable structures',
+            'Multi-instance programming',
+            'Mini project: reusable Siemens machine control block',
+          ]),
+          makeTrackCourse(8, 'siemens-plc-troubleshooting-online-diagnostics', 'Siemens PLC Troubleshooting and Online Diagnostics', 'Siemens Diagnostics', 'Learn how to diagnose machine problems using TIA Portal online tools, monitoring, cross-reference, force tables, watch tables, and diagnostics.', 'Intermediate', ['Online monitoring', 'Watch tables', 'Force tables', 'Diagnostics buffer'], [
+            'Going online with a Siemens PLC',
+            'Monitoring ladder and block logic',
+            'Watch tables',
+            'Force tables and safety considerations',
+            'Cross-reference tools',
+            'Diagnostics buffer',
+            'Module diagnostics',
+            'Finding missing permissives',
+            'Finding active interlocks',
+            'Troubleshooting communication faults',
+            'Troubleshooting analog values',
+            'Practical case: Siemens machine does not start',
+          ]),
+          makeTrackCourse(9, 'siemens-plc-technician-capstone-project', 'Siemens PLC Technician Capstone Project', 'Siemens Capstone', 'Build and document a complete Siemens PLC-controlled machine project with logic, HMI, remote I/O, alarms, diagnostics, testing, and simulation.', 'Intermediate', ['Project architecture', 'Manual and auto modes', 'WinCC screens', 'PLCSIM testing'], [
+            'Project requirements',
+            'I/O list',
+            'Electrical and control architecture',
+            'Siemens PLC program structure',
+            'Manual mode',
+            'Automatic mode',
+            'Fault handling',
+            'WinCC HMI screens',
+            'PROFINET and remote I/O configuration',
+            'Testing and simulation with PLCSIM',
+            'Troubleshooting scenarios',
+            'Final review and certificate submission',
+          ]),
+        ],
       },
       {
-        step: 2,
-        slug: 'plc-programming-fundamentals',
-        title: 'PLC Programming Fundamentals',
-        shortTitle: 'PLC Programming',
-        description: 'Start writing and reading PLC logic with confidence.',
-        level: 'Beginner',
-        estimatedTime: 'TBD',
-        status: 'not-started',
-        skills: ['PLC program structure', 'Basic logic', 'Inputs and outputs', 'Online monitoring concepts'],
-      },
-      {
-        step: 3,
-        slug: 'ladder-logic-for-machine-control',
-        title: 'Ladder Logic for Machine Control',
-        shortTitle: 'Machine Control',
-        description: 'Build control sequences that match real machine behavior.',
-        level: 'Intermediate',
-        estimatedTime: 'TBD',
-        status: 'not-started',
-        skills: ['Machine sequences', 'Interlocks', 'Start and stop logic', 'Control behavior'],
-      },
-      {
-        step: 4,
-        slug: 'plc-troubleshooting-field-signals',
-        title: 'PLC Troubleshooting: Field Signals',
-        shortTitle: 'Field Signals',
-        description: 'Diagnose sensors, outputs, wiring, and logic from the PLC outward.',
-        level: 'Intermediate',
-        estimatedTime: 'TBD',
-        status: 'not-started',
-        skills: ['Sensor diagnostics', 'Output troubleshooting', 'Wiring checks', 'PLC-based fault analysis'],
+        slug: 'plc-technician-rockwell',
+        title: 'Rockwell / Studio 5000',
+        shortTitle: 'Rockwell',
+        platformName: 'Studio 5000',
+        progressLabel: 'Rockwell Path Progress',
+        logoSrc: '/assets/logos/ecosystem/allen-bradley.png',
+        accentColor: '#c8102e',
+        description: 'Learn PLC programming, diagnostics, HMI and EtherNet/IP workflows using Rockwell automation tools.',
+        courses: [
+          makeTrackCourse(4, 'rockwell-plc-platform-fundamentals-studio-5000', 'Rockwell PLC Platform Fundamentals: Studio 5000', 'Studio 5000', 'Learn how to create, configure, download, upload, monitor, and troubleshoot Rockwell Logix projects using Studio 5000.', 'Beginner to Intermediate', ['Studio 5000', 'CompactLogix', 'ControlLogix', 'Online edits'], [
+            'Studio 5000 environment',
+            'CompactLogix and ControlLogix overview',
+            'Creating a new Logix project',
+            'Controller and chassis configuration',
+            'Controller organizer structure',
+            'Tags and data types',
+            'Programs, routines and tasks',
+            'Add-On Instructions overview',
+            'Online edits',
+            'Downloading and uploading projects',
+            'Monitoring tools',
+            'Basic diagnostics in Studio 5000',
+          ]),
+          makeTrackCourse(5, 'rockwell-hmi-fundamentals-factorytalk-view', 'Rockwell HMI Fundamentals: FactoryTalk View', 'FactoryTalk View', 'Build basic operator interfaces connected to Rockwell PLC logic using FactoryTalk View concepts.', 'Beginner to Intermediate', ['FactoryTalk View', 'HMI tags', 'Alarms', 'Operator displays'], [
+            'What is an HMI?',
+            'UI vs UX for machine operators',
+            'FactoryTalk View overview',
+            'HMI tags and PLC connection',
+            'Display navigation',
+            'Buttons, indicators and numeric displays',
+            'Alarm configuration',
+            'Recipes and setpoints',
+            'Basic diagnostics displays',
+            'Good HMI design practices',
+            'Mini project: operator panel for a Rockwell machine sequence',
+          ]),
+          makeTrackCourse(6, 'industrial-networks-rockwell-plc-technicians', 'Industrial Networks for Rockwell PLC Technicians', 'Rockwell Networks', 'Learn the networking concepts required to configure and troubleshoot Rockwell PLC systems, EtherNet/IP devices, remote I/O, and basic PLC communication.', 'Intermediate', ['EtherNet/IP', 'FactoryTalk Linx', 'POINT I/O', 'Connection faults'], [
+            'Industrial Ethernet basics',
+            'IP addresses and subnets',
+            'EtherNet/IP overview',
+            'RSLinx / FactoryTalk Linx overview',
+            'EDS files',
+            'POINT I/O and remote I/O architecture',
+            'Module properties and connection faults',
+            'Produced and consumed tags overview',
+            'Device status and diagnostics',
+            'Common EtherNet/IP troubleshooting cases',
+            'Network troubleshooting checklist',
+            'Mini project: Rockwell PLC with remote I/O and HMI',
+          ]),
+          makeTrackCourse(7, 'advanced-rockwell-plc-programming-st-aoi-udt', 'Advanced Rockwell PLC Programming: ST, AOI and UDT', 'Advanced Rockwell', 'Develop reusable Rockwell PLC logic using structured text, Add-On Instructions, UDTs, arrays, and modular machine logic.', 'Intermediate', ['Structured text', 'AOIs', 'UDTs', 'Reusable patterns'], [
+            'When to use structured text',
+            'Variables and assignments',
+            'IF / THEN / ELSE',
+            'CASE statements',
+            'FOR loops',
+            'WHILE loops',
+            'Calling routines and instructions',
+            'Timers and counters in structured text',
+            'UDTs and arrays',
+            'Add-On Instructions',
+            'Produced and consumed tags overview',
+            'Reusable machine logic patterns',
+            'Mini project: reusable Rockwell machine control block',
+          ]),
+          makeTrackCourse(8, 'rockwell-plc-troubleshooting-online-diagnostics', 'Rockwell PLC Troubleshooting and Online Diagnostics', 'Rockwell Diagnostics', 'Learn how to diagnose machine problems using Studio 5000 online tools, cross-reference, controller tags, forces, trends, faults, and module status.', 'Intermediate', ['Online tools', 'Controller tags', 'Trends', 'Module faults'], [
+            'Going online with a Rockwell PLC',
+            'Monitoring ladder and routines',
+            'Controller tags and watch tools',
+            'Forces and safety considerations',
+            'Cross-reference tools',
+            'Trends',
+            'Controller and module fault codes',
+            'Module status',
+            'Finding missing permissives',
+            'Finding active interlocks',
+            'Troubleshooting communication faults',
+            'Practical case: Rockwell machine does not start',
+          ]),
+          makeTrackCourse(9, 'rockwell-plc-technician-capstone-project', 'Rockwell PLC Technician Capstone Project', 'Rockwell Capstone', 'Build and document a complete Rockwell PLC-controlled machine project with logic, HMI, remote I/O, alarms, diagnostics, testing, and simulation.', 'Intermediate', ['Project architecture', 'Manual and auto modes', 'FactoryTalk displays', 'Simulation workflow'], [
+            'Project requirements',
+            'I/O list',
+            'Electrical and control architecture',
+            'Rockwell PLC program structure',
+            'Manual mode',
+            'Automatic mode',
+            'Fault handling',
+            'FactoryTalk View HMI displays',
+            'EtherNet/IP and remote I/O configuration',
+            'Testing and simulation workflow',
+            'Troubleshooting scenarios',
+            'Final review and certificate submission',
+          ]),
+        ],
       },
     ],
   },
@@ -682,6 +908,133 @@ function getTrackStatusLabel(status: AcademyTrackCourse['status'], t: AcademyTra
   return t('Not started');
 }
 
+function getDefaultSpecialization(track?: AcademyTrack) {
+  return track?.specializations?.[0] ?? null;
+}
+
+function getVisibleTrackCourses(track: AcademyTrack, specialization?: AcademyTrackSpecialization | null) {
+  return specialization ? [...track.courses, ...specialization.courses] : track.courses;
+}
+
+function getLocalTrackSpecialization(trackSlug: string, specializationSlug?: string | null) {
+  if (!specializationSlug) return null;
+  return academyTracks
+    .find((track) => track.slug === trackSlug)
+    ?.specializations?.find((specialization) => specialization.slug === specializationSlug) ?? null;
+}
+
+function getTrackCourseLessonCount(course: AcademyTrackCourse) {
+  return Math.max(course.lessons?.length ?? 1, 1);
+}
+
+function findLocalTrackCourse(courseSlug: string) {
+  for (const track of academyTracks) {
+    const directCourse = track.courses.find((course) => course.slug === courseSlug);
+    if (directCourse) return directCourse;
+
+    for (const specialization of track.specializations ?? []) {
+      const specializedCourse = specialization.courses.find((course) => course.slug === courseSlug);
+      if (specializedCourse) return specializedCourse;
+    }
+  }
+
+  return null;
+}
+
+function getDisplayCourseBundle(bundle: AcademyCourseBundle): AcademyCourseBundle {
+  const localCourse = findLocalTrackCourse(bundle.course.slug);
+  if (!localCourse?.lessons?.length) return bundle;
+
+  const existingLessons = [
+    ...bundle.modules.flatMap((module) => module.lessons),
+    ...bundle.ungroupedLessons,
+  ];
+  const existingBySlug = new Map(existingLessons.map((lesson) => [lesson.slug, lesson]));
+  const now = new Date().toISOString();
+  const orderedLessons = localCourse.lessons.map((lesson, index) => {
+    const existing = existingBySlug.get(lesson.slug);
+    if (existing) {
+      return {
+        ...existing,
+        title: lesson.title,
+        order_index: index + 1,
+      };
+    }
+
+    return {
+      id: `${bundle.course.id}-${lesson.slug}`,
+      course_id: bundle.course.id,
+      module_id: `${bundle.course.id}-track-curriculum`,
+      slug: lesson.slug,
+      title: lesson.title,
+      description: null,
+      lesson_type: 'text' as const,
+      video_provider: null,
+      video_id: null,
+      video_url: null,
+      duration_seconds: null,
+      order_index: index + 1,
+      is_preview: index === 0,
+      status: 'published' as const,
+      created_at: now,
+      updated_at: now,
+    };
+  });
+
+  return {
+    ...bundle,
+    modules: [{
+      id: `${bundle.course.id}-track-curriculum`,
+      course_id: bundle.course.id,
+      title: localCourse.shortTitle ? `${localCourse.shortTitle} Lessons` : 'Course Lessons',
+      description: 'Structured lessons from the current PLC Technician curriculum.',
+      order_index: 1,
+      created_at: now,
+      updated_at: now,
+      lessons: orderedLessons,
+    }],
+    ungroupedLessons: [],
+  };
+}
+
+type ProgressTrackBundleVariant = {
+  bundle: AcademyTrackBundle;
+  displayTitle?: string;
+  routeTrackSlug?: string;
+  progressKey?: string;
+};
+
+function getPathTrackBundles(bundle: AcademyTrackBundle): ProgressTrackBundleVariant[] {
+  const localTrack = academyTracks.find((track) => track.slug === bundle.track.slug);
+  if (!localTrack?.specializations?.length) return [{ bundle }];
+
+  return localTrack.specializations.map((specialization) => {
+    const visibleCourses = getVisibleTrackCourses(localTrack, specialization);
+    const visibleSlugs = new Set(visibleCourses.map((course) => course.slug));
+    const stepBySlug = new Map(visibleCourses.map((course) => [course.slug, course.step]));
+    return {
+      bundle: {
+        ...bundle,
+        track: {
+          ...bundle.track,
+          title: localTrack.title,
+          short_title: localTrack.shortTitle,
+        },
+        trackCourses: bundle.trackCourses
+          .filter((link) => visibleSlugs.has(link.course.slug))
+          .map((link) => ({
+            ...link,
+            step: stepBySlug.get(link.course.slug) ?? link.step,
+          }))
+          .sort((left, right) => left.step - right.step),
+      },
+      displayTitle: `${localTrack.title} - ${specialization.title}`,
+      routeTrackSlug: localTrack.slug,
+      progressKey: specialization.slug,
+    };
+  });
+}
+
 function AcademyTrackCards({
   navigateTo,
   t,
@@ -701,6 +1054,10 @@ function AcademyTrackCards({
       <div className="academy-track-grid">
         {academyTracks.map((track) => {
           const Icon = track.icon;
+          const previewCourses = track.specializations ? track.courses : getVisibleTrackCourses(track, getDefaultSpecialization(track));
+          const cardDescription = track.specializations
+            ? track.description
+            : track.description;
           return (
             <button
               className="academy-track-card"
@@ -724,17 +1081,33 @@ function AcademyTrackCards({
                   <em>{t(track.categoryLabel ?? track.shortTitle)}</em>
                 </span>
               </span>
-              <span className="academy-track-description">{t(track.description)}</span>
+              <span className="academy-track-description">{t(cardDescription)}</span>
               <span className="academy-track-chip-row">
                 <span>{t(`${track.courseCount} courses`)}</span>
                 <span>{t(track.level)}</span>
+                {track.specializations ? (
+                  <>
+                    <span className="siemens">{t('Siemens path')}</span>
+                    <span className="rockwell">{t('Rockwell path')}</span>
+                  </>
+                ) : null}
                 <span>{t(track.certificateType)}</span>
+                {track.specializations ? <span>{t('Capstone project')}</span> : null}
               </span>
               <span className="academy-track-preview" aria-label={`${track.title} curriculum preview`}>
-                {track.courses.map((course) => (
+                {previewCourses.map((course) => (
                   <span key={course.slug}>
                     <b>{String(course.step).padStart(2, '0')}</b>
                     {t(course.title)}
+                  </span>
+                ))}
+                {track.specializations?.map((specialization) => (
+                  <span
+                    className={`academy-track-preview-path ${specialization.slug.includes('siemens') ? 'siemens' : 'rockwell'}`}
+                    key={specialization.slug}
+                  >
+                    <b>{specialization.shortTitle}</b>
+                    {t(`${specialization.title} courses 04-09`)}
                   </span>
                 ))}
               </span>
@@ -764,7 +1137,7 @@ function buildLocalTrackBundles(courses: AcademyCourse[]): AcademyTrackBundle[] 
   const now = new Date().toISOString();
 
   return academyTracks.flatMap((track) => {
-    const trackCourses = track.courses.flatMap((trackCourse) => {
+    const trackCourses = getVisibleTrackCourses(track, getDefaultSpecialization(track)).flatMap((trackCourse) => {
       const course = courseBySlug.get(trackCourse.slug);
       if (!course) return [];
 
@@ -879,15 +1252,31 @@ export function AcademyTrackPage({
   const [completion, setCompletion] = React.useState<CourseCompletionMap>({});
   const [trackCertificate, setTrackCertificate] = React.useState<AcademyTrackCertificate | null>(null);
   const [trackCourseProgress, setTrackCourseProgress] = React.useState<Record<string, number>>({});
-  const [selectedSlug, setSelectedSlug] = React.useState(track?.courses[0]?.slug ?? '');
+  const [selectedSpecializationSlug, setSelectedSpecializationSlug] = React.useState(
+    getDefaultSpecialization(track)?.slug ?? null,
+  );
+  const selectedSpecialization = track?.specializations?.find((item) => item.slug === selectedSpecializationSlug)
+    ?? getDefaultSpecialization(track);
+  const visibleTrackCourses = React.useMemo(
+    () => (track ? getVisibleTrackCourses(track, selectedSpecialization) : []),
+    [selectedSpecialization, track],
+  );
+  const [selectedSlug, setSelectedSlug] = React.useState(visibleTrackCourses[0]?.slug ?? '');
   const [hoveredSlug, setHoveredSlug] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const curriculumRef = React.useRef<HTMLElement | null>(null);
 
   React.useEffect(() => {
-    setSelectedSlug(track?.courses[0]?.slug ?? '');
+    const defaultSpecialization = getDefaultSpecialization(track);
+    setSelectedSpecializationSlug(defaultSpecialization?.slug ?? null);
+    setSelectedSlug(track ? getVisibleTrackCourses(track, defaultSpecialization)[0]?.slug ?? '' : '');
   }, [track?.slug]);
+
+  React.useEffect(() => {
+    if (!track || visibleTrackCourses.some((course) => course.slug === selectedSlug)) return;
+    setSelectedSlug(visibleTrackCourses[0]?.slug ?? '');
+  }, [selectedSlug, track, visibleTrackCourses]);
 
   React.useEffect(() => {
     let active = true;
@@ -900,13 +1289,14 @@ export function AcademyTrackPage({
           user ? fetchTrackCertificatesForUser(user.id).catch(() => [] as AcademyTrackCertificate[]) : Promise.resolve([]),
         ]);
         const progressEntries = await Promise.all(
-          (track?.courses ?? []).map(async (trackCourse) => {
+          (visibleTrackCourses ?? []).map(async (trackCourse) => {
             const publishedCourse = items.find((item) => item.slug === trackCourse.slug);
             if (!user || !publishedCourse) return [trackCourse.slug, 0] as const;
             if (nextCompletion[publishedCourse.id]) return [trackCourse.slug, 100] as const;
 
-            const bundle = await fetchCourseBundle(publishedCourse.slug, languageCode);
-            if (!bundle) return [trackCourse.slug, 0] as const;
+            const rawBundle = await fetchCourseBundle(publishedCourse.slug, languageCode);
+            if (!rawBundle) return [trackCourse.slug, 0] as const;
+            const bundle = getDisplayCourseBundle(rawBundle);
 
             const lessons = [
               ...bundle.modules.flatMap((module) => module.lessons),
@@ -921,7 +1311,10 @@ export function AcademyTrackPage({
         if (active) {
           setPublishedCourses(items);
           setCompletion(nextCompletion);
-          setTrackCertificate(trackCertificates.find((certificate) => certificate.track_slug === trackSlug) ?? null);
+          setTrackCertificate(trackCertificates.find((certificate) => (
+            certificate.track_slug === trackSlug
+            && (certificate.specialization_slug ?? null) === (selectedSpecialization?.slug ?? null)
+          )) ?? null);
           setTrackCourseProgress(Object.fromEntries(progressEntries));
         }
       })
@@ -935,7 +1328,7 @@ export function AcademyTrackPage({
     return () => {
       active = false;
     };
-  }, [languageCode, track, trackSlug, user]);
+  }, [languageCode, selectedSpecialization?.slug, track, trackSlug, user, visibleTrackCourses]);
 
   if (!track) {
     return (
@@ -946,13 +1339,20 @@ export function AcademyTrackPage({
   }
 
   const trackCompletion = buildTrackCompletionMap(publishedCourses, completion);
-  const selectedCourse = track.courses.find((course) => course.slug === selectedSlug) ?? track.courses[0];
-  const hoveredCourse = hoveredSlug ? track.courses.find((course) => course.slug === hoveredSlug) ?? null : null;
-  const completedCount = track.courses.filter((course) => getTrackCourseStatus(course, trackCompletion) === 'completed').length;
-  const progressPercent = Math.round((completedCount / track.courses.length) * 100);
-  const nextCourse = track.courses.find((course) => getTrackCourseStatus(course, trackCompletion) !== 'completed') ?? track.courses[0];
+  const selectedCourse = visibleTrackCourses.find((course) => course.slug === selectedSlug) ?? visibleTrackCourses[0];
+  const hoveredCourse = hoveredSlug ? visibleTrackCourses.find((course) => course.slug === hoveredSlug) ?? null : null;
+  const completedCount = visibleTrackCourses.filter((course) => getTrackCourseStatus(course, trackCompletion) === 'completed').length;
+  const totalLessonCount = visibleTrackCourses.reduce((total, course) => total + getTrackCourseLessonCount(course), 0);
+  const completedLessonCount = visibleTrackCourses.reduce((total, course) => {
+    const coursePercent = getTrackCourseStatus(course, trackCompletion) === 'completed'
+      ? 100
+      : trackCourseProgress[course.slug] ?? 0;
+    return total + Math.round((coursePercent / 100) * getTrackCourseLessonCount(course));
+  }, 0);
+  const progressPercent = totalLessonCount > 0 ? Math.round((completedLessonCount / totalLessonCount) * 100) : 0;
+  const nextCourse = visibleTrackCourses.find((course) => getTrackCourseStatus(course, trackCompletion) !== 'completed') ?? visibleTrackCourses[0];
   const relatedTracks = academyTracks.filter((item) => item.slug !== track.slug);
-  const trackComplete = completedCount === track.courses.length;
+  const trackComplete = completedCount === visibleTrackCourses.length;
 
   const selectCourse = (course: AcademyTrackCourse) => {
     setSelectedSlug(course.slug);
@@ -968,7 +1368,8 @@ export function AcademyTrackPage({
       return;
     }
 
-    navigateTo(`/academy/progress?track=${track.slug}#academy-track-${track.slug}`);
+    const progressSlug = selectedSpecialization?.slug ?? track.slug;
+    navigateTo(`/academy/progress?track=${progressSlug}#academy-track-${progressSlug}`);
   };
 
   return (
@@ -982,12 +1383,20 @@ export function AcademyTrackPage({
             </button>
             <p className="eyebrow">{t(track.categoryLabel ?? 'ACADEMY TRACK')}</p>
             <h1>{t(track.title)}</h1>
-            <p>{t(track.subtitle)}</p>
+            <p>{t(track.description)}</p>
             <div className="academy-track-chip-row">
               <span>{t(`${track.courseCount} courses`)}</span>
               <span>{t(track.level)}</span>
               <span>{t(track.certificateType)}</span>
-              <span>{t(track.estimatedDuration)}</span>
+              {track.specializations ? (
+                <>
+                  <span className="siemens">{t('Siemens path')}</span>
+                  <span className="rockwell">{t('Rockwell path')}</span>
+                  <span>{t('Capstone project')}</span>
+                </>
+              ) : (
+                <span>{t(track.estimatedDuration)}</span>
+              )}
             </div>
             <div className="academy-track-hero-actions">
               <button
@@ -998,7 +1407,7 @@ export function AcademyTrackPage({
                     navigateTo(`/academy/certificates?track=${track.slug}`);
                     return;
                   }
-                  navigateTo(getTrackCoursePath(track.courses[0]));
+                  navigateTo(getTrackCoursePath(visibleTrackCourses[0]));
                 }}
               >
                 {trackComplete && trackCertificate ? t('Completed') : t('Start track')} <ArrowRight size={17} />
@@ -1010,10 +1419,20 @@ export function AcademyTrackPage({
           </div>
           <div className="academy-track-hero-panel">
             <img className="academy-track-hero-badge" src={getTrackBadgeSrc(track.slug)} alt="" />
+            {selectedSpecialization ? (
+              <em
+                className={[
+                  'academy-track-hero-path-pill',
+                  selectedSpecialization.slug.includes('siemens') ? 'siemens' : 'rockwell',
+                ].join(' ')}
+              >
+                {t(`${selectedSpecialization.shortTitle} path`)}
+              </em>
+            ) : null}
             <span>Study Plan</span>
             <strong>{t(track.shortTitle)}</strong>
             <div className="academy-track-hero-steps">
-              {track.courses.map((course) => {
+              {visibleTrackCourses.map((course) => {
                 const completed = getTrackCourseStatus(course, trackCompletion) === 'completed'
                   || (trackCourseProgress[course.slug] ?? 0) >= 100;
                 const inProgress = !completed && (trackCourseProgress[course.slug] ?? 0) > 0;
@@ -1038,6 +1457,38 @@ export function AcademyTrackPage({
             </button>
           </div>
         </section>
+
+        {track.specializations ? (
+          <section className="academy-specialization-section" aria-label="PLC specialization selector">
+            <div className="academy-specialization-heading">
+              <p className="eyebrow">{t('Choose your PLC specialization')}</p>
+              <h2>{t(selectedSpecialization?.title ?? 'Siemens / TIA Portal')}</h2>
+              <span>{t(selectedSpecialization?.description ?? '')}</span>
+            </div>
+            <div className="academy-specialization-options" role="tablist" aria-label="PLC specialization paths">
+              {track.specializations.map((specialization) => {
+                const active = selectedSpecialization?.slug === specialization.slug;
+                return (
+                  <button
+                    className={active ? 'active' : ''}
+                    style={{ '--path-accent': specialization.accentColor } as React.CSSProperties}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    key={specialization.slug}
+                    onClick={() => {
+                      setSelectedSpecializationSlug(specialization.slug);
+                      setSelectedSlug(getVisibleTrackCourses(track, specialization)[0]?.slug ?? '');
+                    }}
+                  >
+                    <img src={specialization.logoSrc} alt="" aria-hidden="true" />
+                    <strong>{t(specialization.title)}</strong>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        ) : null}
 
         <section className="academy-curriculum-section" ref={curriculumRef}>
           <div className="academy-featured-heading academy-curriculum-heading">
@@ -1070,8 +1521,8 @@ export function AcademyTrackPage({
               <svg className="academy-study-wheel" viewBox="0 0 640 640" role="img" aria-label={`${track.title} Study Plan`}>
                 <circle className="academy-study-wheel-guide" cx="320" cy="320" r="279" />
                 <circle className="academy-study-wheel-guide inner" cx="320" cy="320" r="114" />
-                {track.courses.map((course, index) => {
-                  const slice = 360 / track.courses.length;
+                {visibleTrackCourses.map((course, index) => {
+                  const slice = 360 / visibleTrackCourses.length;
                   const gap = 3;
                   const startAngle = index * slice + gap;
                   const endAngle = (index + 1) * slice - gap;
@@ -1079,7 +1530,12 @@ export function AcademyTrackPage({
                   const labelPoint = polarToCartesian(320, 320, 205, midAngle);
                   const hovered = hoveredSlug === course.slug;
                   const faded = Boolean(hoveredSlug && hoveredSlug !== course.slug);
-                  const status = getTrackCourseStatus(course, trackCompletion);
+                  const courseProgress = trackCourseProgress[course.slug] ?? 0;
+                  const status = getTrackCourseStatus(course, trackCompletion) === 'completed' || courseProgress >= 100
+                    ? 'completed'
+                    : courseProgress > 0
+                      ? 'in-progress'
+                      : 'not-started';
                   return (
                     <g
                       className={[
@@ -1087,6 +1543,8 @@ export function AcademyTrackPage({
                         hovered ? 'hovered' : '',
                         faded ? 'faded' : '',
                         status === 'completed' ? 'completed' : '',
+                        status === 'in-progress' ? 'in-progress' : '',
+                        status === 'not-started' ? 'not-started' : '',
                       ].filter(Boolean).join(' ')}
                       key={course.slug}
                       role="button"
@@ -1126,8 +1584,8 @@ export function AcademyTrackPage({
                   className="academy-course-tooltip"
                   style={
                     {
-                      '--tooltip-x': `${50 + Math.cos(((-90 + (360 / track.courses.length) * (hoveredCourse.step - 1)) * Math.PI) / 180) * 27}%`,
-                      '--tooltip-y': `${50 + Math.sin(((-90 + (360 / track.courses.length) * (hoveredCourse.step - 1)) * Math.PI) / 180) * 27}%`,
+                      '--tooltip-x': `${50 + Math.cos(((-90 + (360 / visibleTrackCourses.length) * (hoveredCourse.step - 1)) * Math.PI) / 180) * 27}%`,
+                      '--tooltip-y': `${50 + Math.sin(((-90 + (360 / visibleTrackCourses.length) * (hoveredCourse.step - 1)) * Math.PI) / 180) * 27}%`,
                     } as React.CSSProperties
                   }
                 >
@@ -1144,7 +1602,7 @@ export function AcademyTrackPage({
             </div>
 
             <div className="academy-mobile-roadmap">
-              {track.courses.map((course) => {
+              {visibleTrackCourses.map((course) => {
                 const status = getTrackCourseStatus(course, trackCompletion);
                 const active = selectedCourse.slug === course.slug;
                 return (
@@ -1193,7 +1651,7 @@ export function AcademyTrackPage({
             </span>
           </div>
           <div className="academy-track-course-list-grid">
-            {track.courses.map((course) => {
+            {visibleTrackCourses.map((course) => {
               const status = getTrackCourseStatus(course, trackCompletion);
               return (
                 <article className="academy-track-course-list-card" key={course.slug}>
@@ -1224,7 +1682,7 @@ export function AcademyTrackPage({
           <div className="academy-track-progress-card">
             <div>
               <p className="eyebrow">TRACK PROGRESS</p>
-              <h2>{t('Track progress')}</h2>
+              <h2>{t(selectedSpecialization?.progressLabel ?? 'Track progress')}</h2>
             </div>
             {loading ? <span className="academy-track-loading">{t('Loading progress...')}</span> : null}
             <div className="academy-track-progress-meter">
@@ -1234,7 +1692,7 @@ export function AcademyTrackPage({
             <div className="academy-track-progress-grid">
               <article>
                 <span>{t('Completed courses')}</span>
-                <strong>{completedCount} / {track.courses.length}</strong>
+                <strong>{completedCount} / {visibleTrackCourses.length}</strong>
               </article>
               <article>
                 <span>{t('Next course')}</span>
@@ -1242,7 +1700,7 @@ export function AcademyTrackPage({
               </article>
               <article>
                 <span>{t('Certificate status')}</span>
-                <strong>{completedCount === track.courses.length ? t('Unlocked') : t('Locked')}</strong>
+                <strong>{completedCount === visibleTrackCourses.length ? t('Unlocked') : t('Locked')}</strong>
               </article>
             </div>
           </div>
@@ -1676,7 +2134,8 @@ export function AcademyCoursePage({ user, navigateTo, courseSlug, t = defaultT, 
     setMessage(null);
 
     try {
-      const nextBundle = await fetchCourseBundle(courseSlug, languageCode);
+      const rawBundle = await fetchCourseBundle(courseSlug, languageCode);
+      const nextBundle = rawBundle ? getDisplayCourseBundle(rawBundle) : null;
       setBundle(nextBundle);
 
       if (nextBundle && user) {
@@ -1738,7 +2197,12 @@ export function AcademyCoursePage({ user, navigateTo, courseSlug, t = defaultT, 
     ...bundle.modules.flatMap((module) => module.lessons),
     ...bundle.ungroupedLessons,
   ];
-  const courseCompleted = allLessons.length > 0 && progress.filter((item) => item.completed).length === allLessons.length;
+  const displayLessonIds = new Set(allLessons.map((lesson) => lesson.id));
+  const displayProgress = progress.filter((item) => displayLessonIds.has(item.lesson_id));
+  const courseCompleted = allLessons.length > 0 && displayProgress.filter((item) => item.completed).length === allLessons.length;
+  const displayCourseProgress = allLessons.length > 0
+    ? Math.round((displayProgress.filter((item) => item.completed).length / allLessons.length) * 100)
+    : courseProgress;
   const progressButtonLabel = certificate
     ? 'View my certificate'
     : courseCompleted
@@ -1772,14 +2236,14 @@ export function AcademyCoursePage({ user, navigateTo, courseSlug, t = defaultT, 
             {admin
               ? t('You can access all Academy content.')
               : activeEnrollment
-                ? `${courseProgress}% ${t('complete')}`
+                ? `${displayCourseProgress}% ${t('complete')}`
                 : isFreeCourse(bundle.course)
                   ? t('Free course enrollment is available.')
                   : t('Enrollment required for protected lessons.')}
           </span>
           {user && activeEnrollment ? (
             <div className="academy-progress-bar" aria-label="Course progress">
-              <span style={{ width: `${courseProgress}%` }} />
+              <span style={{ width: `${displayCourseProgress}%` }} />
             </div>
           ) : null}
           {user && activeEnrollment ? (
@@ -1812,7 +2276,7 @@ export function AcademyCoursePage({ user, navigateTo, courseSlug, t = defaultT, 
             <AcademyModuleBlock
               key={module.id}
               module={module}
-              progress={progress}
+              progress={displayProgress}
               canOpenProtected={activeEnrollment || admin}
               navigateTo={navigateTo}
               courseSlug={bundle.course.slug}
@@ -1831,7 +2295,7 @@ export function AcademyCoursePage({ user, navigateTo, courseSlug, t = defaultT, 
                 updated_at: '',
                 lessons: bundle.ungroupedLessons,
               }}
-              progress={progress}
+              progress={displayProgress}
               canOpenProtected={activeEnrollment || admin}
               navigateTo={navigateTo}
               courseSlug={bundle.course.slug}
@@ -2203,6 +2667,9 @@ type ProgressTrack = {
   completedCourseIds: Set<string>;
   activeCourseIds: Set<string>;
   courseProgressPercent: Map<string, number>;
+  displayTitle?: string;
+  routeTrackSlug?: string;
+  progressKey?: string;
 };
 
 export function AcademyProgressPage({ user, navigateTo, t = defaultT, languageCode = 'en' }: AcademyPageProps) {
@@ -2243,11 +2710,17 @@ export function AcademyProgressPage({ user, navigateTo, t = defaultT, languageCo
         ]);
         const certificateByCourse = new Map(certificates.map((certificate) => [certificate.course_id, certificate]));
         const summaryByTrack = new Map(trackSummaries.map((summary) => [summary.track_id, summary]));
-        const certificateByTrack = new Map(trackCertificates.map((certificate) => [certificate.track_id, certificate]));
+        const certificateByTrack = new Map(
+          trackCertificates.map((certificate) => [
+            `${certificate.track_id}:${certificate.specialization_slug ?? ''}`,
+            certificate,
+          ]),
+        );
         const nextItems = await Promise.all(
           courses.map(async (course) => {
-            const bundle = await fetchCourseBundle(course.slug, languageCode);
-            if (!bundle) return null;
+            const rawBundle = await fetchCourseBundle(course.slug, languageCode);
+            if (!rawBundle) return null;
+            const bundle = getDisplayCourseBundle(rawBundle);
             const progress = await fetchLessonProgressForCourse(user.id, course.id);
             return { bundle, progress, certificate: certificateByCourse.get(course.id) ?? null };
           }),
@@ -2274,7 +2747,8 @@ export function AcademyProgressPage({ user, navigateTo, t = defaultT, languageCo
               ...item.bundle.modules.flatMap((module) => module.lessons),
               ...item.bundle.ungroupedLessons,
             ];
-            const completedLessons = item.progress.filter((progress) => progress.completed).length;
+            const lessonIds = new Set(lessons.map((lesson) => lesson.id));
+            const completedLessons = item.progress.filter((progress) => lessonIds.has(progress.lesson_id) && progress.completed).length;
             const percent = lessons.length > 0 ? Math.round((completedLessons / lessons.length) * 100) : 0;
             courseProgressPercent.set(item.bundle.course.id, percent);
           });
@@ -2283,9 +2757,10 @@ export function AcademyProgressPage({ user, navigateTo, t = defaultT, languageCo
           });
 
           setTrackItems(
-            trackBundles.flatMap((bundle) => {
-              const summary = summaryByTrack.get(bundle.track.id) ?? null;
-              const trackCertificate = certificateByTrack.get(bundle.track.id) ?? null;
+            trackBundles.flatMap((sourceBundle) => getPathTrackBundles(sourceBundle).flatMap((variant) => {
+              const bundle = variant.bundle;
+              const summary = variant.progressKey ? null : summaryByTrack.get(bundle.track.id) ?? null;
+              const trackCertificate = certificateByTrack.get(`${bundle.track.id}:${variant.progressKey ?? ''}`) ?? null;
               if (trackCertificate) return [];
               const hasTrackActivity = bundle.trackCourses.some((link) => activeCourseIds.has(link.course_id))
                 || Boolean(summary && summary.completed_courses > 0);
@@ -2302,8 +2777,11 @@ export function AcademyProgressPage({ user, navigateTo, t = defaultT, languageCo
                 completedCourseIds,
                 activeCourseIds,
                 courseProgressPercent,
+                displayTitle: variant.displayTitle,
+                routeTrackSlug: variant.routeTrackSlug,
+                progressKey: variant.progressKey,
               }];
-            }),
+            })),
           );
           setItems(
             nextItems.filter((item): item is ProgressCourse => {
@@ -2382,7 +2860,7 @@ export function AcademyProgressPage({ user, navigateTo, t = defaultT, languageCo
             <div className="academy-progress-track-grid">
               {trackItems.map((item) => (
                 <AcademyProgressTrackCard
-                  key={item.bundle.track.id}
+                  key={item.progressKey ?? item.bundle.track.id}
                   item={item}
                   user={user}
                   navigateTo={navigateTo}
@@ -2521,6 +2999,9 @@ function AcademyProgressTrackCard({
     ?? item.bundle.trackCourses.filter((link) => item.completedCourseIds.has(link.course_id)).length;
   const progressPercent = item.certificate ? 100 : Math.round((completedCourses / Math.max(totalCourses, 1)) * 100);
   const allCompleted = totalCourses > 0 && completedCourses >= totalCourses;
+  const displayTitle = item.displayTitle ?? item.bundle.track.title;
+  const routeTrackSlug = item.routeTrackSlug ?? item.bundle.track.slug;
+  const progressId = item.progressKey ?? item.bundle.track.slug;
   const [certificateBusy, setCertificateBusy] = React.useState(false);
 
   const handleCertificate = async () => {
@@ -2530,12 +3011,15 @@ function AcademyProgressTrackCard({
       const certificate = await createCertificateForTrack({
         userId: user.id,
         track: item.bundle.track,
+        specializationSlug: item.progressKey ?? null,
+        specializationTitle: getLocalTrackSpecialization(item.bundle.track.slug, item.progressKey)?.title ?? null,
+        certificateTrackTitle: displayTitle,
         studentName: user.name,
         studentEmail: user.email,
         completedCourses,
         totalCourses,
       });
-      navigateTo('/academy/certificates');
+      navigateTo(`/academy/certificates/${certificate.id}?new=1`);
     } finally {
       setCertificateBusy(false);
     }
@@ -2544,12 +3028,12 @@ function AcademyProgressTrackCard({
   return (
     <article
       className={allCompleted ? 'academy-progress-track-card complete' : 'academy-progress-track-card'}
-      id={`academy-track-${item.bundle.track.slug}`}
+      id={`academy-track-${progressId}`}
     >
       <div className="academy-progress-track-header">
         <div>
           <p className="eyebrow">{t('Academy Track')}</p>
-          <h3>{item.bundle.track.title}</h3>
+          <h3>{displayTitle}</h3>
           <span>{completedCourses} {t('of')} {totalCourses} {t(totalCourses === 1 ? 'course' : 'courses')} {t('completed')}</span>
         </div>
         <strong>{progressPercent}%</strong>
@@ -2562,7 +3046,7 @@ function AcademyProgressTrackCard({
         <div
           className="academy-progress-track-wheel-mini"
           style={{ '--track-course-count': item.bundle.trackCourses.length } as React.CSSProperties}
-          aria-label={`${item.bundle.track.title} course map`}
+          aria-label={`${displayTitle} course map`}
         >
           {item.bundle.trackCourses.map((link, index) => {
             const completed = Boolean(item.certificate) || item.completedCourseIds.has(link.course_id);
@@ -2596,7 +3080,7 @@ function AcademyProgressTrackCard({
         </div>
       </div>
       <div className="academy-progress-track-actions">
-        <button type="button" onClick={() => navigateTo(`/academy/tracks/${item.bundle.track.slug}`)}>
+        <button type="button" onClick={() => navigateTo(`/academy/tracks/${routeTrackSlug}`)}>
           <Route size={17} />
           {t('View track')}
         </button>
@@ -2828,9 +3312,12 @@ export function AcademyCertificatesPage({
   const certificatePackages = React.useMemo(() => {
     return trackCertificates.map((trackCertificate) => {
       const track = academyTracks.find((item) => item.slug === trackCertificate.track_slug);
-      const courseSlugs = new Set(track?.courses.map((course) => course.slug) ?? []);
+      const specialization = getLocalTrackSpecialization(trackCertificate.track_slug, trackCertificate.specialization_slug);
+      const trackCourses = track ? getVisibleTrackCourses(track, specialization) : [];
+      const courseSlugs = new Set(trackCourses.map((course) => course.slug));
       return {
         track,
+        specialization,
         certificate: trackCertificate,
         courseCertificates: certificates.filter((certificate) => courseSlugs.has(certificate.course_slug)),
       };
@@ -2896,7 +3383,7 @@ export function AcademyCertificatesPage({
             {certificatePackages.map((item) => (
               <section
                 className="academy-certificate-pack"
-                id={`academy-certificate-pack-${item.certificate.track_slug}`}
+                id={`academy-certificate-pack-${item.certificate.specialization_slug ?? item.certificate.track_slug}`}
                 key={item.certificate.id}
               >
                 <div className="academy-certificate-pack-top">

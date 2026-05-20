@@ -186,6 +186,9 @@ export type AcademyTrackCertificate = {
   id: string;
   user_id: string;
   track_id: string;
+  specialization_id?: string | null;
+  specialization_slug?: string | null;
+  specialization_title?: string | null;
   certificate_code: string;
   student_name: string;
   student_email: string;

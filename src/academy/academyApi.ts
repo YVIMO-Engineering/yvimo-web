@@ -34,6 +34,9 @@ export type CreateCertificateInput = {
 export type CreateTrackCertificateInput = {
   userId: string;
   track: AcademyTrack;
+  specializationSlug?: string | null;
+  specializationTitle?: string | null;
+  certificateTrackTitle?: string;
   studentName: string;
   studentEmail: string;
   completedCourses: number;
@@ -795,16 +798,22 @@ export async function fetchTrackCertificatesForUser(
 export async function fetchTrackCertificateForTrack(
   userId: string | null,
   trackId: string,
+  specializationSlug: string | null = null,
   client: AcademyClient = supabase,
 ) {
   if (!userId) return null;
 
-  const { data, error } = await client
+  let query = client
     .from('academy_track_certificates')
     .select('*')
     .eq('user_id', userId)
-    .eq('track_id', trackId)
-    .maybeSingle<AcademyTrackCertificate>();
+    .eq('track_id', trackId);
+
+  query = specializationSlug
+    ? query.eq('specialization_slug', specializationSlug)
+    : query.is('specialization_slug', null);
+
+  const { data, error } = await query.maybeSingle<AcademyTrackCertificate>();
 
   if (error) throw error;
   return data;
@@ -854,6 +863,9 @@ export async function createCertificateForTrack(
   {
     userId,
     track,
+    specializationSlug = null,
+    specializationTitle = null,
+    certificateTrackTitle,
     studentName,
     studentEmail,
     completedCourses,
@@ -866,7 +878,7 @@ export async function createCertificateForTrack(
     throw new Error('Users can only create their own certificates.');
   }
 
-  const existing = await fetchTrackCertificateForTrack(userId, track.id, client);
+  const existing = await fetchTrackCertificateForTrack(userId, track.id, specializationSlug, client);
   if (existing) return existing;
 
   const { data, error } = await client
@@ -874,10 +886,12 @@ export async function createCertificateForTrack(
     .insert({
       user_id: userId,
       track_id: track.id,
+      specialization_slug: specializationSlug,
+      specialization_title: specializationTitle,
       certificate_code: createCertificateCode().replace('YVIMO-', 'YVIMO-TRACK-'),
       student_name: studentName,
       student_email: studentEmail,
-      track_title: track.title,
+      track_title: certificateTrackTitle ?? track.title,
       track_slug: track.slug,
       completed_courses: completedCourses,
       total_courses: totalCourses,
