@@ -2,8 +2,10 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   ArrowRight,
+  ArrowLeft,
   Blocks,
   Cable,
+  Calculator,
   ChevronLeft,
   ChevronRight,
   Check,
@@ -30,6 +32,7 @@ import {
   Star,
   TerminalSquare,
   Workflow,
+  Wrench,
   X,
 } from 'lucide-react';
 import type { Session, User } from '@supabase/supabase-js';
@@ -212,6 +215,9 @@ const translations: Record<Exclude<LanguageCode, 'en'>, Record<string, string>> 
     'Welcome back': 'Bienvenido de nuevo',
     'Your YVIMO workspace is ready.': 'Tu espacio YVIMO está listo.',
     'Gateway Online': 'Gateway Online',
+    'Design, simulate, and prepare industrial connectivity flows using virtual devices, labs, and Gateway tools.':
+      'Diseña, simula y prepara flujos de conectividad industrial usando dispositivos virtuales, laboratorios y herramientas Gateway.',
+    'Engineering Tools': 'Herramientas de ingeniería',
     'Licenses': 'Licencias',
     'Orders': 'Órdenes',
     'Quotations': 'Cotizaciones',
@@ -233,6 +239,8 @@ const translations: Record<Exclude<LanguageCode, 'en'>, Record<string, string>> 
       'Acceso gratis para probar YVIMO Academy, explorar la plataforma y comenzar cursos seleccionados antes de mejorar tu plan.',
     'Continue courses, guided paths, progress, and professional learning.':
       'Continúa cursos, rutas guiadas, progreso y aprendizaje profesional.',
+    'Access templates, calculators, quotation tools, network utilities, and controls resources for real industrial automation projects.':
+      'Accede a plantillas, calculadoras, herramientas de cotización, utilidades de red y recursos de control para proyectos reales de automatización industrial.',
     'Review product seats, activations, renewals, and account entitlements.':
       'Revisa puestos de producto, activaciones, renovaciones y permisos de cuenta.',
     'Track quotations, purchase requests, project orders, and follow-up.':
@@ -416,6 +424,9 @@ const translations: Record<Exclude<LanguageCode, 'en'>, Record<string, string>> 
     'Welcome back': '欢迎回来',
     'Your YVIMO workspace is ready.': '你的 YVIMO 工作区已准备就绪。',
     'Gateway Online': 'Gateway 在线',
+    'Design, simulate, and prepare industrial connectivity flows using virtual devices, labs, and Gateway tools.':
+      '使用虚拟设备、实验室和 Gateway 工具设计、模拟并准备工业连接流程。',
+    'Engineering Tools': '工程工具',
     'Licenses': '许可证',
     'Orders': '订单',
     'Quotations': '报价',
@@ -1831,15 +1842,22 @@ function LoggedDashboardPage({
   const quickAccessItems = [
     {
       label: 'Gateway Online',
-      description: 'Open connected Gateway tools, demos, downloads, and project modules.',
+      description: 'Design, simulate, and prepare industrial connectivity flows using virtual devices, labs, and Gateway tools.',
       icon: ServerCog,
-      path: '/dashboard/gateway',
+      path: '/portal/gateway-online',
     },
     {
       label: 'YVIMO Academy',
       description: 'Continue courses, guided paths, progress, and professional learning.',
       icon: GraduationCap,
       path: '/academy',
+    },
+    {
+      label: 'Engineering Tools',
+      description: 'Access templates, calculators, quotation tools, network utilities, and controls resources for real industrial automation projects.',
+      icon: Wrench,
+      path: '/portal/engineering-tools',
+      featured: true,
     },
     {
       label: 'Licenses',
@@ -1856,14 +1874,182 @@ function LoggedDashboardPage({
   ];
   const navItems = [
     { label: 'Workspace', icon: Blocks, featured: false, path: '/dashboard' },
-    { label: 'Gateway Online', icon: ServerCog, featured: true, path: '/dashboard/gateway' },
+    { label: 'Gateway Online', icon: ServerCog, featured: true, path: '/portal/gateway-online' },
     { label: 'Academy', icon: GraduationCap, featured: true, path: '/academy' },
+    { label: 'Engineering Tools', icon: Wrench, featured: true, path: '/portal/engineering-tools' },
     { label: 'Licenses', icon: ShieldCheck, featured: false, path: '/dashboard/licenses' },
     { label: 'Orders', icon: FileUp, featured: false, path: '/dashboard/orders' },
     { label: 'Quotations', icon: Database, featured: false, path: '/dashboard/quotations' },
     { label: 'Settings', icon: Gauge, featured: false, path: '/dashboard/settings' },
   ];
   const isLicensesPage = activePath === '/dashboard/licenses';
+  const isGatewayOnlinePage =
+    activePath === '/portal/gateway-online'
+    || activePath.startsWith('/portal/gateway-online/')
+    || activePath === '/dashboard/gateway'
+    || activePath.startsWith('/dashboard/gateway/');
+  const gatewayOnlineFeatures = [
+    {
+      label: 'Virtual Gateway Sandbox',
+      description: 'Build and test industrial data flows using simulated tags, virtual signals, and demo outputs without needing a physical PLC.',
+      icon: ServerCog,
+      path: '/portal/gateway-online/sandbox',
+      badge: 'Preview',
+    },
+    {
+      label: 'Virtual Devices',
+      description: 'Use simulated PLCs, Modbus devices, I/O modules, machines, and production systems to practice industrial connectivity.',
+      icon: Cpu,
+      path: '/portal/gateway-online/virtual-devices',
+      badge: 'Coming soon',
+    },
+    {
+      label: 'Gateway Flow Builder',
+      description: 'Design connectivity flows with inputs, processing blocks, tag mapping, alarms, and outputs for industrial data routing.',
+      icon: Workflow,
+      path: '/portal/gateway-online/flow-builder',
+      badge: 'Preview',
+    },
+    {
+      label: 'Project Generator',
+      description: 'Generate Gateway project packages with configuration files, tag lists, architecture diagrams, and implementation checklists.',
+      icon: FileUp,
+      path: '/portal/gateway-online/project-generator',
+      badge: 'Coming soon',
+    },
+    {
+      label: 'Network Planning Tools',
+      description: 'Prepare IT/OT requirements with IP planning, subnet tools, firewall checklists, communication ports, and topology references.',
+      icon: Network,
+      path: '/portal/gateway-online/network-planning',
+      badge: 'Included',
+    },
+    {
+      label: 'Remote Gateway Agent',
+      description: 'Prepare for future secure outbound connections between local Gateway installations and the YVIMO Portal for diagnostics and monitoring.',
+      icon: RadioTower,
+      path: '/portal/gateway-online/remote-agent',
+      badge: 'Future module',
+    },
+    {
+      label: 'Gateway Academy Labs',
+      description: 'Follow guided labs to read virtual tags, publish data to MQTT, build dashboards, configure alarms, and export Gateway configurations.',
+      icon: GraduationCap,
+      path: '/portal/gateway-online/labs',
+      badge: 'Preview',
+    },
+    {
+      label: 'Demo Dashboards',
+      description: 'Explore simulated dashboards for machine status, production counters, downtime, OEE, alarms, energy, and process monitoring.',
+      icon: Gauge,
+      path: '/portal/gateway-online/demo-dashboards',
+      badge: 'Preview',
+    },
+  ];
+  const gatewayRouteSlug = activePath.split('/').filter(Boolean)[2];
+  const activeGatewayFeature = gatewayOnlineFeatures.find((item) => item.path.endsWith(`/${gatewayRouteSlug}`));
+  const gatewayOverviewItems = activeGatewayFeature ? [activeGatewayFeature] : gatewayOnlineFeatures;
+  const isEngineeringToolsPage =
+    activePath === '/portal/engineering-tools'
+    || activePath.startsWith('/portal/engineering-tools/')
+    || activePath === '/dashboard/engineering-tools'
+    || activePath.startsWith('/dashboard/engineering-tools/');
+  const engineeringCategories = [
+    {
+      label: 'Industrial Templates',
+      description: 'Standards, checklists, FAT/SAT documents, commissioning forms, and project handover templates.',
+      examples: [
+        'PLC programming standards',
+        'HMI design standards',
+        'FAT checklist',
+        'SAT checklist',
+        'I/O checkout sheet',
+        'Commissioning checklist',
+        'Risk assessment template',
+        'Network documentation template',
+        'Controls project handover template',
+        'Machine troubleshooting report',
+        'Customer requirement form',
+      ],
+      icon: FileUp,
+      path: '/portal/engineering-tools/templates',
+      badge: 'Coming soon',
+    },
+    {
+      label: 'Quotation Tools',
+      description: 'Estimators and calculators to help structure automation projects, service visits, and technical proposals.',
+      examples: [
+        'Quotation calculator',
+        'Labor hour estimator',
+        'Controls panel cost estimator',
+        'PLC/HMI hardware list builder',
+        'Automation cell budget estimator',
+        'Service visit cost calculator',
+        'Project timeline estimator',
+        'ROI calculator for automation projects',
+      ],
+      icon: Calculator,
+      path: '/portal/engineering-tools/quotation-tools',
+      badge: 'Coming soon',
+    },
+    {
+      label: 'Controls Utilities',
+      description: 'Technical utilities for industrial networks, PLC connectivity, and controls troubleshooting.',
+      examples: [
+        'IP scanner',
+        'Device discovery tool',
+        'Subnet calculator',
+        'PLC connection tester',
+        'Modbus TCP tester',
+        'OPC UA endpoint tester',
+        'MQTT test client',
+        'Port scanner',
+        'Ping sweep tool',
+        'Network topology helper',
+        'Siemens S7 connection validator',
+      ],
+      icon: Network,
+      path: '/portal/engineering-tools/controls-utilities',
+      badge: 'Coming soon',
+    },
+    {
+      label: 'Engineering Calculators',
+      description: 'Fast calculators for common controls, automation, and industrial engineering tasks.',
+      examples: [
+        '4-20 mA scaling calculator',
+        '0-10 V scaling calculator',
+        'Sensor scaling calculator',
+        'Gear ratio calculator',
+        'Motor speed calculator',
+        'Cycle time calculator',
+        'OEE calculator',
+        'Air consumption calculator',
+        'Safety distance calculator',
+        'Industrial unit converter',
+      ],
+      icon: Gauge,
+      path: '/portal/engineering-tools/calculators',
+      badge: 'Coming soon',
+    },
+    {
+      label: 'Downloads & Resources',
+      description: 'Downloadable software tools, reference files, guides, and starter kits for engineering work.',
+      examples: [
+        'Software utilities',
+        'Quick reference guides',
+        'Starter project files',
+        'Network setup references',
+        'Gateway examples',
+        'Industrial communication references',
+      ],
+      icon: Cloud,
+      path: '/portal/engineering-tools/downloads',
+      badge: 'Coming soon',
+    },
+  ];
+  const engineeringRouteSlug = activePath.split('/').filter(Boolean)[2];
+  const activeEngineeringCategory = engineeringCategories.find((item) => item.path.endsWith(`/${engineeringRouteSlug}`));
+  const engineeringOverviewItems = activeEngineeringCategory ? [activeEngineeringCategory] : engineeringCategories;
   const foundingMemberRank = membershipRank.Professional;
   const foundingMemberIsCurrent = membershipRank[user.subscription] >= foundingMemberRank;
   const foundingMemberCta = foundingMemberIsCurrent ? 'Current Plan' : 'Become a Founding Member';
@@ -1917,7 +2103,16 @@ function LoggedDashboardPage({
         <nav aria-label="Dashboard navigation">
           {navItems.map((item, index) => {
             const Icon = item.icon;
-            const active = activePath === item.path || (item.path === '/academy' && activePath.startsWith('/academy'));
+            const active = activePath === item.path
+              || (item.path === '/academy' && activePath.startsWith('/academy'))
+              || (item.path === '/portal/gateway-online' && (
+                activePath.startsWith('/portal/gateway-online')
+                || activePath.startsWith('/dashboard/gateway')
+              ))
+              || (item.path === '/portal/engineering-tools' && (
+                activePath.startsWith('/portal/engineering-tools')
+                || activePath.startsWith('/dashboard/engineering-tools')
+              ));
             return (
               <button
                 className={[active || (index === 0 && activePath === '/dashboard') ? 'active' : '', item.featured ? 'featured' : ''].filter(Boolean).join(' ')}
@@ -2073,6 +2268,137 @@ function LoggedDashboardPage({
               })}
             </section>
           </div>
+        ) : isGatewayOnlinePage ? (
+          <div className="engineering-tools-page gateway-online-page">
+            <button className="academy-back-button engineering-back-button" type="button" onClick={() => onNavigate('/dashboard')}>
+              <ArrowLeft size={16} />
+              Go Back
+            </button>
+            <section className="engineering-tools-hero gateway-online-hero">
+              <p className="eyebrow">{t('YVIMO PORTAL')}</p>
+              <h1>{t('Gateway Online')}</h1>
+              <p>{t('Design, simulate, test, and prepare industrial connectivity flows from your browser.')}</p>
+              <span>
+                {t('Gateway Online helps users practice with virtual devices, build data-flow concepts, generate project configurations, and prepare real industrial integrations before going onsite.')}
+              </span>
+            </section>
+
+            {activeGatewayFeature ? (
+              <section className="engineering-module-detail gateway-module-detail" aria-live="polite">
+                <span className="workspace-access-icon">
+                  <activeGatewayFeature.icon size={24} />
+                </span>
+                <div>
+                  <strong>{t(activeGatewayFeature.label)}</strong>
+                  <p>{t(activeGatewayFeature.description)}</p>
+                  <small>
+                    {t('This Gateway Online module is being prepared. It will be connected to the full YVIMO Gateway web app in a future release.')}
+                  </small>
+                </div>
+                <span className="engineering-access-badge">{t(activeGatewayFeature.badge)}</span>
+                <button type="button">{t('Access module')}</button>
+                <button className="engineering-secondary-action" type="button" onClick={() => onNavigate('/portal/gateway-online')}>
+                  {t('All Gateway tools')}
+                </button>
+              </section>
+            ) : (
+              <section className="gateway-online-note" aria-label="Gateway Online positioning">
+                <strong>{t('Gateway Online = design, simulate, test, prepare, learn, generate')}</strong>
+                <span>{t('Gateway Local = execute real industrial connections inside the customer network.')}</span>
+              </section>
+            )}
+
+            <section className="engineering-category-grid gateway-feature-grid" aria-label="Gateway Online features">
+              {gatewayOverviewItems.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <button
+                    className="engineering-category-card gateway-feature-card"
+                    type="button"
+                    key={item.label}
+                    onClick={() => onNavigate(item.path)}
+                  >
+                    <span className="gateway-card-top">
+                      <span className="engineering-category-icon">
+                        <Icon size={22} />
+                      </span>
+                      <span className="engineering-access-badge">{t(item.badge)}</span>
+                    </span>
+                    <span className="engineering-category-copy">
+                      <strong>{t(item.label)}</strong>
+                    </span>
+                    <span className="engineering-detail-description">{t(item.description)}</span>
+                    <span className="engineering-card-arrow">
+                      {activeGatewayFeature ? t('Access module') : t('View details')} <ArrowRight size={17} />
+                    </span>
+                  </button>
+                );
+              })}
+            </section>
+          </div>
+        ) : isEngineeringToolsPage ? (
+          <div className="engineering-tools-page">
+            <button className="academy-back-button engineering-back-button" type="button" onClick={() => onNavigate('/dashboard')}>
+              <ArrowLeft size={16} />
+              Go Back
+            </button>
+            <section className="engineering-tools-hero">
+              <p className="eyebrow">{t('YVIMO PORTAL')}</p>
+              <h1>{t('Engineering Tools')}</h1>
+              <p>{t('Practical resources for automation, controls, commissioning, quoting, and troubleshooting.')}</p>
+            </section>
+
+            {activeEngineeringCategory ? (
+              <section className="engineering-module-detail" aria-live="polite">
+                <span className="workspace-access-icon">
+                  <activeEngineeringCategory.icon size={24} />
+                </span>
+                <div>
+                  <strong>{t(activeEngineeringCategory.label)}</strong>
+                  <p>{t(activeEngineeringCategory.description)}</p>
+                </div>
+                <span className="engineering-access-badge">{t(activeEngineeringCategory.badge)}</span>
+                <button type="button">{t('Access module')}</button>
+                <button className="engineering-secondary-action" type="button" onClick={() => onNavigate('/portal/engineering-tools')}>
+                  {t('All tools')}
+                </button>
+              </section>
+            ) : null}
+
+            <section className="engineering-category-grid" aria-label="Engineering tool categories">
+              {engineeringOverviewItems.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <button
+                    className="engineering-category-card"
+                    type="button"
+                    key={item.label}
+                    onClick={() => onNavigate(item.path)}
+                    >
+                    <span className="engineering-category-icon">
+                        <Icon size={22} />
+                    </span>
+                    <span className="engineering-category-copy">
+                      <strong>{t(item.label)}</strong>
+                    </span>
+                    {activeEngineeringCategory ? (
+                      <>
+                        <span className="engineering-detail-description">{t(item.description)}</span>
+                        <span className="engineering-example-list">
+                          {item.examples.map((example) => (
+                        <em key={example}>{t(example)}</em>
+                      ))}
+                        </span>
+                      </>
+                    ) : null}
+                    <span className="engineering-card-arrow">
+                      {activeEngineeringCategory ? t('Access module') : t('View details')} <ArrowRight size={17} />
+                    </span>
+                  </button>
+                );
+              })}
+            </section>
+          </div>
         ) : (
         <div className="workspace-layout">
           <div className="workspace-main">
@@ -2177,7 +2503,13 @@ function App() {
   const currentLanguage = languages.find((item) => item.code === language) ?? languages[0];
   const isLoginPage = currentPath === '/login';
   const isSignUpPage = currentPath === '/signup';
-  const isDashboardPage = currentPath === '/dashboard' || currentPath.startsWith('/dashboard/');
+  const isDashboardPage =
+    currentPath === '/dashboard'
+    || currentPath.startsWith('/dashboard/')
+    || currentPath === '/portal/gateway-online'
+    || currentPath.startsWith('/portal/gateway-online/')
+    || currentPath === '/portal/engineering-tools'
+    || currentPath.startsWith('/portal/engineering-tools/');
   const isAcademyPage = currentPath === '/academy' || currentPath.startsWith('/academy/');
   const isAuthPage = isLoginPage || isSignUpPage;
   const headerProgress = isAuthPage || isDashboardPage || isAcademyPage ? 1 : scrollProgress;

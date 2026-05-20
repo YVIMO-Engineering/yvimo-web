@@ -10,21 +10,21 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock3,
-  Code2,
   Cpu,
   FileText,
   GraduationCap,
   LockKeyhole,
   MapPin,
+  Network,
   Newspaper,
   PlayCircle,
+  Radar,
   RotateCcw,
   Route,
   Save,
   Search,
   ShieldCheck,
   StickyNote,
-  TrendingUp,
   Trophy,
   UserRound,
   Wrench,
@@ -97,18 +97,39 @@ type AcademyTrackCourse = {
   estimatedTime: string;
   status: 'not-started' | 'in-progress' | 'completed';
   skills: string[];
+  lessons?: AcademyTrackLesson[];
+  requiredPlan?: string;
+  isLocked?: boolean;
+  progress?: number;
+  completed?: boolean;
+  certificateEligible?: boolean;
+};
+
+type AcademyTrackLesson = {
+  slug: string;
+  title: string;
+  estimatedDuration?: string;
+  videoUrl?: string;
+  content?: string;
+  quizQuestions?: unknown[];
+  completed?: boolean;
+  isLocked?: boolean;
+  requiredPlan?: string;
+  progress?: number;
 };
 
 type AcademyTrack = {
   slug: string;
   title: string;
   shortTitle: string;
+  categoryLabel?: string;
   description: string;
   subtitle: string;
   level: string;
   courseCount: number;
   certificateType: string;
   estimatedDuration: string;
+  accessStatus?: 'available' | 'preview' | 'coming-soon';
   icon: React.ComponentType<{ size?: number }>;
   badgeSrc?: string;
   courses: AcademyTrackCourse[];
@@ -226,6 +247,17 @@ const academyHowSteps = [
     icon: BriefcaseBusiness,
   },
 ];
+
+function makeTrackLessons(titles: string[]): AcademyTrackLesson[] {
+  return titles.map((title) => ({
+    slug: title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
+    title,
+    estimatedDuration: 'TBD',
+    completed: false,
+    isLocked: false,
+    progress: 0,
+  }));
+}
 
 const academyTracks: AcademyTrack[] = [
   {
@@ -347,107 +379,212 @@ const academyTracks: AcademyTrack[] = [
     ],
   },
   {
-    slug: 'industrial-software',
-    title: 'Industrial Software Track',
-    shortTitle: 'Industrial Software',
-    description: 'Develop practical skills in dashboards, APIs, plant-floor data, and connected manufacturing systems.',
-    subtitle: 'A structured learning path for dashboards, APIs, plant-floor data, and connected manufacturing systems.',
-    level: 'Intermediate',
+    slug: 'industrial-sensing-technologies',
+    title: 'Industrial Sensing Technologies Track',
+    shortTitle: 'Industrial Sensing',
+    categoryLabel: 'INDUSTRIAL SENSING',
+    description: 'Learn how to integrate vision systems, code readers, smart sensors, color detection, vibration monitoring, and inspection technologies into real automation systems.',
+    subtitle: 'Learn how sensing, inspection, vision, smart devices, and condition monitoring support real industrial automation systems.',
+    level: 'Beginner to Intermediate',
     courseCount: 4,
     certificateType: 'Certificate track',
     estimatedDuration: 'Self-paced',
-    icon: Code2,
+    accessStatus: 'preview',
+    icon: Radar,
+    badgeSrc: '/assets/academy/industrial-sensing-track-logo.png',
     courses: [
       {
         step: 1,
-        slug: 'industrial-software-fundamentals',
-        title: 'Industrial Software Fundamentals',
-        shortTitle: 'Software Fundamentals',
-        description: 'Understand how software connects machines, operators, and production data.',
-        level: 'Intermediate',
+        slug: 'industrial-sensors-fundamentals',
+        title: 'Industrial Sensors Fundamentals',
+        shortTitle: 'Sensors Fundamentals',
+        description: 'Understand the most common industrial sensors, how they work, and how they are applied in automation systems.',
+        level: 'Beginner',
         estimatedTime: 'TBD',
         status: 'not-started',
-        skills: ['Industrial software basics', 'IT/OT concepts', 'Data flow', 'Connected systems'],
+        skills: ['Sensor selection', 'Analog signals', 'PNP and NPN wiring', 'Sensor troubleshooting'],
+        certificateEligible: true,
+        lessons: makeTrackLessons([
+          'Introduction to Industrial Sensing',
+          'Discrete Sensors vs. Analog Sensors',
+          'Proximity, Photoelectric, and Inductive Sensors',
+          'Analog Signals: 0-10 V and 4-20 mA',
+          'Sensor Wiring: PNP, NPN, Sourcing, and Sinking',
+          'Sensor Mounting and Alignment Basics',
+          'Common Sensor Faults and Troubleshooting',
+          'Practical Sensor Selection Examples',
+        ]),
       },
       {
         step: 2,
-        slug: 'plant-floor-data-architecture',
-        title: 'Plant-Floor Data Architecture',
-        shortTitle: 'Data Architecture',
-        description: 'Learn how production data moves from machines to dashboards and systems.',
-        level: 'Intermediate',
+        slug: 'vision-systems-and-code-reading',
+        title: 'Vision Systems and Code Reading',
+        shortTitle: 'Vision Code Reading',
+        description: 'Learn the fundamentals of machine vision, barcode readers, QR readers, and Data Matrix code reading for industrial applications.',
+        level: 'Beginner to Intermediate',
         estimatedTime: 'TBD',
         status: 'not-started',
-        skills: ['Machine data', 'Tags', 'APIs', 'Data architecture'],
+        skills: ['Machine vision', 'Code reading', 'Lighting setup', 'PLC integration'],
+        certificateEligible: true,
+        lessons: makeTrackLessons([
+          'Introduction to Machine Vision',
+          'Cameras, Lenses, Lighting, and Field of View',
+          'Image Acquisition and Triggering',
+          'Barcode, QR, and Data Matrix Reading',
+          'Presence, Position, and Quality Inspection',
+          'Lighting Problems and Image Quality Issues',
+          'PLC Integration with Vision Systems',
+          'Vision System Setup Checklist',
+        ]),
       },
       {
         step: 3,
-        slug: 'dashboards-and-apis',
-        title: 'Dashboards and APIs',
-        shortTitle: 'Dashboards APIs',
-        description: 'Build interfaces and integrations that make industrial data useful.',
+        slug: 'smart-devices-and-machine-integration',
+        title: 'Smart Devices and Machine Integration',
+        shortTitle: 'Smart Devices',
+        description: 'Learn how to integrate smart sensors, IO-Link devices, laser sensors, color sensors, and measurement devices into PLC-based systems.',
         level: 'Intermediate',
         estimatedTime: 'TBD',
         status: 'not-started',
-        skills: ['Dashboards', 'APIs', 'Data visualization', 'System integration'],
+        skills: ['IO-Link basics', 'Laser measurement', 'Color sensing', 'Device diagnostics'],
+        certificateEligible: true,
+        lessons: makeTrackLessons([
+          'What Makes a Sensor "Smart"',
+          'IO-Link Basics and Device Parameters',
+          'Laser Distance Sensors and Measurement Devices',
+          'Color Sensors and Part Identification',
+          'Sensor Data Mapping into PLC Tags',
+          'Device Diagnostics and Status Bits',
+          'Integration with HMI and Alarm Systems',
+          'Practical Smart Device Integration Workflow',
+        ]),
       },
       {
         step: 4,
-        slug: 'connected-manufacturing-applications',
-        title: 'Connected Manufacturing Applications',
-        shortTitle: 'Connected Apps',
-        description: 'Apply software concepts to real connected manufacturing workflows.',
+        slug: 'inspection-and-condition-monitoring-basics',
+        title: 'Inspection and Condition Monitoring Basics',
+        shortTitle: 'Inspection Monitoring',
+        description: 'Understand how sensing technologies are used for inspection, reject logic, vibration monitoring, and machine condition awareness.',
         level: 'Intermediate',
         estimatedTime: 'TBD',
         status: 'not-started',
-        skills: ['Connected workflows', 'Production visibility', 'Integration patterns', 'Industrial applications'],
+        skills: ['Inspection logic', 'Reject handling', 'Vibration basics', 'Machine health indicators'],
+        certificateEligible: true,
+        lessons: makeTrackLessons([
+          'Introduction to Inspection Systems',
+          'Pass/Fail Logic and Reject Handling',
+          'Part Presence, Orientation, and Verification',
+          'Vibration Monitoring Fundamentals',
+          'Process Signals and Machine Health Indicators',
+          'Alarm Thresholds and Warning Levels',
+          'Data Logging for Inspection and Diagnostics',
+          'Basic Troubleshooting Strategy for Inspection Systems',
+        ]),
       },
     ],
   },
   {
-    slug: 'automation-career-growth',
-    title: 'Automation Career Growth Track',
-    shortTitle: 'Career Growth',
-    description: 'Strengthen your professional path with guided learning, certifications, and practical development.',
-    subtitle: 'A structured learning path for professional growth, certifications, and practical automation development.',
-    level: 'All levels',
-    courseCount: 3,
-    certificateType: 'Professional development',
+    slug: 'industrial-networks',
+    title: 'Industrial Networks Track',
+    shortTitle: 'Industrial Networks',
+    categoryLabel: 'INDUSTRIAL NETWORKS',
+    description: 'Build practical knowledge in industrial Ethernet, IP addressing, fieldbus communication, device setup, and network troubleshooting for automation systems.',
+    subtitle: 'Build practical knowledge in industrial Ethernet, fieldbus communication, protocols, device setup, and controls network troubleshooting.',
+    level: 'Beginner to Intermediate',
+    courseCount: 4,
+    certificateType: 'Certificate track',
     estimatedDuration: 'Self-paced',
-    icon: TrendingUp,
+    accessStatus: 'preview',
+    icon: Network,
+    badgeSrc: '/assets/academy/industrial-networks-track-logo.png',
     courses: [
       {
         step: 1,
-        slug: 'automation-career-foundations',
-        title: 'Automation Career Foundations',
-        shortTitle: 'Career Foundations',
-        description: 'Understand the skills, roles, and growth paths in industrial automation.',
-        level: 'All levels',
+        slug: 'industrial-ethernet-fundamentals',
+        title: 'Industrial Ethernet Fundamentals',
+        shortTitle: 'Ethernet Fundamentals',
+        description: 'Learn the networking basics required to configure and troubleshoot modern automation systems.',
+        level: 'Beginner',
         estimatedTime: 'TBD',
         status: 'not-started',
-        skills: ['Automation roles', 'Skill planning', 'Career direction', 'Technical positioning'],
+        skills: ['IP addressing', 'Subnets', 'Switches', 'Network documentation'],
+        certificateEligible: true,
+        lessons: makeTrackLessons([
+          'What Is Industrial Ethernet',
+          'IP Addresses, Subnets, and Gateways',
+          'MAC Addresses, Ports, and Switches',
+          'Static IP vs. DHCP in Industrial Systems',
+          'Network Topologies for Machines and Cells',
+          'Managed vs. Unmanaged Switches',
+          'Common Network Design Mistakes',
+          'Basic Network Documentation',
+        ]),
       },
       {
         step: 2,
-        slug: 'industrial-project-communication',
-        title: 'Industrial Project Communication',
-        shortTitle: 'Project Communication',
-        description: 'Learn how to communicate technical ideas, project updates, and automation value.',
-        level: 'All levels',
+        slug: 'profinet-and-ethernet-ip-basics',
+        title: 'PROFINET and EtherNet/IP Basics',
+        shortTitle: 'PROFINET EtherNet/IP',
+        description: 'Understand how common PLC-based industrial networks work and how controllers communicate with field devices.',
+        level: 'Beginner to Intermediate',
         estimatedTime: 'TBD',
         status: 'not-started',
-        skills: ['Technical communication', 'Project updates', 'Stakeholder alignment', 'Professional writing'],
+        skills: ['PROFINET setup', 'EtherNet/IP setup', 'I/O data', 'Device commissioning'],
+        certificateEligible: true,
+        lessons: makeTrackLessons([
+          'Introduction to Fieldbus and Industrial Protocols',
+          'PROFINET Device Names and IP Configuration',
+          'PROFINET Controllers, Devices, and GSDML Files',
+          'EtherNet/IP Scanners, Adapters, and EDS Files',
+          'Cyclic Communication and I/O Data',
+          'Device Replacement and Commissioning Basics',
+          'PLC Hardware Configuration Concepts',
+          'Common PROFINET and EtherNet/IP Faults',
+        ]),
       },
       {
         step: 3,
-        slug: 'portfolio-and-certification-readiness',
-        title: 'Portfolio and Certification Readiness',
-        shortTitle: 'Portfolio Readiness',
-        description: 'Prepare your learning evidence, project portfolio, and certification path.',
-        level: 'All levels',
+        slug: 'modbus-tcp-opc-ua-and-mqtt-concepts',
+        title: 'Modbus TCP, OPC UA, and MQTT Concepts',
+        shortTitle: 'Industrial Protocols',
+        description: 'Learn the basic communication concepts behind common protocols used for gateways, SCADA, dashboards, and plant-floor data systems.',
+        level: 'Intermediate',
         estimatedTime: 'TBD',
         status: 'not-started',
-        skills: ['Portfolio building', 'Certification readiness', 'Skill documentation', 'Professional presentation'],
+        skills: ['Modbus TCP', 'OPC UA', 'MQTT', 'Protocol translation'],
+        certificateEligible: true,
+        lessons: makeTrackLessons([
+          'Why Industrial Protocols Matter',
+          'Modbus TCP Clients, Servers, Registers, and Coils',
+          'OPC UA Servers, Clients, Tags, and Security Basics',
+          'MQTT Brokers, Clients, Topics, and Payloads',
+          'Polling vs. Publishing Data',
+          'Choosing the Right Protocol for an Application',
+          'Gateway Use Cases for Protocol Translation',
+          'Practical Data Flow Examples',
+        ]),
+      },
+      {
+        step: 4,
+        slug: 'network-troubleshooting-for-controls',
+        title: 'Network Troubleshooting for Controls',
+        shortTitle: 'Network Troubleshooting',
+        description: 'Learn practical troubleshooting methods for diagnosing industrial network and communication issues.',
+        level: 'Intermediate',
+        estimatedTime: 'TBD',
+        status: 'not-started',
+        skills: ['Ping and scans', 'IP conflicts', 'Firewall ports', 'PLC diagnostics'],
+        certificateEligible: true,
+        lessons: makeTrackLessons([
+          'Troubleshooting Mindset for Network Problems',
+          'Ping, IP Scan, and Device Discovery',
+          'IP Conflicts and Subnet Problems',
+          'Cable, Connector, and Switch Issues',
+          'Firewall and Port Access Problems',
+          'PLC Communication Diagnostics',
+          'Reading Device Status and Network LEDs',
+          'Network Commissioning Checklist',
+        ]),
       },
     ],
   },
@@ -584,7 +721,7 @@ function AcademyTrackCards({
                 ) : null}
                 <span className="academy-track-title">
                   <strong>{t(track.title)}</strong>
-                  <em>{t(track.shortTitle)}</em>
+                  <em>{t(track.categoryLabel ?? track.shortTitle)}</em>
                 </span>
               </span>
               <span className="academy-track-description">{t(track.description)}</span>
@@ -843,7 +980,7 @@ export function AcademyTrackPage({
               <ArrowLeft size={19} strokeWidth={3} />
               {t('Go Back')}
             </button>
-            <p className="eyebrow">ACADEMY TRACK</p>
+            <p className="eyebrow">{t(track.categoryLabel ?? 'ACADEMY TRACK')}</p>
             <h1>{t(track.title)}</h1>
             <p>{t(track.subtitle)}</p>
             <div className="academy-track-chip-row">
@@ -1047,6 +1184,42 @@ export function AcademyTrackPage({
           </div>
         </section>
 
+        <section className="academy-track-course-list-section">
+          <div className="academy-featured-heading academy-curriculum-heading">
+            <p className="eyebrow">{t('COURSE LIST')}</p>
+            <h2>{t('Courses and lessons')}</h2>
+            <span>
+              {t('Each course is prepared for future lesson content, video, quizzes, completion tracking, and membership access rules.')}
+            </span>
+          </div>
+          <div className="academy-track-course-list-grid">
+            {track.courses.map((course) => {
+              const status = getTrackCourseStatus(course, trackCompletion);
+              return (
+                <article className="academy-track-course-list-card" key={course.slug}>
+                  <div className="academy-track-course-list-top">
+                    <span>{String(course.step).padStart(2, '0')}</span>
+                    <em>{getTrackStatusLabel(status, t)}</em>
+                  </div>
+                  <h3>{t(course.title)}</h3>
+                  <p>{t(course.description)}</p>
+                  <ul>
+                    {(course.lessons ?? []).map((lesson, index) => (
+                      <li key={lesson.slug}>
+                        <b>{String(index + 1).padStart(2, '0')}</b>
+                        {t(lesson.title)}
+                      </li>
+                    ))}
+                  </ul>
+                  <button type="button" onClick={() => navigateTo(getTrackCoursePath(course))}>
+                    {t('View course')} <ArrowRight size={16} />
+                  </button>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+
         <section className="academy-track-progress-section">
           <div className="academy-track-progress-card">
             <div>
@@ -1150,6 +1323,16 @@ function SelectedTrackCoursePanel({
           ))}
         </ul>
       </div>
+      {course.lessons && course.lessons.length > 0 ? (
+        <div className="academy-selected-lessons">
+          <strong>{t('Lessons')}</strong>
+          <ol>
+            {course.lessons.map((lesson) => (
+              <li key={lesson.slug}>{t(lesson.title)}</li>
+            ))}
+          </ol>
+        </div>
+      ) : null}
       <button type="button" onClick={() => navigateTo(getTrackCoursePath(course))}>
         {t('Open course')} <ArrowRight size={17} />
       </button>
