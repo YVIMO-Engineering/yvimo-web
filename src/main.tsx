@@ -2568,7 +2568,10 @@ function App() {
     return currentPath === `/business/${line.slug}`;
   });
   const academyPathParts = currentPath.split('/').filter(Boolean);
-  const academyCourseSlug = academyPathParts[0] === 'academy' ? academyPathParts[1] : undefined;
+  const academyCourseSlug =
+    academyPathParts[0] === 'academy' && !['courses', 'tracks', 'progress', 'certificates'].includes(academyPathParts[1] ?? '')
+      ? academyPathParts[1]
+      : undefined;
   const academyTrackSlug =
     academyPathParts[0] === 'academy' && academyPathParts[1] === 'tracks'
       ? academyPathParts[2]
@@ -2742,7 +2745,14 @@ function App() {
   const navigateTo = (path: string) => {
     window.history.pushState({}, '', path);
     setCurrentPath(window.location.pathname);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    window.setTimeout(() => {
+      if (window.location.hash) {
+        document.querySelector(window.location.hash)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        return;
+      }
+
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }, 0);
     closeMenu();
     setLanguageMenuOpen(false);
   };

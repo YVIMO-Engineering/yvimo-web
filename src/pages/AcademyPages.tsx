@@ -117,6 +117,8 @@ type AcademyTrackSpecialization = {
   courses: AcademyTrackCourse[];
 };
 
+type AcademyTrackCategory = 'core' | 'skill' | 'advanced';
+
 type AcademyTrackLesson = {
   slug: string;
   title: string;
@@ -134,18 +136,27 @@ type AcademyTrack = {
   slug: string;
   title: string;
   shortTitle: string;
+  category: AcademyTrackCategory;
   categoryLabel?: string;
   description: string;
   subtitle: string;
   level: string;
-  courseCount: number;
   certificateType: string;
   estimatedDuration: string;
   accessStatus?: 'available' | 'preview' | 'coming-soon';
   icon: React.ComponentType<{ size?: number }>;
   badgeSrc?: string;
+  recommendedFor?: string[];
   specializations?: AcademyTrackSpecialization[];
   courses: AcademyTrackCourse[];
+};
+
+type AcademyHeroTile = {
+  label: string;
+  color: string;
+  logoSrc?: string;
+  logoSlug?: string;
+  tileSize?: 'square' | 'wide';
 };
 
 const defaultT: AcademyTranslator = (text) => text;
@@ -189,6 +200,10 @@ function isFreeCourse(course: AcademyCourse) {
   return course.price === null || Number(course.price) === 0;
 }
 
+function getAcademyDatabaseErrorMessage() {
+  return 'Database is not connected or Database communication error.';
+}
+
 type CourseCompletionMap = Record<string, boolean>;
 type TrackCompletionMap = Record<string, boolean>;
 
@@ -225,7 +240,8 @@ function getProfileInitials(name: string) {
 }
 
 const academyNavItems = [
-  { label: 'Courses', icon: BookOpen, path: '/academy', section: 'courses' },
+  { label: 'Academy Home', icon: GraduationCap, path: '/academy', section: 'home' },
+  { label: 'Courses', icon: BookOpen, path: '/academy/courses', section: 'courses' },
   { label: 'Continue watching', icon: PlayCircle, path: '/academy', section: 'continue' },
   { label: 'My progress', icon: CheckCircle2, path: '/academy/progress', section: 'progress' },
   { label: 'My certificates', icon: Trophy, path: '/academy/certificates', section: 'certificates' },
@@ -259,6 +275,21 @@ const academyHowSteps = [
     description: 'Use what you learned in real machines, production systems, projects, or your professional portfolio.',
     icon: BriefcaseBusiness,
   },
+];
+
+const academyHeroTiles: AcademyHeroTile[] = [
+  { label: 'Siemens', color: '#009999', logoSlug: 'siemens', tileSize: 'wide' },
+  { label: 'FANUC', color: '#f5c400', logoSrc: '/assets/logos/ecosystem/fanuc.png' },
+  { label: 'Allen-Bradley', color: '#2f4f9e', logoSrc: '/assets/logos/ecosystem/allen-bradley.png' },
+  { label: 'KUKA', color: '#ff6b2a', logoSrc: '/assets/logos/ecosystem/kuka.png', tileSize: 'wide' },
+  { label: 'OPC UA', color: '#3d8aa8', logoSrc: '/assets/logos/ecosystem/opc-ua.png', tileSize: 'wide' },
+  { label: 'AWS', color: '#ff9900', logoSrc: '/assets/logos/ecosystem/aws.png' },
+  { label: 'Azure', color: '#258bd2', logoSrc: '/assets/logos/ecosystem/azure.png' },
+  { label: 'Omron', color: '#1f86c7', logoSrc: '/assets/logos/ecosystem/omron.svg' },
+  { label: 'ABB', color: '#ff2f2f', logoSlug: 'abb' },
+  { label: 'Yaskawa', color: '#276da8', logoSrc: '/assets/logos/ecosystem/yaskawa.jpg' },
+  { label: 'MQTT', color: '#8d3c96', logoSlug: 'mqtt' },
+  { label: 'Node.js', color: '#69ad54', logoSlug: 'nodedotjs' },
 ];
 
 function makeTrackLessons(titles: string[]): AcademyTrackLesson[] {
@@ -302,14 +333,14 @@ const academyTracks: AcademyTrack[] = [
     slug: 'plc-technician',
     title: 'PLC Technician Track',
     shortTitle: 'PLC Technician',
+    category: 'core',
     description: 'A practical learning path for building real PLC programming, troubleshooting, HMI, networking, and machine control skills. Students learn core PLC concepts first, then choose a Siemens or Rockwell specialization.',
     subtitle: 'A practical learning path for building real PLC programming, troubleshooting, HMI, networking, and machine control skills.',
     level: 'Beginner to Intermediate',
-    courseCount: 9,
     certificateType: 'Certificate track',
     estimatedDuration: 'Siemens or Rockwell path',
     icon: Cpu,
-    badgeSrc: '/assets/academy/plc-tech-track-logo.png',
+    badgeSrc: '/assets/academy/plc-technician-track-badge-v4.png',
     courses: [
       makeTrackCourse(1, 'industrial-automation-fundamentals', 'Industrial Automation Fundamentals', 'Automation Fundamentals', 'Build the foundation for understanding industrial automation systems, control architecture, sensors, actuators, signals, and basic machine behavior.', 'Beginner', ['Control architecture', 'Sensors and actuators', 'Machine states', 'Troubleshooting mindset'], [
         'What is a PLC?',
@@ -549,10 +580,10 @@ const academyTracks: AcademyTrack[] = [
     slug: 'robotics-integration',
     title: 'Robotics Technician Track',
     shortTitle: 'Robotics Technician',
+    category: 'core',
     description: 'Learn robot cells, motion, safety, and robot-to-PLC coordination for real automation systems.',
     subtitle: 'A structured learning path for robot cells, motion, safety, and robot-to-PLC coordination.',
     level: 'Beginner to Intermediate',
-    courseCount: 4,
     certificateType: 'Certificate track',
     estimatedDuration: 'Self-paced',
     icon: Bot,
@@ -605,19 +636,43 @@ const academyTracks: AcademyTrack[] = [
     ],
   },
   {
+    slug: 'cnc-technician',
+    title: 'CNC Technician Track',
+    shortTitle: 'CNC Technician',
+    category: 'core',
+    description: 'Learn CNC machine fundamentals, NC programming, FANUC control operation, PMC logic, servo diagnostics, simulation, backups, and troubleshooting.',
+    subtitle: 'CNC TECHNICIAN',
+    level: 'Beginner to Intermediate',
+    certificateType: 'Certificate track',
+    estimatedDuration: 'FANUC Control path',
+    accessStatus: 'preview',
+    icon: Wrench,
+    badgeSrc: '/assets/academy/academy-track-logo.png',
+    courses: [
+      makeTrackCourse(1, 'cnc-machine-fundamentals', 'CNC Machine Fundamentals', 'CNC Fundamentals', 'Understand CNC machine architecture, axes, tooling, workholding, coordinates, and shop-floor operating concepts.', 'Beginner', ['CNC basics', 'Machine axes', 'Tooling', 'Coordinate systems'], ['CNC machine architecture']),
+      makeTrackCourse(2, 'nc-programming-editing-cimco-edit', 'NC Programming & Editing - CIMCO Edit', 'NC Programming', 'Create, edit, review, and prepare NC programs using practical programming and editor workflows.', 'Beginner', ['G-code', 'Program editing', 'CIMCO Edit', 'Program review'], ['NC programming basics']),
+      makeTrackCourse(3, 'fanuc-control-operation-parameters', 'FANUC Control Operation & Parameters', 'FANUC Operation', 'Learn FANUC control navigation, operation, offsets, parameters, and safe handling practices.', 'Beginner to Intermediate', ['FANUC control', 'Offsets', 'Parameters', 'Operation'], ['FANUC control navigation']),
+      makeTrackCourse(4, 'pmc-logic-machine-signals-fanuc-ladder-iii', 'PMC Logic & Machine Signals - FANUC LADDER-III', 'PMC Logic', 'Read and troubleshoot PMC logic, machine signals, interlocks, and ladder diagnostics with FANUC LADDER-III.', 'Intermediate', ['PMC logic', 'Machine signals', 'LADDER-III', 'Interlocks'], ['PMC signal flow']),
+      makeTrackCourse(5, 'servo-diagnostics-tuning-fanuc-servo-guide', 'Servo Diagnostics & Tuning - FANUC SERVO Guide', 'Servo Diagnostics', 'Diagnose servo alarms, feedback issues, tuning concerns, and axis performance using FANUC SERVO Guide concepts.', 'Intermediate', ['Servo alarms', 'Axis tuning', 'Diagnostics', 'SERVO Guide'], ['Servo diagnostics workflow']),
+      makeTrackCourse(6, 'cnc-control-simulation-fanuc-ncguide', 'CNC Control Simulation - FANUC NCGuide', 'NCGuide Simulation', 'Use FANUC NCGuide concepts to simulate controls, validate programs, and practice machine operation offline.', 'Intermediate', ['NCGuide', 'Simulation', 'Offline testing', 'Program validation'], ['Control simulation basics']),
+      makeTrackCourse(7, 'alarms-backups-troubleshooting', 'Alarms, Backups & Troubleshooting', 'Troubleshooting', 'Build a practical workflow for backups, alarm investigation, recovery, and CNC machine fault diagnosis.', 'Intermediate', ['Alarms', 'Backups', 'Recovery', 'Troubleshooting'], ['CNC troubleshooting workflow']),
+      makeTrackCourse(8, 'capstone-diagnose-cnc-machine-fault', 'Capstone: Diagnose a CNC Machine Fault', 'CNC Capstone', 'Apply the complete CNC Technician workflow to diagnose and document a realistic machine fault.', 'Intermediate', ['Fault diagnosis', 'Documentation', 'Capstone', 'FANUC Control'], ['Capstone fault case']),
+    ],
+  },
+  {
     slug: 'industrial-sensing-technologies',
-    title: 'Industrial Sensing Technologies Track',
+    title: 'Industrial Sensing Technologies',
     shortTitle: 'Industrial Sensing',
-    categoryLabel: 'INDUSTRIAL SENSING',
+    category: 'skill',
     description: 'Learn how to integrate vision systems, code readers, smart sensors, color detection, vibration monitoring, and inspection technologies into real automation systems.',
     subtitle: 'Learn how sensing, inspection, vision, smart devices, and condition monitoring support real industrial automation systems.',
     level: 'Beginner to Intermediate',
-    courseCount: 4,
     certificateType: 'Certificate track',
     estimatedDuration: 'Self-paced',
     accessStatus: 'preview',
     icon: Radar,
     badgeSrc: '/assets/academy/industrial-sensing-track-logo.png',
+    recommendedFor: ['PLC Technician', 'Robotics Technician', 'Automation Systems Integrator'],
     courses: [
       {
         step: 1,
@@ -711,18 +766,18 @@ const academyTracks: AcademyTrack[] = [
   },
   {
     slug: 'industrial-networks',
-    title: 'Industrial Networks Track',
+    title: 'Industrial Networks',
     shortTitle: 'Industrial Networks',
-    categoryLabel: 'INDUSTRIAL NETWORKS',
+    category: 'skill',
     description: 'Build practical knowledge in industrial Ethernet, IP addressing, fieldbus communication, device setup, and network troubleshooting for automation systems.',
     subtitle: 'Build practical knowledge in industrial Ethernet, fieldbus communication, protocols, device setup, and controls network troubleshooting.',
     level: 'Beginner to Intermediate',
-    courseCount: 4,
     certificateType: 'Certificate track',
     estimatedDuration: 'Self-paced',
     accessStatus: 'preview',
     icon: Network,
     badgeSrc: '/assets/academy/industrial-networks-track-logo.png',
+    recommendedFor: ['PLC Technician', 'Robotics Technician', 'CNC Technician', 'Automation Systems Integrator'],
     courses: [
       {
         step: 1,
@@ -814,10 +869,140 @@ const academyTracks: AcademyTrack[] = [
       },
     ],
   },
+  {
+    slug: 'machine-vision-code-reading',
+    title: 'Machine Vision & Code Reading',
+    shortTitle: 'Machine Vision',
+    category: 'skill',
+    description: 'Learn machine vision fundamentals, lighting, lenses, image quality, industrial code reading, PLC integration, and inspection troubleshooting.',
+    subtitle: 'MACHINE VISION & CODE READING',
+    level: 'Beginner to Intermediate',
+    certificateType: 'Certificate track',
+    estimatedDuration: 'Self-paced',
+    accessStatus: 'preview',
+    icon: Radar,
+    badgeSrc: '/assets/academy/academy-track-logo.png',
+    recommendedFor: ['PLC Technician', 'Robotics Technician', 'Automation Systems Integrator'],
+    courses: [
+      makeTrackCourse(1, 'machine-vision-fundamentals', 'Machine Vision Fundamentals', 'Vision Fundamentals', 'Understand cameras, inspection goals, triggers, image acquisition, and practical machine vision use cases.', 'Beginner', ['Machine vision', 'Cameras', 'Triggers', 'Inspection'], ['Machine vision fundamentals']),
+      makeTrackCourse(2, 'lighting-lenses-image-quality', 'Lighting, Lenses, and Image Quality', 'Image Quality', 'Learn how lighting, lens selection, exposure, focus, and mounting affect reliable inspection results.', 'Beginner to Intermediate', ['Lighting', 'Lenses', 'Exposure', 'Image quality'], ['Image quality basics']),
+      makeTrackCourse(3, 'code-reading-applications', 'Code Reading Applications', 'Code Reading', 'Apply barcode, QR, and Data Matrix reading to industrial traceability and production workflows.', 'Beginner to Intermediate', ['Barcode', 'QR codes', 'Data Matrix', 'Traceability'], ['Code reading basics']),
+      makeTrackCourse(4, 'vision-to-plc-integration', 'Vision-to-PLC Integration', 'Vision PLC', 'Connect vision results to PLC tags, handshakes, triggers, pass/fail logic, and diagnostics.', 'Intermediate', ['PLC integration', 'Handshakes', 'Pass fail', 'Diagnostics'], ['Vision-to-PLC workflow']),
+      makeTrackCourse(5, 'inspection-troubleshooting-basics', 'Inspection Troubleshooting Basics', 'Inspection Troubleshooting', 'Troubleshoot common inspection failures caused by setup, product variation, image quality, and communication issues.', 'Intermediate', ['Troubleshooting', 'Inspection setup', 'Product variation', 'Communication'], ['Inspection troubleshooting']),
+    ],
+  },
+  {
+    slug: 'safety-systems',
+    title: 'Safety Systems',
+    shortTitle: 'Safety Systems',
+    category: 'skill',
+    description: 'Learn industrial safety fundamentals, safety relays, safety PLCs, guarding, interlocks, E-stops, robot cell safety, and validation basics.',
+    subtitle: 'SAFETY SYSTEMS',
+    level: 'Beginner to Intermediate',
+    certificateType: 'Certificate track',
+    estimatedDuration: 'Self-paced',
+    accessStatus: 'preview',
+    icon: ShieldCheck,
+    badgeSrc: '/assets/academy/academy-track-logo.png',
+    recommendedFor: ['PLC Technician', 'Robotics Technician', 'Automation Systems Integrator'],
+    courses: [
+      makeTrackCourse(1, 'industrial-safety-fundamentals', 'Industrial Safety Fundamentals', 'Safety Fundamentals', 'Understand the safety concepts technicians need when working around automated equipment.', 'Beginner', ['Safety basics', 'Risk awareness', 'Machine states', 'Standards mindset'], ['Industrial safety fundamentals']),
+      makeTrackCourse(2, 'safety-relays-and-safety-plcs', 'Safety Relays and Safety PLCs', 'Safety Controllers', 'Learn how safety relays and safety PLCs monitor devices, outputs, and reset conditions.', 'Beginner to Intermediate', ['Safety relays', 'Safety PLCs', 'Reset logic', 'Outputs'], ['Safety controller basics']),
+      makeTrackCourse(3, 'guarding-interlocks-and-estops', 'Guarding, Interlocks, and E-Stops', 'Guarding Interlocks', 'Understand machine guarding, door switches, interlocks, emergency stops, and safe restart behavior.', 'Beginner to Intermediate', ['Guarding', 'Interlocks', 'E-stops', 'Restart logic'], ['Guarding and interlocks']),
+      makeTrackCourse(4, 'robot-cell-safety', 'Robot Cell Safety', 'Robot Safety', 'Apply safety concepts to robot cells, zones, teaching, recovery, and operator interaction.', 'Intermediate', ['Robot safety', 'Zones', 'Teaching', 'Recovery'], ['Robot cell safety']),
+      makeTrackCourse(5, 'safety-validation-basics', 'Safety Validation Basics', 'Safety Validation', 'Learn basic validation workflows, test documentation, and practical safety sign-off habits.', 'Intermediate', ['Validation', 'Documentation', 'Testing', 'Sign-off'], ['Safety validation basics']),
+    ],
+  },
+  {
+    slug: 'scada-industrial-data',
+    title: 'SCADA & Industrial Data',
+    shortTitle: 'SCADA & Data',
+    category: 'skill',
+    description: 'Learn SCADA fundamentals, HMI and data tag structure, OPC UA, MQTT, alarm design, event design, and production data collection basics.',
+    subtitle: 'SCADA & INDUSTRIAL DATA',
+    level: 'Beginner to Intermediate',
+    certificateType: 'Certificate track',
+    estimatedDuration: 'Self-paced',
+    accessStatus: 'preview',
+    icon: Network,
+    badgeSrc: '/assets/academy/academy-track-logo.png',
+    recommendedFor: ['PLC Technician', 'Automation Systems Integrator', 'Industrial Data / IT-OT Specialist'],
+    courses: [
+      makeTrackCourse(1, 'scada-fundamentals', 'SCADA Fundamentals', 'SCADA Fundamentals', 'Understand SCADA architecture, operators, servers, clients, tags, trends, and plant-floor workflows.', 'Beginner', ['SCADA', 'Architecture', 'Tags', 'Trends'], ['SCADA fundamentals']),
+      makeTrackCourse(2, 'hmi-and-data-tag-structure', 'HMI and Data Tag Structure', 'Tag Structure', 'Design useful tag structures for HMIs, SCADA screens, alarms, diagnostics, and production data.', 'Beginner to Intermediate', ['HMI tags', 'Data structure', 'Diagnostics', 'Screens'], ['Tag structure basics']),
+      makeTrackCourse(3, 'opc-ua-and-mqtt-basics', 'OPC UA and MQTT Basics', 'OPC UA MQTT', 'Learn how OPC UA and MQTT move industrial data between controllers, gateways, SCADA, and databases.', 'Intermediate', ['OPC UA', 'MQTT', 'Gateways', 'Data flow'], ['OPC UA and MQTT basics']),
+      makeTrackCourse(4, 'alarm-and-event-design', 'Alarm and Event Design', 'Alarm Design', 'Build practical alarm and event structures that help operators respond without noise or confusion.', 'Intermediate', ['Alarms', 'Events', 'Priorities', 'Operator response'], ['Alarm design basics']),
+      makeTrackCourse(5, 'production-data-collection-basics', 'Production Data Collection Basics', 'Data Collection', 'Collect counts, states, downtime, quality data, and machine events for production visibility.', 'Intermediate', ['Production data', 'Downtime', 'Quality', 'Events'], ['Production data basics']),
+    ],
+  },
+  {
+    slug: 'automation-systems-integrator',
+    title: 'Automation Systems Integrator',
+    shortTitle: 'Systems Integrator',
+    category: 'advanced',
+    description: 'An advanced learning path for technicians and engineers who want to design, connect, troubleshoot, and commission complete automation systems across PLCs, robots, HMIs, sensors, networks, safety, and industrial data platforms.',
+    subtitle: 'AUTOMATION SYSTEMS INTEGRATOR',
+    level: 'Advanced',
+    certificateType: 'Certificate track',
+    estimatedDuration: 'Multidisciplinary path',
+    accessStatus: 'preview',
+    icon: Route,
+    badgeSrc: '/assets/academy/academy-track-logo.png',
+    courses: [
+      makeTrackCourse(1, 'integration-project-methodology', 'Integration Project Methodology', 'Methodology', 'Plan and execute automation integration projects with clear scope, risk, and commissioning discipline.', 'Advanced', ['Project method', 'Scope', 'Risk', 'Commissioning'], ['Integration methodology']),
+      makeTrackCourse(2, 'electrical-controls-architecture', 'Electrical & Controls Architecture', 'Controls Architecture', 'Design controls architectures across panels, PLCs, I/O, networks, devices, and field wiring.', 'Advanced', ['Controls architecture', 'Electrical design', 'I/O', 'Networks'], ['Controls architecture']),
+      makeTrackCourse(3, 'plc-integration-core', 'PLC Integration Core', 'PLC Integration', 'Connect PLC logic, interfaces, modes, diagnostics, and integration-ready machine states.', 'Advanced', ['PLC logic', 'Modes', 'Diagnostics', 'Machine states'], ['PLC integration core']),
+      makeTrackCourse(4, 'hmi-scada-integration', 'HMI / SCADA Integration', 'HMI SCADA', 'Integrate HMIs and SCADA systems for operations, diagnostics, alarms, and production visibility.', 'Advanced', ['HMI', 'SCADA', 'Alarms', 'Diagnostics'], ['HMI and SCADA integration']),
+      makeTrackCourse(5, 'industrial-networks-integration', 'Industrial Networks', 'Networks', 'Apply industrial network design, commissioning, protocol, and troubleshooting practices in integration projects.', 'Advanced', ['Industrial networks', 'Protocols', 'Commissioning', 'Troubleshooting'], ['Industrial networks integration']),
+      makeTrackCourse(6, 'robot-to-plc-integration', 'Robot-to-PLC Integration', 'Robot PLC', 'Integrate robot programs, signals, handshakes, recovery states, and PLC-controlled cycles.', 'Advanced', ['Robots', 'PLC handshakes', 'Recovery', 'Cycles'], ['Robot-to-PLC integration']),
+      makeTrackCourse(7, 'vision-sensing-integration', 'Vision & Sensing Integration', 'Vision Sensing', 'Integrate vision, smart sensors, inspection signals, and diagnostics into automation systems.', 'Advanced', ['Vision', 'Sensors', 'Inspection', 'Diagnostics'], ['Vision and sensing integration']),
+      makeTrackCourse(8, 'safety-systems-integration', 'Safety Systems Integration', 'Safety Integration', 'Coordinate safety controllers, devices, reset logic, robot zones, and validation workflows.', 'Advanced', ['Safety systems', 'Robot zones', 'Reset logic', 'Validation'], ['Safety systems integration']),
+      makeTrackCourse(9, 'data-collection-it-ot-mqtt-opc-ua', 'Data Collection / IT-OT / MQTT / OPC UA', 'IT OT Data', 'Connect automation systems to data platforms using practical IT-OT, MQTT, OPC UA, and gateway concepts.', 'Advanced', ['IT-OT', 'MQTT', 'OPC UA', 'Data collection'], ['IT-OT data collection']),
+      makeTrackCourse(10, 'virtual-commissioning-basics', 'Virtual Commissioning Basics', 'Virtual Commissioning', 'Use simulation and offline testing to reduce commissioning risk before plant-floor startup.', 'Advanced', ['Simulation', 'Offline testing', 'Virtual FAT', 'Commissioning'], ['Virtual commissioning basics']),
+      makeTrackCourse(11, 'fat-sat-commissioning', 'FAT / SAT / Commissioning', 'FAT SAT', 'Prepare and execute FAT, SAT, startup, punch lists, recovery plans, and commissioning documentation.', 'Advanced', ['FAT', 'SAT', 'Startup', 'Documentation'], ['FAT and SAT workflow']),
+      makeTrackCourse(12, 'capstone-integration-project', 'Capstone Integration Project', 'Integration Capstone', 'Apply the complete systems integrator workflow to a multidisciplinary automation project.', 'Advanced', ['Capstone', 'Integration', 'Commissioning', 'Documentation'], ['Integration capstone']),
+    ],
+  },
+  {
+    slug: 'virtual-commissioning-specialist',
+    title: 'Virtual Commissioning Specialist',
+    shortTitle: 'Virtual Commissioning',
+    category: 'advanced',
+    description: 'Learn how to validate automation systems before commissioning by combining simulation, digital twins, robot simulation, PLC emulation, and virtual FAT workflows.',
+    subtitle: 'VIRTUAL COMMISSIONING SPECIALIST',
+    level: 'Advanced',
+    certificateType: 'Certificate track',
+    estimatedDuration: 'Self-paced',
+    accessStatus: 'preview',
+    icon: RotateCcw,
+    badgeSrc: '/assets/academy/academy-track-logo.png',
+    courses: [
+      makeTrackCourse(1, 'digital-twin-fundamentals', 'Digital Twin Fundamentals', 'Digital Twin', 'Understand digital twin concepts for validating automation systems before commissioning.', 'Advanced', ['Digital twins', 'Simulation', 'Validation', 'System behavior'], ['Digital twin fundamentals']),
+      makeTrackCourse(2, 'robot-simulation-basics', 'Robot Simulation Basics', 'Robot Simulation', 'Use robot simulation concepts to validate motion, reach, zones, cycle flow, and offline logic.', 'Advanced', ['Robot simulation', 'Motion', 'Reach', 'Cycle flow'], ['Robot simulation basics']),
+      makeTrackCourse(3, 'plc-simulation-and-emulation', 'PLC Simulation and Emulation', 'PLC Simulation', 'Connect simulated PLC logic and emulation workflows to virtual equipment and test cases.', 'Advanced', ['PLC simulation', 'Emulation', 'Test cases', 'Virtual equipment'], ['PLC simulation basics']),
+      makeTrackCourse(4, 'offline-testing-methodology', 'Offline Testing Methodology', 'Offline Testing', 'Build repeatable offline tests for sequences, faults, recovery, operator actions, and machine states.', 'Advanced', ['Offline testing', 'Sequences', 'Faults', 'Recovery'], ['Offline testing methodology']),
+      makeTrackCourse(5, 'virtual-fat-workflow', 'Virtual FAT Workflow', 'Virtual FAT', 'Prepare virtual FAT workflows that reduce on-site commissioning risk and improve project readiness.', 'Advanced', ['Virtual FAT', 'Risk reduction', 'Readiness', 'Documentation'], ['Virtual FAT workflow']),
+      makeTrackCourse(6, 'capstone-virtual-commissioning-project', 'Capstone: Virtual Commissioning Project', 'VC Capstone', 'Apply simulation, emulation, testing, and documentation to a virtual commissioning capstone project.', 'Advanced', ['Capstone', 'Simulation', 'Emulation', 'Testing'], ['Virtual commissioning capstone']),
+    ],
+  },
 ];
+
+const academyCoreTracks = academyTracks.filter((track) => track.category === 'core');
+const academySkillPaths = academyTracks.filter((track) => track.category === 'skill');
+const academyAdvancedTracks = academyTracks.filter((track) => track.category === 'advanced');
 
 function getTrackBadgeSrc(trackSlug: string) {
   return academyTracks.find((track) => track.slug === trackSlug)?.badgeSrc ?? '/assets/academy/academy-track-logo.png';
+}
+
+function getTrackCardLabel(track: AcademyTrack) {
+  if (track.category === 'core') return 'CORE TRACK';
+  if (track.category === 'skill') return 'SKILL PATH';
+  return 'ADVANCED TRACK';
+}
+
+function getTrackCourseCount(track: AcademyTrack) {
+  return getVisibleTrackCourses(track, getDefaultSpecialization(track)).length;
 }
 
 function AcademyShell({
@@ -890,7 +1075,18 @@ function CertificateQr({ value }: { value: string }) {
 }
 
 function getVisibleCategories(courses: AcademyCourse[]) {
-  const preferred = ['PLC Programming', 'Robotics', 'Industrial Software', 'Career Growth'];
+  const preferred = [
+    'PLC Programming',
+    'Robotics',
+    'CNC & FANUC Control',
+    'Industrial Networks',
+    'Industrial Sensing',
+    'HMI / SCADA',
+    'Industrial Data & IT-OT',
+    'Safety Systems',
+    'Industrial Software',
+    'Career Growth',
+  ];
   const existing = Array.from(new Set(courses.map(getCourseCategory)));
   return [
     ...preferred.filter((category) => existing.includes(category)),
@@ -925,76 +1121,6 @@ function getLocalTrackSpecialization(trackSlug: string, specializationSlug?: str
 
 function getTrackCourseLessonCount(course: AcademyTrackCourse) {
   return Math.max(course.lessons?.length ?? 1, 1);
-}
-
-function findLocalTrackCourse(courseSlug: string) {
-  for (const track of academyTracks) {
-    const directCourse = track.courses.find((course) => course.slug === courseSlug);
-    if (directCourse) return directCourse;
-
-    for (const specialization of track.specializations ?? []) {
-      const specializedCourse = specialization.courses.find((course) => course.slug === courseSlug);
-      if (specializedCourse) return specializedCourse;
-    }
-  }
-
-  return null;
-}
-
-function getDisplayCourseBundle(bundle: AcademyCourseBundle): AcademyCourseBundle {
-  const localCourse = findLocalTrackCourse(bundle.course.slug);
-  if (!localCourse?.lessons?.length) return bundle;
-
-  const existingLessons = [
-    ...bundle.modules.flatMap((module) => module.lessons),
-    ...bundle.ungroupedLessons,
-  ];
-  const existingBySlug = new Map(existingLessons.map((lesson) => [lesson.slug, lesson]));
-  const now = new Date().toISOString();
-  const orderedLessons = localCourse.lessons.map((lesson, index) => {
-    const existing = existingBySlug.get(lesson.slug);
-    if (existing) {
-      return {
-        ...existing,
-        title: lesson.title,
-        order_index: index + 1,
-      };
-    }
-
-    return {
-      id: `${bundle.course.id}-${lesson.slug}`,
-      course_id: bundle.course.id,
-      module_id: `${bundle.course.id}-track-curriculum`,
-      slug: lesson.slug,
-      title: lesson.title,
-      description: null,
-      lesson_type: 'text' as const,
-      video_provider: null,
-      video_id: null,
-      video_url: null,
-      duration_seconds: null,
-      order_index: index + 1,
-      is_preview: index === 0,
-      status: 'published' as const,
-      created_at: now,
-      updated_at: now,
-    };
-  });
-
-  return {
-    ...bundle,
-    modules: [{
-      id: `${bundle.course.id}-track-curriculum`,
-      course_id: bundle.course.id,
-      title: localCourse.shortTitle ? `${localCourse.shortTitle} Lessons` : 'Course Lessons',
-      description: 'Structured lessons from the current PLC Technician curriculum.',
-      order_index: 1,
-      created_at: now,
-      updated_at: now,
-      lessons: orderedLessons,
-    }],
-    ungroupedLessons: [],
-  };
 }
 
 type ProgressTrackBundleVariant = {
@@ -1038,21 +1164,33 @@ function getPathTrackBundles(bundle: AcademyTrackBundle): ProgressTrackBundleVar
 function AcademyTrackCards({
   navigateTo,
   t,
+  tracks = academyTracks,
+  eyebrow = 'YVIMO ACADEMY TRACKS',
+  title = 'Choose your learning path',
+  description = 'Follow structured learning paths built from real industrial courses, practical progression, and applied automation skills.',
+  note,
 }: {
   navigateTo: (path: string) => void;
   t: AcademyTranslator;
+  tracks?: AcademyTrack[];
+  eyebrow?: string;
+  title?: string;
+  description?: string;
+  note?: string;
 }) {
+  const titleId = React.useId();
+  const categoryClass = tracks[0]?.category ? `academy-track-section-${tracks[0].category}` : '';
+
   return (
-    <section className="academy-tracks-section" aria-labelledby="academy-tracks-title">
+    <section className={['academy-tracks-section', categoryClass].filter(Boolean).join(' ')} aria-labelledby={titleId}>
       <div className="academy-tracks-heading">
-        <p className="eyebrow">{t('YVIMO ACADEMY TRACKS')}</p>
-        <h2 id="academy-tracks-title">{t('Choose your technical track')}</h2>
-        <p>
-          {t('Follow structured learning paths built from real industrial courses, practical progression, and applied automation skills.')}
-        </p>
+        <p className="eyebrow">{t(eyebrow)}</p>
+        <h2 id={titleId}>{t(title)}</h2>
+        <p>{t(description)}</p>
+        {note ? <span className="academy-track-section-note">{t(note)}</span> : null}
       </div>
       <div className="academy-track-grid">
-        {academyTracks.map((track) => {
+        {tracks.map((track) => {
           const Icon = track.icon;
           const previewCourses = track.specializations ? track.courses : getVisibleTrackCourses(track, getDefaultSpecialization(track));
           const cardDescription = track.specializations
@@ -1078,12 +1216,12 @@ function AcademyTrackCards({
                 ) : null}
                 <span className="academy-track-title">
                   <strong>{t(track.title)}</strong>
-                  <em>{t(track.categoryLabel ?? track.shortTitle)}</em>
+                  <em>{t(track.categoryLabel ?? getTrackCardLabel(track))}</em>
                 </span>
               </span>
               <span className="academy-track-description">{t(cardDescription)}</span>
               <span className="academy-track-chip-row">
-                <span>{t(`${track.courseCount} courses`)}</span>
+                <span>{t(`${getTrackCourseCount(track)} courses`)}</span>
                 <span>{t(track.level)}</span>
                 {track.specializations ? (
                   <>
@@ -1094,6 +1232,12 @@ function AcademyTrackCards({
                 <span>{t(track.certificateType)}</span>
                 {track.specializations ? <span>{t('Capstone project')}</span> : null}
               </span>
+              {track.recommendedFor?.length ? (
+                <span className="academy-track-recommended">
+                  <b>{t('Recommended for')}</b>
+                  <span>{track.recommendedFor.map((item) => t(item)).join(' · ')}</span>
+                </span>
+              ) : null}
               <span className="academy-track-preview" aria-label={`${track.title} curriculum preview`}>
                 {previewCourses.map((course) => (
                   <span key={course.slug}>
@@ -1128,8 +1272,57 @@ function buildTrackCompletionMap(courses: AcademyCourse[], completion: CourseCom
   );
 }
 
-function getTrackCoursePath(course: AcademyTrackCourse) {
-  return `/academy/${course.slug}`;
+function getTrackCoursePath(
+  course: AcademyTrackCourse,
+  returnContext?: { trackSlug: string; specializationSlug?: string | null },
+) {
+  const basePath = `/academy/${course.slug}`;
+  if (!returnContext || typeof window === 'undefined') return basePath;
+
+  const params = new URLSearchParams({
+    fromTrack: returnContext.trackSlug,
+    returnY: String(Math.round(window.scrollY)),
+  });
+
+  if (returnContext.specializationSlug) {
+    params.set('fromSpecialization', returnContext.specializationSlug);
+  }
+
+  return `${basePath}?${params.toString()}`;
+}
+
+function getTrackRequestedSpecializationSlug() {
+  if (typeof window === 'undefined') return null;
+  return new URLSearchParams(window.location.search).get('specialization');
+}
+
+function getCourseReturnContext() {
+  if (typeof window === 'undefined') return null;
+  const params = new URLSearchParams(window.location.search);
+  const fromTrack = params.get('fromTrack');
+  if (!fromTrack) return null;
+
+  const returnY = Number(params.get('returnY') ?? '0');
+  return {
+    fromTrack,
+    fromSpecialization: params.get('fromSpecialization'),
+    returnY: Number.isFinite(returnY) ? Math.max(0, Math.round(returnY)) : 0,
+  };
+}
+
+function getCourseReturnPath(returnContext: ReturnType<typeof getCourseReturnContext>) {
+  if (!returnContext) return '/academy/courses';
+
+  const params = new URLSearchParams();
+  if (returnContext.fromSpecialization) {
+    params.set('specialization', returnContext.fromSpecialization);
+  }
+  if (returnContext.returnY > 0) {
+    params.set('returnY', String(returnContext.returnY));
+  }
+
+  const query = params.toString();
+  return `/academy/tracks/${returnContext.fromTrack}${query ? `?${query}` : ''}`;
 }
 
 function buildLocalTrackBundles(courses: AcademyCourse[]): AcademyTrackBundle[] {
@@ -1268,10 +1461,26 @@ export function AcademyTrackPage({
   const curriculumRef = React.useRef<HTMLElement | null>(null);
 
   React.useEffect(() => {
-    const defaultSpecialization = getDefaultSpecialization(track);
+    const requestedSpecializationSlug = getTrackRequestedSpecializationSlug();
+    const defaultSpecialization = track?.specializations?.find((item) => item.slug === requestedSpecializationSlug)
+      ?? getDefaultSpecialization(track);
     setSelectedSpecializationSlug(defaultSpecialization?.slug ?? null);
     setSelectedSlug(track ? getVisibleTrackCourses(track, defaultSpecialization)[0]?.slug ?? '' : '');
   }, [track?.slug]);
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const rawReturnY = params.get('returnY');
+    if (!rawReturnY) return;
+
+    const returnY = Number(rawReturnY);
+    if (!Number.isFinite(returnY)) return;
+
+    window.setTimeout(() => {
+      window.scrollTo({ top: Math.max(0, Math.round(returnY)), behavior: 'smooth' });
+    }, 120);
+  }, [trackSlug]);
 
   React.useEffect(() => {
     if (!track || visibleTrackCourses.some((course) => course.slug === selectedSlug)) return;
@@ -1294,9 +1503,8 @@ export function AcademyTrackPage({
             if (!user || !publishedCourse) return [trackCourse.slug, 0] as const;
             if (nextCompletion[publishedCourse.id]) return [trackCourse.slug, 100] as const;
 
-            const rawBundle = await fetchCourseBundle(publishedCourse.slug, languageCode);
-            if (!rawBundle) return [trackCourse.slug, 0] as const;
-            const bundle = getDisplayCourseBundle(rawBundle);
+            const bundle = await fetchCourseBundle(publishedCourse.slug, languageCode);
+            if (!bundle) return [trackCourse.slug, 0] as const;
 
             const lessons = [
               ...bundle.modules.flatMap((module) => module.lessons),
@@ -1318,8 +1526,8 @@ export function AcademyTrackPage({
           setTrackCourseProgress(Object.fromEntries(progressEntries));
         }
       })
-      .catch((caught) => {
-        if (active) setError(caught instanceof Error ? caught.message : 'Unable to load track progress.');
+      .catch(() => {
+        if (active) setError(getAcademyDatabaseErrorMessage());
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -1332,7 +1540,7 @@ export function AcademyTrackPage({
 
   if (!track) {
     return (
-      <AcademyShell navigateTo={navigateTo} t={t}>
+      <AcademyShell navigateTo={navigateTo} t={t} activeSection="tracks">
         <AcademyEmptyState title={t('Track not found.')} detail={t('Choose another Academy Track to continue.')} />
       </AcademyShell>
     );
@@ -1353,6 +1561,10 @@ export function AcademyTrackPage({
   const nextCourse = visibleTrackCourses.find((course) => getTrackCourseStatus(course, trackCompletion) !== 'completed') ?? visibleTrackCourses[0];
   const relatedTracks = academyTracks.filter((item) => item.slug !== track.slug);
   const trackComplete = completedCount === visibleTrackCourses.length;
+  const courseReturnContext = {
+    trackSlug: track.slug,
+    specializationSlug: selectedSpecialization?.slug ?? null,
+  };
 
   const selectCourse = (course: AcademyTrackCourse) => {
     setSelectedSlug(course.slug);
@@ -1373,7 +1585,7 @@ export function AcademyTrackPage({
   };
 
   return (
-    <AcademyShell navigateTo={navigateTo} t={t}>
+    <AcademyShell navigateTo={navigateTo} t={t} activeSection="tracks">
       <section className="academy-track-detail-page">
         <section className="academy-track-hero">
           <div className="academy-track-hero-copy">
@@ -1381,11 +1593,11 @@ export function AcademyTrackPage({
               <ArrowLeft size={19} strokeWidth={3} />
               {t('Go Back')}
             </button>
-            <p className="eyebrow">{t(track.categoryLabel ?? 'ACADEMY TRACK')}</p>
+            <p className="eyebrow">{t(track.categoryLabel ?? getTrackCardLabel(track))}</p>
             <h1>{t(track.title)}</h1>
             <p>{t(track.description)}</p>
             <div className="academy-track-chip-row">
-              <span>{t(`${track.courseCount} courses`)}</span>
+              <span>{t(`${getTrackCourseCount(track)} courses`)}</span>
               <span>{t(track.level)}</span>
               <span>{t(track.certificateType)}</span>
               {track.specializations ? (
@@ -1407,7 +1619,7 @@ export function AcademyTrackPage({
                     navigateTo(`/academy/certificates?track=${track.slug}`);
                     return;
                   }
-                  navigateTo(getTrackCoursePath(visibleTrackCourses[0]));
+                  navigateTo(getTrackCoursePath(visibleTrackCourses[0], courseReturnContext));
                 }}
               >
                 {trackComplete && trackCertificate ? t('Completed') : t('Start track')} <ArrowRight size={17} />
@@ -1594,7 +1806,7 @@ export function AcademyTrackPage({
                   <span>{t('Level')}: {t(hoveredCourse.level)}</span>
                   <span>{t('Estimated time')}: {t(hoveredCourse.estimatedTime)}</span>
                   <span>{t('Status')}: {getTrackStatusLabel(getTrackCourseStatus(hoveredCourse, trackCompletion), t)}</span>
-                  <button type="button" onClick={() => navigateTo(getTrackCoursePath(hoveredCourse))}>
+                  <button type="button" onClick={() => navigateTo(getTrackCoursePath(hoveredCourse, courseReturnContext))}>
                     {t('View course')}
                   </button>
                 </div>
@@ -1624,7 +1836,7 @@ export function AcademyTrackPage({
                     <em>{t(course.level)} · {t(course.estimatedTime)} · {getTrackStatusLabel(status, t)}</em>
                     <button type="button" onClick={(event) => {
                       event.stopPropagation();
-                      navigateTo(getTrackCoursePath(course));
+                      navigateTo(getTrackCoursePath(course, courseReturnContext));
                     }}>
                       {t('Open course')} <ArrowRight size={15} />
                     </button>
@@ -1637,6 +1849,7 @@ export function AcademyTrackPage({
               course={selectedCourse}
               status={getTrackCourseStatus(selectedCourse, trackCompletion)}
               navigateTo={navigateTo}
+              courseReturnContext={courseReturnContext}
               t={t}
             />
           </div>
@@ -1669,7 +1882,7 @@ export function AcademyTrackPage({
                       </li>
                     ))}
                   </ul>
-                  <button type="button" onClick={() => navigateTo(getTrackCoursePath(course))}>
+                  <button type="button" onClick={() => navigateTo(getTrackCoursePath(course, courseReturnContext))}>
                     {t('View course')} <ArrowRight size={16} />
                   </button>
                 </article>
@@ -1710,7 +1923,7 @@ export function AcademyTrackPage({
             <p>
               {t('Complete every course in this track to unlock your certificate and document your progress in industrial automation.')}
             </p>
-            <button type="button" onClick={() => navigateTo(getTrackCoursePath(nextCourse))}>
+            <button type="button" onClick={() => navigateTo(getTrackCoursePath(nextCourse, courseReturnContext))}>
               {t('Start learning')} <ArrowRight size={17} />
             </button>
           </div>
@@ -1732,7 +1945,7 @@ export function AcademyTrackPage({
                 >
                   <Icon size={20} />
                   <strong>{t(item.title)}</strong>
-                  <span>{t(item.level)} · {t(`${item.courseCount} courses`)}</span>
+                  <span>{t(item.level)} · {t(`${getTrackCourseCount(item)} courses`)}</span>
                 </button>
               );
             })}
@@ -1747,11 +1960,13 @@ function SelectedTrackCoursePanel({
   course,
   status,
   navigateTo,
+  courseReturnContext,
   t,
 }: {
   course: AcademyTrackCourse;
   status: AcademyTrackCourse['status'];
   navigateTo: (path: string) => void;
+  courseReturnContext: { trackSlug: string; specializationSlug?: string | null };
   t: AcademyTranslator;
 }) {
   return (
@@ -1791,127 +2006,168 @@ function SelectedTrackCoursePanel({
           </ol>
         </div>
       ) : null}
-      <button type="button" onClick={() => navigateTo(getTrackCoursePath(course))}>
+      <button type="button" onClick={() => navigateTo(getTrackCoursePath(course, courseReturnContext))}>
         {t('Open course')} <ArrowRight size={17} />
       </button>
     </aside>
   );
 }
 
-export function AcademyHomePage({ user, navigateTo, t = defaultT, languageCode = 'en' }: AcademyPageProps) {
-  const [courses, setCourses] = React.useState<AcademyCourse[]>([]);
-  const [completion, setCompletion] = React.useState<CourseCompletionMap>({});
-  const [loading, setLoading] = React.useState(true);
-  const [error, setError] = React.useState<string | null>(null);
-
-  React.useEffect(() => {
-    let active = true;
-    setLoading(true);
-
-    fetchPublishedCourses(languageCode)
-      .then(async (items) => {
-        const nextCompletion = await fetchCourseCompletionMap(user?.id ?? null, items);
-        if (active) {
-          setCourses(items);
-          setCompletion(nextCompletion);
-        }
-      })
-      .catch((caught) => {
-        if (active) setError(caught instanceof Error ? caught.message : 'Unable to load courses.');
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [languageCode, user]);
-
+export function AcademyHomePage({ navigateTo, t = defaultT }: AcademyPageProps) {
   return (
-    <AcademyShell navigateTo={navigateTo} t={t}>
+    <AcademyShell navigateTo={navigateTo} t={t} activeSection="home">
       <section className="academy-home-hero">
+        <div className="academy-hero-ecosystem" aria-hidden="true">
+          {academyHeroTiles.map((tile, index) => (
+            <span
+              className={[
+                'academy-hero-tile',
+                tile.tileSize === 'wide' ? 'wide' : '',
+              ].filter(Boolean).join(' ')}
+              key={`${tile.label}-${index}`}
+              style={{ '--tile-color': tile.color } as React.CSSProperties}
+            >
+              {tile.logoSrc || tile.logoSlug ? (
+                <img
+                  src={tile.logoSrc ?? `https://cdn.simpleicons.org/${tile.logoSlug}/${tile.color.replace('#', '')}`}
+                  alt=""
+                  loading="lazy"
+                />
+              ) : (
+                tile.label
+              )}
+            </span>
+          ))}
+        </div>
         <div className="academy-hero-copy">
-          <p className="eyebrow">{t('YVIMO Academy')}</p>
+          <p className="eyebrow">{t('YVIMO ACADEMY')}</p>
           <h1>{t('Industrial learning for connected manufacturing.')}</h1>
           <p>
-            {t('Courses, guided paths, and professional training for people building real automation, robotics, and industrial software systems.')}
+            {t('Courses, guided paths, and professional training for people building real automation, robotics, CNC, and industrial software systems.')}
           </p>
         </div>
-        <button className="academy-view-all-button" type="button" onClick={() => navigateTo('/academy/courses')}>
-          {t('View all courses')} <ArrowRight size={17} />
-        </button>
+        <div className="academy-hero-actions">
+          <button className="academy-view-all-button" type="button" onClick={() => document.getElementById('academy-learning-paths')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
+            {t('Explore learning paths')} <ArrowRight size={17} />
+          </button>
+          <button className="academy-view-all-button secondary" type="button" onClick={() => navigateTo('/academy/courses')}>
+            {t('Browse courses')}
+          </button>
+        </div>
       </section>
 
-      <AcademyTrackCards navigateTo={navigateTo} t={t} />
-
-      <section className="academy-content">
-        {loading ? <AcademyEmptyState title={t('Loading courses...')} /> : null}
-        {error ? <AcademyEmptyState title={t('Unable to load Academy')} detail={error} /> : null}
-
-        {!loading && !error ? (
-          <section className="academy-featured-section">
-            <div className="academy-featured-heading">
-              <p className="eyebrow">{t('FEATURED')}</p>
-              <h2>{t('Featured courses')}</h2>
-              <span>{t('Start with the courses we recommend first for each industrial learning area.')}</span>
-            </div>
-            <div className="academy-carousel-stack">
-              {getVisibleCategories(courses).slice(0, 4).map((category) => (
-                <AcademyCourseCarousel
-                  key={category}
-                  title={category}
-                  courses={courses.filter((course) => getCourseCategory(course) === category)}
-                  completion={completion}
-                  navigateTo={navigateTo}
-                  t={t}
-                />
-              ))}
-            </div>
-          </section>
-        ) : null}
-
-        {!loading && !error ? (
-          <section className="academy-how-section" aria-labelledby="academy-how-title">
-            <div className="academy-how-heading">
-              <p className="eyebrow">{t('HOW YOU LEARN')}</p>
-              <h2 id="academy-how-title">{t('A clear path from lesson to real industrial skill.')}</h2>
-              <p>
-                {t('YVIMO Academy turns industrial automation concepts into structured learning paths, practical exercises, and progress you can track.')}
-              </p>
-            </div>
-            <div className="academy-how-flow" aria-label={t('How YVIMO Academy works')}>
-              {academyHowSteps.map((step, index) => {
-                const Icon = step.icon;
-                return (
-                  <article className="academy-how-card" key={step.title}>
-                    <span className="academy-how-port academy-how-port-in" />
-                    <span className="academy-how-port academy-how-port-out" />
-                    <div className="academy-how-card-header">
-                      <span>{String(index + 1).padStart(2, '0')}</span>
-                      <div className="academy-how-icon">
-                        <Icon size={21} />
-                      </div>
+      <section className="academy-content academy-content-after-hero">
+        <section className="academy-how-section" aria-labelledby="academy-how-title">
+          <div className="academy-how-heading">
+            <p className="eyebrow">{t('HOW YOU LEARN')}</p>
+            <h2 id="academy-how-title">{t('A clear path from lesson to real industrial skill.')}</h2>
+            <p>
+              {t('YVIMO Academy turns industrial automation concepts into structured learning paths, practical exercises, and progress you can track.')}
+            </p>
+          </div>
+          <div className="academy-how-flow" aria-label={t('How YVIMO Academy works')}>
+            {academyHowSteps.map((step, index) => {
+              const Icon = step.icon;
+              return (
+                <article className="academy-how-card" key={step.title}>
+                  <span className="academy-how-port academy-how-port-in" />
+                  <span className="academy-how-port academy-how-port-out" />
+                  <div className="academy-how-card-header">
+                    <span>{String(index + 1).padStart(2, '0')}</span>
+                    <div className="academy-how-icon">
+                      <Icon size={21} />
                     </div>
-                    <h3>{t(step.title)}</h3>
-                    <p>{t(step.description)}</p>
-                  </article>
-                );
-              })}
-            </div>
-            <div className="academy-how-result">
-              <span>{t('RESULT')}</span>
-              <strong>
-                {t('A structured learning path that turns industrial knowledge into practical automation capability.')}
-              </strong>
-            </div>
-          </section>
-        ) : null}
-
-        {!loading && !error && courses.length === 0 ? (
-          <AcademyEmptyState title={t('No published courses yet.')} />
-        ) : null}
+                  </div>
+                  <h3>{t(step.title)}</h3>
+                  <p>{t(step.description)}</p>
+                </article>
+              );
+            })}
+          </div>
+          <div className="academy-how-result">
+            <span>{t('RESULT')}</span>
+            <strong>
+              {t('A structured learning path that turns industrial knowledge into practical automation capability.')}
+            </strong>
+          </div>
+        </section>
       </section>
+
+      <section className="academy-learning-structure" id="academy-learning-paths">
+        <div className="academy-tracks-heading">
+          <p className="eyebrow">{t('LEARNING STRUCTURE')}</p>
+          <h2>{t('Choose the path that matches your goal')}</h2>
+          <p>
+            {t('YVIMO Academy is organized into three types of learning paths: Core Tracks build complete technical roles, Skill Paths add focused technical capabilities, and Advanced Tracks combine multiple disciplines into complete automation systems.')}
+          </p>
+        </div>
+        <div className="academy-structure-grid">
+          {[
+            {
+              title: 'Core Tracks',
+              imageSrc: '/assets/academy/paths/core-track.png',
+              tone: 'core',
+              description: 'Build a complete technical role from the ground up.',
+              examples: ['PLC Technician', 'Robotics Technician', 'CNC Technician'],
+            },
+            {
+              title: 'Skill Paths',
+              imageSrc: '/assets/academy/paths/skill-path.png',
+              tone: 'skill',
+              description: 'Add focused technical capabilities that strengthen your main track or help you specialize in a specific technology area.',
+              examples: ['Industrial Networks', 'Industrial Sensing', 'Machine Vision'],
+            },
+            {
+              title: 'Advanced Tracks',
+              imageSrc: '/assets/academy/paths/advanced-track.png',
+              tone: 'advanced',
+              description: 'Combine multiple disciplines into complete automation systems, integration projects, and commissioning workflows.',
+              examples: ['Automation Systems Integrator', 'Virtual Commissioning Specialist'],
+            },
+          ].map((item) => (
+            <article className={`academy-structure-card ${item.tone}`} key={item.title}>
+              <span className="academy-structure-icon" aria-hidden="true">
+                <img src={item.imageSrc} alt="" loading="lazy" />
+              </span>
+              <strong>{t(item.title)}</strong>
+              <p>{t(item.description)}</p>
+              <span className="academy-structure-pills">
+                {item.examples.map((example) => (
+                  <b key={example}>{t(example)}</b>
+                ))}
+              </span>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <AcademyTrackCards
+        navigateTo={navigateTo}
+        t={t}
+        tracks={academyCoreTracks}
+        eyebrow="CORE TRACK"
+        title="Core Tracks"
+        description="Build a complete technical role from the ground up."
+      />
+
+      <AcademyTrackCards
+        navigateTo={navigateTo}
+        t={t}
+        tracks={academySkillPaths}
+        eyebrow="SKILL PATH"
+        title="Skill Paths"
+        description="Add focused technical capabilities that strengthen your main track or help you specialize in a specific technology area."
+      />
+
+      <AcademyTrackCards
+        navigateTo={navigateTo}
+        t={t}
+        tracks={academyAdvancedTracks}
+        eyebrow="ADVANCED TRACK"
+        title="Advanced Tracks"
+        description="Combine multiple disciplines into complete automation systems, integration projects, and commissioning workflows."
+        note="Recommended after completing a Core Track or having equivalent field experience."
+      />
     </AcademyShell>
   );
 }
@@ -1934,8 +2190,8 @@ export function AcademyCatalogPage({ user, navigateTo, t = defaultT, languageCod
           setCompletion(nextCompletion);
         }
       })
-      .catch((caught) => {
-        if (active) setError(caught instanceof Error ? caught.message : 'Unable to load courses.');
+      .catch(() => {
+        if (active) setError(getAcademyDatabaseErrorMessage());
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -1949,23 +2205,46 @@ export function AcademyCatalogPage({ user, navigateTo, t = defaultT, languageCod
   const categories = getVisibleCategories(courses);
 
   return (
-    <AcademyShell navigateTo={navigateTo} t={t}>
+    <AcademyShell navigateTo={navigateTo} t={t} activeSection="courses">
       <section className="academy-catalog-page">
-        <div className="academy-catalog-header">
-          <button className="academy-back-button" type="button" onClick={() => navigateTo('/academy')}>
-            <ArrowLeft size={19} strokeWidth={3} />
-            {t('Go Back')}
-          </button>
-          <p className="eyebrow">{t('Catalog')}</p>
-          <h1>{t('All Academy courses')}</h1>
-          <p>{t('Browse the full published catalog in a compact view.')}</p>
+        <div className="academy-catalog-header academy-catalog-hero">
+          <p className="eyebrow">{t('YVIMO ACADEMY COURSES')}</p>
+          <h1>{t('Explore industrial automation courses')}</h1>
+          <p>{t('Build practical skills through focused lessons, guided exercises, and real industrial automation scenarios.')}</p>
+          <div className="academy-catalog-actions">
+            <button className="academy-view-all-button" type="button" onClick={() => document.getElementById('academy-course-catalog')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
+              {t('View all courses')} <ArrowRight size={17} />
+            </button>
+            <button className="academy-view-all-button secondary" type="button" onClick={() => navigateTo('/academy#academy-learning-paths')}>
+              {t('Explore learning paths')} <ArrowRight size={17} />
+            </button>
+          </div>
         </div>
 
         {loading ? <AcademyEmptyState title={t('Loading courses...')} /> : null}
         {error ? <AcademyEmptyState title={t('Unable to load catalog')} detail={error} /> : null}
 
         {!loading && !error ? (
-          <div className="academy-catalog-stack">
+          <div className="academy-catalog-stack" id="academy-course-catalog">
+            <section className="academy-featured-section academy-catalog-featured">
+              <div className="academy-featured-heading">
+                <p className="eyebrow">{t('FEATURED')}</p>
+                <h2>{t('Featured courses')}</h2>
+                <span>{t('Start with the courses we recommend first for each industrial learning area.')}</span>
+              </div>
+              <div className="academy-carousel-stack">
+                {categories.slice(0, 4).map((category) => (
+                  <AcademyCourseCarousel
+                    key={category}
+                    title={category}
+                    courses={courses.filter((course) => getCourseCategory(course) === category)}
+                    completion={completion}
+                    navigateTo={navigateTo}
+                    t={t}
+                  />
+                ))}
+              </div>
+            </section>
             {categories.map((category) => (
               <section className="academy-catalog-category" key={category}>
                 <div className="academy-catalog-category-heading">
@@ -1999,6 +2278,16 @@ export function AcademyCatalogPage({ user, navigateTo, t = defaultT, languageCod
                 </div>
               </section>
             ))}
+            <section className="academy-full-catalog-cta">
+              <div>
+                <p className="eyebrow">{t('FULL CATALOG')}</p>
+                <h2>{t('View full course catalog')}</h2>
+                <span>{t('Browse every published YVIMO Academy course by category.')}</span>
+              </div>
+              <button className="academy-view-all-button" type="button" onClick={() => document.getElementById('academy-course-catalog')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
+                {t('View full course catalog')} <ArrowRight size={17} />
+              </button>
+            </section>
           </div>
         ) : null}
 
@@ -2134,8 +2423,7 @@ export function AcademyCoursePage({ user, navigateTo, courseSlug, t = defaultT, 
     setMessage(null);
 
     try {
-      const rawBundle = await fetchCourseBundle(courseSlug, languageCode);
-      const nextBundle = rawBundle ? getDisplayCourseBundle(rawBundle) : null;
+      const nextBundle = await fetchCourseBundle(courseSlug, languageCode);
       setBundle(nextBundle);
 
       if (nextBundle && user) {
@@ -2159,7 +2447,7 @@ export function AcademyCoursePage({ user, navigateTo, courseSlug, t = defaultT, 
         setAdmin(false);
       }
     } catch (caught) {
-      setMessage(caught instanceof Error ? caught.message : 'Unable to load course.');
+      setMessage(getAcademyDatabaseErrorMessage());
     } finally {
       setLoading(false);
     }
@@ -2211,12 +2499,13 @@ export function AcademyCoursePage({ user, navigateTo, courseSlug, t = defaultT, 
   const progressButtonTarget = certificate
     ? `/academy/certificates/${certificate.id}`
     : `/academy/progress?course=${bundle.course.slug}`;
+  const returnContext = getCourseReturnContext();
 
   return (
     <AcademyShell navigateTo={navigateTo} t={t}>
       <section className="academy-course-hero">
         <div>
-          <button className="academy-back-button" type="button" onClick={() => navigateTo('/academy')}>
+          <button className="academy-back-button" type="button" onClick={() => navigateTo(getCourseReturnPath(returnContext))}>
             <ArrowLeft size={19} strokeWidth={3} />
             {t('Go Back')}
           </button>
@@ -2272,7 +2561,7 @@ export function AcademyCoursePage({ user, navigateTo, courseSlug, t = defaultT, 
           <p>{bundle.course.description ?? t('Course description coming soon.')}</p>
         </div>
         <div className="academy-module-stack">
-          {bundle.modules.map((module) => (
+          {bundle.modules.filter((module) => module.lessons.length > 0).map((module) => (
             <AcademyModuleBlock
               key={module.id}
               module={module}
@@ -2399,6 +2688,7 @@ export function AcademyLessonPage({
   React.useEffect(() => {
     let active = true;
     setLoading(true);
+    setMessage(null);
 
     async function loadLesson() {
       try {
@@ -2446,7 +2736,7 @@ export function AcademyLessonPage({
           }
         }
       } catch (caught) {
-        if (active) setMessage(caught instanceof Error ? caught.message : 'Unable to load lesson.');
+        if (active) setMessage(getAcademyDatabaseErrorMessage());
       } finally {
         if (active) setLoading(false);
       }
@@ -2718,9 +3008,8 @@ export function AcademyProgressPage({ user, navigateTo, t = defaultT, languageCo
         );
         const nextItems = await Promise.all(
           courses.map(async (course) => {
-            const rawBundle = await fetchCourseBundle(course.slug, languageCode);
-            if (!rawBundle) return null;
-            const bundle = getDisplayCourseBundle(rawBundle);
+            const bundle = await fetchCourseBundle(course.slug, languageCode);
+            if (!bundle) return null;
             const progress = await fetchLessonProgressForCourse(user.id, course.id);
             return { bundle, progress, certificate: certificateByCourse.get(course.id) ?? null };
           }),
@@ -2791,8 +3080,8 @@ export function AcademyProgressPage({ user, navigateTo, t = defaultT, languageCo
             }),
           );
         }
-      } catch (caught) {
-        if (active) setMessage(caught instanceof Error ? caught.message : 'Unable to load progress.');
+      } catch {
+        if (active) setMessage(getAcademyDatabaseErrorMessage());
       } finally {
         if (active) setLoading(false);
       }
