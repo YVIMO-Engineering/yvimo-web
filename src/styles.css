@@ -8288,7 +8288,7 @@ button {
   }
 
   .founding-member-card {
-    grid-template-columns: 260px 1fr;
+    grid-template-columns: 300px 1fr;
   }
 
   .founding-member-card ul,
@@ -8297,7 +8297,10 @@ button {
   }
 
   .license-pricing-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(300px, 380px));
+    justify-content: center;
+    width: 100%;
+    margin: 0 auto;
   }
 }
 
@@ -8308,6 +8311,31 @@ button {
 }
 
 @media (max-width: 1500px) {
+  .logged-workspace {
+    padding-right: clamp(18px, 2.8vw, 38px);
+    padding-left: clamp(18px, 2.8vw, 38px);
+  }
+
+  .founding-member-card {
+    grid-template-columns: 320px minmax(0, 1fr);
+    gap: 28px 40px;
+  }
+
+  .founding-member-badge {
+    width: 320px;
+  }
+
+  .founding-member-card ul {
+    grid-column: 1 / -1;
+  }
+
+  .license-pricing-grid {
+    grid-template-columns: repeat(2, minmax(300px, 380px));
+    justify-content: center;
+    width: 100%;
+    margin: 0 auto;
+  }
+
   .ecosystem-tile:nth-child(odd) {
     left: -38px;
   }
