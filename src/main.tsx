@@ -25,6 +25,7 @@ import {
   Mail,
   Menu,
   Network,
+  Pencil,
   RadioTower,
   Rocket,
   ServerCog,
@@ -89,7 +90,7 @@ type LanguageCode = 'en' | 'es' | 'zh';
 
 type Translator = (text: string) => string;
 
-type SubscriptionTier = 'Explorer' | 'Professional' | 'Enterprise' | 'Founder' | 'Instructor';
+type SubscriptionTier = 'Explorer' | 'Professional' | 'Enterprise' | 'Founder' | 'Instructor' | 'Beta Tester' | 'Owner';
 
 type UserProfile = {
   id: string;
@@ -136,8 +137,12 @@ function getProfileInitials(name: string) {
   return initials || 'Y';
 }
 
+function getSubscriptionSlug(subscription: SubscriptionTier) {
+  return subscription.toLowerCase().replace(/\s+/g, '-');
+}
+
 function getSubscriptionClass(subscription: SubscriptionTier) {
-  return `subscription-pill subscription-${subscription.toLowerCase()}`;
+  return `subscription-pill subscription-${getSubscriptionSlug(subscription)}`;
 }
 
 function getSubscriptionBadgeImage(subscription: SubscriptionTier) {
@@ -147,6 +152,8 @@ function getSubscriptionBadgeImage(subscription: SubscriptionTier) {
     Enterprise: '/assets/academy/badges/license-enterprise.png',
     Founder: '/assets/academy/badges/license-founder.png',
     Instructor: '/assets/academy/badges/license-instructor.png',
+    'Beta Tester': '/assets/academy/badges/license-beta-tester.png',
+    Owner: '/assets/academy/badges/license-owner.png',
   };
 
   return badgeMap[subscription];
@@ -182,6 +189,75 @@ function UserAvatar({ user, className }: { user: AppUser; className: string }) {
   );
 }
 
+type AvatarUploadResult = {
+  ok: boolean;
+  message: string;
+};
+
+type AvatarOffset = {
+  x: number;
+  y: number;
+};
+
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error('Image could not be loaded.'));
+    image.src = src;
+  });
+}
+
+async function createCroppedAvatarFile(file: File, offset: AvatarOffset, zoom: number) {
+  const previewSize = 188;
+  const outputSize = 512;
+  const sourceUrl = URL.createObjectURL(file);
+
+  try {
+    const image = await loadImage(sourceUrl);
+    const canvas = document.createElement('canvas');
+    canvas.width = outputSize;
+    canvas.height = outputSize;
+    const context = canvas.getContext('2d');
+
+    if (!context) {
+      throw new Error('Canvas is not available.');
+    }
+
+    context.clearRect(0, 0, outputSize, outputSize);
+
+    const baseScale = Math.max(outputSize / image.naturalWidth, outputSize / image.naturalHeight);
+    const scale = baseScale * zoom;
+    const drawWidth = image.naturalWidth * scale;
+    const drawHeight = image.naturalHeight * scale;
+    const outputOffsetX = offset.x * (outputSize / previewSize);
+    const outputOffsetY = offset.y * (outputSize / previewSize);
+
+    context.drawImage(
+      image,
+      (outputSize - drawWidth) / 2 + outputOffsetX,
+      (outputSize - drawHeight) / 2 + outputOffsetY,
+      drawWidth,
+      drawHeight,
+    );
+
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob((result) => {
+        if (result) {
+          resolve(result);
+          return;
+        }
+
+        reject(new Error('Avatar image could not be created.'));
+      }, 'image/png', 0.92);
+    });
+
+    return new File([blob], 'profile-avatar.png', { type: 'image/png' });
+  } finally {
+    URL.revokeObjectURL(sourceUrl);
+  }
+}
+
 type BillingPeriod = 'monthly' | 'three_months' | 'six_months' | 'annual';
 
 type CheckoutPlan = {
@@ -193,11 +269,10 @@ type CheckoutPlan = {
 };
 
 type MembershipPlan = {
-  name: Exclude<SubscriptionTier, 'Founder'>;
+  name: Extract<SubscriptionTier, 'Explorer' | 'Professional' | 'Enterprise'>;
   description: string;
   badge: string | null;
   badgeImage: string;
-  internalOnly?: boolean;
   monthly: {
     price: string;
     label: string;
@@ -322,6 +397,51 @@ const translations: Record<Exclude<LanguageCode, 'en'>, Record<string, string>> 
     'Current Plan': 'Plan actual',
     'Upgrade to this Plan': 'Subir a este plan',
     'Choose your YVIMO membership': 'Elige tu membresía YVIMO',
+    'Official team ranks': 'Rangos oficiales del equipo',
+    'Our staff members': 'Nuestro equipo',
+    'To help you recognize official YVIMO staff easily, team profiles may carry one of these ranks. These badges identify people who create Academy content, test upcoming features, or represent YVIMO leadership.':
+      'Para que puedas reconocer facilmente al equipo oficial de YVIMO, los perfiles del staff pueden mostrar uno de estos rangos. Estas insignias identifican a quienes crean contenido de Academy, prueban nuevas funciones o representan el liderazgo de YVIMO.',
+    'Academy staff': 'Staff de Academy',
+    'Product testing': 'Pruebas de producto',
+    'YVIMO leadership': 'Liderazgo YVIMO',
+    'Beta Tester': 'Beta Tester',
+    Owner: 'Owner',
+    'Official instructors and collaborators who create lessons, review learning material, and support students inside YVIMO Academy.':
+      'Instructores y colaboradores oficiales que crean lecciones, revisan material de aprendizaje y apoyan a estudiantes dentro de YVIMO Academy.',
+    'Trusted testers who validate new platform features, report issues, and help us improve tools before public release.':
+      'Testers de confianza que validan nuevas funciones, reportan problemas y nos ayudan a mejorar herramientas antes de publicarlas.',
+    'Official YVIMO ownership and leadership accounts responsible for platform direction, official decisions, and company-level communication.':
+      'Cuentas oficiales de propiedad y liderazgo de YVIMO responsables de la direccion de la plataforma, decisiones oficiales y comunicacion de la empresa.',
+    'Course guidance and mentoring': 'Guia de cursos y mentorias',
+    'Academy content review': 'Revision de contenido de Academy',
+    'Learning path support': 'Soporte en rutas de aprendizaje',
+    'Early feature validation': 'Validacion temprana de funciones',
+    'Bug reporting and feedback': 'Reporte de errores y feedback',
+    'Preview workflow testing': 'Pruebas de flujos en preview',
+    'Official YVIMO communication': 'Comunicacion oficial de YVIMO',
+    'Platform and business decisions': 'Decisiones de plataforma y negocio',
+    'Final escalation authority': 'Autoridad final de escalamiento',
+    'All official YVIMO staff members display one of these badges on their profile. Please do not trust accounts claiming to represent YVIMO if their profile does not show an official staff badge.':
+      'Todo el personal oficial de YVIMO muestra una de estas insignias en su perfil. No confies en cuentas que digan representar a YVIMO si su perfil no muestra una insignia oficial del staff.',
+    'Change profile picture': 'Cambiar foto de perfil',
+    'Profile picture': 'Foto de perfil',
+    'Choose image': 'Elegir imagen',
+    Zoom: 'Zoom',
+    'Center image': 'Centrar imagen',
+    'Drag image to reposition it': 'Arrastra la imagen para acomodarla',
+    'Choose an image file.': 'Elige un archivo de imagen.',
+    'Image must be 5 MB or smaller.': 'La imagen debe pesar 5 MB o menos.',
+    'Choose an image first.': 'Elige una imagen primero.',
+    'Profile picture could not be prepared.': 'No se pudo preparar la foto de perfil.',
+    'Save picture': 'Guardar foto',
+    'Saving...': 'Guardando...',
+    Cancel: 'Cancelar',
+    Close: 'Cerrar',
+    'Profile picture updated.': 'Foto de perfil actualizada.',
+    'Profile picture could not be uploaded.': 'No se pudo subir la foto de perfil.',
+    'Profile picture was uploaded, but your profile could not be updated.':
+      'La foto se subio, pero no se pudo actualizar tu perfil.',
+    'Sign in again to update your profile picture.': 'Inicia sesion de nuevo para actualizar tu foto de perfil.',
     'Go to Dashboard': 'Ir al dashboard',
     'Loading workspace...': 'Cargando espacio de trabajo...',
     'Loading dashboard...': 'Cargando dashboard...',
@@ -1760,27 +1880,55 @@ function LoggedDashboardPage({
   user,
   onSignOut,
   onNavigate,
+  onUpdateAvatar,
   activePath,
   t,
 }: {
   user: AppUser;
   onSignOut: () => void;
   onNavigate: (path: string) => void;
+  onUpdateAvatar: (file: File) => Promise<AvatarUploadResult>;
   activePath: string;
   t: Translator;
 }) {
   const [billingPeriod, setBillingPeriod] = React.useState<BillingPeriod>('monthly');
   const [checkoutMessage, setCheckoutMessage] = React.useState<string | null>(null);
+  const [avatarDialogOpen, setAvatarDialogOpen] = React.useState(false);
+  const [avatarFile, setAvatarFile] = React.useState<File | null>(null);
+  const [avatarPreview, setAvatarPreview] = React.useState<string | null>(null);
+  const [avatarOffset, setAvatarOffset] = React.useState<AvatarOffset>({ x: 0, y: 0 });
+  const [avatarZoom, setAvatarZoom] = React.useState(1);
+  const avatarDragRef = React.useRef<{ pointerId: number; startX: number; startY: number; origin: AvatarOffset } | null>(null);
+  const [avatarMessage, setAvatarMessage] = React.useState<string | null>(null);
+  const [avatarSaving, setAvatarSaving] = React.useState(false);
   const membershipRank: Record<SubscriptionTier, number> = {
     Explorer: 0,
     Professional: 1,
     Enterprise: 2,
     Founder: 3,
     Instructor: 4,
+    'Beta Tester': 5,
+    Owner: 6,
   };
   const profileLevelProgress = user.profileLevelProgress;
   const profileLevel = user.profileLevel;
   const yvimoPoints = user.yvimoPoints;
+  React.useEffect(() => {
+    if (!avatarDialogOpen) {
+      setAvatarMessage(null);
+      setAvatarFile(null);
+      setAvatarPreview(null);
+      setAvatarOffset({ x: 0, y: 0 });
+      setAvatarZoom(1);
+      avatarDragRef.current = null;
+    }
+  }, [avatarDialogOpen]);
+
+  React.useEffect(() => {
+    return () => {
+      if (avatarPreview) URL.revokeObjectURL(avatarPreview);
+    };
+  }, [avatarPreview]);
   const academyPlans: MembershipPlan[] = [
     {
       name: 'Explorer',
@@ -1916,47 +2064,45 @@ function LoggedDashboardPage({
         'Optional custom training or implementation support',
       ],
     },
+  ];
+  const staffRanks: Array<{
+    name: Extract<SubscriptionTier, 'Instructor' | 'Beta Tester' | 'Owner'>;
+    badgeImage: string;
+    eyebrow: string;
+    description: string;
+    responsibilities: string[];
+  }> = [
     {
       name: 'Instructor',
-      description: 'Internal YVIMO category for future instructors, collaborators, and creator profiles that help build Academy content and mentor learners.',
-      badge: 'Internal',
       badgeImage: '/assets/academy/badges/license-instructor.png',
-      internalOnly: true,
-      monthly: {
-        price: 'Internal',
-        label: '',
-        cta: 'Internal category',
-        plan_key: 'instructor_internal',
-        note: 'Assigned by YVIMO',
-      },
-      three_months: {
-        price: 'Internal',
-        label: '',
-        cta: 'Internal category',
-        plan_key: 'instructor_internal',
-        note: 'Assigned by YVIMO',
-      },
-      six_months: {
-        price: 'Internal',
-        label: '',
-        cta: 'Internal category',
-        plan_key: 'instructor_internal',
-        note: 'Assigned by YVIMO',
-      },
-      annual: {
-        price: 'Internal',
-        label: '',
-        cta: 'Internal category',
-        plan_key: 'instructor_internal',
-        note: 'Assigned by YVIMO',
-      },
-      features: [
-        'Instructor and collaborator profile badge',
-        'Access to Academy creator workflows',
-        'Course review and mentoring visibility',
-        'Internal content planning access',
-        'Future instructor onboarding path',
-        'Assigned by YVIMO administrators',
+      eyebrow: 'Academy staff',
+      description: 'Official instructors and collaborators who create lessons, review learning material, and support students inside YVIMO Academy.',
+      responsibilities: [
+        'Course guidance and mentoring',
+        'Academy content review',
+        'Learning path support',
+      ],
+    },
+    {
+      name: 'Beta Tester',
+      badgeImage: '/assets/academy/badges/license-beta-tester.png',
+      eyebrow: 'Product testing',
+      description: 'Trusted testers who validate new platform features, report issues, and help us improve tools before public release.',
+      responsibilities: [
+        'Early feature validation',
+        'Bug reporting and feedback',
+        'Preview workflow testing',
+      ],
+    },
+    {
+      name: 'Owner',
+      badgeImage: '/assets/academy/badges/license-owner.png',
+      eyebrow: 'YVIMO leadership',
+      description: 'Official YVIMO ownership and leadership accounts responsible for platform direction, official decisions, and company-level communication.',
+      responsibilities: [
+        'Official YVIMO communication',
+        'Platform and business decisions',
+        'Final escalation authority',
       ],
     },
   ];
@@ -2214,6 +2360,104 @@ function LoggedDashboardPage({
     window.setTimeout(() => setCheckoutMessage(null), 4200);
   };
 
+  const handleAvatarFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] ?? null;
+    setAvatarMessage(null);
+
+    if (!file) {
+      setAvatarFile(null);
+      setAvatarPreview(null);
+      setAvatarOffset({ x: 0, y: 0 });
+      setAvatarZoom(1);
+      return;
+    }
+
+    if (!file.type.startsWith('image/')) {
+      setAvatarFile(null);
+      setAvatarPreview(null);
+      setAvatarOffset({ x: 0, y: 0 });
+      setAvatarZoom(1);
+      setAvatarMessage('Choose an image file.');
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setAvatarFile(null);
+      setAvatarPreview(null);
+      setAvatarOffset({ x: 0, y: 0 });
+      setAvatarZoom(1);
+      setAvatarMessage('Image must be 5 MB or smaller.');
+      return;
+    }
+
+    setAvatarFile(file);
+    setAvatarOffset({ x: 0, y: 0 });
+    setAvatarZoom(1);
+    setAvatarPreview(URL.createObjectURL(file));
+  };
+
+  const handleAvatarPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!avatarPreview) return;
+
+    event.currentTarget.setPointerCapture(event.pointerId);
+    avatarDragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      origin: avatarOffset,
+    };
+  };
+
+  const handleAvatarPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    const drag = avatarDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+
+    setAvatarOffset({
+      x: drag.origin.x + event.clientX - drag.startX,
+      y: drag.origin.y + event.clientY - drag.startY,
+    });
+  };
+
+  const handleAvatarPointerEnd = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (avatarDragRef.current?.pointerId === event.pointerId) {
+      avatarDragRef.current = null;
+    }
+  };
+
+  const resetAvatarCrop = () => {
+    setAvatarOffset({ x: 0, y: 0 });
+    setAvatarZoom(1);
+  };
+
+  const handleAvatarSave = async () => {
+    if (!avatarFile) {
+      setAvatarMessage('Choose an image first.');
+      return;
+    }
+
+    setAvatarSaving(true);
+    setAvatarMessage(null);
+
+    let uploadFile = avatarFile;
+
+    try {
+      uploadFile = await createCroppedAvatarFile(avatarFile, avatarOffset, avatarZoom);
+    } catch (error) {
+      console.error('[auth] avatar crop error', error);
+      setAvatarSaving(false);
+      setAvatarMessage('Profile picture could not be prepared.');
+      return;
+    }
+
+    const result = await onUpdateAvatar(uploadFile);
+    setAvatarSaving(false);
+    setAvatarMessage(result.message);
+
+    if (result.ok) {
+      window.setTimeout(() => setAvatarDialogOpen(false), 700);
+    }
+  };
+
   return (
     <main className="logged-shell">
       <aside className="logged-sidebar">
@@ -2343,28 +2587,25 @@ function LoggedDashboardPage({
                 const planRank = membershipRank[planName];
                 const planCta = isCurrentPlan
                   ? 'Current Plan'
-                  : plan.internalOnly
-                    ? pricing.cta
-                    : planName === 'Explorer'
-                      ? 'Start Free'
-                      : planName === 'Enterprise'
-                        ? 'Contact sales'
-                        : planRank > currentRank
-                          ? 'Upgrade to this Plan'
-                          : pricing.cta;
+                  : planName === 'Explorer'
+                    ? 'Start Free'
+                    : planName === 'Enterprise'
+                      ? 'Contact sales'
+                      : planRank > currentRank
+                        ? 'Upgrade to this Plan'
+                        : pricing.cta;
                 return (
                   <article
                     className={[
                       'license-plan-card',
                       plan.badge === 'Recommended' ? 'recommended' : '',
-                      plan.internalOnly ? 'internal-plan' : '',
                     ].filter(Boolean).join(' ')}
                     key={plan.name}
                   >
                     {plan.badge ? <span className="license-plan-status">{t(plan.badge)}</span> : null}
                     <div className="license-plan-heading">
                       <h2>
-                        <span className={`license-plan-tier subscription-pill subscription-${plan.name.toLowerCase()}`}>
+                        <span className={`license-plan-tier subscription-pill subscription-${getSubscriptionSlug(plan.name)}`}>
                           {t(plan.name)}
                         </span>
                       </h2>
@@ -2385,9 +2626,9 @@ function LoggedDashboardPage({
                       ))}
                     </ul>
                     <button
-                      className={isCurrentPlan || plan.internalOnly ? 'current-plan' : ''}
+                      className={isCurrentPlan ? 'current-plan' : ''}
                       type="button"
-                      disabled={isCurrentPlan || plan.internalOnly}
+                      disabled={isCurrentPlan}
                       onClick={() => handleCheckout({
                         product_key: 'yvimo_membership',
                         plan_key: pricing.plan_key,
@@ -2401,6 +2642,42 @@ function LoggedDashboardPage({
                   </article>
                 );
               })}
+            </section>
+
+            <section className="license-staff-section" aria-labelledby="license-staff-title">
+              <div className="license-staff-heading">
+                <span>{t('Official team ranks')}</span>
+                <h2 id="license-staff-title">{t('Our staff members')}</h2>
+                <p>
+                  {t('To help you recognize official YVIMO staff easily, team profiles may carry one of these ranks. These badges identify people who create Academy content, test upcoming features, or represent YVIMO leadership.')}
+                </p>
+              </div>
+
+              <div className="license-staff-grid">
+                {staffRanks.map((rank) => (
+                  <article className={`license-staff-card staff-rank-${getSubscriptionSlug(rank.name)}`} key={rank.name}>
+                    <span className="license-staff-card-eyebrow">{t(rank.eyebrow)}</span>
+                    <img className="license-staff-badge-image" src={rank.badgeImage} alt="" aria-hidden="true" />
+                    <h3>{t(rank.name)}</h3>
+                    <p>{t(rank.description)}</p>
+                    <ul>
+                      {rank.responsibilities.map((responsibility) => (
+                        <li key={responsibility}>
+                          <Check size={16} />
+                          {t(responsibility)}
+                        </li>
+                      ))}
+                    </ul>
+                  </article>
+                ))}
+              </div>
+
+              <div className="license-staff-warning" role="note">
+                <ShieldCheck size={20} />
+                <p>
+                  {t('All official YVIMO staff members display one of these badges on their profile. Please do not trust accounts claiming to represent YVIMO if their profile does not show an official staff badge.')}
+                </p>
+              </div>
             </section>
           </div>
         ) : isGatewayOnlinePage ? (
@@ -2570,13 +2847,23 @@ function LoggedDashboardPage({
             <div className="workspace-profile-copy">
               <strong>{user.name}</strong>
             </div>
-            <div
-              className="workspace-profile-ring"
-              style={{ '--profile-progress': `${profileLevelProgress}%` } as React.CSSProperties}
-              aria-label={`${profileLevelProgress}% level progress`}
+            <button
+              className="workspace-profile-avatar-button"
+              type="button"
+              onClick={() => setAvatarDialogOpen(true)}
+              aria-label={t('Change profile picture')}
             >
-              <UserAvatar user={user} className="workspace-profile-avatar" />
-            </div>
+              <span
+                className="workspace-profile-ring"
+                style={{ '--profile-progress': `${profileLevelProgress}%` } as React.CSSProperties}
+                aria-label={`${profileLevelProgress}% level progress`}
+              >
+                <UserAvatar user={user} className="workspace-profile-avatar" />
+                <span className="workspace-profile-edit-icon" aria-hidden="true">
+                  <Pencil size={16} />
+                </span>
+              </span>
+            </button>
             <div className="workspace-profile-level" aria-label={`Level ${profileLevel}`}>
               <span>LV</span>
               <strong>{profileLevel}</strong>
@@ -2595,6 +2882,83 @@ function LoggedDashboardPage({
               <span>{t('YVIMO Points')}</span>
             </div>
           </aside>
+
+          {avatarDialogOpen ? (
+            <div className="profile-avatar-dialog-backdrop" role="presentation" onMouseDown={() => setAvatarDialogOpen(false)}>
+              <section
+                className="profile-avatar-dialog"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="profile-avatar-dialog-title"
+                onMouseDown={(event) => event.stopPropagation()}
+              >
+                <button
+                  className="profile-avatar-dialog-close"
+                  type="button"
+                  onClick={() => setAvatarDialogOpen(false)}
+                  aria-label={t('Close')}
+                >
+                  <X size={18} />
+                </button>
+                <div className="profile-avatar-dialog-heading">
+                  <span>{t('Profile picture')}</span>
+                  <h2 id="profile-avatar-dialog-title">{t('Change profile picture')}</h2>
+                </div>
+                <div
+                  className={avatarPreview ? 'profile-avatar-preview editable' : 'profile-avatar-preview'}
+                  aria-label={t('Drag image to reposition it')}
+                  onPointerDown={handleAvatarPointerDown}
+                  onPointerMove={handleAvatarPointerMove}
+                  onPointerUp={handleAvatarPointerEnd}
+                  onPointerCancel={handleAvatarPointerEnd}
+                >
+                  {avatarPreview ? (
+                    <img
+                      src={avatarPreview}
+                      alt=""
+                      draggable={false}
+                      style={{
+                        transform: `translate(${avatarOffset.x}px, ${avatarOffset.y}px) scale(${avatarZoom})`,
+                      }}
+                    />
+                  ) : (
+                    <UserAvatar user={user} className="profile-avatar-preview-fallback" />
+                  )}
+                </div>
+                <div className="profile-avatar-crop-controls">
+                  <label>
+                    <span>{t('Zoom')}</span>
+                    <input
+                      type="range"
+                      min="1"
+                      max="2.6"
+                      step="0.01"
+                      value={avatarZoom}
+                      disabled={!avatarPreview}
+                      onChange={(event) => setAvatarZoom(Number(event.target.value))}
+                    />
+                  </label>
+                  <button type="button" onClick={resetAvatarCrop} disabled={!avatarPreview}>
+                    {t('Center image')}
+                  </button>
+                </div>
+                <label className="profile-avatar-file-control">
+                  <Pencil size={17} />
+                  <span>{avatarFile ? avatarFile.name : t('Choose image')}</span>
+                  <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={handleAvatarFileChange} />
+                </label>
+                {avatarMessage ? <p className="profile-avatar-message">{t(avatarMessage)}</p> : null}
+                <div className="profile-avatar-dialog-actions">
+                  <button type="button" onClick={() => setAvatarDialogOpen(false)}>
+                    {t('Cancel')}
+                  </button>
+                  <button type="button" onClick={handleAvatarSave} disabled={!avatarFile || avatarSaving}>
+                    {avatarSaving ? t('Saving...') : t('Save picture')}
+                  </button>
+                </div>
+              </section>
+            </div>
+          ) : null}
         </div>
         )}
       </section>
@@ -2650,6 +3014,7 @@ function App() {
     || currentPath.startsWith('/portal/gateway-online/')
     || currentPath === '/portal/engineering-tools'
     || currentPath.startsWith('/portal/engineering-tools/');
+  const isWorkspacePage = currentPath === '/dashboard';
   const isAcademyPage = currentPath === '/academy' || currentPath.startsWith('/academy/');
   const isAuthPage = isLoginPage || isSignUpPage;
   const headerProgress = isAuthPage || isDashboardPage || isAcademyPage ? 1 : scrollProgress;
@@ -2917,7 +3282,7 @@ function App() {
   }, [authSession, refreshAuthProfile]);
 
   React.useEffect(() => {
-    if (!authSession) return;
+    if (!authSession || !isWorkspacePage) return;
 
     const refreshProfileSnapshot = () => {
       if (document.visibilityState === 'hidden') return;
@@ -2931,7 +3296,7 @@ function App() {
     refreshProfileSnapshot();
 
     return () => window.clearInterval(intervalId);
-  }, [authSession, refreshAuthProfile]);
+  }, [authSession, isWorkspacePage, refreshAuthProfile]);
 
   const navigateTo = (path: string) => {
     window.history.pushState({}, '', path);
@@ -3091,6 +3456,49 @@ function App() {
     }
 
     return null;
+  };
+
+  const handleUpdateAvatar = async (file: File): Promise<AvatarUploadResult> => {
+    if (!authSession?.user) {
+      return { ok: false, message: 'Sign in again to update your profile picture.' };
+    }
+
+    const extension = file.name.split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '') || 'png';
+    const filePath = `${authSession.user.id}/avatar-${Date.now()}.${extension}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('profile-avatars')
+      .upload(filePath, file, {
+        cacheControl: '3600',
+        upsert: false,
+      });
+
+    if (uploadError) {
+      console.error('[auth] avatar upload error', uploadError);
+      return { ok: false, message: 'Profile picture could not be uploaded.' };
+    }
+
+    const { data: publicUrlData } = supabase.storage
+      .from('profile-avatars')
+      .getPublicUrl(filePath);
+
+    const avatarUrl = publicUrlData.publicUrl;
+    const { data, error: updateError } = await supabase.auth.updateUser({
+      data: { avatar_url: avatarUrl },
+    });
+
+    if (updateError) {
+      console.error('[auth] avatar metadata update error', updateError);
+      return { ok: false, message: 'Profile picture was uploaded, but your profile could not be updated.' };
+    }
+
+    setAuthUser((currentUser) => currentUser ? { ...currentUser, avatarUrl } : currentUser);
+    setAuthSession((currentSession) => {
+      if (!currentSession || !data.user) return currentSession;
+      return { ...currentSession, user: data.user };
+    });
+
+    return { ok: true, message: 'Profile picture updated.' };
   };
 
   const handleSignOut = async () => {
@@ -3375,6 +3783,7 @@ function App() {
           user={authUser}
           onSignOut={handleSignOut}
           onNavigate={navigateTo}
+          onUpdateAvatar={handleUpdateAvatar}
           activePath={currentPath}
           t={t}
         />
