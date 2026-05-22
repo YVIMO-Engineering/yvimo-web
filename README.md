@@ -53,7 +53,7 @@ Profiles:
 
 - The app expects a `public.profiles` table linked to `auth.users`.
 - Dashboard user name and subscription tier come from Supabase profile data.
-- Subscription tiers are `Explorer`, `Professional`, and `Enterprise`.
+- Subscription tiers are `Explorer`, `Professional`, `Enterprise`, `Founder`, and `Instructor`.
 - If profile fetch is slow or fails, the UI falls back to the Supabase auth user so login does not hang.
 
 SQL setup:

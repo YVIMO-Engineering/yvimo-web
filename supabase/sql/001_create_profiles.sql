@@ -4,7 +4,7 @@ create table if not exists public.profiles (
   company_name text,
   role text,
   subscription_tier text not null default 'Explorer'
-    check (subscription_tier in ('Explorer', 'Professional', 'Enterprise')),
+    check (subscription_tier in ('Explorer', 'Professional', 'Enterprise', 'Founder', 'Instructor')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );

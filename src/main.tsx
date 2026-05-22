@@ -89,7 +89,7 @@ type LanguageCode = 'en' | 'es' | 'zh';
 
 type Translator = (text: string) => string;
 
-type SubscriptionTier = 'Explorer' | 'Professional' | 'Enterprise';
+type SubscriptionTier = 'Explorer' | 'Professional' | 'Enterprise' | 'Founder' | 'Instructor';
 
 type UserProfile = {
   id: string;
@@ -118,6 +118,18 @@ function getProfileInitials(name: string) {
 
 function getSubscriptionClass(subscription: SubscriptionTier) {
   return `subscription-pill subscription-${subscription.toLowerCase()}`;
+}
+
+function getSubscriptionBadgeImage(subscription: SubscriptionTier) {
+  const badgeMap: Record<SubscriptionTier, string> = {
+    Explorer: '/assets/academy/badges/license-explorer.png',
+    Professional: '/assets/academy/badges/license-professional.png',
+    Enterprise: '/assets/academy/badges/license-enterprise.png',
+    Founder: '/assets/academy/badges/license-founder.png',
+    Instructor: '/assets/academy/badges/license-instructor.png',
+  };
+
+  return badgeMap[subscription];
 }
 
 function profileToAppUser(user: User, profile: UserProfile | null): AppUser {
@@ -154,6 +166,43 @@ type CheckoutPlan = {
   billing_period: BillingPeriod;
   price_display: string;
   price_id: string | null;
+};
+
+type MembershipPlan = {
+  name: Exclude<SubscriptionTier, 'Founder'>;
+  description: string;
+  badge: string | null;
+  badgeImage: string;
+  internalOnly?: boolean;
+  monthly: {
+    price: string;
+    label: string;
+    cta: string;
+    plan_key: string;
+    note: string | null;
+  };
+  three_months: {
+    price: string;
+    label: string;
+    cta: string;
+    plan_key: string;
+    note: string | null;
+  };
+  six_months: {
+    price: string;
+    label: string;
+    cta: string;
+    plan_key: string;
+    note: string | null;
+  };
+  annual: {
+    price: string;
+    label: string;
+    cta: string;
+    plan_key: string;
+    note: string | null;
+  };
+  features: string[];
 };
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
@@ -1702,15 +1751,18 @@ function LoggedDashboardPage({
     Explorer: 0,
     Professional: 1,
     Enterprise: 2,
+    Founder: 3,
+    Instructor: 4,
   };
   const profileLevelProgress = 72;
   const profileLevel = 373;
   const yvimoPoints = 1280;
-  const academyPlans = [
+  const academyPlans: MembershipPlan[] = [
     {
       name: 'Explorer',
       description: 'Explore the YVIMO portal, preview selected Academy lessons, and experience the platform before upgrading.',
       badge: null,
+      badgeImage: '/assets/academy/badges/license-explorer.png',
       monthly: {
         price: 'Free',
         label: '',
@@ -1753,6 +1805,7 @@ function LoggedDashboardPage({
       name: 'Professional',
       description: 'For serious learners, technicians, and engineers who want full Academy access, Gateway Online tools, and priority portal benefits.',
       badge: 'Recommended',
+      badgeImage: '/assets/academy/badges/license-professional.png',
       monthly: {
         price: '$1,999 MXN',
         label: '/ month',
@@ -1797,6 +1850,7 @@ function LoggedDashboardPage({
       name: 'Enterprise',
       description: 'For companies, universities, and teams that need structured industrial automation training, Gateway Online access, and commercial workflow support.',
       badge: null,
+      badgeImage: '/assets/academy/badges/license-enterprise.png',
       monthly: {
         price: 'Contact sales',
         label: '',
@@ -1836,6 +1890,49 @@ function LoggedDashboardPage({
         'Invoice and purchase order support',
         'Optional private onboarding',
         'Optional custom training or implementation support',
+      ],
+    },
+    {
+      name: 'Instructor',
+      description: 'Internal YVIMO category for future instructors, collaborators, and creator profiles that help build Academy content and mentor learners.',
+      badge: 'Internal',
+      badgeImage: '/assets/academy/badges/license-instructor.png',
+      internalOnly: true,
+      monthly: {
+        price: 'Internal',
+        label: '',
+        cta: 'Internal category',
+        plan_key: 'instructor_internal',
+        note: 'Assigned by YVIMO',
+      },
+      three_months: {
+        price: 'Internal',
+        label: '',
+        cta: 'Internal category',
+        plan_key: 'instructor_internal',
+        note: 'Assigned by YVIMO',
+      },
+      six_months: {
+        price: 'Internal',
+        label: '',
+        cta: 'Internal category',
+        plan_key: 'instructor_internal',
+        note: 'Assigned by YVIMO',
+      },
+      annual: {
+        price: 'Internal',
+        label: '',
+        cta: 'Internal category',
+        plan_key: 'instructor_internal',
+        note: 'Assigned by YVIMO',
+      },
+      features: [
+        'Instructor and collaborator profile badge',
+        'Access to Academy creator workflows',
+        'Course review and mentoring visibility',
+        'Internal content planning access',
+        'Future instructor onboarding path',
+        'Assigned by YVIMO administrators',
       ],
     },
   ];
@@ -2050,7 +2147,7 @@ function LoggedDashboardPage({
   const engineeringRouteSlug = activePath.split('/').filter(Boolean)[2];
   const activeEngineeringCategory = engineeringCategories.find((item) => item.path.endsWith(`/${engineeringRouteSlug}`));
   const engineeringOverviewItems = activeEngineeringCategory ? [activeEngineeringCategory] : engineeringCategories;
-  const foundingMemberRank = membershipRank.Professional;
+  const foundingMemberRank = membershipRank.Founder;
   const foundingMemberIsCurrent = membershipRank[user.subscription] >= foundingMemberRank;
   const foundingMemberCta = foundingMemberIsCurrent ? 'Current Plan' : 'Become a Founding Member';
   const foundingMemberPricing: Record<BillingPeriod, { price: string; label: string; plan_key: string; price_display: string }> = {
@@ -2165,12 +2262,32 @@ function LoggedDashboardPage({
             ) : null}
 
             <section className="founding-member-card" aria-label="Founding Member offer">
+              <img
+                className="founding-member-badge"
+                src="/assets/academy/badges/license-founder.png"
+                alt=""
+                aria-hidden="true"
+              />
               <div className="founding-member-copy">
                 <span>{t('Limited early access')}</span>
                 <h2>{t('Founding Member')}</h2>
                 <p>{t('Get Professional-level YVIMO access for $1,000 MXN/month while the platform is being built.')}</p>
                 <p>{t('Join early, help shape the platform, and lock in early-access pricing while your subscription stays active.')}</p>
                 <strong>{currentFoundingMemberPricing.price} <em>{t(currentFoundingMemberPricing.label)}</em></strong>
+                <button
+                  className={foundingMemberIsCurrent ? 'current-plan' : ''}
+                  type="button"
+                  disabled={foundingMemberIsCurrent}
+                  onClick={() => handleCheckout({
+                    product_key: 'yvimo_membership',
+                    plan_key: currentFoundingMemberPricing.plan_key,
+                    billing_period: billingPeriod,
+                    price_display: currentFoundingMemberPricing.price_display,
+                    price_id: null,
+                  })}
+                >
+                  {t(foundingMemberCta)} {!foundingMemberIsCurrent ? <ArrowRight size={17} /> : null}
+                </button>
               </div>
               <ul>
                 {[
@@ -2190,52 +2307,46 @@ function LoggedDashboardPage({
                   </li>
                 ))}
               </ul>
-              <button
-                className={foundingMemberIsCurrent ? 'current-plan' : ''}
-                type="button"
-                disabled={foundingMemberIsCurrent}
-                onClick={() => handleCheckout({
-                  product_key: 'yvimo_membership',
-                  plan_key: currentFoundingMemberPricing.plan_key,
-                  billing_period: billingPeriod,
-                  price_display: currentFoundingMemberPricing.price_display,
-                  price_id: null,
-                })}
-              >
-                {t(foundingMemberCta)} {!foundingMemberIsCurrent ? <ArrowRight size={17} /> : null}
-              </button>
             </section>
 
             <section className="license-pricing-grid" aria-label="YVIMO membership pricing plans">
               {academyPlans.map((plan) => {
                 const pricing = plan[billingPeriod];
                 const priceDisplay = `${pricing.price}${pricing.label ? ` ${pricing.label}` : ''}`;
-                const planName = plan.name as SubscriptionTier;
+                const planName = plan.name;
                 const isCurrentPlan = user.subscription === planName;
                 const currentRank = membershipRank[user.subscription];
                 const planRank = membershipRank[planName];
                 const planCta = isCurrentPlan
                   ? 'Current Plan'
-                  : planName === 'Explorer'
-                    ? 'Start Free'
-                    : planName === 'Enterprise'
-                      ? 'Contact sales'
-                      : planRank > currentRank
-                        ? 'Upgrade to this Plan'
-                        : pricing.cta;
+                  : plan.internalOnly
+                    ? pricing.cta
+                    : planName === 'Explorer'
+                      ? 'Start Free'
+                      : planName === 'Enterprise'
+                        ? 'Contact sales'
+                        : planRank > currentRank
+                          ? 'Upgrade to this Plan'
+                          : pricing.cta;
                 return (
-                  <article className={plan.badge ? 'license-plan-card recommended' : 'license-plan-card'} key={plan.name}>
-                    <div className="license-plan-top">
-                      <div>
-                        <h2>
-                          <span className={`license-plan-tier subscription-pill subscription-${plan.name.toLowerCase()}`}>
-                            {t(plan.name)}
-                          </span>
-                        </h2>
-                        <p>{t(plan.description)}</p>
-                      </div>
-                      {plan.badge ? <span>{t(plan.badge)}</span> : null}
+                  <article
+                    className={[
+                      'license-plan-card',
+                      plan.badge === 'Recommended' ? 'recommended' : '',
+                      plan.internalOnly ? 'internal-plan' : '',
+                    ].filter(Boolean).join(' ')}
+                    key={plan.name}
+                  >
+                    {plan.badge ? <span className="license-plan-status">{t(plan.badge)}</span> : null}
+                    <div className="license-plan-heading">
+                      <h2>
+                        <span className={`license-plan-tier subscription-pill subscription-${plan.name.toLowerCase()}`}>
+                          {t(plan.name)}
+                        </span>
+                      </h2>
                     </div>
+                    <img className="license-plan-badge-image" src={plan.badgeImage} alt="" aria-hidden="true" />
+                    <p className="license-plan-description">{t(plan.description)}</p>
                     <div className="license-plan-price">
                       <strong>{pricing.price}</strong>
                       {pricing.label ? <span>{t(pricing.label)}</span> : null}
@@ -2250,9 +2361,9 @@ function LoggedDashboardPage({
                       ))}
                     </ul>
                     <button
-                      className={isCurrentPlan ? 'current-plan' : ''}
+                      className={isCurrentPlan || plan.internalOnly ? 'current-plan' : ''}
                       type="button"
-                      disabled={isCurrentPlan}
+                      disabled={isCurrentPlan || plan.internalOnly}
                       onClick={() => handleCheckout({
                         product_key: 'yvimo_membership',
                         plan_key: pricing.plan_key,
@@ -2434,9 +2545,6 @@ function LoggedDashboardPage({
           <aside className="workspace-profile-card" aria-label="Workspace profile">
             <div className="workspace-profile-copy">
               <strong>{user.name}</strong>
-              <span className={getSubscriptionClass(user.subscription)}>
-                {user.subscription}
-              </span>
             </div>
             <div
               className="workspace-profile-ring"
@@ -2449,6 +2557,14 @@ function LoggedDashboardPage({
               <span>LV</span>
               <strong>{profileLevel}</strong>
             </div>
+            <img
+              className="workspace-profile-badge"
+              src={getSubscriptionBadgeImage(user.subscription)}
+              alt={`${user.subscription} badge`}
+            />
+            <span className={`${getSubscriptionClass(user.subscription)} workspace-profile-tier`}>
+              {user.subscription}
+            </span>
             <div className="workspace-profile-points">
               <Star size={19} fill="currentColor" />
               <strong>{yvimoPoints.toLocaleString()}</strong>
