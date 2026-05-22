@@ -3068,6 +3068,22 @@ button {
   background: #ffe9d3;
 }
 
+.academy-track-hero-actions button:disabled,
+.academy-track-hero-actions button:disabled:hover {
+  border-color: rgba(148, 157, 169, 0.28);
+  background: #eef1f5;
+  color: #7d8794;
+  cursor: default;
+}
+
+.academy-track-export-error {
+  max-width: 420px;
+  margin: -4px 0 0;
+  color: #b42318;
+  font-size: 13px;
+  font-weight: 850;
+}
+
 .academy-track-hero-panel {
   position: relative;
   display: grid;
@@ -3303,6 +3319,10 @@ button {
   padding: 13px;
   background: color-mix(in srgb, var(--path-accent) 8%, #ffffff);
   box-shadow: 0 12px 26px color-mix(in srgb, var(--path-accent) 10%, transparent);
+}
+
+.academy-specialization-logo-text {
+  display: none;
 }
 
 .academy-specialization-options button:hover img,
@@ -3717,6 +3737,10 @@ button {
 }
 
 .academy-mobile-roadmap {
+  display: none;
+}
+
+.academy-pdf-radial-map {
   display: none;
 }
 
@@ -9616,4 +9640,235 @@ button {
   .route-connector {
     min-width: 40px;
   }
+}
+
+body[data-screenshot-export="academy-track"] .academy-track-hero-actions,
+body[data-screenshot-export="academy-track"] .academy-track-export-error,
+body[data-screenshot-export="academy-track"] .academy-course-tooltip {
+  visibility: hidden !important;
+}
+
+body[data-screenshot-export="academy-track"] .topbar,
+body[data-screenshot-export="academy-track"] .academy-track-hero-panel,
+body[data-screenshot-export="academy-track"] .academy-specialization-section,
+body[data-screenshot-export="academy-track"] .academy-radial-map,
+body[data-screenshot-export="academy-track"] .academy-track-course-list-card,
+body[data-screenshot-export="academy-track"] .academy-track-progress-card,
+body[data-screenshot-export="academy-track"] .academy-certificate-track-card,
+body[data-screenshot-export="academy-track"] .academy-related-track-card {
+  filter: none !important;
+  backdrop-filter: none !important;
+}
+
+body[data-screenshot-export="academy-track"] .academy-specialization-options button,
+body[data-screenshot-export="academy-track"] .academy-specialization-options img {
+  background: #ffffff !important;
+  border-color: rgba(255, 138, 31, 0.28) !important;
+  box-shadow: none !important;
+}
+
+body[data-screenshot-export="academy-track"] .academy-specialization-option.siemens img {
+  display: none !important;
+}
+
+body[data-screenshot-export="academy-track"] .academy-specialization-option.siemens .academy-specialization-logo-text {
+  display: grid !important;
+  width: 86px;
+  height: 86px;
+  place-items: center;
+  border: 1px solid rgba(0, 153, 153, 0.28);
+  border-radius: 14px;
+  background: #ffffff;
+  color: #009999;
+  font-size: 16px;
+  font-weight: 950;
+}
+
+body[data-screenshot-export="academy-track"] .academy-specialization-options strong {
+  color: var(--ink) !important;
+}
+
+body[data-screenshot-export="academy-track"] .academy-radial-map {
+  display: none !important;
+}
+
+body[data-screenshot-export="academy-track"] .academy-pdf-radial-map {
+  position: relative;
+  display: block !important;
+  min-height: 660px;
+  overflow: hidden;
+  border: 1px solid rgba(223, 228, 234, 0.78);
+  border-radius: 12px;
+  background:
+    linear-gradient(rgba(32, 36, 42, 0.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(32, 36, 42, 0.055) 1px, transparent 1px),
+    #ffffff;
+  background-size: 30px 30px, 30px 30px, auto;
+  box-shadow: none;
+}
+
+body[data-screenshot-export="academy-track"] .academy-pdf-radial-ring {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: min(520px, 68%);
+  aspect-ratio: 1;
+  border: 2px solid rgba(255, 138, 31, 0.45);
+  border-radius: 999px;
+  transform: translate(-50%, -50%);
+}
+
+body[data-screenshot-export="academy-track"] .academy-pdf-radial-ring::before,
+body[data-screenshot-export="academy-track"] .academy-pdf-radial-ring::after {
+  content: "";
+  position: absolute;
+  inset: 22%;
+  border: 1px solid rgba(255, 138, 31, 0.24);
+  border-radius: 999px;
+}
+
+body[data-screenshot-export="academy-track"] .academy-pdf-radial-center {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  width: 170px;
+  min-height: 170px;
+  place-items: center;
+  border: 2px solid rgba(255, 138, 31, 0.64);
+  border-radius: 999px;
+  padding: 20px;
+  background: #ffffff;
+  text-align: center;
+  transform: translate(-50%, -50%);
+}
+
+body[data-screenshot-export="academy-track"] .academy-pdf-radial-center span,
+body[data-screenshot-export="academy-track"] .academy-pdf-radial-center em {
+  color: var(--orange-strong);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 950;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+body[data-screenshot-export="academy-track"] .academy-pdf-radial-center strong {
+  color: var(--ink);
+  font-size: 22px;
+  line-height: 1.08;
+}
+
+body[data-screenshot-export="academy-track"] .academy-pdf-radial-center em {
+  color: var(--green);
+}
+
+body[data-screenshot-export="academy-track"] .academy-pdf-radial-node {
+  position: absolute;
+  display: grid;
+  gap: 6px;
+  width: 150px;
+  min-height: 94px;
+  place-items: center;
+  border: 1px solid rgba(255, 138, 31, 0.28);
+  border-radius: 12px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.96);
+  color: var(--ink);
+  text-align: center;
+  transform: translate(-50%, -50%);
+}
+
+body[data-screenshot-export="academy-track"] .academy-pdf-radial-node span {
+  display: inline-grid;
+  min-width: 32px;
+  height: 24px;
+  place-items: center;
+  border-radius: 999px;
+  background: #fff3e8;
+  color: var(--orange-strong);
+  font-size: 11px;
+  font-weight: 950;
+}
+
+body[data-screenshot-export="academy-track"] .academy-pdf-radial-node strong {
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.1;
+}
+
+body[data-screenshot-export="academy-track"] .academy-pdf-radial-node em {
+  color: #596472;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+body[data-screenshot-export="academy-track"] .academy-pdf-radial-node.completed {
+  border-color: rgba(37, 128, 83, 0.38);
+}
+
+body[data-screenshot-export="academy-track"] .academy-pdf-radial-node.in-progress {
+  border-color: rgba(255, 138, 31, 0.68);
+}
+
+body[data-screenshot-export="academy-track"] .academy-mobile-roadmap {
+  display: none !important;
+}
+
+body[data-screenshot-export="academy-track"] .academy-mobile-roadmap::before {
+  display: none !important;
+}
+
+body[data-screenshot-export="academy-track"] .academy-mobile-track-step {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px 14px 14px 52px;
+  background: #ffffff;
+  color: var(--ink);
+  text-align: left;
+  box-shadow: none;
+}
+
+body[data-screenshot-export="academy-track"] .academy-mobile-track-step > span {
+  position: absolute;
+  top: 14px;
+  left: 12px;
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--orange);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 950;
+}
+
+body[data-screenshot-export="academy-track"] .academy-mobile-track-step strong {
+  color: var(--ink);
+  font-size: 16px;
+  line-height: 1.14;
+}
+
+body[data-screenshot-export="academy-track"] .academy-mobile-track-step p {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+body[data-screenshot-export="academy-track"] .academy-mobile-track-step em {
+  color: var(--orange-strong);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+body[data-screenshot-export="academy-track"] .academy-mobile-track-step button {
+  display: none !important;
 }

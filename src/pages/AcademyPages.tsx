@@ -11,6 +11,7 @@ import {
   ChevronRight,
   Clock3,
   Cpu,
+  Download,
   FileText,
   GraduationCap,
   LockKeyhole,
@@ -70,6 +71,7 @@ import type {
   LessonAccessResult,
 } from '../academy/types';
 import { VideoPlayer } from '../components/academy/VideoPlayer';
+import { exportElementScreenshotToSinglePagePdf } from '../lib/screenshotPdfExport';
 
 type AcademyUser = {
   id: string;
@@ -386,7 +388,7 @@ const academyTracks: AcademyTrack[] = [
         shortTitle: 'Siemens',
         platformName: 'TIA Portal',
         progressLabel: 'Siemens Path Progress',
-        logoSrc: 'https://cdn.simpleicons.org/siemens/009999',
+        logoSrc: '/assets/logos/ecosystem/siemens.svg',
         accentColor: '#009999',
         description: 'Learn PLC programming, diagnostics, HMI and PROFINET workflows using Siemens automation tools.',
         courses: [
@@ -1458,6 +1460,8 @@ export function AcademyTrackPage({
   const [hoveredSlug, setHoveredSlug] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
+  const [pdfGenerating, setPdfGenerating] = React.useState(false);
+  const [pdfError, setPdfError] = React.useState<string | null>(null);
   const curriculumRef = React.useRef<HTMLElement | null>(null);
 
   React.useEffect(() => {
@@ -1574,6 +1578,25 @@ export function AcademyTrackPage({
     curriculumRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
+  const downloadTrackPdf = async () => {
+    const exportElement = document.querySelector<HTMLElement>('.site-shell');
+    if (pdfGenerating || !exportElement) return;
+
+    setPdfGenerating(true);
+    setPdfError(null);
+
+    try {
+      document.body.dataset.screenshotExport = 'academy-track';
+      await exportElementScreenshotToSinglePagePdf(exportElement, 'plc-technician-track.pdf');
+    } catch (error) {
+      console.error('[academy] track pdf export error', error);
+      setPdfError('Could not generate PDF. Please try again.');
+    } finally {
+      delete document.body.dataset.screenshotExport;
+      setPdfGenerating(false);
+    }
+  };
+
   const viewTrackProgress = () => {
     if (trackComplete && trackCertificate) {
       navigateTo(`/academy/certificates?track=${track.slug}`);
@@ -1627,7 +1650,14 @@ export function AcademyTrackPage({
               <button className="secondary" type="button" onClick={scrollToCurriculum}>
                 {t('View curriculum')}
               </button>
+              {track.slug === 'plc-technician' ? (
+                <button className="secondary" type="button" disabled={pdfGenerating} onClick={downloadTrackPdf}>
+                  <Download size={17} />
+                  {pdfGenerating ? t('Generating...') : t('Download PDF')}
+                </button>
+              ) : null}
             </div>
+            {pdfError ? <p className="academy-track-export-error" role="status">{t(pdfError)}</p> : null}
           </div>
           <div className="academy-track-hero-panel">
             <img className="academy-track-hero-badge" src={getTrackBadgeSrc(track.slug)} alt="" />
@@ -1682,7 +1712,11 @@ export function AcademyTrackPage({
                 const active = selectedSpecialization?.slug === specialization.slug;
                 return (
                   <button
-                    className={active ? 'active' : ''}
+                    className={[
+                      'academy-specialization-option',
+                      active ? 'active' : '',
+                      specialization.slug.includes('siemens') ? 'siemens' : 'rockwell',
+                    ].filter(Boolean).join(' ')}
                     style={{ '--path-accent': specialization.accentColor } as React.CSSProperties}
                     type="button"
                     role="tab"
@@ -1694,6 +1728,9 @@ export function AcademyTrackPage({
                     }}
                   >
                     <img src={specialization.logoSrc} alt="" aria-hidden="true" />
+                    <span className="academy-specialization-logo-text" aria-hidden="true">
+                      {specialization.shortTitle}
+                    </span>
                     <strong>{t(specialization.title)}</strong>
                   </button>
                 );
@@ -1811,6 +1848,42 @@ export function AcademyTrackPage({
                   </button>
                 </div>
               ) : null}
+            </div>
+
+            <div className="academy-pdf-radial-map" aria-hidden="true">
+              <div className="academy-pdf-radial-ring" />
+              <div className="academy-pdf-radial-center">
+                <span>Track Map</span>
+                <strong>{t(track.shortTitle)}</strong>
+                <em>{progressPercent}% complete</em>
+              </div>
+              {visibleTrackCourses.map((course, index) => {
+                const angle = -90 + (360 / visibleTrackCourses.length) * index;
+                const radians = (angle * Math.PI) / 180;
+                const x = 50 + Math.cos(radians) * 38;
+                const y = 50 + Math.sin(radians) * 38;
+                const courseProgress = trackCourseProgress[course.slug] ?? 0;
+                const status = getTrackCourseStatus(course, trackCompletion) === 'completed' || courseProgress >= 100
+                  ? 'completed'
+                  : courseProgress > 0
+                    ? 'in-progress'
+                    : 'not-started';
+                return (
+                  <div
+                    className={[
+                      'academy-pdf-radial-node',
+                      status === 'completed' ? 'completed' : '',
+                      status === 'in-progress' ? 'in-progress' : '',
+                    ].filter(Boolean).join(' ')}
+                    key={course.slug}
+                    style={{ left: `${x}%`, top: `${y}%` }}
+                  >
+                    <span>{String(course.step).padStart(2, '0')}</span>
+                    <strong>{t(course.shortTitle)}</strong>
+                    <em>{getTrackStatusLabel(status, t)}</em>
+                  </div>
+                );
+              })}
             </div>
 
             <div className="academy-mobile-roadmap">

@@ -2777,6 +2777,13 @@ function App() {
     setAuthUser(profileToAppUser(session.user, profile));
   }, [fetchOrCreateProfile]);
 
+  const refreshAuthProfile = React.useCallback(async () => {
+    if (!authSession?.user) return;
+
+    const profile = await fetchOrCreateProfile(authSession.user);
+    setAuthUser(profileToAppUser(authSession.user, profile));
+  }, [authSession, fetchOrCreateProfile]);
+
   React.useEffect(() => {
     let frame = 0;
 
@@ -2857,6 +2864,34 @@ function App() {
       navigateLogin();
     }
   }, [authLoading, authSession, isDashboardPage]);
+
+  React.useEffect(() => {
+    if (authLoading || !authSession || !isDashboardPage) return;
+
+    refreshAuthProfile().catch((error) => {
+      console.error('[auth] dashboard profile refresh error', error);
+    });
+  }, [authLoading, authSession, isDashboardPage, refreshAuthProfile]);
+
+  React.useEffect(() => {
+    if (!authSession) return;
+
+    const refreshWhenActive = () => {
+      if (document.visibilityState === 'hidden') return;
+
+      refreshAuthProfile().catch((error) => {
+        console.error('[auth] active profile refresh error', error);
+      });
+    };
+
+    window.addEventListener('focus', refreshWhenActive);
+    document.addEventListener('visibilitychange', refreshWhenActive);
+
+    return () => {
+      window.removeEventListener('focus', refreshWhenActive);
+      document.removeEventListener('visibilitychange', refreshWhenActive);
+    };
+  }, [authSession, refreshAuthProfile]);
 
   const navigateTo = (path: string) => {
     window.history.pushState({}, '', path);

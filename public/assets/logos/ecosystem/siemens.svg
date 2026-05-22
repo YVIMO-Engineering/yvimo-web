@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" role="img" aria-label="Siemens">
+  <rect width="160" height="160" rx="24" fill="#ffffff"/>
+  <rect x="1" y="1" width="158" height="158" rx="23" fill="none" stroke="#009999" stroke-opacity=".24" stroke-width="2"/>
+  <text x="80" y="88" fill="#009999" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="900" text-anchor="middle" letter-spacing="-1">SIEMENS</text>
+</svg>
