@@ -97,6 +97,10 @@ type UserProfile = {
   company_name: string | null;
   role: string | null;
   subscription_tier: SubscriptionTier;
+  yvimo_points: number | null;
+  experience_points: number | null;
+  profile_level: number | null;
+  profile_level_progress: number | null;
   created_at?: string;
   updated_at?: string | null;
 };
@@ -107,8 +111,24 @@ type AppUser = {
   name: string;
   company?: string;
   subscription: SubscriptionTier;
+  yvimoPoints: number;
+  experiencePoints: number;
+  profileLevel: number;
+  profileLevelProgress: number;
   avatarUrl?: string;
 };
+
+function normalizeNonNegativeNumber(value: number | null | undefined, fallback = 0) {
+  return Number.isFinite(value) ? Math.max(0, Math.round(Number(value))) : fallback;
+}
+
+function normalizeProfileLevel(value: number | null | undefined) {
+  return Math.max(1, normalizeNonNegativeNumber(value, 1));
+}
+
+function normalizeProfileProgress(value: number | null | undefined) {
+  return Math.min(100, normalizeNonNegativeNumber(value, 0));
+}
 
 function getProfileInitials(name: string) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -144,6 +164,10 @@ function profileToAppUser(user: User, profile: UserProfile | null): AppUser {
     name: fullName,
     company: profile?.company_name ?? undefined,
     subscription: profile?.subscription_tier ?? 'Explorer',
+    yvimoPoints: normalizeNonNegativeNumber(profile?.yvimo_points),
+    experiencePoints: normalizeNonNegativeNumber(profile?.experience_points),
+    profileLevel: normalizeProfileLevel(profile?.profile_level),
+    profileLevelProgress: normalizeProfileProgress(profile?.profile_level_progress),
     avatarUrl: typeof user.user_metadata?.avatar_url === 'string' ? user.user_metadata.avatar_url : undefined,
   };
 }
@@ -1754,9 +1778,9 @@ function LoggedDashboardPage({
     Founder: 3,
     Instructor: 4,
   };
-  const profileLevelProgress = 72;
-  const profileLevel = 373;
-  const yvimoPoints = 1280;
+  const profileLevelProgress = user.profileLevelProgress;
+  const profileLevel = user.profileLevel;
+  const yvimoPoints = user.yvimoPoints;
   const academyPlans: MembershipPlan[] = [
     {
       name: 'Explorer',
@@ -2631,9 +2655,9 @@ function App() {
   const headerProgress = isAuthPage || isDashboardPage || isAcademyPage ? 1 : scrollProgress;
   const compactViewport = viewportWidth < 760;
   const tinyViewport = viewportWidth < 480;
-  const headerProfileLevelProgress = 72;
-  const headerProfileLevel = 373;
-  const headerYvimoPoints = 1280;
+  const headerProfileLevelProgress = authUser?.profileLevelProgress ?? 0;
+  const headerProfileLevel = authUser?.profileLevel ?? 1;
+  const headerYvimoPoints = authUser?.yvimoPoints ?? 0;
   const expandedHeaderHeight = compactViewport ? 104 : 128;
   const compactHeaderHeight = compactViewport ? 82 : 94;
   const expandedWaveDepth = compactViewport ? 34 : 48;
@@ -2716,7 +2740,7 @@ function App() {
       const { data, error } = await withTimeout(
         supabase
           .from('profiles')
-          .select('id, full_name, company_name, role, subscription_tier, created_at, updated_at')
+          .select('id, full_name, company_name, role, subscription_tier, yvimo_points, experience_points, profile_level, profile_level_progress, created_at, updated_at')
           .eq('id', user.id)
           .maybeSingle<UserProfile>(),
         7000,
@@ -2739,14 +2763,13 @@ function App() {
           || 'YVIMO User',
         company_name: String(user.user_metadata?.company_name ?? '').trim(),
         role: String(user.user_metadata?.role ?? '').trim(),
-        subscription_tier: 'Explorer' as SubscriptionTier,
       };
 
       const { data: insertedProfile, error: insertError } = await withTimeout(
         supabase
           .from('profiles')
           .insert(fallbackProfile)
-          .select('id, full_name, company_name, role, subscription_tier, created_at, updated_at')
+          .select('id, full_name, company_name, role, subscription_tier, yvimo_points, experience_points, profile_level, profile_level_progress, created_at, updated_at')
           .single<UserProfile>(),
         7000,
         'Profile insert',
@@ -2891,6 +2914,23 @@ function App() {
       window.removeEventListener('focus', refreshWhenActive);
       document.removeEventListener('visibilitychange', refreshWhenActive);
     };
+  }, [authSession, refreshAuthProfile]);
+
+  React.useEffect(() => {
+    if (!authSession) return;
+
+    const refreshProfileSnapshot = () => {
+      if (document.visibilityState === 'hidden') return;
+
+      refreshAuthProfile().catch((error) => {
+        console.error('[auth] profile snapshot refresh error', error);
+      });
+    };
+
+    const intervalId = window.setInterval(refreshProfileSnapshot, 5000);
+    refreshProfileSnapshot();
+
+    return () => window.clearInterval(intervalId);
   }, [authSession, refreshAuthProfile]);
 
   const navigateTo = (path: string) => {

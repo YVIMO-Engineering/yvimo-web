@@ -5,6 +5,10 @@ create table if not exists public.profiles (
   role text,
   subscription_tier text not null default 'Explorer'
     check (subscription_tier in ('Explorer', 'Professional', 'Enterprise', 'Founder', 'Instructor')),
+  yvimo_points integer not null default 0 check (yvimo_points >= 0),
+  experience_points integer not null default 0 check (experience_points >= 0),
+  profile_level integer not null default 1 check (profile_level >= 1),
+  profile_level_progress integer not null default 0 check (profile_level_progress >= 0 and profile_level_progress <= 100),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -58,14 +62,22 @@ begin
     full_name,
     company_name,
     role,
-    subscription_tier
+    subscription_tier,
+    yvimo_points,
+    experience_points,
+    profile_level,
+    profile_level_progress
   )
   values (
     new.id,
     coalesce(new.raw_user_meta_data ->> 'full_name', ''),
     coalesce(new.raw_user_meta_data ->> 'company_name', ''),
     coalesce(new.raw_user_meta_data ->> 'role', ''),
-    'Explorer'
+    'Explorer',
+    0,
+    0,
+    1,
+    0
   )
   on conflict (id) do nothing;
 
