@@ -162,6 +162,7 @@ type AcademyHeroTile = {
 };
 
 const defaultT: AcademyTranslator = (text) => text;
+const lessonNotesMaxLength = 5000;
 
 function formatPrice(course: AcademyCourse) {
   if (course.price === null || Number(course.price) === 0) return 'Free';
@@ -2802,7 +2803,7 @@ export function AcademyLessonPage({
             if (active) {
               setLessonProgress(nextProgress);
               setCourseCertificate(nextCertificate);
-              setNotes(nextNote?.content ?? '');
+              setNotes((nextNote?.content ?? '').slice(0, lessonNotesMaxLength));
               latestProgress.current = nextProgress?.progress_seconds ?? 0;
               completedOnce.current = nextProgress?.completed ?? false;
             }
@@ -2885,7 +2886,7 @@ export function AcademyLessonPage({
         userId: user.id,
         courseId: bundle.course.id,
         lessonId: lesson.id,
-        content: notes,
+        content: notes.slice(0, lessonNotesMaxLength),
       });
       setNotesStatus('Saved');
     } catch (caught) {
@@ -2984,13 +2985,14 @@ export function AcademyLessonPage({
               <textarea
                 value={notes}
                 onChange={(event) => {
-                  setNotes(event.target.value);
+                  setNotes(event.target.value.slice(0, lessonNotesMaxLength));
                   setNotesStatus(null);
                 }}
+                maxLength={lessonNotesMaxLength}
                 placeholder={t('Write your notes for this lesson...')}
               />
               <div className="academy-notes-footer">
-                <span>{notesStatus ? t(notesStatus) : `${notes.length} ${t('characters')}`}</span>
+                <span>{`${notes.length} / ${lessonNotesMaxLength} ${t('Characters')}`}</span>
                 <button type="button" onClick={() => saveNotes()}>
                   <Save size={16} />
                   {t('Save')}
