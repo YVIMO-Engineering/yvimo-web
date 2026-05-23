@@ -5451,6 +5451,13 @@ button {
   padding: 9px 12px;
 }
 
+.academy-notes-status {
+  margin: -2px 0 0;
+  color: #9a4a0c;
+  font-size: 12px;
+  font-weight: 850;
+}
+
 .academy-video-frame {
   overflow: hidden;
   aspect-ratio: 16 / 9;

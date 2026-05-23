@@ -2992,12 +2992,13 @@ export function AcademyLessonPage({
                 placeholder={t('Write your notes for this lesson...')}
               />
               <div className="academy-notes-footer">
-                <span>{`${notes.length} / ${lessonNotesMaxLength} ${t('Characters')}`}</span>
+                <span>{`${notes.length} / ${lessonNotesMaxLength} Characters`}</span>
                 <button type="button" onClick={() => saveNotes()}>
                   <Save size={16} />
                   {t('Save')}
                 </button>
               </div>
+              {notesStatus ? <p className="academy-notes-status">{t(notesStatus)}</p> : null}
             </aside>
           ) : null}
         </section>
