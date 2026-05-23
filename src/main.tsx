@@ -3234,6 +3234,26 @@ function App() {
     const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
       console.log('[auth] state change', event, session);
       window.setTimeout(() => {
+        if (event === 'TOKEN_REFRESHED') {
+          setAuthSession(session);
+          return;
+        }
+
+        if (event === 'USER_UPDATED') {
+          setAuthSession(session);
+          if (session?.user) {
+            setAuthUser((currentUser) => currentUser
+              ? {
+                  ...currentUser,
+                  avatarUrl: typeof session.user.user_metadata?.avatar_url === 'string'
+                    ? session.user.user_metadata.avatar_url
+                    : currentUser.avatarUrl,
+                }
+              : profileToAppUser(session.user, null));
+          }
+          return;
+        }
+
         syncSessionUser(session).catch(() => {
           setAuthSession(null);
           setAuthUser(null);
@@ -3260,26 +3280,6 @@ function App() {
       console.error('[auth] dashboard profile refresh error', error);
     });
   }, [authLoading, authSession, isDashboardPage, refreshAuthProfile]);
-
-  React.useEffect(() => {
-    if (!authSession) return;
-
-    const refreshWhenActive = () => {
-      if (document.visibilityState === 'hidden') return;
-
-      refreshAuthProfile().catch((error) => {
-        console.error('[auth] active profile refresh error', error);
-      });
-    };
-
-    window.addEventListener('focus', refreshWhenActive);
-    document.addEventListener('visibilitychange', refreshWhenActive);
-
-    return () => {
-      window.removeEventListener('focus', refreshWhenActive);
-      document.removeEventListener('visibilitychange', refreshWhenActive);
-    };
-  }, [authSession, refreshAuthProfile]);
 
   React.useEffect(() => {
     if (!authSession || !isWorkspacePage) return;

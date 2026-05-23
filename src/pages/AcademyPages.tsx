@@ -650,7 +650,7 @@ const academyTracks: AcademyTrack[] = [
     estimatedDuration: 'FANUC Control path',
     accessStatus: 'preview',
     icon: Wrench,
-    badgeSrc: '/assets/academy/academy-track-logo.png',
+    badgeSrc: '/assets/academy/cnc-technician-track-badge-v4.png',
     courses: [
       makeTrackCourse(1, 'cnc-machine-fundamentals', 'CNC Machine Fundamentals', 'CNC Fundamentals', 'Understand CNC machine architecture, axes, tooling, workholding, coordinates, and shop-floor operating concepts.', 'Beginner', ['CNC basics', 'Machine axes', 'Tooling', 'Coordinate systems'], ['CNC machine architecture']),
       makeTrackCourse(2, 'nc-programming-editing-cimco-edit', 'NC Programming & Editing - CIMCO Edit', 'NC Programming', 'Create, edit, review, and prepare NC programs using practical programming and editor workflows.', 'Beginner', ['G-code', 'Program editing', 'CIMCO Edit', 'Program review'], ['NC programming basics']),
@@ -674,7 +674,7 @@ const academyTracks: AcademyTrack[] = [
     estimatedDuration: 'Self-paced',
     accessStatus: 'preview',
     icon: Radar,
-    badgeSrc: '/assets/academy/industrial-sensing-track-logo.png',
+    badgeSrc: '/assets/academy/industrial-sensing-badge-v4-blue.png',
     recommendedFor: ['PLC Technician', 'Robotics Technician', 'Automation Systems Integrator'],
     courses: [
       {
@@ -779,7 +779,7 @@ const academyTracks: AcademyTrack[] = [
     estimatedDuration: 'Self-paced',
     accessStatus: 'preview',
     icon: Network,
-    badgeSrc: '/assets/academy/industrial-networks-track-logo.png',
+    badgeSrc: '/assets/academy/industrial-networks-badge-v4-blue.png',
     recommendedFor: ['PLC Technician', 'Robotics Technician', 'CNC Technician', 'Automation Systems Integrator'],
     courses: [
       {
@@ -884,7 +884,7 @@ const academyTracks: AcademyTrack[] = [
     estimatedDuration: 'Self-paced',
     accessStatus: 'preview',
     icon: Radar,
-    badgeSrc: '/assets/academy/academy-track-logo.png',
+    badgeSrc: '/assets/academy/machine-vision-code-reading-badge-v4.png',
     recommendedFor: ['PLC Technician', 'Robotics Technician', 'Automation Systems Integrator'],
     courses: [
       makeTrackCourse(1, 'machine-vision-fundamentals', 'Machine Vision Fundamentals', 'Vision Fundamentals', 'Understand cameras, inspection goals, triggers, image acquisition, and practical machine vision use cases.', 'Beginner', ['Machine vision', 'Cameras', 'Triggers', 'Inspection'], ['Machine vision fundamentals']),
@@ -906,7 +906,7 @@ const academyTracks: AcademyTrack[] = [
     estimatedDuration: 'Self-paced',
     accessStatus: 'preview',
     icon: ShieldCheck,
-    badgeSrc: '/assets/academy/academy-track-logo.png',
+    badgeSrc: '/assets/academy/safety-systems-badge-v4.png',
     recommendedFor: ['PLC Technician', 'Robotics Technician', 'Automation Systems Integrator'],
     courses: [
       makeTrackCourse(1, 'industrial-safety-fundamentals', 'Industrial Safety Fundamentals', 'Safety Fundamentals', 'Understand the safety concepts technicians need when working around automated equipment.', 'Beginner', ['Safety basics', 'Risk awareness', 'Machine states', 'Standards mindset'], ['Industrial safety fundamentals']),
@@ -928,7 +928,7 @@ const academyTracks: AcademyTrack[] = [
     estimatedDuration: 'Self-paced',
     accessStatus: 'preview',
     icon: Network,
-    badgeSrc: '/assets/academy/academy-track-logo.png',
+    badgeSrc: '/assets/academy/scada-industrial-data-badge-v4.png',
     recommendedFor: ['PLC Technician', 'Automation Systems Integrator', 'Industrial Data / IT-OT Specialist'],
     courses: [
       makeTrackCourse(1, 'scada-fundamentals', 'SCADA Fundamentals', 'SCADA Fundamentals', 'Understand SCADA architecture, operators, servers, clients, tags, trends, and plant-floor workflows.', 'Beginner', ['SCADA', 'Architecture', 'Tags', 'Trends'], ['SCADA fundamentals']),
@@ -950,7 +950,7 @@ const academyTracks: AcademyTrack[] = [
     estimatedDuration: 'Multidisciplinary path',
     accessStatus: 'preview',
     icon: Route,
-    badgeSrc: '/assets/academy/academy-track-logo.png',
+    badgeSrc: '/assets/academy/automation-systems-integrator-badge-v4-red.png',
     courses: [
       makeTrackCourse(1, 'integration-project-methodology', 'Integration Project Methodology', 'Methodology', 'Plan and execute automation integration projects with clear scope, risk, and commissioning discipline.', 'Advanced', ['Project method', 'Scope', 'Risk', 'Commissioning'], ['Integration methodology']),
       makeTrackCourse(2, 'electrical-controls-architecture', 'Electrical & Controls Architecture', 'Controls Architecture', 'Design controls architectures across panels, PLCs, I/O, networks, devices, and field wiring.', 'Advanced', ['Controls architecture', 'Electrical design', 'I/O', 'Networks'], ['Controls architecture']),
@@ -978,7 +978,7 @@ const academyTracks: AcademyTrack[] = [
     estimatedDuration: 'Self-paced',
     accessStatus: 'preview',
     icon: RotateCcw,
-    badgeSrc: '/assets/academy/academy-track-logo.png',
+    badgeSrc: '/assets/academy/virtual-commissioning-badge-v4-red.png',
     courses: [
       makeTrackCourse(1, 'digital-twin-fundamentals', 'Digital Twin Fundamentals', 'Digital Twin', 'Understand digital twin concepts for validating automation systems before commissioning.', 'Advanced', ['Digital twins', 'Simulation', 'Validation', 'System behavior'], ['Digital twin fundamentals']),
       makeTrackCourse(2, 'robot-simulation-basics', 'Robot Simulation Basics', 'Robot Simulation', 'Use robot simulation concepts to validate motion, reach, zones, cycle flow, and offline logic.', 'Advanced', ['Robot simulation', 'Motion', 'Reach', 'Cycle flow'], ['Robot simulation basics']),
@@ -1172,6 +1172,7 @@ function AcademyTrackCards({
   title = 'Choose your learning path',
   description = 'Follow structured learning paths built from real industrial courses, practical progression, and applied automation skills.',
   note,
+  returnSection,
 }: {
   navigateTo: (path: string) => void;
   t: AcademyTranslator;
@@ -1180,12 +1181,14 @@ function AcademyTrackCards({
   title?: string;
   description?: string;
   note?: string;
+  returnSection?: string;
 }) {
   const titleId = React.useId();
   const categoryClass = tracks[0]?.category ? `academy-track-section-${tracks[0].category}` : '';
+  const sectionId = returnSection ? `academy-${returnSection}-tracks` : undefined;
 
   return (
-    <section className={['academy-tracks-section', categoryClass].filter(Boolean).join(' ')} aria-labelledby={titleId}>
+    <section className={['academy-tracks-section', categoryClass].filter(Boolean).join(' ')} id={sectionId} aria-labelledby={titleId}>
       <div className="academy-tracks-heading">
         <p className="eyebrow">{t(eyebrow)}</p>
         <h2 id={titleId}>{t(title)}</h2>
@@ -1204,7 +1207,7 @@ function AcademyTrackCards({
               className="academy-track-card"
               type="button"
               key={track.slug}
-              onClick={() => navigateTo(`/academy/tracks/${track.slug}`)}
+              onClick={() => navigateTo(`/academy/tracks/${track.slug}${returnSection ? `?from=${returnSection}` : ''}`)}
             >
               {track.badgeSrc ? (
                 <span className="academy-track-card-badge" aria-hidden="true">
@@ -1570,6 +1573,12 @@ export function AcademyTrackPage({
     trackSlug: track.slug,
     specializationSlug: selectedSpecialization?.slug ?? null,
   };
+  const returnSection = typeof window === 'undefined'
+    ? null
+    : new URLSearchParams(window.location.search).get('from');
+  const academyBackPath = returnSection && ['core', 'skill', 'advanced', 'paths'].includes(returnSection)
+    ? `/academy?section=${returnSection}`
+    : '/academy';
 
   const selectCourse = (course: AcademyTrackCourse) => {
     setSelectedSlug(course.slug);
@@ -1613,7 +1622,7 @@ export function AcademyTrackPage({
       <section className="academy-track-detail-page">
         <section className="academy-track-hero">
           <div className="academy-track-hero-copy">
-            <button className="academy-back-button" type="button" onClick={() => navigateTo('/academy')}>
+            <button className="academy-back-button" type="button" onClick={() => navigateTo(academyBackPath)}>
               <ArrowLeft size={19} strokeWidth={3} />
               {t('Go Back')}
             </button>
@@ -2088,6 +2097,27 @@ function SelectedTrackCoursePanel({
 }
 
 export function AcademyHomePage({ navigateTo, t = defaultT }: AcademyPageProps) {
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const section = new URLSearchParams(window.location.search).get('section');
+    if (!section) return;
+
+    const sectionTargets: Record<string, string> = {
+      core: 'academy-core-tracks',
+      skill: 'academy-skill-tracks',
+      advanced: 'academy-advanced-tracks',
+      paths: 'academy-learning-paths',
+    };
+    const targetId = sectionTargets[section];
+    if (!targetId) return;
+
+    window.setTimeout(() => {
+      const target = document.getElementById(targetId);
+      if (target) scrollToElementBelowHeader(target);
+    }, 120);
+  }, []);
+
   return (
     <AcademyShell navigateTo={navigateTo} t={t} activeSection="home">
       <section className="academy-home-hero">
@@ -2222,6 +2252,7 @@ export function AcademyHomePage({ navigateTo, t = defaultT }: AcademyPageProps) 
         eyebrow="CORE TRACK"
         title="Core Tracks"
         description="Build a complete technical role from the ground up."
+        returnSection="core"
       />
 
       <AcademyTrackCards
@@ -2231,6 +2262,7 @@ export function AcademyHomePage({ navigateTo, t = defaultT }: AcademyPageProps) 
         eyebrow="SKILL PATH"
         title="Skill Paths"
         description="Add focused technical capabilities that strengthen your main track or help you specialize in a specific technology area."
+        returnSection="skill"
       />
 
       <AcademyTrackCards
@@ -2241,6 +2273,7 @@ export function AcademyHomePage({ navigateTo, t = defaultT }: AcademyPageProps) 
         title="Advanced Tracks"
         description="Combine multiple disciplines into complete automation systems, integration projects, and commissioning workflows."
         note="Recommended after completing a Core Track or having equivalent field experience."
+        returnSection="advanced"
       />
     </AcademyShell>
   );
@@ -3038,6 +3071,51 @@ type ProgressTrack = {
   progressKey?: string;
 };
 
+type CertificatePackage = {
+  track: AcademyTrack | undefined;
+  specialization: AcademyTrackSpecialization | null;
+  certificate: AcademyTrackCertificate;
+  courseCertificates: AcademyCertificate[];
+};
+
+function getCertificatePackageId(certificate: AcademyTrackCertificate) {
+  return certificate.specialization_slug ?? certificate.track_slug;
+}
+
+function buildCertificatePackage(
+  trackCertificate: AcademyTrackCertificate,
+  courseCertificates: AcademyCertificate[],
+): CertificatePackage {
+  const track = academyTracks.find((item) => item.slug === trackCertificate.track_slug);
+  const specialization = getLocalTrackSpecialization(trackCertificate.track_slug, trackCertificate.specialization_slug);
+  const trackCourses = track ? getVisibleTrackCourses(track, specialization) : [];
+  const courseSlugs = new Set(trackCourses.map((course) => course.slug));
+
+  return {
+    track,
+    specialization,
+    certificate: trackCertificate,
+    courseCertificates: courseCertificates.filter((certificate) => courseSlugs.has(certificate.course_slug)),
+  };
+}
+
+function buildCertificatePackages(
+  courseCertificates: AcademyCertificate[],
+  trackCertificates: AcademyTrackCertificate[],
+) {
+  return trackCertificates.map((trackCertificate) => buildCertificatePackage(trackCertificate, courseCertificates));
+}
+
+function scrollToElementBelowHeader(target: HTMLElement) {
+  const shell = target.closest('.site-shell') ?? document.documentElement;
+  const headerHeight = parseFloat(getComputedStyle(shell).getPropertyValue('--header-height')) || 128;
+  const targetTop = target.getBoundingClientRect().top + window.scrollY;
+  window.scrollTo({
+    top: Math.max(targetTop - headerHeight - 24, 0),
+    behavior: 'smooth',
+  });
+}
+
 export function AcademyProgressPage({ user, navigateTo, t = defaultT, languageCode = 'en' }: AcademyPageProps) {
   const [items, setItems] = React.useState<ProgressCourse[]>([]);
   const [trackItems, setTrackItems] = React.useState<ProgressTrack[]>([]);
@@ -3196,6 +3274,11 @@ export function AcademyProgressPage({ user, navigateTo, t = defaultT, languageCo
     }, 120);
   }, [focusedTrackSlug, loading, trackItems.length]);
 
+  const handleTrackCertificateClaimed = (certificate: AcademyTrackCertificate) => {
+    const packageId = getCertificatePackageId(certificate);
+    navigateTo(`/academy/certificates?track=${packageId}`);
+  };
+
   return (
     <AcademyShell navigateTo={navigateTo} activeSection="progress" t={t}>
       <section className="academy-progress-page">
@@ -3229,6 +3312,7 @@ export function AcademyProgressPage({ user, navigateTo, t = defaultT, languageCo
                   item={item}
                   user={user}
                   navigateTo={navigateTo}
+                  onCertificateClaimed={handleTrackCertificateClaimed}
                   t={t}
                 />
               ))}
@@ -3350,11 +3434,13 @@ function AcademyProgressTrackCard({
   item,
   user,
   navigateTo,
+  onCertificateClaimed,
   t = defaultT,
 }: {
   item: ProgressTrack;
   user: AcademyUser;
   navigateTo: (path: string) => void;
+  onCertificateClaimed: (certificate: AcademyTrackCertificate) => void;
   t?: AcademyTranslator;
 }) {
   const totalCourses = item.summary && item.summary.total_courses > 0
@@ -3384,7 +3470,7 @@ function AcademyProgressTrackCard({
         completedCourses,
         totalCourses,
       });
-      navigateTo(`/academy/certificates/${certificate.id}?new=1`);
+      onCertificateClaimed(certificate);
     } finally {
       setCertificateBusy(false);
     }
@@ -3668,7 +3754,7 @@ export function AcademyCertificatesPage({
     if (!target) return;
 
     window.setTimeout(() => {
-      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      scrollToElementBelowHeader(target);
       target.classList.add('focus-certificate');
       window.setTimeout(() => target.classList.remove('focus-certificate'), 1800);
     }, 120);
