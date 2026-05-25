@@ -2998,6 +2998,7 @@ function App() {
   const [authUser, setAuthUser] = React.useState<AppUser | null>(null);
   const [authLoading, setAuthLoading] = React.useState(true);
   const [dashboardTransition, setDashboardTransition] = React.useState(false);
+  const authSessionRef = React.useRef<Session | null>(null);
   const [viewportWidth, setViewportWidth] = React.useState(() =>
     typeof window === 'undefined' ? 1440 : window.innerWidth,
   );
@@ -3097,6 +3098,10 @@ function App() {
     `C500 ${34 * edgeShape} 570 0 710 0 ` +
     `C850 0 930 ${46 * edgeShape} 1080 ${76 * edgeShape} ` +
     `C1225 ${105 * edgeShape} 1410 ${84 * edgeShape} 1600 ${28 * edgeShape}`;
+
+  React.useEffect(() => {
+    authSessionRef.current = authSession;
+  }, [authSession]);
 
   const fetchOrCreateProfile = React.useCallback(async (user: User) => {
     console.log('[auth] profile fetch start', user.id);
@@ -3234,6 +3239,15 @@ function App() {
     const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
       console.log('[auth] state change', event, session);
       window.setTimeout(() => {
+        if (
+          event === 'SIGNED_IN'
+          && session?.user?.id
+          && session.user.id === authSessionRef.current?.user?.id
+        ) {
+          setAuthSession(session);
+          return;
+        }
+
         if (event === 'TOKEN_REFRESHED') {
           setAuthSession(session);
           return;

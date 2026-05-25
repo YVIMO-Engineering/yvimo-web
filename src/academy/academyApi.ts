@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import * as tus from 'tus-js-client';
 import { supabase } from '../lib/supabaseClient';
 import type {
   AcademyCertificate,
@@ -9,6 +10,8 @@ import type {
   AcademyLesson,
   AcademyLessonNote,
   AcademyLessonProgress,
+  AcademyLessonResource,
+  AcademyLessonSubmission,
   AcademyModule,
   AcademyModuleTranslation,
   AcademyModuleWithLessons,
@@ -21,6 +24,7 @@ import type {
 } from './types';
 
 type AcademyClient = SupabaseClient;
+const supabaseProjectUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 
 export type CreateCertificateInput = {
   userId: string;
@@ -712,6 +716,194 @@ export async function saveLessonNote(
     )
     .select('*')
     .single<AcademyLessonNote>();
+
+  if (error) throw error;
+  return data;
+}
+
+function isMissingAcademyFilesTable(error: { code?: string; message?: string } | null) {
+  return error?.code === '42P01' || error?.message?.includes('academy_lesson_');
+}
+
+export async function fetchLessonResources(
+  lessonId: string,
+  client: AcademyClient = supabase,
+) {
+  const { data, error } = await client
+    .from('academy_lesson_resources')
+    .select('*')
+    .eq('lesson_id', lessonId)
+    .order('order_index', { ascending: true })
+    .order('created_at', { ascending: true })
+    .returns<AcademyLessonResource[]>();
+
+  if (isMissingAcademyFilesTable(error)) return [];
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function getLessonResourceDownloadUrl(
+  resource: AcademyLessonResource,
+  client: AcademyClient = supabase,
+) {
+  if (resource.public_url) return resource.public_url;
+  if (!resource.storage_path) return null;
+
+  const { data, error } = await client.storage
+    .from('academy-lesson-resources')
+    .createSignedUrl(resource.storage_path, 60 * 5);
+
+  if (error) throw error;
+  return data.signedUrl;
+}
+
+export async function fetchLessonSubmissions(
+  userId: string | null,
+  lessonId: string,
+  client: AcademyClient = supabase,
+) {
+  if (!userId) return [];
+
+  const { data, error } = await client
+    .from('academy_lesson_submissions')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('lesson_id', lessonId)
+    .order('submitted_at', { ascending: false })
+    .returns<AcademyLessonSubmission[]>();
+
+  if (isMissingAcademyFilesTable(error)) return [];
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function uploadLessonSubmission(
+  {
+    userId,
+    courseId,
+    lessonId,
+    file,
+  }: {
+    userId: string;
+    courseId: string;
+    lessonId: string;
+    file: File;
+  },
+  client: AcademyClient = supabase,
+) {
+  const { data: sessionData } = await client.auth.getSession();
+  if (sessionData.session?.user.id !== userId) {
+    throw new Error('Users can only upload their own lesson submissions.');
+  }
+
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'submission';
+  const storagePath = `${userId}/${lessonId}/${Date.now()}-${safeName}`;
+  const accessToken = sessionData.session.access_token;
+
+  if (!supabaseProjectUrl) {
+    throw new Error('Missing Supabase project URL.');
+  }
+
+  const projectRef = new URL(supabaseProjectUrl).hostname.split('.')[0];
+  const resumableEndpoint = `https://${projectRef}.storage.supabase.co/storage/v1/upload/resumable`;
+
+  await new Promise<void>((resolve, reject) => {
+    const upload = new tus.Upload(file, {
+      endpoint: resumableEndpoint,
+      retryDelays: [0, 3000, 5000, 10000, 20000],
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        'x-upsert': 'false',
+      },
+      uploadDataDuringCreation: true,
+      removeFingerprintOnSuccess: true,
+      metadata: {
+        bucketName: 'academy-lesson-submissions',
+        objectName: storagePath,
+        contentType: file.type || 'application/octet-stream',
+        cacheControl: '3600',
+      },
+      chunkSize: 6 * 1024 * 1024,
+      onError: (error) => reject(error),
+      onSuccess: () => resolve(),
+    });
+
+    upload.findPreviousUploads()
+      .then((previousUploads) => {
+        if (previousUploads.length > 0) upload.resumeFromPreviousUpload(previousUploads[0]);
+        upload.start();
+      })
+      .catch(reject);
+  });
+
+  const { data, error } = await client
+    .from('academy_lesson_submissions')
+    .insert({
+      user_id: userId,
+      course_id: courseId,
+      lesson_id: lessonId,
+      file_name: file.name,
+      file_size: file.size,
+      mime_type: file.type || null,
+      storage_path: storagePath,
+      status: 'submitted',
+    })
+    .select('*')
+    .single<AcademyLessonSubmission>();
+
+  if (error) throw error;
+  return data;
+}
+
+export async function publishLessonResource(
+  {
+    courseId,
+    lessonId,
+    title,
+    description,
+    file,
+    orderIndex = 0,
+  }: {
+    courseId: string;
+    lessonId: string;
+    title: string;
+    description?: string | null;
+    file: File;
+    orderIndex?: number;
+  },
+  client: AcademyClient = supabase,
+) {
+  const { data: sessionData } = await client.auth.getSession();
+  if (!sessionData.session?.user.id) {
+    throw new Error('You must be signed in to publish lesson resources.');
+  }
+
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'resource';
+  const storagePath = `${courseId}/${lessonId}/${Date.now()}-${safeName}`;
+  const { error: uploadError } = await client.storage
+    .from('academy-lesson-resources')
+    .upload(storagePath, file, {
+      contentType: file.type || undefined,
+      upsert: false,
+    });
+
+  if (uploadError) throw uploadError;
+
+  const { data, error } = await client
+    .from('academy_lesson_resources')
+    .insert({
+      course_id: courseId,
+      lesson_id: lessonId,
+      title,
+      description: description?.trim() || null,
+      file_name: file.name,
+      file_size: file.size,
+      mime_type: file.type || null,
+      storage_path: storagePath,
+      order_index: orderIndex,
+    })
+    .select('*')
+    .single<AcademyLessonResource>();
 
   if (error) throw error;
   return data;

@@ -129,6 +129,37 @@ export type AcademyLessonNote = {
   updated_at: string;
 };
 
+export type AcademyLessonResource = {
+  id: string;
+  course_id: string;
+  lesson_id: string;
+  title: string;
+  description: string | null;
+  file_name: string;
+  file_size: number | null;
+  mime_type: string | null;
+  storage_path: string | null;
+  public_url: string | null;
+  order_index: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AcademyLessonSubmission = {
+  id: string;
+  user_id: string;
+  course_id: string;
+  lesson_id: string;
+  file_name: string;
+  file_size: number | null;
+  mime_type: string | null;
+  storage_path: string;
+  status: 'submitted' | 'reviewed' | 'returned';
+  submitted_at: string;
+  created_at: string;
+  updated_at: string;
+};
+
 export type AcademyCertificate = {
   id: string;
   user_id: string;

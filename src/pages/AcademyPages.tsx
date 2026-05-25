@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   Award,
   Bot,
+  Bold,
   BookOpen,
   BriefcaseBusiness,
   CheckCircle2,
@@ -12,13 +13,21 @@ import {
   Clock3,
   Cpu,
   Download,
+  FileUp,
   FileText,
   GraduationCap,
+  Heading2,
+  Italic,
+  List,
+  ListOrdered,
   LockKeyhole,
   MapPin,
   Network,
   Newspaper,
+  PanelLeftClose,
+  PanelLeftOpen,
   PlayCircle,
+  Quote,
   Radar,
   RotateCcw,
   Route,
@@ -29,6 +38,7 @@ import {
   Trophy,
   UserRound,
   Wrench,
+  X,
 } from 'lucide-react';
 import {
   canAccessLesson,
@@ -43,18 +53,23 @@ import {
   fetchLessonNote,
   fetchLessonProgressForLesson,
   fetchLessonProgressForCourse,
+  fetchLessonResources,
+  fetchLessonSubmissions,
   fetchPlayableLessonBySlug,
   fetchPublishedCourses,
   fetchPublishedTrackBundles,
   fetchTrackCertificatesForUser,
   fetchTrackProgressSummaries,
+  getLessonResourceDownloadUrl,
   getCourseProgressSummary,
   getEnrollmentStatus,
   isAdminUser,
   isEnrollmentActive,
+  publishLessonResource,
   resetLessonProgress,
   saveLessonNote,
   updateLessonProgress,
+  uploadLessonSubmission,
   type AcademyCourseBundle,
   type AcademyTrackBundle,
 } from '../academy/academyApi';
@@ -65,6 +80,8 @@ import type {
   AcademyLesson,
   AcademyLessonProgress,
   AcademyLessonProgressState,
+  AcademyLessonResource,
+  AcademyLessonSubmission,
   AcademyModuleWithLessons,
   AcademyTrackCertificate,
   AcademyTrackProgressSummary,
@@ -78,6 +95,7 @@ type AcademyUser = {
   name: string;
   email: string;
   avatarUrl?: string;
+  subscription?: string;
 };
 
 type AcademyTranslator = (text: string) => string;
@@ -163,6 +181,71 @@ type AcademyHeroTile = {
 
 const defaultT: AcademyTranslator = (text) => text;
 const lessonNotesMaxLength = 5000;
+const lessonSubmissionMaxBytes = 250 * 1024 * 1024;
+const lessonSubmissionMaxSizeLabel = '250 MB';
+
+function formatFileSize(bytes?: number | null) {
+  if (!bytes || bytes <= 0) return 'File size unavailable';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let value = bytes;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  return `${value >= 10 || unitIndex === 0 ? Math.round(value) : value.toFixed(1)} ${units[unitIndex]}`;
+}
+
+const allowedLessonNoteTags = new Set(['b', 'strong', 'i', 'em', 'h2', 'ul', 'ol', 'li', 'blockquote', 'div', 'p', 'br']);
+
+function escapeLessonNoteText(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function sanitizeLessonNoteHtml(value: string) {
+  if (!value.trim()) return '';
+  if (typeof window === 'undefined') return escapeLessonNoteText(value);
+
+  const parser = new DOMParser();
+  const documentBody = parser.parseFromString(`<div>${value}</div>`, 'text/html').body;
+
+  function sanitizeNode(node: Node): string {
+    if (node.nodeType === Node.TEXT_NODE) return escapeLessonNoteText(node.textContent ?? '');
+    if (node.nodeType !== Node.ELEMENT_NODE) return '';
+
+    const element = node as HTMLElement;
+    const tag = element.tagName.toLowerCase();
+    const children = Array.from(element.childNodes).map(sanitizeNode).join('');
+    if (!allowedLessonNoteTags.has(tag)) return children;
+    if (tag === 'br') return '<br>';
+    return `<${tag}>${children}</${tag}>`;
+  }
+
+  return Array.from(documentBody.childNodes).map(sanitizeNode).join('');
+}
+
+function getLessonNotePlainText(value: string) {
+  if (!value) return '';
+  if (typeof window === 'undefined') return value.replace(/<[^>]+>/g, '');
+  const element = document.createElement('div');
+  element.innerHTML = sanitizeLessonNoteHtml(value);
+  return element.textContent ?? '';
+}
+
+function getReadableErrorMessage(caught: unknown, fallback: string) {
+  if (caught instanceof Error && caught.message) return caught.message;
+  if (caught && typeof caught === 'object') {
+    const errorRecord = caught as { message?: unknown; error_description?: unknown; details?: unknown };
+    const message = errorRecord.message ?? errorRecord.error_description ?? errorRecord.details;
+    if (typeof message === 'string' && message.trim()) return message;
+  }
+  return fallback;
+}
 
 function formatPrice(course: AcademyCourse) {
   if (course.price === null || Number(course.price) === 0) return 'Free';
@@ -1013,18 +1096,20 @@ function AcademyShell({
   navigateTo,
   t = defaultT,
   activeSection = 'courses',
+  compact = false,
 }: {
   children: React.ReactNode;
   navigateTo: (path: string) => void;
   t?: AcademyTranslator;
   activeSection?: string;
+  compact?: boolean;
 }) {
   return (
-    <main className="academy-shell">
+    <main className={compact ? 'academy-shell theater' : 'academy-shell'}>
       <aside className="academy-sidebar">
         <button className="academy-sidebar-back" type="button" onClick={() => navigateTo('/dashboard')}>
           <ArrowRight size={16} />
-          {t('Dashboard')}
+          <span>{t('Dashboard')}</span>
         </button>
         <div className="academy-sidebar-title">
           <span>YVIMO</span>
@@ -1041,7 +1126,7 @@ function AcademyShell({
                 onClick={() => navigateTo(item.path)}
               >
                 <Icon size={18} />
-                {t(item.label)}
+                <span>{t(item.label)}</span>
               </button>
             );
           })}
@@ -1556,7 +1641,6 @@ export function AcademyTrackPage({
 
   const trackCompletion = buildTrackCompletionMap(publishedCourses, completion);
   const selectedCourse = visibleTrackCourses.find((course) => course.slug === selectedSlug) ?? visibleTrackCourses[0];
-  const hoveredCourse = hoveredSlug ? visibleTrackCourses.find((course) => course.slug === hoveredSlug) ?? null : null;
   const completedCount = visibleTrackCourses.filter((course) => getTrackCourseStatus(course, trackCompletion) === 'completed').length;
   const totalLessonCount = visibleTrackCourses.reduce((total, course) => total + getTrackCourseLessonCount(course), 0);
   const completedLessonCount = visibleTrackCourses.reduce((total, course) => {
@@ -1767,7 +1851,7 @@ export function AcademyTrackPage({
               onMouseLeave={() => setHoveredSlug(null)}
               onMouseMove={(event) => {
                 const target = event.target as Element;
-                if (!target.closest('.academy-study-segment') && !target.closest('.academy-course-tooltip')) {
+                if (!target.closest('.academy-study-segment')) {
                   setHoveredSlug(null);
                 }
               }}
@@ -1838,26 +1922,6 @@ export function AcademyTrackPage({
                   );
                 })}
               </svg>
-              {hoveredCourse ? (
-                <div
-                  className="academy-course-tooltip"
-                  style={
-                    {
-                      '--tooltip-x': `${50 + Math.cos(((-90 + (360 / visibleTrackCourses.length) * (hoveredCourse.step - 1)) * Math.PI) / 180) * 27}%`,
-                      '--tooltip-y': `${50 + Math.sin(((-90 + (360 / visibleTrackCourses.length) * (hoveredCourse.step - 1)) * Math.PI) / 180) * 27}%`,
-                    } as React.CSSProperties
-                  }
-                >
-                  <strong>{t(hoveredCourse.title)}</strong>
-                  <p>{t(hoveredCourse.description)}</p>
-                  <span>{t('Level')}: {t(hoveredCourse.level)}</span>
-                  <span>{t('Estimated time')}: {t(hoveredCourse.estimatedTime)}</span>
-                  <span>{t('Status')}: {getTrackStatusLabel(getTrackCourseStatus(hoveredCourse, trackCompletion), t)}</span>
-                  <button type="button" onClick={() => navigateTo(getTrackCoursePath(hoveredCourse, courseReturnContext))}>
-                    {t('View course')}
-                  </button>
-                </div>
-              ) : null}
             </div>
 
             <div className="academy-pdf-radial-map" aria-hidden="true">
@@ -2785,12 +2849,35 @@ export function AcademyLessonPage({
   const [courseCertificate, setCourseCertificate] = React.useState<AcademyCertificate | null>(null);
   const [notes, setNotes] = React.useState('');
   const [notesStatus, setNotesStatus] = React.useState<string | null>(null);
+  const [lessonResources, setLessonResources] = React.useState<AcademyLessonResource[]>([]);
+  const [lessonSubmissions, setLessonSubmissions] = React.useState<AcademyLessonSubmission[]>([]);
+  const [submissionFiles, setSubmissionFiles] = React.useState<File[]>([]);
+  const [submissionStatus, setSubmissionStatus] = React.useState<string | null>(null);
+  const [submissionBusy, setSubmissionBusy] = React.useState(false);
+  const [resourceFile, setResourceFile] = React.useState<File | null>(null);
+  const [resourceTitle, setResourceTitle] = React.useState('');
+  const [resourceDescription, setResourceDescription] = React.useState('');
+  const [resourceStatus, setResourceStatus] = React.useState<string | null>(null);
+  const [resourceBusy, setResourceBusy] = React.useState(false);
+  const [theaterMode, setTheaterMode] = React.useState(false);
+  const [activeNoteFormats, setActiveNoteFormats] = React.useState({
+    bold: false,
+    italic: false,
+    heading: false,
+    bullet: false,
+    numbered: false,
+    quote: false,
+  });
   const [loading, setLoading] = React.useState(true);
   const [message, setMessage] = React.useState<string | null>(null);
   const [completeBusy, setCompleteBusy] = React.useState(false);
   const [retakeBusy, setRetakeBusy] = React.useState(false);
+  const notesEditorRef = React.useRef<HTMLDivElement | null>(null);
+  const hydratedNotesLessonRef = React.useRef<string | null>(null);
   const latestProgress = React.useRef(0);
   const completedOnce = React.useRef(false);
+  const userId = user?.id ?? null;
+  const canManageLessonResources = user?.subscription === 'Instructor' || user?.subscription === 'Owner';
 
   React.useEffect(() => {
     let active = true;
@@ -2809,7 +2896,7 @@ export function AcademyLessonPage({
           return;
         }
 
-        const admin = user ? await isAdminUser(user.id) : false;
+        const admin = userId ? await isAdminUser(userId) : false;
         const nextLesson = admin
           ? await fetchPlayableLessonBySlug(nextBundle.course.id, lessonSlug, languageCode)
           : await fetchLessonBySlug(nextBundle.course.id, lessonSlug, languageCode);
@@ -2818,7 +2905,7 @@ export function AcademyLessonPage({
 
         if (nextLesson) {
           const nextAccess = await canAccessLesson({
-            userId: user?.id ?? null,
+            userId,
             courseId: nextBundle.course.id,
             lessonId: nextLesson.id,
           });
@@ -2826,20 +2913,27 @@ export function AcademyLessonPage({
           setAccess(nextAccess);
 
           if (nextAccess.allowed) {
-            const [playableLesson, nextProgress, nextNote, nextCertificate] = await Promise.all([
+            const [playableLesson, nextProgress, nextNote, nextCertificate, nextResources, nextSubmissions] = await Promise.all([
               fetchPlayableLessonBySlug(nextBundle.course.id, lessonSlug, languageCode),
-              fetchLessonProgressForLesson(user?.id ?? null, nextLesson.id),
-              fetchLessonNote(user?.id ?? null, nextLesson.id),
-              fetchCertificateForCourse(user?.id ?? null, nextBundle.course.id),
+              fetchLessonProgressForLesson(userId, nextLesson.id),
+              fetchLessonNote(userId, nextLesson.id),
+              fetchCertificateForCourse(userId, nextBundle.course.id),
+              fetchLessonResources(nextLesson.id),
+              fetchLessonSubmissions(userId, nextLesson.id),
             ]);
             if (active && playableLesson) setLesson(playableLesson);
             if (active) {
               setLessonProgress(nextProgress);
               setCourseCertificate(nextCertificate);
-              setNotes((nextNote?.content ?? '').slice(0, lessonNotesMaxLength));
+              setLessonResources(nextResources);
+              setLessonSubmissions(nextSubmissions);
+              setNotes(sanitizeLessonNoteHtml(nextNote?.content ?? ''));
               latestProgress.current = nextProgress?.progress_seconds ?? 0;
               completedOnce.current = nextProgress?.completed ?? false;
             }
+          } else if (active) {
+            setLessonResources([]);
+            setLessonSubmissions([]);
           }
         }
       } catch (caught) {
@@ -2854,7 +2948,7 @@ export function AcademyLessonPage({
     return () => {
       active = false;
     };
-  }, [courseSlug, languageCode, lessonSlug, user]);
+  }, [courseSlug, languageCode, lessonSlug, userId]);
 
   const persistProgress = React.useCallback(
     async (progressSeconds: number, durationSeconds: number | null) => {
@@ -2911,6 +3005,20 @@ export function AcademyLessonPage({
     }
   }, [bundle, courseCertificate, lesson, retakeBusy, user]);
 
+  React.useEffect(() => {
+    const editor = notesEditorRef.current;
+    if (!editor || !lesson) return;
+
+    const lessonChanged = hydratedNotesLessonRef.current !== lesson.id;
+    const editorIsFocused = document.activeElement === editor;
+    const editorIsEmpty = (editor.textContent ?? '').trim().length === 0;
+
+    if (lessonChanged || !editorIsFocused || (notes && editorIsEmpty)) {
+      if (editor.innerHTML !== notes) editor.innerHTML = notes;
+      hydratedNotesLessonRef.current = lesson.id;
+    }
+  }, [lesson?.id, notes]);
+
   const saveNotes = React.useCallback(async () => {
     if (!user || !bundle || !lesson) return;
     setNotesStatus('Saving...');
@@ -2919,13 +3027,212 @@ export function AcademyLessonPage({
         userId: user.id,
         courseId: bundle.course.id,
         lessonId: lesson.id,
-        content: notes.slice(0, lessonNotesMaxLength),
+        content: sanitizeLessonNoteHtml(notes),
       });
       setNotesStatus('Saved');
     } catch (caught) {
       setNotesStatus(caught instanceof Error ? caught.message : 'Unable to save notes.');
     }
   }, [bundle, lesson, notes, user]);
+
+  const downloadLessonResource = React.useCallback(async (resource: AcademyLessonResource) => {
+    try {
+      const url = await getLessonResourceDownloadUrl(resource);
+      if (!url) {
+        setSubmissionStatus('Resource download is not configured yet.');
+        return;
+      }
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } catch (caught) {
+      setSubmissionStatus(caught instanceof Error ? caught.message : 'Resource could not be downloaded.');
+    }
+  }, []);
+
+  const handleSubmissionFiles = React.useCallback((files: FileList | null) => {
+    const nextFiles = Array.from(files ?? []);
+    setSubmissionStatus(null);
+    if (nextFiles.some((file) => file.size > lessonSubmissionMaxBytes)) {
+      setSubmissionFiles([]);
+      setSubmissionStatus(`Each submission file must be ${lessonSubmissionMaxSizeLabel} or smaller.`);
+      return;
+    }
+    setSubmissionFiles(nextFiles);
+  }, []);
+
+  const removeSubmissionFile = React.useCallback((fileToRemove: File) => {
+    setSubmissionFiles((current) => current.filter((file) => file !== fileToRemove));
+    setSubmissionStatus(null);
+  }, []);
+
+  const handleResourceFile = React.useCallback((files: FileList | null) => {
+    const file = files?.[0] ?? null;
+    setResourceFile(file);
+    setResourceStatus(null);
+    if (file && !resourceTitle.trim()) {
+      setResourceTitle(file.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' '));
+    }
+  }, [resourceTitle]);
+
+  const publishResource = React.useCallback(async () => {
+    if (!bundle || !lesson || !resourceFile || resourceBusy) return;
+
+    const title = resourceTitle.trim();
+    if (!title) {
+      setResourceStatus('Add a resource title before publishing.');
+      return;
+    }
+
+    setResourceBusy(true);
+    setResourceStatus('Publishing...');
+    try {
+      const nextResource = await publishLessonResource({
+        courseId: bundle.course.id,
+        lessonId: lesson.id,
+        title,
+        description: resourceDescription,
+        file: resourceFile,
+        orderIndex: lessonResources.length + 1,
+      });
+      setLessonResources((current) => [...current, nextResource].sort((a, b) => a.order_index - b.order_index));
+      setResourceFile(null);
+      setResourceTitle('');
+      setResourceDescription('');
+      setResourceStatus('Resource published');
+    } catch (caught) {
+      setResourceStatus(getReadableErrorMessage(caught, 'Resource could not be published.'));
+    } finally {
+      setResourceBusy(false);
+    }
+  }, [bundle, lesson, lessonResources.length, resourceBusy, resourceDescription, resourceFile, resourceTitle]);
+
+  const submitAssignmentFiles = React.useCallback(async () => {
+    if (!user || !bundle || !lesson || submissionFiles.length === 0 || submissionBusy) return;
+    setSubmissionBusy(true);
+    setSubmissionStatus('Uploading...');
+    try {
+      const uploaded: AcademyLessonSubmission[] = [];
+      for (const file of submissionFiles) {
+        const nextSubmission = await uploadLessonSubmission({
+          userId: user.id,
+          courseId: bundle.course.id,
+          lessonId: lesson.id,
+          file,
+        });
+        uploaded.push(nextSubmission);
+      }
+      setLessonSubmissions((current) => [...uploaded, ...current]);
+      setSubmissionFiles([]);
+      setSubmissionStatus('Submitted');
+    } catch (caught) {
+      const errorMessage = getReadableErrorMessage(caught, 'Assignment files could not be uploaded.');
+      setSubmissionStatus(
+        errorMessage.toLowerCase().includes('maximum allowed size') || errorMessage.toLowerCase().includes('maximum size exceeded') || errorMessage.includes('413')
+          ? 'Supabase rejected this file before upload. Check Storage > Settings and set the Global file size limit to at least 250 MB, then keep the academy-lesson-submissions bucket at 250 MB.'
+          : errorMessage,
+      );
+    } finally {
+      setSubmissionBusy(false);
+    }
+  }, [bundle, lesson, submissionBusy, submissionFiles, user]);
+
+  const syncNotesFromEditor = React.useCallback(() => {
+    const editor = notesEditorRef.current;
+    if (!editor) return;
+
+    const plainText = editor.textContent ?? '';
+    if (plainText.length > lessonNotesMaxLength) {
+      editor.textContent = plainText.slice(0, lessonNotesMaxLength);
+      const range = document.createRange();
+      range.selectNodeContents(editor);
+      range.collapse(false);
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+    }
+
+    setNotes(sanitizeLessonNoteHtml(editor.innerHTML));
+    setNotesStatus(null);
+  }, []);
+
+  const updateActiveNoteFormats = React.useCallback(() => {
+    const editor = notesEditorRef.current;
+    const selection = window.getSelection();
+    if (!editor || !selection || selection.rangeCount === 0 || !selection.anchorNode || !editor.contains(selection.anchorNode)) {
+      return;
+    }
+
+    const commandFormats = {
+      bold: document.queryCommandState('bold'),
+      italic: document.queryCommandState('italic'),
+      heading: document.queryCommandValue('formatBlock')?.toString().toLowerCase() === 'h2',
+      bullet: document.queryCommandState('insertUnorderedList'),
+      numbered: document.queryCommandState('insertOrderedList'),
+      quote: document.queryCommandValue('formatBlock')?.toString().toLowerCase() === 'blockquote',
+    };
+    if (selection.isCollapsed) {
+      setActiveNoteFormats(commandFormats);
+      return;
+    }
+
+    let node: Node | null = selection.anchorNode.nodeType === Node.ELEMENT_NODE
+      ? selection.anchorNode
+      : selection.anchorNode.parentNode;
+    const activeFormats = { ...commandFormats };
+
+    while (node && node !== editor) {
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        const tagName = (node as HTMLElement).tagName.toLowerCase();
+        if (tagName === 'b' || tagName === 'strong') activeFormats.bold = true;
+        if (tagName === 'i' || tagName === 'em') activeFormats.italic = true;
+        if (tagName === 'h2') activeFormats.heading = true;
+        if (tagName === 'ul') activeFormats.bullet = true;
+        if (tagName === 'ol') activeFormats.numbered = true;
+        if (tagName === 'blockquote') activeFormats.quote = true;
+      }
+      node = node.parentNode;
+    }
+
+    setActiveNoteFormats(activeFormats);
+  }, []);
+
+  const applyNotesFormat = React.useCallback((format: 'bold' | 'italic' | 'heading' | 'bullet' | 'numbered' | 'quote') => {
+    const editor = notesEditorRef.current;
+    if (!editor) return;
+
+    editor.focus();
+    const nextActiveFormats = { ...activeNoteFormats };
+    if (format === 'bold') {
+      document.execCommand('bold');
+      nextActiveFormats.bold = !activeNoteFormats.bold;
+    }
+    if (format === 'italic') {
+      document.execCommand('italic');
+      nextActiveFormats.italic = !activeNoteFormats.italic;
+    }
+    if (format === 'heading') {
+      document.execCommand('formatBlock', false, activeNoteFormats.heading ? 'p' : 'h2');
+      nextActiveFormats.heading = !activeNoteFormats.heading;
+      nextActiveFormats.quote = false;
+    }
+    if (format === 'bullet') {
+      document.execCommand('insertUnorderedList');
+      nextActiveFormats.bullet = !activeNoteFormats.bullet;
+      if (nextActiveFormats.bullet) nextActiveFormats.numbered = false;
+    }
+    if (format === 'numbered') {
+      document.execCommand('insertOrderedList');
+      nextActiveFormats.numbered = !activeNoteFormats.numbered;
+      if (nextActiveFormats.numbered) nextActiveFormats.bullet = false;
+    }
+    if (format === 'quote') {
+      document.execCommand('formatBlock', false, activeNoteFormats.quote ? 'p' : 'blockquote');
+      nextActiveFormats.quote = !activeNoteFormats.quote;
+      nextActiveFormats.heading = false;
+    }
+    setActiveNoteFormats(nextActiveFormats);
+    syncNotesFromEditor();
+    window.setTimeout(updateActiveNoteFormats, 0);
+  }, [activeNoteFormats, syncNotesFromEditor, updateActiveNoteFormats]);
 
   if (loading) {
     return <AcademyShellState title={t('Loading lesson...')} navigateTo={navigateTo} t={t} />;
@@ -2938,26 +3245,50 @@ export function AcademyLessonPage({
   const allowed = access?.allowed ?? false;
   const completed = lessonProgress?.completed ?? false;
   const certificateIssued = Boolean(courseCertificate);
+  const lessonPageClassName = theaterMode ? 'academy-lesson-page theater' : 'academy-lesson-page';
+  const playerLayoutClassName = user ? 'academy-player-layout' : 'academy-player-layout no-notes';
+  const notesCharacterCount = getLessonNotePlainText(notes).length;
+  const notesToolbarItems = [
+    { format: 'bold' as const, icon: Bold, label: 'Bold' },
+    { format: 'italic' as const, icon: Italic, label: 'Italic' },
+    { format: 'heading' as const, icon: Heading2, label: 'Heading' },
+    { format: 'bullet' as const, icon: List, label: 'Bullet list' },
+    { format: 'numbered' as const, icon: ListOrdered, label: 'Numbered list' },
+    { format: 'quote' as const, icon: Quote, label: 'Quote' },
+  ];
 
   return (
-    <AcademyShell navigateTo={navigateTo} t={t}>
-    <div className="academy-lesson-page">
+    <AcademyShell navigateTo={navigateTo} t={t} compact={theaterMode}>
+    <div className={lessonPageClassName}>
       <section className="academy-lesson-header">
-        <button
-          className="academy-back-button"
-          type="button"
-          onClick={() => navigateTo(`/academy/${bundle.course.slug}`)}
-        >
-          <ArrowLeft size={19} strokeWidth={3} />
-          {t('Go Back')}
-        </button>
+        <div className="academy-lesson-toolbar">
+          <button
+            className="academy-back-button"
+            type="button"
+            onClick={() => navigateTo(`/academy/${bundle.course.slug}`)}
+          >
+            <ArrowLeft size={19} strokeWidth={3} />
+            {t('Go Back')}
+          </button>
+          {allowed ? (
+            <button
+              className={theaterMode ? 'academy-theater-button active' : 'academy-theater-button'}
+              type="button"
+              onClick={() => setTheaterMode((current) => !current)}
+            >
+              {theaterMode ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+              {theaterMode ? t('Exit Theater') : t('Theater mode')}
+            </button>
+          ) : null}
+        </div>
         <p className="eyebrow">{access?.isPreview ? t('Preview lesson') : t('Lesson')}</p>
         <h1>{lesson.title}</h1>
         {lesson.description ? <p>{lesson.description}</p> : null}
       </section>
 
       {allowed ? (
-        <section className="academy-player-layout">
+        <>
+        <section className={playerLayoutClassName}>
           <div className="academy-player-column">
             <VideoPlayer
               provider={lesson.video_provider}
@@ -3015,17 +3346,61 @@ export function AcademyLessonPage({
                 <StickyNote size={19} />
                 <strong>{t('Lesson notes')}</strong>
               </div>
-              <textarea
-                value={notes}
-                onChange={(event) => {
-                  setNotes(event.target.value.slice(0, lessonNotesMaxLength));
-                  setNotesStatus(null);
-                }}
-                maxLength={lessonNotesMaxLength}
-                placeholder={t('Write your notes for this lesson...')}
-              />
+              <div className="academy-notes-toolbar" aria-label={t('Note formatting')}>
+                {notesToolbarItems.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <button
+                      type="button"
+                      className={activeNoteFormats[item.format] ? 'active' : ''}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => applyNotesFormat(item.format)}
+                      title={t(item.label)}
+                      aria-pressed={activeNoteFormats[item.format]}
+                      key={item.format}
+                    >
+                      <Icon size={16} />
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="academy-notes-editor-wrap">
+                {notesCharacterCount === 0 ? <span>{t('Write your notes for this lesson...')}</span> : null}
+                <div
+                  className="academy-notes-editor"
+                  contentEditable
+                  ref={notesEditorRef}
+                  role="textbox"
+                  aria-label={t('Lesson notes')}
+                  aria-multiline="true"
+                  suppressContentEditableWarning
+                  onBeforeInput={(event) => {
+                    const inputEvent = event.nativeEvent as InputEvent;
+                    const selection = window.getSelection();
+                    const selectedText = selection?.toString() ?? '';
+                    if (
+                      inputEvent.inputType?.startsWith('insert')
+                      && notesCharacterCount >= lessonNotesMaxLength
+                      && selectedText.length === 0
+                    ) {
+                      event.preventDefault();
+                    }
+                  }}
+                  onInput={syncNotesFromEditor}
+                  onKeyUp={updateActiveNoteFormats}
+                  onMouseUp={updateActiveNoteFormats}
+                  onFocus={updateActiveNoteFormats}
+                  onPaste={(event) => {
+                    event.preventDefault();
+                    const text = event.clipboardData.getData('text/plain');
+                    const remaining = lessonNotesMaxLength - notesCharacterCount;
+                    document.execCommand('insertText', false, text.slice(0, Math.max(remaining, 0)));
+                    syncNotesFromEditor();
+                  }}
+                />
+              </div>
               <div className="academy-notes-footer">
-                <span>{`${notes.length} / ${lessonNotesMaxLength} Characters`}</span>
+                <span>{`${notesCharacterCount} / ${lessonNotesMaxLength} Characters`}</span>
                 <button type="button" onClick={() => saveNotes()}>
                   <Save size={16} />
                   {t('Save')}
@@ -3035,6 +3410,140 @@ export function AcademyLessonPage({
             </aside>
           ) : null}
         </section>
+        <section className="academy-lesson-file-zone">
+          <article className="academy-lesson-file-card">
+            <div className="academy-lesson-file-heading">
+              <span>
+                <Download size={20} />
+              </span>
+              <div>
+                <p className="eyebrow">{t('Lesson resources')}</p>
+                <h2>{t('Resources for this lesson')}</h2>
+              </div>
+            </div>
+            {lessonResources.length > 0 ? (
+              <div className="academy-lesson-resource-list">
+                {lessonResources.map((resource) => (
+                  <button type="button" key={resource.id} onClick={() => downloadLessonResource(resource)}>
+                    <FileText size={19} />
+                    <span>
+                      <strong>{resource.title}</strong>
+                      <em>{resource.description ?? `${resource.file_name} · ${formatFileSize(resource.file_size)}`}</em>
+                    </span>
+                    <Download size={18} />
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="academy-lesson-file-empty">{t('No downloadable resources have been assigned to this lesson yet.')}</p>
+            )}
+            {canManageLessonResources ? (
+              <div className="academy-resource-admin">
+                <div>
+                  <p className="eyebrow">{t('Staff tools')}</p>
+                  <h3>{t('Add lesson resource')}</h3>
+                </div>
+                <label className="academy-resource-upload">
+                  <input type="file" onChange={(event) => handleResourceFile(event.target.files)} />
+                  <FileUp size={20} />
+                  <span>{resourceFile ? resourceFile.name : t('Choose resource file')}</span>
+                </label>
+                <div className="academy-resource-admin-fields">
+                  <input
+                    type="text"
+                    value={resourceTitle}
+                    onChange={(event) => setResourceTitle(event.target.value)}
+                    placeholder={t('Resource title')}
+                  />
+                  <textarea
+                    value={resourceDescription}
+                    onChange={(event) => setResourceDescription(event.target.value)}
+                    placeholder={t('Short description')}
+                  />
+                </div>
+                <div className="academy-submission-actions">
+                  <button
+                    className="academy-complete-button"
+                    type="button"
+                    onClick={() => publishResource()}
+                    disabled={resourceBusy || !resourceFile}
+                  >
+                    <FileUp size={17} />
+                    {resourceBusy ? t('Publishing...') : t('Publish resource')}
+                  </button>
+                  {resourceStatus ? <p>{t(resourceStatus)}</p> : null}
+                </div>
+              </div>
+            ) : null}
+          </article>
+
+          {user ? (
+            <article className="academy-lesson-file-card">
+              <div className="academy-lesson-file-heading">
+                <span>
+                  <FileUp size={20} />
+                </span>
+                <div>
+                  <p className="eyebrow">{t('Assignment submission')}</p>
+                  <h2>{t('Upload your work')}</h2>
+                </div>
+              </div>
+              <label className="academy-submission-dropzone">
+                <input
+                  type="file"
+                  multiple
+                  onChange={(event) => handleSubmissionFiles(event.target.files)}
+                />
+                <FileUp size={24} />
+                <strong>{t('Choose assignment files')}</strong>
+                <span>{t(`Upload PDFs, images, documents, PLC backups, or project files up to ${lessonSubmissionMaxSizeLabel} each.`)}</span>
+              </label>
+              {submissionFiles.length > 0 ? (
+                <div className="academy-submission-staged-list">
+                  {submissionFiles.map((file) => (
+                    <span key={`${file.name}-${file.lastModified}`}>
+                      <FileText size={16} />
+                      <strong>{file.name}</strong>
+                      <em>{formatFileSize(file.size)}</em>
+                      <button
+                        type="button"
+                        onClick={() => removeSubmissionFile(file)}
+                        aria-label={t(`Remove ${file.name}`)}
+                      >
+                        <X size={15} />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+              <div className="academy-submission-actions">
+                <button
+                  className="academy-complete-button"
+                  type="button"
+                  onClick={() => submitAssignmentFiles()}
+                  disabled={submissionBusy || submissionFiles.length === 0}
+                >
+                  <FileUp size={17} />
+                  {submissionBusy ? t('Uploading...') : t('Submit files')}
+                </button>
+                {submissionStatus ? <p>{t(submissionStatus)}</p> : null}
+              </div>
+              {lessonSubmissions.length > 0 ? (
+                <div className="academy-submission-history">
+                  <strong>{t('Submitted files')}</strong>
+                  {lessonSubmissions.map((submission) => (
+                    <span key={submission.id}>
+                      <CheckCircle2 size={16} />
+                      {submission.file_name}
+                      <em>{formatFileSize(submission.file_size)}</em>
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+            </article>
+          ) : null}
+        </section>
+        </>
       ) : (
         <section className="academy-locked-state">
           <LockKeyhole size={30} />
