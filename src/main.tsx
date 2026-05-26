@@ -38,7 +38,7 @@ import {
 } from 'lucide-react';
 import type { Session, User } from '@supabase/supabase-js';
 import { supabase } from './lib/supabaseClient';
-import { AcademyCatalogPage, AcademyCertificatesPage, AcademyCoursePage, AcademyHomePage, AcademyLessonPage, AcademyProgressPage, AcademyTrackPage } from './pages/AcademyPages';
+import { AcademyActivityPage, AcademyCatalogPage, AcademyCertificatesPage, AcademyCoursePage, AcademyHomePage, AcademyLessonPage, AcademyProgressPage, AcademyTrackPage } from './pages/AcademyPages';
 import './styles.css';
 
 type BusinessLine = {
@@ -3086,6 +3086,10 @@ function App() {
     academyPathParts[0] === 'academy' && academyPathParts[2] === 'lessons'
       ? academyPathParts[3]
       : undefined;
+  const academyActivityId =
+    academyPathParts[0] === 'academy' && academyPathParts[2] === 'activities'
+      ? academyPathParts[3]
+      : undefined;
   const isAcademyCatalogPage = currentPath === '/academy/courses';
   const isAcademyProgressPage = currentPath === '/academy/progress';
   const isAcademyCertificatesPage = currentPath === '/academy/certificates' || currentPath.startsWith('/academy/certificates/');
@@ -3830,6 +3834,16 @@ function App() {
             t={t}
             languageCode={language}
           />
+        ) : academyCourseSlug && academyActivityId ? (
+          <AcademyActivityPage
+            user={authUser}
+            navigateTo={navigateTo}
+            courseSlug={academyCourseSlug}
+            activityId={academyActivityId}
+            t={t}
+            languageCode={language}
+            onUserProfileRefresh={refreshAuthProfile}
+          />
         ) : academyCourseSlug && academyLessonSlug ? (
           <AcademyLessonPage
             user={authUser}
@@ -3846,6 +3860,7 @@ function App() {
             courseSlug={academyCourseSlug}
             t={t}
             languageCode={language}
+            onUserProfileRefresh={refreshAuthProfile}
           />
         ) : (
           <AcademyHomePage user={authUser} navigateTo={navigateTo} t={t} languageCode={language} />

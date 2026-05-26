@@ -1,5 +1,6 @@
 import React from 'react';
 import {
+  Activity,
   ArrowRight,
   ArrowLeft,
   Award,
@@ -11,6 +12,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock3,
+  ClipboardCheck,
   Cpu,
   Download,
   FileUp,
@@ -33,8 +35,13 @@ import {
   Route,
   Save,
   Search,
+  Pencil,
+  Plus,
   ShieldCheck,
+  Settings2,
+  Star,
   StickyNote,
+  Trash2,
   Trophy,
   UserRound,
   Wrench,
@@ -42,9 +49,16 @@ import {
 } from 'lucide-react';
 import {
   canAccessLesson,
+  canManageAcademyActivities,
+  completeAcademyActivity,
   createCertificateForCourse,
   createCertificateForTrack,
+  deleteAcademyActivity,
   enrollInFreeCourse,
+  fetchActivitiesForCourse,
+  fetchActivityAttempt,
+  fetchActivityAttemptsForCourse,
+  fetchActivityById,
   fetchCertificateForCourse,
   fetchCertificateById,
   fetchCertificatesForUser,
@@ -68,6 +82,7 @@ import {
   publishLessonResource,
   resetLessonProgress,
   saveLessonNote,
+  saveAcademyActivity,
   updateLessonProgress,
   uploadLessonSubmission,
   type AcademyCourseBundle,
@@ -75,6 +90,11 @@ import {
 } from '../academy/academyApi';
 import type {
   AcademyCertificate,
+  AcademyActivity,
+  AcademyActivityAttempt,
+  AcademyActivityConfig,
+  AcademyActivityOption,
+  AcademyActivityType,
   AcademyCourse,
   AcademyEnrollment,
   AcademyLesson,
@@ -85,7 +105,11 @@ import type {
   AcademyModuleWithLessons,
   AcademyTrackCertificate,
   AcademyTrackProgressSummary,
+  IndustrialScenarioConfig,
   LessonAccessResult,
+  QuickCheckConfig,
+  QuickCheckQuestion,
+  SimulationTaskConfig,
 } from '../academy/types';
 import { VideoPlayer } from '../components/academy/VideoPlayer';
 import { exportElementScreenshotToSinglePagePdf } from '../lib/screenshotPdfExport';
@@ -105,6 +129,7 @@ type AcademyPageProps = {
   navigateTo: (path: string) => void;
   t?: AcademyTranslator;
   languageCode?: string;
+  onUserProfileRefresh?: () => Promise<void>;
 };
 
 type AcademyTrackCourse = {
@@ -280,6 +305,99 @@ function getProgressLabel(state: AcademyLessonProgressState, t: AcademyTranslato
   if (state === 'completed') return t('Completed');
   if (state === 'in_progress') return t('In progress');
   return t('Not started');
+}
+
+function getActivityTypeLabel(type: AcademyActivityType) {
+  if (type === 'quick_check') return 'Quick Check';
+  if (type === 'industrial_scenario') return 'Industrial Scenario';
+  return 'Simulation Task';
+}
+
+function getActivityStatus(attempt?: AcademyActivityAttempt | null): AcademyLessonProgressState {
+  if (attempt?.status === 'completed') return 'completed';
+  if (attempt?.status === 'in_progress') return 'in_progress';
+  return 'not_started';
+}
+
+function getDefaultActivityConfig(type: AcademyActivityType): AcademyActivityConfig {
+  if (type === 'industrial_scenario') {
+    return {
+      context: 'PLC is in RUN, safety is OK, but the output is not energizing.',
+      problemDescription: 'Review the visible machine status and choose the best next step.',
+      machineStatus: 'Stopped',
+      statusTags: [
+        { label: 'I0.0 Start Button', value: 'ON' },
+        { label: 'I0.1 E-stop OK', value: 'ON' },
+        { label: 'Q0.0 Motor Output', value: 'OFF' },
+      ],
+      question: 'What should you check first?',
+      choices: [
+        { id: 'a', text: 'PLC program comments' },
+        { id: 'b', text: 'The missing permissive or field input' },
+        { id: 'c', text: 'HMI color theme' },
+      ],
+      correctChoiceId: 'b',
+      explanation: 'The output is off while command and safety are OK, so the next useful check is the missing permissive or input condition.',
+    };
+  }
+
+  if (type === 'simulation_task') {
+    return {
+      simulationType: 'start_stop_latch',
+      objective: 'Start the motor, then stop it correctly.',
+      initialState: {
+        startButton: false,
+        stopButton: false,
+        estopOk: true,
+        motorRunning: false,
+      },
+      successCondition: {
+        requiredEvents: ['motor_started', 'motor_stopped'],
+      },
+      explanation: 'A basic latch starts when Start is pressed and stops when Stop is pressed or safety is lost.',
+    };
+  }
+
+  return {
+    questions: [
+      {
+        id: 'q1',
+        type: 'multiple_choice',
+        question: 'What type of PLC signal is 24VDC ON/OFF?',
+        options: [
+          { id: 'a', text: 'Analog' },
+          { id: 'b', text: 'Digital' },
+          { id: 'c', text: 'Pneumatic' },
+        ],
+        correctOptionId: 'b',
+        explanation: 'A 24VDC ON/OFF signal is considered a digital signal.',
+      },
+    ],
+  };
+}
+
+function getActivityAttemptScoreSummary(activity: AcademyActivity, attempt?: AcademyActivityAttempt | null) {
+  if (attempt?.status !== 'completed') return null;
+
+  const savedCorrectCount = attempt.attempt_data_json?.correctCount;
+  const savedTotalQuestions = attempt.attempt_data_json?.totalQuestions;
+  if (typeof savedCorrectCount === 'number' && typeof savedTotalQuestions === 'number') {
+    return {
+      correctCount: savedCorrectCount,
+      totalQuestions: savedTotalQuestions,
+    };
+  }
+
+  if (activity.type !== 'quick_check') return null;
+  const config = activity.config_json as QuickCheckConfig;
+  const questions = config.questions ?? [];
+  const answers = (attempt.attempt_data_json?.answers ?? {}) as Record<string, string>;
+  if (questions.length === 0 || Object.keys(answers).length === 0) return null;
+
+  return {
+    correctCount: questions.filter((question) => isQuickCheckAnswerCorrect(question, answers[question.id])).length,
+    totalQuestions: questions.length,
+  };
 }
 
 function isFreeCourse(course: AcademyCourse) {
@@ -2579,15 +2697,19 @@ function AcademyCourseCard({
   );
 }
 
-export function AcademyCoursePage({ user, navigateTo, courseSlug, t = defaultT, languageCode = 'en' }: AcademyPageProps & { courseSlug: string }) {
+export function AcademyCoursePage({ user, navigateTo, courseSlug, t = defaultT, languageCode = 'en', onUserProfileRefresh }: AcademyPageProps & { courseSlug: string }) {
   const [bundle, setBundle] = React.useState<AcademyCourseBundle | null>(null);
   const [enrollment, setEnrollment] = React.useState<AcademyEnrollment | null>(null);
   const [progress, setProgress] = React.useState<AcademyLessonProgress[]>([]);
   const [certificate, setCertificate] = React.useState<AcademyCertificate | null>(null);
+  const [activities, setActivities] = React.useState<AcademyActivity[]>([]);
+  const [activityAttempts, setActivityAttempts] = React.useState<AcademyActivityAttempt[]>([]);
   const [courseProgress, setCourseProgress] = React.useState(0);
   const [admin, setAdmin] = React.useState(false);
+  const [canManageActivities, setCanManageActivities] = React.useState(false);
   const [loading, setLoading] = React.useState(true);
   const [message, setMessage] = React.useState<string | null>(null);
+  const [editingActivity, setEditingActivity] = React.useState<{ lesson: AcademyLesson; activity: AcademyActivity | null } | null>(null);
 
   const loadCourse = React.useCallback(async () => {
     setLoading(true);
@@ -2598,24 +2720,36 @@ export function AcademyCoursePage({ user, navigateTo, courseSlug, t = defaultT, 
       setBundle(nextBundle);
 
       if (nextBundle && user) {
-        const [nextEnrollment, nextProgress, nextSummary, nextAdmin, nextCertificate] = await Promise.all([
+        const [nextEnrollment, nextProgress, nextSummary, nextAdmin, nextStaff, nextCertificate, nextActivities] = await Promise.all([
           getEnrollmentStatus(user.id, nextBundle.course.id),
           fetchLessonProgressForCourse(user.id, nextBundle.course.id),
           getCourseProgressSummary(user.id, nextBundle.course.id),
           isAdminUser(user.id),
+          canManageAcademyActivities(user.id),
           fetchCertificateForCourse(user.id, nextBundle.course.id),
+          fetchActivitiesForCourse(nextBundle.course.id),
         ]);
+        const nextActivityAttempts = await fetchActivityAttemptsForCourse(
+          user.id,
+          nextActivities.map((activityItem) => activityItem.id),
+        );
         setEnrollment(nextEnrollment);
         setProgress(nextProgress);
+        setActivities(nextActivities);
+        setActivityAttempts(nextActivityAttempts);
         setCourseProgress(nextSummary?.course_progress_percent ?? 0);
         setAdmin(nextAdmin);
+        setCanManageActivities(nextStaff);
         setCertificate(nextCertificate);
       } else {
         setEnrollment(null);
         setProgress([]);
+        setActivities(nextBundle ? await fetchActivitiesForCourse(nextBundle.course.id) : []);
+        setActivityAttempts([]);
         setCertificate(null);
         setCourseProgress(0);
         setAdmin(false);
+        setCanManageActivities(false);
       }
     } catch (caught) {
       setMessage(getAcademyDatabaseErrorMessage());
@@ -2641,6 +2775,55 @@ export function AcademyCoursePage({ user, navigateTo, courseSlug, t = defaultT, 
       await loadCourse();
     } catch (caught) {
       setMessage(caught instanceof Error ? caught.message : 'Unable to enroll.');
+    }
+  };
+
+  const handleSaveActivity = async (input: {
+    activity: AcademyActivity | null;
+    lesson: AcademyLesson;
+    type: AcademyActivityType;
+    title: string;
+    instructions: string;
+    difficulty: string;
+    pointsReward: number;
+    isRequired: boolean;
+    isPublished: boolean;
+    configJson: AcademyActivityConfig;
+  }) => {
+    if (!bundle) return;
+    const contentChanged = input.activity
+      ? input.activity.type !== input.type
+        || JSON.stringify(input.activity.config_json) !== JSON.stringify(input.configJson)
+      : false;
+    try {
+      await saveAcademyActivity({
+        id: input.activity?.id,
+        courseId: bundle.course.id,
+        lessonId: input.lesson.id,
+        type: input.type,
+        title: input.title,
+        instructions: input.instructions,
+        difficulty: input.difficulty,
+        pointsReward: input.pointsReward,
+        isRequired: input.isRequired,
+        isPublished: input.isPublished,
+        orderIndex: input.activity?.order_index ?? input.lesson.order_index,
+        configJson: input.configJson,
+      });
+      setEditingActivity(null);
+      await loadCourse();
+      if (contentChanged) await onUserProfileRefresh?.();
+    } catch (caught) {
+      setMessage(getReadableErrorMessage(caught, 'Activity could not be saved.'));
+    }
+  };
+
+  const handleDeleteActivity = async (activity: AcademyActivity) => {
+    try {
+      await deleteAcademyActivity(activity.id);
+      await loadCourse();
+    } catch (caught) {
+      setMessage(getReadableErrorMessage(caught, 'Activity could not be deleted.'));
     }
   };
 
@@ -2737,9 +2920,15 @@ export function AcademyCoursePage({ user, navigateTo, courseSlug, t = defaultT, 
               key={module.id}
               module={module}
               progress={displayProgress}
+              activities={activities}
+              activityAttempts={activityAttempts}
               canOpenProtected={activeEnrollment || admin}
+              canManageActivities={canManageActivities}
               navigateTo={navigateTo}
               courseSlug={bundle.course.slug}
+              onAddActivity={(lesson) => setEditingActivity({ lesson, activity: null })}
+              onEditActivity={(lesson, activity) => setEditingActivity({ lesson, activity })}
+              onDeleteActivity={handleDeleteActivity}
               t={t}
             />
           ))}
@@ -2756,14 +2945,29 @@ export function AcademyCoursePage({ user, navigateTo, courseSlug, t = defaultT, 
                 lessons: bundle.ungroupedLessons,
               }}
               progress={displayProgress}
+              activities={activities}
+              activityAttempts={activityAttempts}
               canOpenProtected={activeEnrollment || admin}
+              canManageActivities={canManageActivities}
               navigateTo={navigateTo}
               courseSlug={bundle.course.slug}
+              onAddActivity={(lesson) => setEditingActivity({ lesson, activity: null })}
+              onEditActivity={(lesson, activity) => setEditingActivity({ lesson, activity })}
+              onDeleteActivity={handleDeleteActivity}
               t={t}
             />
           ) : null}
         </div>
       </section>
+      {editingActivity ? (
+        <ActivityEditor
+          activity={editingActivity.activity}
+          lesson={editingActivity.lesson}
+          onCancel={() => setEditingActivity(null)}
+          onSave={handleSaveActivity}
+          t={t}
+        />
+      ) : null}
     </AcademyShell>
   );
 }
@@ -2771,16 +2975,28 @@ export function AcademyCoursePage({ user, navigateTo, courseSlug, t = defaultT, 
 function AcademyModuleBlock({
   module,
   progress,
+  activities,
+  activityAttempts,
   canOpenProtected,
+  canManageActivities,
   navigateTo,
   courseSlug,
+  onAddActivity,
+  onEditActivity,
+  onDeleteActivity,
   t = defaultT,
 }: {
   module: AcademyModuleWithLessons;
   progress: AcademyLessonProgress[];
+  activities: AcademyActivity[];
+  activityAttempts: AcademyActivityAttempt[];
   canOpenProtected: boolean;
+  canManageActivities: boolean;
   navigateTo: (path: string) => void;
   courseSlug: string;
+  onAddActivity: (lesson: AcademyLesson) => void;
+  onEditActivity: (lesson: AcademyLesson, activity: AcademyActivity) => void;
+  onDeleteActivity: (activity: AcademyActivity) => void;
   t?: AcademyTranslator;
 }) {
   return (
@@ -2797,40 +3013,1138 @@ function AcademyModuleBlock({
           const lessonProgress = progress.find((item) => item.lesson_id === lesson.id);
           const progressState = getProgressState(lessonProgress);
           const locked = !lesson.is_preview && !canOpenProtected;
+          const lessonActivities = activities.filter((activityItem) => activityItem.lesson_id === lesson.id);
 
           return (
-            <button
-              className={[
-                'academy-lesson-row',
-                locked ? 'locked' : '',
-                progressState === 'completed' ? 'completed' : '',
-              ].filter(Boolean).join(' ')}
-              type="button"
-              key={lesson.id}
-              onClick={() => navigateTo(`/academy/${courseSlug}/lessons/${lesson.slug}`)}
-            >
-              <span className="academy-lesson-icon">
-                {locked ? (
-                  <LockKeyhole size={18} />
-                ) : progressState === 'completed' ? (
-                  <CheckCircle2 size={20} />
-                ) : (
-                  <PlayCircle size={18} />
-                )}
-              </span>
-              <span>
-                <strong>{lesson.title}</strong>
-                <em>
-                  {lesson.is_preview ? t('Preview') : locked ? t('Locked') : getProgressLabel(progressState, t)}
-                  {formatDuration(lesson.duration_seconds) ? ` · ${formatDuration(lesson.duration_seconds)}` : ''}
-                </em>
-              </span>
-              {progressState === 'completed' ? <span className="academy-lesson-done">{t('Done')}</span> : <ArrowRight size={16} />}
-            </button>
+            <div className="academy-linked-lesson-item" key={lesson.id}>
+              <button
+                className={[
+                  'academy-lesson-row',
+                  locked ? 'locked' : '',
+                  progressState === 'completed' ? 'completed' : '',
+                ].filter(Boolean).join(' ')}
+                type="button"
+                onClick={() => navigateTo(`/academy/${courseSlug}/lessons/${lesson.slug}`)}
+              >
+                <span className="academy-lesson-icon">
+                  {locked ? (
+                    <LockKeyhole size={18} />
+                  ) : progressState === 'completed' ? (
+                    <CheckCircle2 size={20} />
+                  ) : (
+                    <PlayCircle size={18} />
+                  )}
+                </span>
+                <span>
+                  <strong>{lesson.title}</strong>
+                  <em>
+                    {lesson.is_preview ? t('Preview') : locked ? t('Locked') : getProgressLabel(progressState, t)}
+                    {formatDuration(lesson.duration_seconds) ? ` · ${formatDuration(lesson.duration_seconds)}` : ''}
+                  </em>
+                </span>
+                {progressState === 'completed' ? <span className="academy-lesson-done">{t('Done')}</span> : <ArrowRight size={16} />}
+              </button>
+              {lessonActivities.length > 0 ? lessonActivities.map((activityItem) => (
+                <ActivityCard
+                  activity={activityItem}
+                  attempt={activityAttempts.find((attempt) => attempt.activity_id === activityItem.id)}
+                  locked={locked}
+                  canManage={canManageActivities}
+                  courseSlug={courseSlug}
+                  navigateTo={navigateTo}
+                  onEdit={() => onEditActivity(lesson, activityItem)}
+                  onDelete={() => onDeleteActivity(activityItem)}
+                  t={t}
+                  key={activityItem.id}
+                />
+              )) : canManageActivities ? (
+                <div className="academy-activity-empty">
+                  <span>{t('No activity available yet')}</span>
+                  <button type="button" onClick={() => onAddActivity(lesson)}>
+                    <Plus size={15} />
+                    {t('Add activity')}
+                  </button>
+                </div>
+              ) : null}
+            </div>
           );
         })}
       </div>
     </article>
+  );
+}
+
+function ActivityStatusBadge({ status, t = defaultT }: { status: AcademyLessonProgressState; t?: AcademyTranslator }) {
+  return (
+    <span className={`academy-activity-status ${status}`}>
+      {status === 'completed' ? <CheckCircle2 size={14} /> : status === 'in_progress' ? <Clock3 size={14} /> : <Activity size={14} />}
+      {getProgressLabel(status, t)}
+    </span>
+  );
+}
+
+function PointsCelebration({ points, animate = false }: { points: number; animate?: boolean }) {
+  const target = Math.max(Math.floor(points), 0);
+  const [displayPoints, setDisplayPoints] = React.useState(animate ? 0 : target);
+
+  React.useEffect(() => {
+    if (!animate) {
+      setDisplayPoints(target);
+      return;
+    }
+
+    if (target <= 0) {
+      setDisplayPoints(0);
+      return;
+    }
+
+    setDisplayPoints(0);
+    const duration = 950;
+    const startedAt = performance.now();
+    let frame = 0;
+
+    const tick = (now: number) => {
+      const progress = Math.min((now - startedAt) / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setDisplayPoints(Math.round(target * eased));
+      if (progress < 1) {
+        frame = requestAnimationFrame(tick);
+      }
+    };
+
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [animate, target]);
+
+  return (
+    <span className={animate ? 'academy-points-celebration is-animating' : 'academy-points-celebration'} aria-hidden="true">
+      <Star size={15} fill="currentColor" />
+      <strong>+ {displayPoints}</strong>
+      <em>YVIMO Points</em>
+    </span>
+  );
+}
+
+function PointsRewardBadge({ points, t = defaultT }: { points: number; t?: AcademyTranslator }) {
+  return (
+    <span className="academy-points-reward">
+      <Trophy size={14} />
+      {points} {t('YVIMO Points')}
+    </span>
+  );
+}
+
+function MaxRewardBadge({ points, t = defaultT }: { points: number; t?: AcademyTranslator }) {
+  return (
+    <span className="academy-max-reward">
+      <Trophy size={14} />
+      {t('Max Reward')}: {points} {t('Points')}
+    </span>
+  );
+}
+
+function ActivityScoreBadge({ correct, total, large = false, t = defaultT }: { correct: number; total: number; large?: boolean; t?: AcademyTranslator }) {
+  return (
+    <span className={large ? 'academy-activity-score large' : 'academy-activity-score'}>
+      <CheckCircle2 size={14} />
+      {correct} / {total} {t(total === 1 ? 'question correct' : 'questions correct')}
+    </span>
+  );
+}
+
+function ActivityCard({
+  activity,
+  attempt,
+  locked,
+  canManage,
+  courseSlug,
+  navigateTo,
+  onEdit,
+  onDelete,
+  t = defaultT,
+}: {
+  activity: AcademyActivity;
+  attempt?: AcademyActivityAttempt;
+  locked: boolean;
+  canManage: boolean;
+  courseSlug: string;
+  navigateTo: (path: string) => void;
+  onEdit: () => void;
+  onDelete: () => void;
+  t?: AcademyTranslator;
+}) {
+  const status = getActivityStatus(attempt);
+  const unpublished = !activity.is_published;
+  const scoreSummary = getActivityAttemptScoreSummary(activity, attempt);
+  return (
+    <div className={['academy-activity-card', status === 'completed' ? 'completed' : '', locked ? 'locked' : '', unpublished ? 'draft' : ''].filter(Boolean).join(' ')}>
+      <button
+        type="button"
+        onClick={() => navigateTo(`/academy/${courseSlug}/activities/${activity.id}`)}
+        disabled={locked && !canManage}
+      >
+        <span className="academy-activity-connector" aria-hidden="true">└</span>
+        <span className="academy-lesson-icon">
+          {locked ? <LockKeyhole size={18} /> : status === 'completed' ? <CheckCircle2 size={19} /> : <ClipboardCheck size={18} />}
+        </span>
+        <span className="academy-activity-copy">
+          <strong>{activity.title}</strong>
+          <em>
+            {getActivityTypeLabel(activity.type)}
+            {activity.difficulty ? ` · ${activity.difficulty}` : ''}
+            {activity.is_required ? ` · ${t('Required')}` : ''}
+            {unpublished ? ` · ${t('Draft')}` : ''}
+          </em>
+          <span>
+            {status === 'completed' ? (
+              <>
+                <PointsCelebration points={attempt?.points_awarded ?? activity.points_reward} />
+                {scoreSummary ? (
+                  <ActivityScoreBadge
+                    correct={scoreSummary.correctCount}
+                    total={scoreSummary.totalQuestions}
+                    t={t}
+                  />
+                ) : null}
+                <ActivityStatusBadge status={status} t={t} />
+              </>
+            ) : (
+              <>
+                <ActivityStatusBadge status={status} t={t} />
+                <MaxRewardBadge points={activity.points_reward} t={t} />
+              </>
+            )}
+          </span>
+        </span>
+        <span className="academy-activity-action-label">
+          {status === 'completed' ? t('Review') : status === 'in_progress' ? t('Continue') : t('Start')}
+        </span>
+      </button>
+      {canManage ? (
+        <div className="academy-activity-staff-actions">
+          <button type="button" onClick={onEdit} title={t('Edit activity')}>
+            <Pencil size={15} />
+          </button>
+          <button type="button" onClick={onDelete} title={t('Delete activity')}>
+            <Trash2 size={15} />
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ActivityEditor({
+  activity,
+  lesson,
+  onCancel,
+  onSave,
+  t = defaultT,
+}: {
+  activity: AcademyActivity | null;
+  lesson: AcademyLesson;
+  onCancel: () => void;
+  onSave: (input: {
+    activity: AcademyActivity | null;
+    lesson: AcademyLesson;
+    type: AcademyActivityType;
+    title: string;
+    instructions: string;
+    difficulty: string;
+    pointsReward: number;
+    isRequired: boolean;
+    isPublished: boolean;
+    configJson: AcademyActivityConfig;
+  }) => void;
+  t?: AcademyTranslator;
+}) {
+  const [type, setType] = React.useState<AcademyActivityType>(activity?.type ?? 'quick_check');
+  const [title, setTitle] = React.useState(activity?.title ?? `Activity: ${lesson.title}`);
+  const [instructions, setInstructions] = React.useState(activity?.instructions ?? '');
+  const [difficulty, setDifficulty] = React.useState(activity?.difficulty ?? 'Beginner');
+  const [pointsReward, setPointsReward] = React.useState(activity?.points_reward ?? 10);
+  const [isRequired, setIsRequired] = React.useState(activity?.is_required ?? true);
+  const [isPublished, setIsPublished] = React.useState(activity?.is_published ?? true);
+  const [configText, setConfigText] = React.useState(JSON.stringify(activity?.config_json ?? getDefaultActivityConfig(type), null, 2));
+  const [error, setError] = React.useState<string | null>(null);
+
+  const changeType = (nextType: AcademyActivityType) => {
+    setType(nextType);
+    setConfigText(JSON.stringify(getDefaultActivityConfig(nextType), null, 2));
+  };
+  const difficultyOptions = [
+    { value: 'Beginner', label: 'Easy', className: 'easy' },
+    { value: 'Intermediate', label: 'Intermediate', className: 'medium' },
+    { value: 'Advanced', label: 'Hard', className: 'hard' },
+  ];
+
+  const handleSave = () => {
+    try {
+      const parsed = JSON.parse(configText) as AcademyActivityConfig;
+      onSave({
+        activity,
+        lesson,
+        type,
+        title,
+        instructions,
+        difficulty,
+        pointsReward,
+        isRequired,
+        isPublished,
+        configJson: parsed,
+      });
+    } catch {
+      setError('Config JSON is not valid.');
+    }
+  };
+
+  return (
+    <div className="academy-editor-backdrop" role="presentation">
+      <section className="academy-activity-editor" role="dialog" aria-modal="true" aria-label={t('Activity editor')}>
+        <div className="academy-editor-heading">
+          <div>
+            <p className="eyebrow">{t('Staff activity tools')}</p>
+            <h2>{activity ? t('Edit activity') : t('Add activity')}</h2>
+            <span>{lesson.title}</span>
+          </div>
+          <button type="button" onClick={onCancel}>
+            <X size={18} />
+          </button>
+        </div>
+        <div className="academy-editor-grid">
+          <label>
+            {t('Title')}
+            <input value={title} onChange={(event) => setTitle(event.target.value)} />
+          </label>
+          <div className="academy-editor-field">
+            {t('Type')}
+            <div className="academy-segmented-control">
+              {([
+                ['quick_check', 'Quick Check'],
+                ['industrial_scenario', 'Industrial Scenario'],
+                ['simulation_task', 'Simulation Task'],
+              ] as Array<[AcademyActivityType, string]>).map(([value, label]) => (
+                <button
+                  type="button"
+                  className={type === value ? 'active' : ''}
+                  onClick={() => changeType(value)}
+                  key={value}
+                >
+                  {t(label)}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="academy-editor-field">
+            {t('Difficulty')}
+            <div className="academy-segmented-control difficulty">
+              {difficultyOptions.map((option) => (
+                <button
+                  type="button"
+                  className={[difficulty === option.value ? 'active' : '', option.className].filter(Boolean).join(' ')}
+                  onClick={() => setDifficulty(option.value)}
+                  key={option.value}
+                >
+                  {t(option.label)}
+                </button>
+              ))}
+            </div>
+          </div>
+          <label>
+            {t('Point reward')}
+            <input type="number" min="0" value={pointsReward} onChange={(event) => setPointsReward(Number(event.target.value))} />
+          </label>
+          <label className="academy-editor-wide">
+            {t('Instructions')}
+            <textarea value={instructions} onChange={(event) => setInstructions(event.target.value)} />
+          </label>
+          <label className="academy-editor-check">
+            <input type="checkbox" checked={isRequired} onChange={(event) => setIsRequired(event.target.checked)} />
+            {t('Required')}
+          </label>
+          <label className="academy-editor-check">
+            <input type="checkbox" checked={isPublished} onChange={(event) => setIsPublished(event.target.checked)} />
+            {t('Published')}
+          </label>
+        </div>
+        {type === 'quick_check' ? <QuickCheckEditor configText={configText} setConfigText={setConfigText} t={t} /> : null}
+        {type === 'industrial_scenario' ? <ScenarioEditor configText={configText} setConfigText={setConfigText} t={t} /> : null}
+        {type === 'simulation_task' ? <SimulationEditor configText={configText} setConfigText={setConfigText} t={t} /> : null}
+        {error ? <p className="academy-editor-error">{t(error)}</p> : null}
+        <div className="academy-editor-actions">
+          <button type="button" onClick={onCancel}>{t('Cancel')}</button>
+          <button type="button" onClick={handleSave}>
+            <Save size={16} />
+            {t('Save changes')}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function QuickCheckEditor({ configText, setConfigText, t = defaultT }: { configText: string; setConfigText: (value: string) => void; t?: AcademyTranslator }) {
+  const makeQuestion = React.useCallback((index: number): QuickCheckQuestion => ({
+    id: `q${index + 1}`,
+    type: 'multiple_choice',
+    question: '',
+    options: [
+      { id: 'a', text: '' },
+      { id: 'b', text: '' },
+      { id: 'c', text: '' },
+    ],
+    correctOptionId: 'a',
+    explanation: '',
+  }), []);
+
+  const parseQuestions = React.useCallback(() => {
+    try {
+      const parsed = JSON.parse(configText) as QuickCheckConfig;
+      return parsed.questions?.length ? parsed.questions : [makeQuestion(0)];
+    } catch {
+      return [makeQuestion(0)];
+    }
+  }, [configText, makeQuestion]);
+
+  const [questions, setQuestions] = React.useState<QuickCheckQuestion[]>(parseQuestions);
+
+  const commitQuestions = React.useCallback((nextQuestions: QuickCheckQuestion[]) => {
+    const normalizedQuestions = nextQuestions.map((question, index) => ({
+      ...question,
+      id: `q${index + 1}`,
+    }));
+    setQuestions(normalizedQuestions);
+    setConfigText(JSON.stringify({ questions: normalizedQuestions }, null, 2));
+  }, [setConfigText]);
+
+  const updateQuestion = (questionIndex: number, nextQuestion: QuickCheckQuestion) => {
+    commitQuestions(questions.map((question, index) => index === questionIndex ? nextQuestion : question));
+  };
+
+  const setOptionCount = (questionIndex: number, count: number) => {
+    const question = questions[questionIndex];
+    const currentOptions = question.options ?? [];
+    const nextOptions = Array.from({ length: count }, (_, index) => {
+      const id = String.fromCharCode(97 + index);
+      return currentOptions[index] ?? { id, text: '' };
+    }).map((option, index) => ({ ...option, id: String.fromCharCode(97 + index) }));
+    updateQuestion(questionIndex, {
+      ...question,
+      options: nextOptions,
+      correctOptionId: nextOptions.some((option) => option.id === question.correctOptionId)
+        ? question.correctOptionId
+        : nextOptions[0]?.id,
+    });
+  };
+
+  return (
+    <section className="academy-quickcheck-editor">
+      <div className="academy-quickcheck-heading">
+        <span><ClipboardCheck size={15} />{t('Quick Check questions')}</span>
+      </div>
+      {questions.map((question, questionIndex) => (
+        <article className="academy-question-builder" key={question.id}>
+          <div className="academy-question-builder-top">
+            <strong>
+              <ClipboardCheck size={15} />
+              {t('Question')} {String(questionIndex + 1).padStart(2, '0')}
+            </strong>
+            <div className="academy-question-builder-controls">
+              <div className="academy-option-count">
+                <span>{t('Options')}</span>
+                {[2, 3, 4].map((count) => (
+                  <button
+                    type="button"
+                    className={(question.options?.length ?? 0) === count ? 'active' : ''}
+                    onClick={() => setOptionCount(questionIndex, count)}
+                    key={count}
+                  >
+                    {count}
+                  </button>
+                ))}
+              </div>
+              <button
+                className="academy-delete-question-button"
+                type="button"
+                onClick={() => commitQuestions(questions.filter((_, index) => index !== questionIndex))}
+                disabled={questions.length <= 1}
+                title={t('Delete question')}
+                aria-label={t(`Delete question ${questionIndex + 1}`)}
+              >
+                <X size={16} />
+              </button>
+            </div>
+          </div>
+          <label>
+            {t('Question text')}
+            <textarea
+              value={question.question}
+              onChange={(event) => updateQuestion(questionIndex, { ...question, question: event.target.value })}
+              placeholder={t('Write the question students will answer.')}
+            />
+          </label>
+          <div className="academy-option-builder-grid">
+            {(question.options ?? []).map((option, optionIndex) => (
+              <label className={question.correctOptionId === option.id ? 'correct' : ''} key={option.id}>
+                <span>
+                  {t('Option')} {optionIndex + 1}
+                  <button
+                    type="button"
+                    onClick={() => updateQuestion(questionIndex, { ...question, correctOptionId: option.id })}
+                  >
+                    {question.correctOptionId === option.id ? t('Correct answer') : t('Mark correct')}
+                  </button>
+                </span>
+                <input
+                  value={option.text}
+                  onChange={(event) => {
+                    const nextOptions = (question.options ?? []).map((current) => (
+                      current.id === option.id ? { ...current, text: event.target.value } : current
+                    ));
+                    updateQuestion(questionIndex, { ...question, options: nextOptions });
+                  }}
+                  placeholder={t('Option text')}
+                />
+              </label>
+            ))}
+          </div>
+          <label>
+            {t('Explanation')}
+            <textarea
+              value={question.explanation ?? ''}
+              onChange={(event) => updateQuestion(questionIndex, { ...question, explanation: event.target.value })}
+              placeholder={t('Explain why the correct answer is correct.')}
+            />
+          </label>
+        </article>
+      ))}
+      <button
+        className="academy-add-question-tile"
+        type="button"
+        onClick={() => commitQuestions([...questions, makeQuestion(questions.length)])}
+      >
+        <Plus size={20} />
+        {t('Add another question')}
+      </button>
+    </section>
+  );
+}
+
+function ScenarioEditor({ configText, setConfigText, t = defaultT }: { configText: string; setConfigText: (value: string) => void; t?: AcademyTranslator }) {
+  return (
+    <label className="academy-config-editor">
+      <span>{t('Scenario context/status tags/choices/explanation')}</span>
+      <textarea value={configText} onChange={(event) => setConfigText(event.target.value)} spellCheck={false} />
+    </label>
+  );
+}
+
+function SimulationEditor({ configText, setConfigText, t = defaultT }: { configText: string; setConfigText: (value: string) => void; t?: AcademyTranslator }) {
+  return (
+    <label className="academy-config-editor">
+      <span>{t('Simulation configuration and success condition')}</span>
+      <textarea value={configText} onChange={(event) => setConfigText(event.target.value)} spellCheck={false} />
+    </label>
+  );
+}
+
+export function AcademyActivityPage({
+  user,
+  navigateTo,
+  courseSlug,
+  activityId,
+  t = defaultT,
+  languageCode = 'en',
+  onUserProfileRefresh,
+}: AcademyPageProps & { courseSlug: string; activityId: string }) {
+  const [bundle, setBundle] = React.useState<AcademyCourseBundle | null>(null);
+  const [activityItem, setActivityItem] = React.useState<AcademyActivity | null>(null);
+  const [attempt, setAttempt] = React.useState<AcademyActivityAttempt | null>(null);
+  const [activityAccess, setActivityAccess] = React.useState<LessonAccessResult | null>(null);
+  const [canManage, setCanManage] = React.useState(false);
+  const [editMode, setEditMode] = React.useState(false);
+  const [pointsCelebration, setPointsCelebration] = React.useState(false);
+  const [earnedPointsVisible, setEarnedPointsVisible] = React.useState(false);
+  const [runnerRevision, setRunnerRevision] = React.useState(0);
+  const [loading, setLoading] = React.useState(true);
+  const [message, setMessage] = React.useState<string | null>(null);
+  const userId = user?.id ?? null;
+
+  const loadActivity = React.useCallback(async () => {
+    setLoading(true);
+    setMessage(null);
+    try {
+      const nextBundle = await fetchCourseBundle(courseSlug, languageCode);
+      const [nextActivity, nextStaff] = await Promise.all([
+        fetchActivityById(activityId),
+        canManageAcademyActivities(userId),
+      ]);
+      const nextAttempt = await fetchActivityAttempt(userId, activityId);
+      const nextAccess = nextActivity
+        ? await canAccessLesson({
+          userId,
+          courseId: nextActivity.course_id,
+          lessonId: nextActivity.lesson_id,
+        })
+        : null;
+      setBundle(nextBundle);
+      setActivityItem(nextActivity);
+      setAttempt(nextAttempt);
+      setEarnedPointsVisible(nextAttempt?.status === 'completed');
+      setActivityAccess(nextAccess);
+      setCanManage(nextStaff);
+    } catch (caught) {
+      setMessage(getReadableErrorMessage(caught, getAcademyDatabaseErrorMessage()));
+    } finally {
+      setLoading(false);
+    }
+  }, [activityId, courseSlug, languageCode, userId]);
+
+  React.useEffect(() => {
+    void loadActivity();
+  }, [loadActivity]);
+
+  const lesson = React.useMemo(() => {
+    if (!bundle || !activityItem) return null;
+    return [...bundle.modules.flatMap((module) => module.lessons), ...bundle.ungroupedLessons]
+      .find((item) => item.id === activityItem.lesson_id) ?? null;
+  }, [activityItem, bundle]);
+
+  const handleComplete = async (score: number, attemptData: Record<string, unknown>) => {
+    if (!user || !activityItem) {
+      navigateTo('/login');
+      return;
+    }
+    const wasAlreadyCompleted = attempt?.status === 'completed';
+    const nextAttempt = await completeAcademyActivity({
+      userId: user.id,
+      activityId: activityItem.id,
+      score,
+      attemptData,
+    });
+    setAttempt(nextAttempt);
+    if (!wasAlreadyCompleted && nextAttempt.status === 'completed') {
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(resolve);
+        });
+      });
+
+      const rewardTarget = document.querySelector('.academy-runner-footer, .academy-sim-complete-feedback');
+      rewardTarget?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+      window.setTimeout(() => {
+        setEarnedPointsVisible(true);
+        setPointsCelebration(true);
+        window.setTimeout(() => setPointsCelebration(false), 1300);
+      }, rewardTarget ? 520 : 0);
+    }
+    await onUserProfileRefresh?.();
+  };
+
+  const handleSave = async (input: {
+    activity: AcademyActivity | null;
+    lesson: AcademyLesson;
+    type: AcademyActivityType;
+    title: string;
+    instructions: string;
+    difficulty: string;
+    pointsReward: number;
+    isRequired: boolean;
+    isPublished: boolean;
+    configJson: AcademyActivityConfig;
+  }) => {
+    if (!bundle || !activityItem) return;
+    const contentChanged = activityItem.type !== input.type
+      || JSON.stringify(activityItem.config_json) !== JSON.stringify(input.configJson);
+    const saved = await saveAcademyActivity({
+      id: activityItem.id,
+      courseId: bundle.course.id,
+      lessonId: input.lesson.id,
+      type: input.type,
+      title: input.title,
+      instructions: input.instructions,
+      difficulty: input.difficulty,
+      pointsReward: input.pointsReward,
+      isRequired: input.isRequired,
+      isPublished: input.isPublished,
+      orderIndex: activityItem.order_index,
+      configJson: input.configJson,
+    });
+    setActivityItem(saved);
+    if (contentChanged) {
+      setAttempt(null);
+      setEarnedPointsVisible(false);
+      setPointsCelebration(false);
+      setRunnerRevision((current) => current + 1);
+      await onUserProfileRefresh?.();
+    }
+    setEditMode(false);
+  };
+
+  if (loading) {
+    return <AcademyShellState title={t('Loading activity...')} navigateTo={navigateTo} t={t} />;
+  }
+
+  if (!bundle || !activityItem) {
+    return <AcademyShellState title={t('Activity not found.')} detail={message ?? undefined} navigateTo={navigateTo} t={t} />;
+  }
+
+  const allowed = canManage || activityAccess?.allowed === true;
+  const scoreSummary = getActivityAttemptScoreSummary(activityItem, attempt);
+
+  return (
+    <AcademyShell navigateTo={navigateTo} t={t}>
+      <section className="academy-activity-screen">
+        <div className="academy-lesson-toolbar">
+          <button className="academy-back-button" type="button" onClick={() => navigateTo(`/academy/${bundle.course.slug}`)}>
+            <ArrowLeft size={19} strokeWidth={3} />
+            {t('Back to course')}
+          </button>
+          {canManage ? (
+            <button className="academy-theater-button" type="button" onClick={() => setEditMode((current) => !current)}>
+              <Settings2 size={18} />
+              {editMode ? t('Preview as student') : t('Edit mode')}
+            </button>
+          ) : null}
+        </div>
+        <header className="academy-activity-header">
+          <p className="eyebrow">{lesson ? lesson.title : bundle.course.title}</p>
+          <h1>{activityItem.title}</h1>
+          {activityItem.instructions ? <p>{activityItem.instructions}</p> : null}
+          <div className="academy-activity-meta">
+            <span>{getActivityTypeLabel(activityItem.type)}</span>
+            {activityItem.difficulty ? <span>{activityItem.difficulty}</span> : null}
+            <PointsRewardBadge points={activityItem.points_reward} t={t} />
+            <span className="academy-activity-status-wrap">
+              {earnedPointsVisible ? <PointsCelebration points={attempt?.points_awarded ?? activityItem.points_reward} animate={pointsCelebration} /> : null}
+              {scoreSummary ? (
+                <ActivityScoreBadge
+                  correct={scoreSummary.correctCount}
+                  total={scoreSummary.totalQuestions}
+                  t={t}
+                />
+              ) : null}
+              <ActivityStatusBadge status={getActivityStatus(attempt)} t={t} />
+            </span>
+          </div>
+        </header>
+        {!allowed ? (
+          <section className="academy-locked-state">
+            <LockKeyhole size={30} />
+            <h2>{t('Activity locked')}</h2>
+            <p>{t(activityAccess?.reason ?? 'Enroll in this course to access this activity.')}</p>
+          </section>
+        ) : null}
+        {editMode && canManage && lesson ? (
+          <ActivityEditor
+            activity={activityItem}
+            lesson={lesson}
+            onCancel={() => setEditMode(false)}
+            onSave={handleSave}
+            t={t}
+          />
+        ) : null}
+        {allowed ? (
+          <ActivityRunner
+            key={`${activityItem.id}-${activityItem.updated_at}-${attempt?.id ?? 'fresh'}-${runnerRevision}`}
+            activity={activityItem}
+            attempt={attempt}
+            pointsCelebration={pointsCelebration}
+            earnedPointsVisible={earnedPointsVisible}
+            onComplete={handleComplete}
+            t={t}
+          />
+        ) : null}
+      </section>
+    </AcademyShell>
+  );
+}
+
+function ActivityRunner({
+  activity,
+  attempt,
+  pointsCelebration,
+  earnedPointsVisible,
+  onComplete,
+  t = defaultT,
+}: {
+  activity: AcademyActivity;
+  attempt: AcademyActivityAttempt | null;
+  pointsCelebration: boolean;
+  earnedPointsVisible: boolean;
+  onComplete: (score: number, attemptData: Record<string, unknown>) => Promise<void>;
+  t?: AcademyTranslator;
+}) {
+  if (activity.type === 'industrial_scenario') {
+    return <IndustrialScenarioRunner activity={activity} attempt={attempt} pointsCelebration={pointsCelebration} earnedPointsVisible={earnedPointsVisible} onComplete={onComplete} t={t} />;
+  }
+  if (activity.type === 'simulation_task') {
+    return <SimulationTaskRunner activity={activity} attempt={attempt} pointsCelebration={pointsCelebration} earnedPointsVisible={earnedPointsVisible} onComplete={onComplete} t={t} />;
+  }
+  return <QuickCheckRunner activity={activity} attempt={attempt} pointsCelebration={pointsCelebration} earnedPointsVisible={earnedPointsVisible} onComplete={onComplete} t={t} />;
+}
+
+function QuickCheckRunner({ activity, attempt, pointsCelebration, earnedPointsVisible, onComplete, t = defaultT }: {
+  activity: AcademyActivity;
+  attempt: AcademyActivityAttempt | null;
+  pointsCelebration: boolean;
+  earnedPointsVisible: boolean;
+  onComplete: (score: number, attemptData: Record<string, unknown>) => Promise<void>;
+  t?: AcademyTranslator;
+}) {
+  const config = activity.config_json as QuickCheckConfig;
+  const questions = config.questions ?? [];
+  const savedAnswers = (attempt?.attempt_data_json?.answers ?? {}) as Record<string, string>;
+  const [answers, setAnswers] = React.useState<Record<string, string>>(attempt?.status === 'completed' ? savedAnswers : {});
+  const [checked, setChecked] = React.useState(attempt?.status === 'completed');
+  const [busy, setBusy] = React.useState(false);
+  const completed = attempt?.status === 'completed';
+  const result = questions.map((question) => isQuickCheckAnswerCorrect(question, answers[question.id]));
+  const answeredCount = questions.filter((question) => Boolean(answers[question.id])).length;
+  const correctCount = result.filter(Boolean).length;
+  const totalQuestions = questions.length;
+  const allAnswered = totalQuestions > 0 && answeredCount === totalQuestions;
+
+  const submit = async () => {
+    setChecked(true);
+    if (!allAnswered || completed) return;
+    setBusy(true);
+    try {
+      const score = totalQuestions > 0 ? Math.round((correctCount / totalQuestions) * 100) : 0;
+      await onComplete(score, {
+        answers,
+        correctCount,
+        totalQuestions,
+        type: activity.type,
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="academy-runner-card">
+      <div className="academy-question-stack">
+        {questions.map((question, index) => (
+          <article className="academy-question-card" key={question.id}>
+            <strong>{index + 1}. {question.question}</strong>
+            <QuickCheckQuestionControl
+              question={question}
+              value={answers[question.id] ?? ''}
+              checked={checked}
+              locked={completed}
+              onChange={(value) => setAnswers((current) => ({ ...current, [question.id]: value }))}
+            />
+            {checked ? (
+              <p className={isQuickCheckAnswerCorrect(question, answers[question.id]) ? 'academy-feedback good' : 'academy-feedback bad'}>
+                {isQuickCheckAnswerCorrect(question, answers[question.id]) ? <CheckCircle2 size={18} /> : <X size={18} />}
+                <span>
+                  <strong>{isQuickCheckAnswerCorrect(question, answers[question.id]) ? t('Correct') : t('Incorrect')}</strong>
+                  {question.explanation ? <em>{question.explanation}</em> : null}
+                </span>
+              </p>
+            ) : null}
+          </article>
+        ))}
+      </div>
+      {checked && !allAnswered && !completed ? (
+        <p className="academy-feedback bad">
+          <X size={18} />
+          <span>
+            <strong>{t('Answer every question')}</strong>
+            <em>{t('Complete all questions before checking your score.')}</em>
+          </span>
+        </p>
+      ) : null}
+      <RunnerFooter
+        completed={completed}
+        success={checked && allAnswered}
+        busy={busy}
+        pointsCelebration={pointsCelebration}
+        earnedPointsVisible={earnedPointsVisible}
+        pointsReward={attempt?.points_awarded ?? activity.points_reward}
+        correctCount={attempt?.status === 'completed' ? Number(attempt.attempt_data_json?.correctCount ?? correctCount) : correctCount}
+        totalQuestions={attempt?.status === 'completed' ? Number(attempt.attempt_data_json?.totalQuestions ?? totalQuestions) : totalQuestions}
+        onSubmit={submit}
+        t={t}
+      />
+    </section>
+  );
+}
+
+function QuickCheckQuestionControl({
+  question,
+  value,
+  checked,
+  locked,
+  onChange,
+}: {
+  question: QuickCheckQuestion;
+  value: string;
+  checked: boolean;
+  locked: boolean;
+  onChange: (value: string) => void;
+}) {
+  const getChoiceClassName = (choiceValue: string) => {
+    const selected = value === choiceValue;
+    if (!selected) return '';
+    if (!checked) return 'selected';
+    return isQuickCheckAnswerCorrect(question, value) ? 'selected correct' : 'selected incorrect';
+  };
+
+  if (question.type === 'true_false') {
+    return (
+      <div className="academy-choice-grid two">
+        {['true', 'false'].map((item) => (
+          <button type="button" className={getChoiceClassName(item)} onClick={() => onChange(item)} disabled={locked} key={item}>{item}</button>
+        ))}
+      </div>
+    );
+  }
+  if (question.type === 'sequence_order') {
+    return <input value={value} onChange={(event) => onChange(event.target.value)} placeholder="item1,item2,item3" disabled={locked} />;
+  }
+  if (question.type === 'matching') {
+    return <input value={value} onChange={(event) => onChange(event.target.value)} placeholder="left=right,left=right" disabled={locked} />;
+  }
+  return (
+    <div className="academy-choice-grid">
+      {(question.options ?? []).map((option) => (
+        <button type="button" className={getChoiceClassName(option.id)} onClick={() => onChange(option.id)} disabled={locked} key={option.id}>{option.text}</button>
+      ))}
+    </div>
+  );
+}
+
+function isQuickCheckAnswerCorrect(question: QuickCheckQuestion, value?: string) {
+  if (question.type === 'true_false') return value === String(question.correctValue);
+  if (question.type === 'sequence_order') return value?.split(',').map((item) => item.trim()).join('|') === (question.correctOrder ?? []).join('|');
+  if (question.type === 'matching') return Boolean(value?.trim());
+  return value === question.correctOptionId;
+}
+
+function IndustrialScenarioRunner({ activity, attempt, pointsCelebration, earnedPointsVisible, onComplete, t = defaultT }: {
+  activity: AcademyActivity;
+  attempt: AcademyActivityAttempt | null;
+  pointsCelebration: boolean;
+  earnedPointsVisible: boolean;
+  onComplete: (score: number, attemptData: Record<string, unknown>) => Promise<void>;
+  t?: AcademyTranslator;
+}) {
+  const config = activity.config_json as IndustrialScenarioConfig;
+  const savedChoice = typeof attempt?.attempt_data_json?.choice === 'string' ? attempt.attempt_data_json.choice : '';
+  const [choice, setChoice] = React.useState(attempt?.status === 'completed' ? savedChoice : '');
+  const [checked, setChecked] = React.useState(attempt?.status === 'completed');
+  const completed = attempt?.status === 'completed';
+  const correct = choice === config.correctChoiceId;
+
+  const submit = async () => {
+    setChecked(true);
+    if (correct && !completed) await onComplete(100, { choice, type: activity.type });
+  };
+
+  return (
+    <section className="academy-runner-card">
+      <div className="academy-scenario-layout">
+        <article>
+          <p>{config.context}</p>
+          {config.problemDescription ? <strong>{config.problemDescription}</strong> : null}
+          {config.machineStatus ? <span className="academy-machine-status">{config.machineStatus}</span> : null}
+        </article>
+        <IOStatusPanel tags={config.statusTags ?? []} />
+      </div>
+      <h2>{config.question}</h2>
+      <div className="academy-choice-grid">
+        {(config.choices ?? []).map((option) => (
+          <button
+            type="button"
+            className={[
+              choice === option.id ? 'selected' : '',
+              checked && choice === option.id ? (correct ? 'correct' : 'incorrect') : '',
+            ].filter(Boolean).join(' ')}
+            onClick={() => setChoice(option.id)}
+            disabled={completed}
+            key={option.id}
+          >
+            {option.text}
+          </button>
+        ))}
+      </div>
+      {checked ? (
+        <p className={correct ? 'academy-feedback good' : 'academy-feedback bad'}>
+          {correct ? <CheckCircle2 size={18} /> : <X size={18} />}
+          <span>
+            <strong>{correct ? t('Correct') : t('Incorrect')}</strong>
+            <em>{config.explanation}</em>
+          </span>
+        </p>
+      ) : null}
+      <RunnerFooter completed={completed} success={checked && correct} busy={false} pointsCelebration={pointsCelebration} earnedPointsVisible={earnedPointsVisible} pointsReward={attempt?.points_awarded || activity.points_reward} onSubmit={submit} t={t} />
+    </section>
+  );
+}
+
+function IOStatusPanel({ tags }: { tags: Array<{ label: string; value: string }> }) {
+  return (
+    <div className="academy-io-panel">
+      {tags.map((tag) => (
+        <span key={`${tag.label}-${tag.value}`}>
+          <strong>{tag.label}</strong>
+          <em className={String(tag.value).toLowerCase() === 'on' || String(tag.value).toLowerCase() === 'true' ? 'on' : ''}>{tag.value}</em>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function SimulationTaskRunner({ activity, attempt, pointsCelebration, earnedPointsVisible, onComplete, t = defaultT }: {
+  activity: AcademyActivity;
+  attempt: AcademyActivityAttempt | null;
+  pointsCelebration: boolean;
+  earnedPointsVisible: boolean;
+  onComplete: (score: number, attemptData: Record<string, unknown>) => Promise<void>;
+  t?: AcademyTranslator;
+}) {
+  const config = activity.config_json as SimulationTaskConfig;
+  const savedState = (
+    attempt?.attempt_data_json?.state
+    && typeof attempt.attempt_data_json.state === 'object'
+    && !Array.isArray(attempt.attempt_data_json.state)
+      ? attempt.attempt_data_json.state
+      : null
+  ) as Record<string, boolean> | null;
+  const savedEvents = Array.isArray(attempt?.attempt_data_json?.events)
+    ? attempt.attempt_data_json.events.filter((event): event is string => typeof event === 'string')
+    : [];
+  const [state, setState] = React.useState<Record<string, boolean>>(attempt?.status === 'completed' && savedState ? savedState : { ...(config.initialState ?? {}) });
+  const [events, setEvents] = React.useState<string[]>(attempt?.status === 'completed' ? savedEvents : []);
+  const [busy, setBusy] = React.useState(false);
+  const completed = attempt?.status === 'completed';
+  const success = (config.successCondition?.requiredEvents ?? []).every((event) => events.includes(event));
+
+  React.useEffect(() => {
+    if (!success || completed || busy) return;
+    setBusy(true);
+    onComplete(100, { state, events, type: activity.type })
+      .catch(() => undefined)
+      .finally(() => setBusy(false));
+  }, [activity.type, busy, completed, events, onComplete, state, success]);
+
+  const recordEvent = (eventName: string) => setEvents((current) => current.includes(eventName) ? current : [...current, eventName]);
+  const toggle = (key: string) => setState((current) => ({ ...current, [key]: !current[key] }));
+
+  return (
+    <section className="academy-runner-card">
+      <div className="academy-sim-heading">
+        <Activity size={22} />
+        <div>
+          <h2>{config.objective}</h2>
+          <span>{getSimulationLabel(config.simulationType)}</span>
+        </div>
+      </div>
+      <SimulationControlPanel
+        simulationType={config.simulationType}
+        state={state}
+        setState={setState}
+        recordEvent={recordEvent}
+        toggle={toggle}
+      />
+      <IOStatusPanel tags={Object.entries(state).map(([label, value]) => ({ label, value: value ? 'ON' : 'OFF' }))} />
+      {success || completed ? (
+        <p className="academy-feedback good academy-sim-complete-feedback">
+          {earnedPointsVisible ? <PointsCelebration points={attempt?.points_awarded || activity.points_reward} animate={pointsCelebration} /> : null}
+          {t('Completed')}: {config.explanation}
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
+function SimulationControlPanel({
+  simulationType,
+  state,
+  setState,
+  recordEvent,
+  toggle,
+}: {
+  simulationType: SimulationTaskConfig['simulationType'];
+  state: Record<string, boolean>;
+  setState: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
+  recordEvent: (eventName: string) => void;
+  toggle: (key: string) => void;
+}) {
+  if (simulationType === 'start_stop_latch') {
+    return (
+      <div className="academy-sim-controls">
+        <button type="button" onClick={() => setState((current) => {
+          recordEvent('motor_started');
+          return { ...current, startButton: true, stopButton: false, motorRunning: current.estopOk !== false };
+        })}>Start</button>
+        <button type="button" onClick={() => setState((current) => {
+          recordEvent('motor_stopped');
+          return { ...current, stopButton: true, startButton: false, motorRunning: false };
+        })}>Stop</button>
+        <button type="button" onClick={() => toggle('estopOk')}>E-stop OK</button>
+      </div>
+    );
+  }
+  if (simulationType === 'alarm_reset') {
+    return (
+      <div className="academy-sim-controls">
+        <button type="button" onClick={() => { toggle('alarmActive'); recordEvent('alarm_seen'); }}>Alarm</button>
+        <button type="button" onClick={() => setState((current) => { recordEvent('alarm_reset'); return { ...current, alarmActive: false, resetPressed: true }; })}>Reset</button>
+      </div>
+    );
+  }
+  return (
+    <div className="academy-sim-controls">
+      {Object.keys(state).map((key) => (
+        <button type="button" onClick={() => { toggle(key); recordEvent(`${key}_toggled`); }} key={key}>{key}</button>
+      ))}
+    </div>
+  );
+}
+
+function getSimulationLabel(type: SimulationTaskConfig['simulationType']) {
+  if (type === 'start_stop_latch') return 'Start/Stop motor latch';
+  if (type === 'sensor_output') return 'Sensor and output interaction';
+  if (type === 'alarm_reset') return 'Basic alarm reset';
+  if (type === 'safety_ready') return 'Safety circuit ready/not-ready';
+  return 'Conveyor sequence';
+}
+
+function RunnerFooter({ completed, success, busy, pointsCelebration, earnedPointsVisible, pointsReward, correctCount, totalQuestions, onSubmit, t = defaultT }: {
+  completed: boolean;
+  success: boolean;
+  busy: boolean;
+  pointsCelebration: boolean;
+  earnedPointsVisible: boolean;
+  pointsReward: number;
+  correctCount?: number;
+  totalQuestions?: number;
+  onSubmit: () => void;
+  t?: AcademyTranslator;
+}) {
+  return (
+    <div className="academy-runner-footer">
+      {completed ? (
+        <span className="academy-runner-completed-wrap">
+          {earnedPointsVisible ? <PointsCelebration points={pointsReward} animate={pointsCelebration} /> : null}
+          {typeof correctCount === 'number' && typeof totalQuestions === 'number' ? (
+            <ActivityScoreBadge correct={correctCount} total={totalQuestions} large t={t} />
+          ) : null}
+          <span className="academy-completed-box"><CheckCircle2 size={17} />{t('Completed')}</span>
+        </span>
+      ) : null}
+      {success && !completed ? <span className="academy-feedback good">{t('Points awarded after completion.')}</span> : null}
+      {!completed ? (
+        <button className="academy-complete-button" type="button" onClick={onSubmit} disabled={busy}>
+          <ClipboardCheck size={17} />
+          {busy ? t('Checking...') : t('Check answer')}
+        </button>
+      ) : null}
+    </div>
   );
 }
 

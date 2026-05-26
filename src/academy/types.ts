@@ -14,6 +14,57 @@ export type AcademyEnrollmentStatus = 'active' | 'inactive' | 'expired' | 'revok
 export type AcademyLessonProgressState = 'not_started' | 'in_progress' | 'completed';
 export type AcademyTrackStatus = 'draft' | 'published' | 'archived';
 export type AcademyTrackEnrollmentStatus = 'active' | 'inactive' | 'completed' | 'revoked';
+export type AcademyActivityType = 'quick_check' | 'industrial_scenario' | 'simulation_task';
+export type AcademyActivityAttemptStatus = 'not_started' | 'in_progress' | 'completed' | 'failed';
+
+export type AcademyActivityOption = {
+  id: string;
+  text: string;
+};
+
+export type QuickCheckQuestion = {
+  id: string;
+  type: 'multiple_choice' | 'true_false' | 'matching' | 'sequence_order';
+  question: string;
+  options?: AcademyActivityOption[];
+  correctOptionId?: string;
+  correctValue?: boolean;
+  pairs?: Array<{ left: string; right: string }>;
+  correctOrder?: string[];
+  explanation?: string;
+};
+
+export type QuickCheckConfig = {
+  questions: QuickCheckQuestion[];
+};
+
+export type IndustrialScenarioConfig = {
+  context: string;
+  problemDescription?: string;
+  machineStatus?: string;
+  statusTags: Array<{ label: string; value: string }>;
+  question: string;
+  choices: AcademyActivityOption[];
+  correctChoiceId: string;
+  explanation: string;
+};
+
+export type SimulationTaskConfig = {
+  simulationType:
+    | 'start_stop_latch'
+    | 'sensor_output'
+    | 'alarm_reset'
+    | 'safety_ready'
+    | 'conveyor_sequence';
+  objective: string;
+  initialState: Record<string, boolean>;
+  successCondition: {
+    requiredEvents: string[];
+  };
+  explanation: string;
+};
+
+export type AcademyActivityConfig = QuickCheckConfig | IndustrialScenarioConfig | SimulationTaskConfig;
 
 export type AcademyCourse = {
   id: string;
@@ -230,6 +281,38 @@ export type AcademyTrackCertificate = {
   issued_at: string;
   created_at: string;
   updated_at: string;
+};
+
+export type AcademyActivity = {
+  id: string;
+  track_id: string | null;
+  course_id: string;
+  lesson_id: string;
+  type: AcademyActivityType;
+  title: string;
+  instructions: string | null;
+  difficulty: string | null;
+  points_reward: number;
+  is_required: boolean;
+  is_published: boolean;
+  order_index: number;
+  config_json: AcademyActivityConfig;
+  created_by: string | null;
+  updated_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AcademyActivityAttempt = {
+  id: string;
+  user_id: string;
+  activity_id: string;
+  status: AcademyActivityAttemptStatus;
+  score: number | null;
+  points_awarded: number;
+  attempt_data_json: Record<string, unknown>;
+  started_at: string;
+  completed_at: string | null;
 };
 
 export type AcademyModuleWithLessons = AcademyModule & {

@@ -7,6 +7,10 @@ import type {
   AcademyCourseProgressSummary,
   AcademyCourseTranslation,
   AcademyEnrollment,
+  AcademyActivity,
+  AcademyActivityAttempt,
+  AcademyActivityConfig,
+  AcademyActivityType,
   AcademyLesson,
   AcademyLessonNote,
   AcademyLessonProgress,
@@ -56,6 +60,22 @@ export type AcademyCourseBundle = {
 export type AcademyTrackBundle = {
   track: AcademyTrack;
   trackCourses: Array<AcademyTrackCourse & { course: AcademyCourse }>;
+};
+
+export type AcademyActivityInput = {
+  id?: string;
+  trackId?: string | null;
+  courseId: string;
+  lessonId: string;
+  type: AcademyActivityType;
+  title: string;
+  instructions?: string | null;
+  difficulty?: string | null;
+  pointsReward: number;
+  isRequired: boolean;
+  isPublished: boolean;
+  orderIndex?: number;
+  configJson: AcademyActivityConfig;
 };
 
 function shouldTranslate(languageCode?: string | null) {
@@ -120,6 +140,23 @@ export async function isAdminUser(userId: string, client: AcademyClient = supaba
   const tier = data?.subscription_tier?.trim().toLowerCase();
 
   return role === 'admin' || role === 'owner' || tier === 'enterprise-admin';
+}
+
+export async function canManageAcademyActivities(userId: string | null, client: AcademyClient = supabase) {
+  if (!userId) return false;
+  const { data } = await client
+    .from('profiles')
+    .select('role, subscription_tier')
+    .eq('id', userId)
+    .maybeSingle<{ role: string | null; subscription_tier: string | null }>();
+
+  const role = data?.role?.trim().toLowerCase();
+  const tier = data?.subscription_tier?.trim().toLowerCase();
+  return role === 'admin' || role === 'owner' || tier === 'owner' || tier === 'instructor' || tier === 'enterprise-admin';
+}
+
+function isMissingAcademyActivitiesTable(error: { code?: string; message?: string } | null) {
+  return error?.code === '42P01' || Boolean(error?.message?.includes('academy_activities'));
 }
 
 export async function fetchPublishedCourses(languageCode = 'en', client: AcademyClient = supabase) {
@@ -586,6 +623,159 @@ export async function fetchLessonProgressForCourse(
 
   if (error) throw error;
   return data ?? [];
+}
+
+export async function fetchActivitiesForCourse(
+  courseId: string,
+  client: AcademyClient = supabase,
+) {
+  const { data, error } = await client
+    .from('academy_activities')
+    .select('*')
+    .eq('course_id', courseId)
+    .order('order_index', { ascending: true })
+    .order('created_at', { ascending: true })
+    .returns<AcademyActivity[]>();
+
+  if (isMissingAcademyActivitiesTable(error)) return [];
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function fetchActivityAttemptsForCourse(
+  userId: string | null,
+  activityIds: string[],
+  client: AcademyClient = supabase,
+) {
+  if (!userId || activityIds.length === 0) return [];
+
+  const { data, error } = await client
+    .from('academy_activity_attempts')
+    .select('*')
+    .eq('user_id', userId)
+    .in('activity_id', activityIds)
+    .returns<AcademyActivityAttempt[]>();
+
+  if (isMissingAcademyActivitiesTable(error)) return [];
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function fetchActivityById(
+  activityId: string,
+  client: AcademyClient = supabase,
+) {
+  const { data, error } = await client
+    .from('academy_activities')
+    .select('*')
+    .eq('id', activityId)
+    .maybeSingle<AcademyActivity>();
+
+  if (isMissingAcademyActivitiesTable(error)) return null;
+  if (error) throw error;
+  return data;
+}
+
+export async function fetchActivityAttempt(
+  userId: string | null,
+  activityId: string,
+  client: AcademyClient = supabase,
+) {
+  if (!userId) return null;
+
+  const { data, error } = await client
+    .from('academy_activity_attempts')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('activity_id', activityId)
+    .maybeSingle<AcademyActivityAttempt>();
+
+  if (isMissingAcademyActivitiesTable(error)) return null;
+  if (error) throw error;
+  return data;
+}
+
+export async function saveAcademyActivity(input: AcademyActivityInput, client: AcademyClient = supabase) {
+  const { data: sessionData } = await client.auth.getSession();
+  if (!sessionData.session?.user.id) {
+    throw new Error('You must be signed in to save activities.');
+  }
+
+  const staff = await canManageAcademyActivities(sessionData.session.user.id, client);
+  if (!staff) {
+    throw new Error('Only Instructor and Owner users can manage activities.');
+  }
+
+  const payload = {
+    track_id: input.trackId ?? null,
+    course_id: input.courseId,
+    lesson_id: input.lessonId,
+    type: input.type,
+    title: input.title.trim(),
+    instructions: input.instructions?.trim() || null,
+    difficulty: input.difficulty?.trim() || null,
+    points_reward: Math.max(Math.floor(input.pointsReward), 0),
+    is_required: input.isRequired,
+    is_published: input.isPublished,
+    order_index: input.orderIndex ?? 0,
+    config_json: input.configJson,
+    updated_by: sessionData.session.user.id,
+    ...(input.id ? {} : { created_by: sessionData.session.user.id }),
+  };
+
+  const query = input.id
+    ? client.from('academy_activities').update(payload).eq('id', input.id)
+    : client.from('academy_activities').insert(payload);
+
+  const { data, error } = await query.select('*').single<AcademyActivity>();
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteAcademyActivity(activityId: string, client: AcademyClient = supabase) {
+  const { data: sessionData } = await client.auth.getSession();
+  if (!sessionData.session?.user.id) {
+    throw new Error('You must be signed in to delete activities.');
+  }
+
+  const staff = await canManageAcademyActivities(sessionData.session.user.id, client);
+  if (!staff) {
+    throw new Error('Only Instructor and Owner users can manage activities.');
+  }
+
+  const { error } = await client.from('academy_activities').delete().eq('id', activityId);
+  if (error) throw error;
+}
+
+export async function completeAcademyActivity(
+  {
+    userId,
+    activityId,
+    score,
+    attemptData,
+  }: {
+    userId: string;
+    activityId: string;
+    score: number;
+    attemptData: Record<string, unknown>;
+  },
+  client: AcademyClient = supabase,
+) {
+  const { data: sessionData } = await client.auth.getSession();
+  if (sessionData.session?.user.id !== userId) {
+    throw new Error('Users can only complete their own activities.');
+  }
+
+  const { data, error } = await client
+    .rpc('complete_academy_activity', {
+      target_activity_id: activityId,
+      score_value: score,
+      attempt_payload: attemptData,
+    })
+    .single<AcademyActivityAttempt>();
+
+  if (error) throw error;
+  return data;
 }
 
 export async function fetchPublishedTrackBundles(client: AcademyClient = supabase): Promise<AcademyTrackBundle[]> {
