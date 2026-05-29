@@ -1,0 +1,13 @@
+services:
+  yvimo-web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: yvimo-web
+    ports:
+      - "5173:5173"
+    volumes:
+      - .:/app
+      - /app/node_modules
+    environment:
+      - CHOKIDAR_USEPOLLING=true
