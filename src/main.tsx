@@ -37,7 +37,7 @@ import {
   X,
 } from 'lucide-react';
 import type { Session, User } from '@supabase/supabase-js';
-import { supabase } from './lib/supabaseClient';
+import { createSessionSupabaseClient, supabase } from './lib/supabaseClient';
 import { AcademyActivityPage, AcademyCatalogPage, AcademyCertificatesPage, AcademyCoursePage, AcademyHomePage, AcademyLessonPage, AcademyProgressPage, AcademyTrackPage } from './pages/AcademyPages';
 import './styles.css';
 
@@ -118,6 +118,8 @@ type AppUser = {
   profileLevelProgress: number;
   avatarUrl?: string;
 };
+
+type ProfileLoadState = 'idle' | 'loading' | 'loaded' | 'error';
 
 function normalizeNonNegativeNumber(value: number | null | undefined, fallback = 0) {
   return Number.isFinite(value) ? Math.max(0, Math.round(Number(value))) : fallback;
@@ -2997,8 +2999,12 @@ function App() {
   const [authSession, setAuthSession] = React.useState<Session | null>(null);
   const [authUser, setAuthUser] = React.useState<AppUser | null>(null);
   const [authLoading, setAuthLoading] = React.useState(true);
+  const [profileLoadState, setProfileLoadState] = React.useState<ProfileLoadState>('idle');
+  const [profileLoadError, setProfileLoadError] = React.useState<string | null>(null);
   const [dashboardTransition, setDashboardTransition] = React.useState(false);
   const authSessionRef = React.useRef<Session | null>(null);
+  const authProfileRequestRef = React.useRef(0);
+  const explicitSignOutRef = React.useRef(false);
   const [viewportWidth, setViewportWidth] = React.useState(() =>
     typeof window === 'undefined' ? 1440 : window.innerWidth,
   );
@@ -3107,12 +3113,25 @@ function App() {
     authSessionRef.current = authSession;
   }, [authSession]);
 
-  const fetchOrCreateProfile = React.useCallback(async (user: User) => {
-    console.log('[auth] profile fetch start', user.id);
+  React.useEffect(() => {
+    if (profileLoadState === 'error') {
+      console.warn('[auth] profile unavailable; keeping authenticated session', {
+        profileLoadError,
+        hasSession: !!authSession?.user,
+      });
+    }
+  }, [authSession, profileLoadError, profileLoadState]);
+
+  const fetchOrCreateProfile = React.useCallback(async (session: Session) => {
+    const { user } = session;
 
     try {
+      const profileClient = createSessionSupabaseClient(session.access_token);
+
+      console.log('[auth] profile fetch start', user.id);
+
       const { data, error } = await withTimeout(
-        supabase
+        profileClient
           .from('profiles')
           .select('id, full_name, company_name, role, subscription_tier, yvimo_points, experience_points, profile_level, profile_level_progress, created_at, updated_at')
           .eq('id', user.id)
@@ -3140,7 +3159,7 @@ function App() {
       };
 
       const { data: insertedProfile, error: insertError } = await withTimeout(
-        supabase
+        profileClient
           .from('profiles')
           .insert(fallbackProfile)
           .select('id, full_name, company_name, role, subscription_tier, yvimo_points, experience_points, profile_level, profile_level_progress, created_at, updated_at')
@@ -3156,29 +3175,61 @@ function App() {
       console.log('[auth] profile fetch result', insertedProfile);
       return insertedProfile;
     } catch (error) {
-      console.error('[auth] profile fetch error', error);
+      console.warn('[auth] profile fetch error', error);
       return null;
     }
   }, []);
 
   const syncSessionUser = React.useCallback(async (session: Session | null) => {
     console.log('[auth] session value', session);
+    const requestId = ++authProfileRequestRef.current;
     setAuthSession(session);
 
     if (!session?.user) {
       setAuthUser(null);
+      setProfileLoadState('idle');
+      setProfileLoadError(null);
       return;
     }
 
-    const profile = await fetchOrCreateProfile(session.user);
-    setAuthUser(profileToAppUser(session.user, profile));
+    setAuthUser(profileToAppUser(session.user, null));
+    setProfileLoadState('loading');
+    setProfileLoadError(null);
+
+    try {
+      const profile = await fetchOrCreateProfile(session);
+      if (requestId !== authProfileRequestRef.current) return;
+      setAuthUser(profileToAppUser(session.user, profile));
+      setProfileLoadState(profile ? 'loaded' : 'error');
+      setProfileLoadError(profile ? null : 'Profile could not be loaded.');
+    } catch (error) {
+      if (requestId !== authProfileRequestRef.current) return;
+      console.error('[auth] session profile sync error', error);
+      setAuthUser(profileToAppUser(session.user, null));
+      setProfileLoadState('error');
+      setProfileLoadError(error instanceof Error ? error.message : 'Profile could not be loaded.');
+    }
   }, [fetchOrCreateProfile]);
 
   const refreshAuthProfile = React.useCallback(async () => {
     if (!authSession?.user) return;
 
-    const profile = await fetchOrCreateProfile(authSession.user);
-    setAuthUser(profileToAppUser(authSession.user, profile));
+    setProfileLoadState('loading');
+    setProfileLoadError(null);
+
+    try {
+      const profile = await fetchOrCreateProfile(authSession);
+      setAuthUser((currentUser) => (
+        profile || !currentUser ? profileToAppUser(authSession.user, profile) : currentUser
+      ));
+      setProfileLoadState(profile ? 'loaded' : 'error');
+      setProfileLoadError(profile ? null : 'Profile could not be loaded.');
+    } catch (error) {
+      console.error('[auth] profile refresh sync error', error);
+      setAuthUser((currentUser) => currentUser ?? profileToAppUser(authSession.user, null));
+      setProfileLoadState('error');
+      setProfileLoadError(error instanceof Error ? error.message : 'Profile could not be loaded.');
+    }
   }, [authSession, fetchOrCreateProfile]);
 
   React.useEffect(() => {
@@ -3223,6 +3274,8 @@ function App() {
         console.error('[auth] getSession error', error);
         setAuthSession(null);
         setAuthUser(null);
+        setProfileLoadState('idle');
+        setProfileLoadError(null);
         setAuthLoading(false);
         return;
       }
@@ -3234,6 +3287,8 @@ function App() {
         console.error('[auth] getSession sync error', error);
         setAuthSession(data.session);
         setAuthUser(data.session?.user ? profileToAppUser(data.session.user, null) : null);
+        setProfileLoadState(data.session?.user ? 'error' : 'idle');
+        setProfileLoadError(error instanceof Error ? error.message : 'Profile could not be loaded.');
       } finally {
         console.log('[auth] getSession loading reset');
         if (active) setAuthLoading(false);
@@ -3243,6 +3298,22 @@ function App() {
     const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
       console.log('[auth] state change', event, session);
       window.setTimeout(() => {
+        if (event === 'SIGNED_OUT') {
+          if (!explicitSignOutRef.current && authSessionRef.current?.user) {
+            console.warn('[auth] ignored SIGNED_OUT without explicit sign out while local session exists');
+            return;
+          }
+
+          explicitSignOutRef.current = false;
+          syncSessionUser(null).catch(() => {
+            setAuthSession(null);
+            setAuthUser(null);
+            setProfileLoadState('idle');
+            setProfileLoadError(null);
+          });
+          return;
+        }
+
         if (
           event === 'SIGNED_IN'
           && session?.user?.id
@@ -3273,8 +3344,10 @@ function App() {
         }
 
         syncSessionUser(session).catch(() => {
-          setAuthSession(null);
-          setAuthUser(null);
+          setAuthSession(session);
+          setAuthUser(session?.user ? profileToAppUser(session.user, null) : null);
+          setProfileLoadState(session?.user ? 'error' : 'idle');
+          setProfileLoadError(session?.user ? 'Profile could not be loaded.' : null);
         });
       }, 0);
     });
@@ -3286,35 +3359,23 @@ function App() {
   }, [syncSessionUser]);
 
   React.useEffect(() => {
-    if (!authLoading && isDashboardPage && !authSession) {
+    if (!authLoading && isDashboardPage && !authSession?.user) {
       navigateLogin();
     }
   }, [authLoading, authSession, isDashboardPage]);
 
   React.useEffect(() => {
-    if (authLoading || !authSession || !isDashboardPage) return;
+    if (
+      authLoading
+      || !authSession?.user
+      || !isDashboardPage
+      || profileLoadState !== 'idle'
+    ) return;
 
     refreshAuthProfile().catch((error) => {
       console.error('[auth] dashboard profile refresh error', error);
     });
-  }, [authLoading, authSession, isDashboardPage, refreshAuthProfile]);
-
-  React.useEffect(() => {
-    if (!authSession || !isWorkspacePage) return;
-
-    const refreshProfileSnapshot = () => {
-      if (document.visibilityState === 'hidden') return;
-
-      refreshAuthProfile().catch((error) => {
-        console.error('[auth] profile snapshot refresh error', error);
-      });
-    };
-
-    const intervalId = window.setInterval(refreshProfileSnapshot, 5000);
-    refreshProfileSnapshot();
-
-    return () => window.clearInterval(intervalId);
-  }, [authSession, isWorkspacePage, refreshAuthProfile]);
+  }, [authLoading, authSession, isDashboardPage, profileLoadState, refreshAuthProfile]);
 
   const navigateTo = (path: string) => {
     window.history.pushState({}, '', path);
@@ -3373,8 +3434,15 @@ function App() {
 
   const completeAuth = async (session: Session | null, message: string) => {
     if (session) {
+      explicitSignOutRef.current = false;
+      await supabase.auth.setSession({
+        access_token: session.access_token,
+        refresh_token: session.refresh_token,
+      });
       setAuthSession(session);
       setAuthUser(profileToAppUser(session.user, null));
+      setProfileLoadState('loading');
+      setProfileLoadError(null);
       window.setTimeout(() => {
         setDashboardTransition(true);
         window.setTimeout(() => {
@@ -3520,9 +3588,12 @@ function App() {
   };
 
   const handleSignOut = async () => {
+    explicitSignOutRef.current = true;
     await supabase.auth.signOut();
     setAuthSession(null);
     setAuthUser(null);
+    setProfileLoadState('idle');
+    setProfileLoadError(null);
     navigateLogin();
   };
 
@@ -3796,15 +3867,19 @@ function App() {
           t={t}
         />
       ) : isDashboardPage ? (
-        authUser ? (
-        <LoggedDashboardPage
-          user={authUser}
-          onSignOut={handleSignOut}
-          onNavigate={navigateTo}
-          onUpdateAvatar={handleUpdateAvatar}
-          activePath={currentPath}
-          t={t}
-        />
+        authSession?.user ? (
+          authUser ? (
+            <LoggedDashboardPage
+              user={authUser}
+              onSignOut={handleSignOut}
+              onNavigate={navigateTo}
+              onUpdateAvatar={handleUpdateAvatar}
+              activePath={currentPath}
+              t={t}
+            />
+          ) : (
+            <DashboardLoadingPage t={t} />
+          )
         ) : (
           <LoginPage
             onNavigateSignUp={navigateSignUp}
