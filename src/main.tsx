@@ -1,11 +1,14 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import {
+  Activity,
+  AlertTriangle,
   ArrowRight,
   ArrowLeft,
   Blocks,
   Cable,
   Calculator,
+  CalendarClock,
   ChevronLeft,
   ChevronRight,
   Check,
@@ -999,6 +1002,114 @@ Object.assign(translations.zh, {
 });
 
 Object.assign(translations.es, {
+  'Manufacturing Ops': 'Manufacturing Ops',
+  'MES, APS, production tracking, scheduling, and manufacturing intelligence in one connected workspace.':
+    'MES, APS, seguimiento de producci\u00f3n, programaci\u00f3n e inteligencia de manufactura en un workspace conectado.',
+  'Flagship products': 'Productos principales',
+  'Start with your main YVIMO workspaces': 'Comienza con tus workspaces principales de YVIMO',
+  'Secondary modules': 'M\u00f3dulos secundarios',
+  'Tools, licenses, and commercial workflows': 'Herramientas, licencias y flujos comerciales',
+  'MANUFACTURING OPS': 'MANUFACTURING OPS',
+  MES: 'MES',
+  APS: 'APS',
+  Active: 'Activo',
+  Selected: 'Seleccionado',
+  Structured: 'Estructurado',
+  'View structure': 'Ver estructura',
+  'All MES modules': 'Todos los m\u00f3dulos MES',
+  'All modules': 'Todos los m\u00f3dulos',
+  Events: 'Eventos',
+  Quality: 'Calidad',
+  'This module is being structured. Data models, permissions, and CRUD workflows will be connected in a future step.':
+    'Este m\u00f3dulo se est\u00e1 estructurando. Los modelos de datos, permisos y flujos CRUD se conectar\u00e1n en un paso futuro.',
+  'This MES module is being structured. Data models, permissions, and CRUD workflows will be connected in a future step.':
+    'Este m\u00f3dulo MES se est\u00e1 estructurando. Los modelos de datos, permisos y flujos CRUD se conectar\u00e1n en un paso futuro.',
+  'Execute, track, and monitor production orders across work centers.':
+    'Ejecuta, rastrea y monitorea \u00f3rdenes de producci\u00f3n en centros de trabajo.',
+  'Plan and schedule production using capacity, priorities, and constraints.':
+    'Planea y programa producci\u00f3n usando capacidad, prioridades y restricciones.',
+  'Transform production data into actionable manufacturing KPIs.':
+    'Convierte datos de producci\u00f3n en KPIs de manufactura accionables.',
+  'Production order tracking': 'Seguimiento de \u00f3rdenes de producci\u00f3n',
+  'Work center status': 'Estado de centros de trabajo',
+  'Operator actions': 'Acciones de operador',
+  'Downtime and scrap capture': 'Captura de paros y scrap',
+  Traceability: 'Trazabilidad',
+  'Quality checkpoints': 'Puntos de control de calidad',
+  'Production schedule': 'Programa de producci\u00f3n',
+  'Capacity planning': 'Planeaci\u00f3n de capacidad',
+  'Work center loading': 'Carga de centros de trabajo',
+  'Bottleneck visibility': 'Visibilidad de cuellos de botella',
+  'Priority sequencing': 'Secuenciaci\u00f3n de prioridades',
+  'OEE dashboard': 'Dashboard OEE',
+  'Downtime analysis': 'An\u00e1lisis de paros',
+  'Cycle time trends': 'Tendencias de tiempo ciclo',
+  'Throughput visibility': 'Visibilidad de throughput',
+  'Production reports': 'Reportes de producci\u00f3n',
+  'Open MES': 'Abrir MES',
+  'Open APS': 'Abrir APS',
+  'Open Intelligence': 'Abrir Intelligence',
+  'Operations Intelligence': 'Inteligencia Operativa',
+  'Manufacturing execution, production tracking, traceability, quality checkpoints, and shop-floor visibility.':
+    'Ejecuci\u00f3n de manufactura, seguimiento de producci\u00f3n, trazabilidad, puntos de calidad y visibilidad de piso.',
+  'Manufacturing execution, production tracking, work center visibility, downtime, quality, and traceability.':
+    'Ejecuci\u00f3n de manufactura, seguimiento de producci\u00f3n, visibilidad de centros de trabajo, paros, calidad y trazabilidad.',
+  'Advanced planning and scheduling for work centers, capacity, priorities, and delivery constraints.':
+    'Planeaci\u00f3n y programaci\u00f3n avanzada para centros de trabajo, capacidad, prioridades y restricciones de entrega.',
+  'Production Orders': '\u00d3rdenes de producci\u00f3n',
+  'Work Centers': 'Centros de trabajo',
+  'Operator Terminal': 'Terminal de operador',
+  'Production Events': 'Eventos de producci\u00f3n',
+  'Quality Checks': 'Revisiones de calidad',
+  'Downtime Events': 'Eventos de paro',
+  'MES Dashboard': 'Dashboard MES',
+  'Create, release, assign, and track manufacturing orders from planned quantity to completion.':
+    'Crea, libera, asigna y rastrea \u00f3rdenes de manufactura desde la cantidad planeada hasta su terminaci\u00f3n.',
+  'Manage machines, lines, cells, and stations where production is executed.':
+    'Administra m\u00e1quinas, l\u00edneas, celdas y estaciones donde se ejecuta la producci\u00f3n.',
+  'Simple shop-floor interface for starting jobs, reporting production, scrap, downtime, and completing operations.':
+    'Interfaz simple de piso para iniciar trabajos, reportar producci\u00f3n, scrap, paros y completar operaciones.',
+  'Timeline of execution events such as order started, quantity added, downtime started, quality check completed, and order completed.':
+    'Linea de tiempo de eventos como orden iniciada, cantidad agregada, paro iniciado, revisi\u00f3n de calidad completada y orden terminada.',
+  'Track machine stops, reason codes, duration, category, and notes.':
+    'Rastrea paros de m\u00e1quina, c\u00f3digos de raz\u00f3n, duraci\u00f3n, categor\u00eda y notas.',
+  'Record pass/fail checks, measurements, inspection results, and quality notes linked to production orders.':
+    'Registra revisiones aprobado/rechazado, mediciones, resultados de inspecci\u00f3n y notas de calidad ligadas a \u00f3rdenes de producci\u00f3n.',
+  'View the complete production history for an order, lot, serial number, work center, or operation.':
+    'Consulta el historial completo de producci\u00f3n por orden, lote, n\u00famero de serie, centro de trabajo u operaci\u00f3n.',
+  'Show active orders, running work centers, completed quantity, scrap, downtime, and production KPIs.':
+    'Muestra \u00f3rdenes activas, centros de trabajo corriendo, cantidad completada, scrap, paros y KPIs de producci\u00f3n.',
+  'Production Schedule': 'Programa de producci\u00f3n',
+  'Capacity Planning': 'Planeaci\u00f3n de capacidad',
+  'Work Center Loading': 'Carga de centros de trabajo',
+  Bottlenecks: 'Cuellos de botella',
+  'Priority Sequencing': 'Secuenciaci\u00f3n de prioridades',
+  'Build and review sequenced production plans across lines, cells, and work centers.':
+    'Construye y revisa planes de producci\u00f3n secuenciados entre l\u00edneas, celdas y centros de trabajo.',
+  'Compare demand against available machine, labor, and shift capacity.':
+    'Compara la demanda contra la capacidad disponible de m\u00e1quinas, mano de obra y turnos.',
+  'Visualize assigned workload by work center and planning horizon.':
+    'Visualiza carga asignada por centro de trabajo y horizonte de planeaci\u00f3n.',
+  'Identify constrained operations and overloaded resources before execution.':
+    'Identifica operaciones restringidas y recursos sobrecargados antes de ejecutar.',
+  'Sequence orders using due dates, priorities, changeovers, and constraints.':
+    'Secuencia \u00f3rdenes usando fechas compromiso, prioridades, cambios de modelo y restricciones.',
+  'OEE Dashboard': 'Dashboard OEE',
+  'Downtime Analysis': 'An\u00e1lisis de paros',
+  'Cycle Time Trends': 'Tendencias de tiempo ciclo',
+  'Throughput Visibility': 'Visibilidad de throughput',
+  'Production Reports': 'Reportes de producci\u00f3n',
+  'Monitor availability, performance, quality, and total OEE by area or work center.':
+    'Monitorea disponibilidad, rendimiento, calidad y OEE total por \u00e1rea o centro de trabajo.',
+  'Analyze stops by reason, category, equipment, duration, and trend.':
+    'Analiza paros por raz\u00f3n, categor\u00eda, equipo, duraci\u00f3n y tendencia.',
+  'Track cycle time behavior and variation across products, shifts, and operations.':
+    'Rastrea comportamiento y variaci\u00f3n de tiempo ciclo por productos, turnos y operaciones.',
+  'Review output, pace, constraints, and production flow across the plant.':
+    'Revisa salida, ritmo, restricciones y flujo de producci\u00f3n en la planta.',
+  'Prepare production summaries, KPI reports, and execution history snapshots.':
+    'Prepara res\u00famenes de producci\u00f3n, reportes KPI e instant\u00e1neas del historial de ejecuci\u00f3n.',
+  Preview: 'Preview',
   'Courses, guided paths, and professional training for people building real automation, robotics, and industrial software systems.':
     'Cursos, rutas guiadas y capacitaci\u00f3n profesional para personas que construyen automatizaci\u00f3n, rob\u00f3tica y software industrial real.',
   'PLC Programming': 'Programaci\u00f3n PLC',
@@ -2108,25 +2219,39 @@ function LoggedDashboardPage({
       ],
     },
   ];
-  const quickAccessItems = [
+  const quickAccessItems: Array<{
+    label: string;
+    description: string;
+    icon: React.ComponentType<{ size?: number }>;
+    path: string;
+    flagship?: boolean;
+  }> = [
     {
       label: 'Gateway Online',
       description: 'Design, simulate, and prepare industrial connectivity flows using virtual devices, labs, and Gateway tools.',
       icon: ServerCog,
       path: '/portal/gateway-online',
+      flagship: true,
     },
     {
       label: 'YVIMO Academy',
       description: 'Continue courses, guided paths, progress, and professional learning.',
       icon: GraduationCap,
       path: '/academy',
+      flagship: true,
+    },
+    {
+      label: 'Manufacturing Ops',
+      description: 'MES, APS, production tracking, scheduling, and manufacturing intelligence in one connected workspace.',
+      icon: Factory,
+      path: '/workspace/manufacturing-ops',
+      flagship: true,
     },
     {
       label: 'Engineering Tools',
       description: 'Access templates, calculators, quotation tools, network utilities, and controls resources for real industrial automation projects.',
       icon: Wrench,
       path: '/portal/engineering-tools',
-      featured: true,
     },
     {
       label: 'Licenses',
@@ -2141,10 +2266,13 @@ function LoggedDashboardPage({
       path: '/dashboard/orders',
     },
   ];
+  const flagshipAccessItems = quickAccessItems.filter((item) => item.flagship);
+  const secondaryAccessItems = quickAccessItems.filter((item) => !item.flagship);
   const navItems = [
     { label: 'Workspace', icon: Blocks, featured: false, path: '/dashboard' },
     { label: 'Gateway Online', icon: ServerCog, featured: true, path: '/portal/gateway-online' },
     { label: 'Academy', icon: GraduationCap, featured: true, path: '/academy' },
+    { label: 'Manufacturing Ops', icon: Factory, featured: true, path: '/workspace/manufacturing-ops' },
     { label: 'Engineering Tools', icon: Wrench, featured: true, path: '/portal/engineering-tools' },
     { label: 'Licenses', icon: ShieldCheck, featured: false, path: '/dashboard/licenses' },
     { label: 'Orders', icon: FileUp, featured: false, path: '/dashboard/orders' },
@@ -2157,6 +2285,227 @@ function LoggedDashboardPage({
     || activePath.startsWith('/portal/gateway-online/')
     || activePath === '/dashboard/gateway'
     || activePath.startsWith('/dashboard/gateway/');
+  const manufacturingOpsModules: Array<{
+    label: string;
+    description: string;
+    features: string[];
+    icon: React.ComponentType<{ size?: number }>;
+    path: string;
+    cta: string;
+    status: string;
+    featured?: boolean;
+    disabled?: boolean;
+  }> = [
+    {
+      label: 'MES',
+      description: 'Execute, track, and monitor production orders across work centers.',
+      features: [
+        'Production order tracking',
+        'Work center status',
+        'Operator actions',
+        'Downtime and scrap capture',
+        'Traceability',
+        'Quality checkpoints',
+      ],
+      icon: Factory,
+      path: '/workspace/manufacturing-ops/mes',
+      cta: 'Open MES',
+      status: 'Active',
+      featured: true,
+    },
+    {
+      label: 'APS',
+      description: 'Plan and schedule production using capacity, priorities, and constraints.',
+      features: [
+        'Production schedule',
+        'Capacity planning',
+        'Work center loading',
+        'Bottleneck visibility',
+        'Priority sequencing',
+      ],
+      icon: Workflow,
+      path: '/workspace/manufacturing-ops/aps',
+      cta: 'Open APS',
+      status: 'Active',
+    },
+    {
+      label: 'Operations Intelligence',
+      description: 'Transform production data into actionable manufacturing KPIs.',
+      features: [
+        'OEE dashboard',
+        'Downtime analysis',
+        'Cycle time trends',
+        'Throughput visibility',
+        'Production reports',
+      ],
+      icon: Gauge,
+      path: '/workspace/manufacturing-ops/intelligence',
+      cta: 'Open Intelligence',
+      status: 'Active',
+    },
+  ];
+  const mesModules: Array<{
+    label: string;
+    description: string;
+    icon: React.ComponentType<{ size?: number }>;
+    path: string;
+  }> = [
+    {
+      label: 'Production Orders',
+      description: 'Create, release, assign, and track manufacturing orders from planned quantity to completion.',
+      icon: FileUp,
+      path: '/workspace/manufacturing-ops/mes/orders',
+    },
+    {
+      label: 'Work Centers',
+      description: 'Manage machines, lines, cells, and stations where production is executed.',
+      icon: Factory,
+      path: '/workspace/manufacturing-ops/mes/work-centers',
+    },
+    {
+      label: 'Operator Terminal',
+      description: 'Simple shop-floor interface for starting jobs, reporting production, scrap, downtime, and completing operations.',
+      icon: TerminalSquare,
+      path: '/workspace/manufacturing-ops/mes/operator-terminal',
+    },
+    {
+      label: 'Production Events',
+      description: 'Timeline of execution events such as order started, quantity added, downtime started, quality check completed, and order completed.',
+      icon: GitBranch,
+      path: '/workspace/manufacturing-ops/mes/events',
+    },
+    {
+      label: 'Downtime Events',
+      description: 'Track machine stops, reason codes, duration, category, and notes.',
+      icon: RadioTower,
+      path: '/workspace/manufacturing-ops/mes/downtime',
+    },
+    {
+      label: 'Quality Checks',
+      description: 'Record pass/fail checks, measurements, inspection results, and quality notes linked to production orders.',
+      icon: ShieldCheck,
+      path: '/workspace/manufacturing-ops/mes/quality',
+    },
+    {
+      label: 'Traceability',
+      description: 'View the complete production history for an order, lot, serial number, work center, or operation.',
+      icon: Database,
+      path: '/workspace/manufacturing-ops/mes/traceability',
+    },
+    {
+      label: 'MES Dashboard',
+      description: 'Show active orders, running work centers, completed quantity, scrap, downtime, and production KPIs.',
+      icon: Gauge,
+      path: '/workspace/manufacturing-ops/mes/dashboard',
+    },
+  ];
+  const apsModules: Array<{
+    label: string;
+    description: string;
+    icon: React.ComponentType<{ size?: number }>;
+    path: string;
+  }> = [
+    {
+      label: 'Production Schedule',
+      description: 'Build and review sequenced production plans across lines, cells, and work centers.',
+      icon: CalendarClock,
+      path: '/workspace/manufacturing-ops/aps/schedule',
+    },
+    {
+      label: 'Capacity Planning',
+      description: 'Compare demand against available machine, labor, and shift capacity.',
+      icon: Gauge,
+      path: '/workspace/manufacturing-ops/aps/capacity',
+    },
+    {
+      label: 'Work Center Loading',
+      description: 'Visualize assigned workload by work center and planning horizon.',
+      icon: Factory,
+      path: '/workspace/manufacturing-ops/aps/loading',
+    },
+    {
+      label: 'Bottlenecks',
+      description: 'Identify constrained operations and overloaded resources before execution.',
+      icon: AlertTriangle,
+      path: '/workspace/manufacturing-ops/aps/bottlenecks',
+    },
+    {
+      label: 'Priority Sequencing',
+      description: 'Sequence orders using due dates, priorities, changeovers, and constraints.',
+      icon: Workflow,
+      path: '/workspace/manufacturing-ops/aps/priorities',
+    },
+  ];
+  const intelligenceModules: Array<{
+    label: string;
+    description: string;
+    icon: React.ComponentType<{ size?: number }>;
+    path: string;
+  }> = [
+    {
+      label: 'OEE Dashboard',
+      description: 'Monitor availability, performance, quality, and total OEE by area or work center.',
+      icon: Gauge,
+      path: '/workspace/manufacturing-ops/intelligence/oee',
+    },
+    {
+      label: 'Downtime Analysis',
+      description: 'Analyze stops by reason, category, equipment, duration, and trend.',
+      icon: RadioTower,
+      path: '/workspace/manufacturing-ops/intelligence/downtime',
+    },
+    {
+      label: 'Cycle Time Trends',
+      description: 'Track cycle time behavior and variation across products, shifts, and operations.',
+      icon: Activity,
+      path: '/workspace/manufacturing-ops/intelligence/cycle-time',
+    },
+    {
+      label: 'Throughput Visibility',
+      description: 'Review output, pace, constraints, and production flow across the plant.',
+      icon: Workflow,
+      path: '/workspace/manufacturing-ops/intelligence/throughput',
+    },
+    {
+      label: 'Production Reports',
+      description: 'Prepare production summaries, KPI reports, and execution history snapshots.',
+      icon: FileUp,
+      path: '/workspace/manufacturing-ops/intelligence/reports',
+    },
+  ];
+  const isManufacturingOpsPage =
+    activePath === '/workspace/manufacturing-ops'
+    || activePath.startsWith('/workspace/manufacturing-ops/');
+  const isMesPage =
+    activePath === '/workspace/manufacturing-ops/mes'
+    || activePath.startsWith('/workspace/manufacturing-ops/mes/');
+  const isApsPage =
+    activePath === '/workspace/manufacturing-ops/aps'
+    || activePath.startsWith('/workspace/manufacturing-ops/aps/');
+  const isOperationsIntelligencePage =
+    activePath === '/workspace/manufacturing-ops/intelligence'
+    || activePath.startsWith('/workspace/manufacturing-ops/intelligence/');
+  const activeManufacturingModule = isApsPage
+    ? manufacturingOpsModules[1]
+    : isOperationsIntelligencePage
+      ? manufacturingOpsModules[2]
+      : manufacturingOpsModules[0];
+  const getManufacturingPanelTitle = (label: string) => {
+    if (label === 'MES') return 'Manufacturing Execution System';
+    if (label === 'APS') return 'Advanced Production Scheduling';
+    if (label === 'Operations Intelligence') return 'Operations Intelligence';
+    return label;
+  };
+  const getManufacturingRowLabel = (label: string) => {
+    if (label === 'Operations Intelligence') return 'Ops-Intel';
+    return label;
+  };
+  const activeSpecialtyModules = isApsPage
+    ? apsModules
+    : isOperationsIntelligencePage
+      ? intelligenceModules
+      : mesModules;
+  const activeMesModule = mesModules.find((module) => activePath === module.path);
   const gatewayOnlineFeatures = [
     {
       label: 'Virtual Gateway Sandbox',
@@ -2476,6 +2825,7 @@ function LoggedDashboardPage({
                 activePath.startsWith('/portal/gateway-online')
                 || activePath.startsWith('/dashboard/gateway')
               ))
+              || (item.path === '/workspace/manufacturing-ops' && activePath.startsWith('/workspace/manufacturing-ops'))
               || (item.path === '/portal/engineering-tools' && (
                 activePath.startsWith('/portal/engineering-tools')
                 || activePath.startsWith('/dashboard/engineering-tools')
@@ -2499,7 +2849,7 @@ function LoggedDashboardPage({
         </button>
       </aside>
 
-      <section className="logged-workspace">
+      <section className={['logged-workspace', isManufacturingOpsPage ? 'manufacturing-workspace-active' : ''].filter(Boolean).join(' ')}>
         {isLicensesPage ? (
           <div className="license-page">
             <section className="license-pricing-hero">
@@ -2750,6 +3100,197 @@ function LoggedDashboardPage({
               })}
             </section>
           </div>
+        ) : isManufacturingOpsPage ? (
+          <div className="engineering-tools-page manufacturing-ops-page">
+            <div className="manufacturing-page-header">
+              <button className="academy-back-button engineering-back-button" type="button" onClick={() => onNavigate('/dashboard')}>
+                <ArrowLeft size={16} />
+                Go Back
+              </button>
+              <section className="engineering-tools-hero manufacturing-ops-hero">
+                <p className="eyebrow">{t('YVIMO PORTAL')}</p>
+                <h1>{t('Manufacturing Ops')}</h1>
+              </section>
+            </div>
+            {isMesPage || isApsPage || isOperationsIntelligencePage ? (
+              <>
+                <section
+                  className={[
+                    'manufacturing-suite-stage',
+                    'manufacturing-specialty-stage',
+                    `active-${getSubscriptionSlug(activeManufacturingModule.label)}`,
+                  ].join(' ')}
+                  aria-label="Manufacturing Ops modules"
+                >
+                  <span className="manufacturing-flow flow-description-to-orbit" aria-hidden="true" />
+                  <span className="manufacturing-flow flow-orbit-to-row" aria-hidden="true" />
+                  <span className="manufacturing-flow flow-row-to-watch" aria-hidden="true" />
+                  <article className="manufacturing-suite-panel">
+                    <div className="manufacturing-suite-panel-top">
+                      <span className="manufacturing-suite-icon">
+                        {React.createElement(activeManufacturingModule.icon, { size: 30 })}
+                      </span>
+                      <span className="engineering-access-badge">{t('Active')}</span>
+                    </div>
+                    <h2>{t(getManufacturingPanelTitle(activeManufacturingModule.label))}</h2>
+                    <p>{t(activeManufacturingModule.description)}</p>
+                    <div className="manufacturing-suite-metrics" aria-label={`${activeManufacturingModule.label} capability groups`}>
+                      {activeManufacturingModule.features.slice(0, 4).map((item) => (
+                        <span key={item}>{t(item)}</span>
+                      ))}
+                    </div>
+                  </article>
+
+                  <div className="manufacturing-suite-orbit" aria-label="Manufacturing Ops selector">
+                    {manufacturingOpsModules.map((module) => {
+                      const Icon = module.icon;
+                      const moduleActive = module.label === activeManufacturingModule.label;
+                      return (
+                        <button
+                          className={moduleActive ? 'active' : ''}
+                          type="button"
+                          key={module.label}
+                          aria-label={t(module.label)}
+                          onClick={() => onNavigate(module.path)}
+                        >
+                          <Icon size={24} />
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div className="manufacturing-suite-right">
+                    <div className="manufacturing-suite-menu">
+                      {manufacturingOpsModules.map((module) => {
+                        const moduleActive = module.label === activeManufacturingModule.label;
+                        return (
+                          <button
+                            className={['manufacturing-suite-row', moduleActive ? 'active' : ''].filter(Boolean).join(' ')}
+                            type="button"
+                            key={module.label}
+                            onClick={() => onNavigate(module.path)}
+                          >
+                            <strong>{t(getManufacturingRowLabel(module.label))}</strong>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <section className="manufacturing-app-launcher" aria-label={`${activeManufacturingModule.label} modules`}>
+                      {activeSpecialtyModules.map((module, index) => {
+                        const Icon = module.icon;
+                        const activeModule = activePath === module.path;
+                        return (
+                          <button
+                            className={['manufacturing-app-icon', `position-${index + 1}`, activeModule ? 'active' : ''].filter(Boolean).join(' ')}
+                            type="button"
+                            key={module.label}
+                            onClick={() => onNavigate(module.path)}
+                          >
+                            <span className="manufacturing-app-glyph">
+                              <Icon size={26} />
+                            </span>
+                            <strong>{t(module.label)}</strong>
+                          </button>
+                        );
+                      })}
+                      {Array.from({ length: Math.max(0, 8 - activeSpecialtyModules.length) }).map((_, index) => (
+                        <span
+                          className={`manufacturing-app-icon placeholder position-${activeSpecialtyModules.length + index + 1}`}
+                          aria-hidden="true"
+                          key={`placeholder-${index}`}
+                        />
+                      ))}
+                    </section>
+                  </div>
+                </section>
+              </>
+            ) : (
+              <>
+                <section
+                  className={[
+                    'manufacturing-suite-stage',
+                    `active-${getSubscriptionSlug(activeManufacturingModule.label)}`,
+                  ].join(' ')}
+                  aria-label="Manufacturing Ops modules"
+                >
+                  <span className="manufacturing-flow flow-description-to-orbit" aria-hidden="true" />
+                  <span className="manufacturing-flow flow-orbit-to-row" aria-hidden="true" />
+                  <span className="manufacturing-flow flow-row-to-watch" aria-hidden="true" />
+                  <article className="manufacturing-suite-panel">
+                    <div className="manufacturing-suite-panel-top">
+                      <span className="manufacturing-suite-icon">
+                        {React.createElement(activeManufacturingModule.icon, { size: 30 })}
+                      </span>
+                      <span className="engineering-access-badge">{t('Active')}</span>
+                    </div>
+                    <h2>{t(getManufacturingPanelTitle(activeManufacturingModule.label))}</h2>
+                    <p>{t(activeManufacturingModule.description)}</p>
+                    <div className="manufacturing-suite-metrics" aria-label="MES capability groups">
+                      {activeManufacturingModule.features.slice(0, 4).map((item) => (
+                        <span key={item}>{t(item)}</span>
+                      ))}
+                    </div>
+                    <button className="manufacturing-card-action" type="button" onClick={() => onNavigate(activeManufacturingModule.path)}>
+                      {t(activeManufacturingModule.cta)} <ArrowRight size={17} />
+                    </button>
+                  </article>
+
+                  <div className="manufacturing-suite-orbit" aria-label="Manufacturing Ops selector">
+                    {manufacturingOpsModules.map((module) => {
+                      const Icon = module.icon;
+                      const moduleActive = module.label === activeManufacturingModule.label;
+                      return (
+                        <button
+                          className={moduleActive ? 'active' : ''}
+                          type="button"
+                          key={module.label}
+                          aria-label={t(module.label)}
+                          onClick={() => onNavigate(module.path)}
+                        >
+                          <Icon size={24} />
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div className="manufacturing-suite-right">
+                    <div className="manufacturing-suite-menu">
+                      {manufacturingOpsModules.map((module) => {
+                        return (
+                          <button
+                            className={['manufacturing-suite-row', module.label === activeManufacturingModule.label ? 'active' : ''].filter(Boolean).join(' ')}
+                            type="button"
+                            key={module.label}
+                            onClick={() => onNavigate(module.path)}
+                          >
+                            <strong>{t(getManufacturingRowLabel(module.label))}</strong>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <section className="manufacturing-app-launcher compact" aria-label="MES modules">
+                      {mesModules.map((module, index) => {
+                        const Icon = module.icon;
+                        return (
+                          <button
+                            className={['manufacturing-app-icon', `position-${index + 1}`].join(' ')}
+                            type="button"
+                            key={module.label}
+                            onClick={() => onNavigate(module.path)}
+                          >
+                            <span className="manufacturing-app-glyph">
+                              <Icon size={24} />
+                            </span>
+                            <strong>{t(module.label)}</strong>
+                          </button>
+                        );
+                      })}
+                    </section>
+                  </div>
+                </section>
+              </>
+            )}
+          </div>
         ) : isEngineeringToolsPage ? (
           <div className="engineering-tools-page">
             <button className="academy-back-button engineering-back-button" type="button" onClick={() => onNavigate('/dashboard')}>
@@ -2821,28 +3362,62 @@ function LoggedDashboardPage({
               <h1>{t('Workspace overview')}</h1>
               <p>{t('Your YVIMO tools, licenses, and learning access in one place.')}</p>
             </div>
-            <div className="workspace-grid">
-              {quickAccessItems.map((item) => {
-                const Icon = item.icon;
-                return (
-                  <button
-                    className="workspace-access-card"
-                    type="button"
-                    key={item.label}
-                    onClick={() => onNavigate(item.path)}
-                  >
-                    <span className="workspace-access-icon">
-                      <Icon size={22} />
-                    </span>
-                    <span className="workspace-access-copy">
-                      <strong>{t(item.label)}</strong>
-                      <span>{t(item.description)}</span>
-                    </span>
-                    <ArrowRight size={18} />
-                  </button>
-                );
-              })}
-            </div>
+            <section className="workspace-product-section" aria-label="Flagship products">
+              <div className="workspace-section-heading">
+                <span>{t('Flagship products')}</span>
+                <h2>{t('Start with your main YVIMO workspaces')}</h2>
+              </div>
+              <div className="workspace-grid workspace-flagship-grid">
+                {flagshipAccessItems.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <button
+                      className="workspace-access-card workspace-flagship-card"
+                      type="button"
+                      key={item.label}
+                      onClick={() => onNavigate(item.path)}
+                    >
+                      <span className="workspace-access-icon">
+                        <Icon size={24} />
+                      </span>
+                      <span className="workspace-access-copy">
+                        <strong>{t(item.label)}</strong>
+                        <span>{t(item.description)}</span>
+                      </span>
+                      <ArrowRight size={18} />
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+
+            <section className="workspace-product-section workspace-secondary-section" aria-label="Secondary modules">
+              <div className="workspace-section-heading">
+                <span>{t('Secondary modules')}</span>
+                <h2>{t('Tools, licenses, and commercial workflows')}</h2>
+              </div>
+              <div className="workspace-grid workspace-secondary-grid">
+                {secondaryAccessItems.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <button
+                      className="workspace-secondary-tile"
+                      type="button"
+                      key={item.label}
+                      onClick={() => onNavigate(item.path)}
+                    >
+                      <span className="workspace-access-icon">
+                        <Icon size={18} />
+                      </span>
+                      <span className="workspace-access-copy">
+                        <strong>{t(item.label)}</strong>
+                      </span>
+                      <ArrowRight size={16} />
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
           </div>
 
           <aside className="workspace-profile-card" aria-label="Workspace profile">
@@ -3020,7 +3595,9 @@ function App() {
     || currentPath === '/portal/gateway-online'
     || currentPath.startsWith('/portal/gateway-online/')
     || currentPath === '/portal/engineering-tools'
-    || currentPath.startsWith('/portal/engineering-tools/');
+    || currentPath.startsWith('/portal/engineering-tools/')
+    || currentPath === '/workspace/manufacturing-ops'
+    || currentPath.startsWith('/workspace/manufacturing-ops/');
   const isWorkspacePage = currentPath === '/dashboard';
   const isAcademyPage = currentPath === '/academy' || currentPath.startsWith('/academy/');
   const isAuthPage = isLoginPage || isSignUpPage;
