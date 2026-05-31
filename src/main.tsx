@@ -2298,14 +2298,12 @@ function LoggedDashboardPage({
   }> = [
     {
       label: 'MES',
-      description: 'Execute, track, and monitor production orders across work centers.',
+      description: 'Execute, track, and monitor production orders across work centers in real time.',
       features: [
         'Production order tracking',
         'Work center status',
         'Operator actions',
         'Downtime and scrap capture',
-        'Traceability',
-        'Quality checkpoints',
       ],
       icon: Factory,
       path: '/workspace/manufacturing-ops/mes',
@@ -2315,13 +2313,12 @@ function LoggedDashboardPage({
     },
     {
       label: 'APS',
-      description: 'Plan and schedule production using capacity, priorities, and constraints.',
+      description: 'Plan and schedule production using capacity, priorities, due dates, and operational constraints.',
       features: [
         'Production schedule',
         'Capacity planning',
         'Work center loading',
         'Bottleneck visibility',
-        'Priority sequencing',
       ],
       icon: Workflow,
       path: '/workspace/manufacturing-ops/aps',
@@ -2330,13 +2327,12 @@ function LoggedDashboardPage({
     },
     {
       label: 'Operations Intelligence',
-      description: 'Transform production data into actionable manufacturing KPIs.',
+      description: 'Transform production data into actionable manufacturing KPIs, trends, and improvement insights.',
       features: [
         'OEE dashboard',
         'Downtime analysis',
         'Cycle time trends',
         'Throughput visibility',
-        'Production reports',
       ],
       icon: Gauge,
       path: '/workspace/manufacturing-ops/intelligence',
@@ -2497,8 +2493,16 @@ function LoggedDashboardPage({
     return label;
   };
   const getManufacturingRowLabel = (label: string) => {
-    if (label === 'Operations Intelligence') return 'Ops-Intel';
+    if (label === 'Operations Intelligence') return 'Ops Intelligence';
     return label;
+  };
+  const getManufacturingAppPosition = (moduleLabel: string, index: number) => {
+    const positionsByModule: Record<string, number[]> = {
+      MES: [1, 2, 4, 5, 6, 7, 9, 10],
+      APS: [1, 4, 5, 6, 8],
+      'Operations Intelligence': [1, 2, 4, 5, 8],
+    };
+    return positionsByModule[moduleLabel]?.[index] ?? index + 1;
   };
   const activeSpecialtyModules = isApsPage
     ? apsModules
@@ -3110,6 +3114,7 @@ function LoggedDashboardPage({
               <section className="engineering-tools-hero manufacturing-ops-hero">
                 <p className="eyebrow">{t('YVIMO PORTAL')}</p>
                 <h1>{t('Manufacturing Ops')}</h1>
+                <p>{t('Plan, execute, track, and improve manufacturing operations from one connected YVIMO workspace.')}</p>
               </section>
             </div>
             {isMesPage || isApsPage || isOperationsIntelligencePage ? (
@@ -3123,6 +3128,7 @@ function LoggedDashboardPage({
                   aria-label="Manufacturing Ops modules"
                 >
                   <span className="manufacturing-flow flow-description-to-orbit" aria-hidden="true" />
+                  <span className="manufacturing-flow flow-orbit-entry" aria-hidden="true" />
                   <span className="manufacturing-flow flow-orbit-to-row" aria-hidden="true" />
                   <span className="manufacturing-flow flow-row-to-watch" aria-hidden="true" />
                   <article className="manufacturing-suite-panel">
@@ -3176,12 +3182,16 @@ function LoggedDashboardPage({
                       })}
                     </div>
                     <section className="manufacturing-app-launcher" aria-label={`${activeManufacturingModule.label} modules`}>
+                      <div className="manufacturing-app-launcher-header">
+                        <strong>{t('Applications')}</strong>
+                        <span>{t('Select a module to open its workspace.')}</span>
+                      </div>
                       {activeSpecialtyModules.map((module, index) => {
                         const Icon = module.icon;
                         const activeModule = activePath === module.path;
                         return (
                           <button
-                            className={['manufacturing-app-icon', `position-${index + 1}`, activeModule ? 'active' : ''].filter(Boolean).join(' ')}
+                            className={['manufacturing-app-icon', `position-${getManufacturingAppPosition(activeManufacturingModule.label, index)}`, activeModule ? 'active' : ''].filter(Boolean).join(' ')}
                             type="button"
                             key={module.label}
                             onClick={() => onNavigate(module.path)}
@@ -3193,13 +3203,6 @@ function LoggedDashboardPage({
                           </button>
                         );
                       })}
-                      {Array.from({ length: Math.max(0, 8 - activeSpecialtyModules.length) }).map((_, index) => (
-                        <span
-                          className={`manufacturing-app-icon placeholder position-${activeSpecialtyModules.length + index + 1}`}
-                          aria-hidden="true"
-                          key={`placeholder-${index}`}
-                        />
-                      ))}
                     </section>
                   </div>
                 </section>
@@ -3214,6 +3217,7 @@ function LoggedDashboardPage({
                   aria-label="Manufacturing Ops modules"
                 >
                   <span className="manufacturing-flow flow-description-to-orbit" aria-hidden="true" />
+                  <span className="manufacturing-flow flow-orbit-entry" aria-hidden="true" />
                   <span className="manufacturing-flow flow-orbit-to-row" aria-hidden="true" />
                   <span className="manufacturing-flow flow-row-to-watch" aria-hidden="true" />
                   <article className="manufacturing-suite-panel">
@@ -3230,9 +3234,6 @@ function LoggedDashboardPage({
                         <span key={item}>{t(item)}</span>
                       ))}
                     </div>
-                    <button className="manufacturing-card-action" type="button" onClick={() => onNavigate(activeManufacturingModule.path)}>
-                      {t(activeManufacturingModule.cta)} <ArrowRight size={17} />
-                    </button>
                   </article>
 
                   <div className="manufacturing-suite-orbit" aria-label="Manufacturing Ops selector">
@@ -3269,11 +3270,15 @@ function LoggedDashboardPage({
                       })}
                     </div>
                     <section className="manufacturing-app-launcher compact" aria-label="MES modules">
+                      <div className="manufacturing-app-launcher-header">
+                        <strong>{t('Applications')}</strong>
+                        <span>{t('Select a module to open its workspace.')}</span>
+                      </div>
                       {mesModules.map((module, index) => {
                         const Icon = module.icon;
                         return (
                           <button
-                            className={['manufacturing-app-icon', `position-${index + 1}`].join(' ')}
+                            className={['manufacturing-app-icon', `position-${getManufacturingAppPosition('MES', index)}`].join(' ')}
                             type="button"
                             key={module.label}
                             onClick={() => onNavigate(module.path)}

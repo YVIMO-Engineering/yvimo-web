@@ -2000,31 +2000,38 @@ button {
 
 .manufacturing-ops-hero p {
   margin: 0;
-  max-width: 800px;
-  color: var(--ink-soft);
+  max-width: 980px;
+  color: #ffffff;
   font-size: 18px;
   line-height: 1.55;
+  white-space: nowrap;
 }
 
 .manufacturing-page-header {
   display: grid;
-  grid-template-columns: 140px minmax(0, 1fr) 140px;
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
+  justify-items: center;
   gap: 22px;
   position: relative;
   z-index: 2;
 }
 
 .manufacturing-ops-page .engineering-back-button {
+  position: absolute;
+  left: 0;
+  top: 50%;
   width: fit-content;
   margin: 0;
   align-self: center;
+  transform: translateY(-50%);
 }
 
 .manufacturing-ops-page .manufacturing-ops-hero {
   justify-items: center;
-  gap: 8px;
-  max-width: none;
+  gap: 10px;
+  width: min(100%, 1040px);
+  max-width: 1040px;
   margin: 0;
   text-align: center;
 }
@@ -2037,6 +2044,21 @@ button {
   color: #ffffff;
   font-size: clamp(46px, 5.6vw, 76px);
   text-shadow: 0 22px 46px rgba(0, 0, 0, 0.28);
+  width: 100%;
+  text-align: center;
+}
+
+.manufacturing-ops-page .manufacturing-ops-hero h1 + p {
+  width: max-content;
+  max-width: none;
+  justify-self: center;
+  margin-top: 8px;
+  text-align: center;
+}
+
+.manufacturing-ops-page .manufacturing-ops-hero p:last-child {
+  max-width: none;
+  color: #ffffff;
 }
 
 .manufacturing-suite-stage {
@@ -2047,7 +2069,7 @@ button {
   justify-content: center;
   gap: 32px;
   height: 560px;
-  margin-top: 18px;
+  margin-top: -12px;
   border: 0;
   border-radius: 0;
   padding: 56px 64px;
@@ -2062,35 +2084,37 @@ button {
 }
 
 .manufacturing-suite-stage {
-  --active-flow-y: 198px;
-  --panel-flow-y: 280px;
+  --active-flow-y: 222px;
+  --panel-flow-y: 300px;
   --watch-flow-y: 280px;
   --panel-out-x: 390px;
-  --orbit-in-x: 500px;
-  --orbit-out-x: 558px;
-  --row-in-x: 604px;
-  --row-out-x: 854px;
-  --watch-in-x: 924px;
-  --panel-flow-width: 137px;
-  --panel-flow-angle: -37deg;
-  --watch-flow-width: 108px;
-  --watch-flow-angle: 49deg;
+  --orbit-in-x: 494px;
+  --orbit-entry-x: 498px;
+  --orbit-entry-width: 60px;
+  --orbit-out-x: 552px;
+  --row-in-x: 626px;
+  --row-out-x: 858px;
+  --watch-in-x: 928px;
+  --panel-flow-width: 140px;
+  --panel-flow-angle: -34deg;
+  --watch-flow-width: 112px;
+  --watch-flow-angle: 46deg;
 }
 
 .manufacturing-suite-stage.active-aps {
-  --active-flow-y: 280px;
-  --panel-flow-width: 110px;
+  --active-flow-y: 300px;
+  --panel-flow-width: 116px;
   --panel-flow-angle: 0deg;
-  --watch-flow-width: 70px;
+  --watch-flow-width: 76px;
   --watch-flow-angle: 0deg;
 }
 
 .manufacturing-suite-stage.active-operations-intelligence {
-  --active-flow-y: 362px;
-  --panel-flow-width: 137px;
-  --panel-flow-angle: 37deg;
-  --watch-flow-width: 108px;
-  --watch-flow-angle: -49deg;
+  --active-flow-y: 378px;
+  --panel-flow-width: 140px;
+  --panel-flow-angle: 34deg;
+  --watch-flow-width: 112px;
+  --watch-flow-angle: -46deg;
 }
 
 .manufacturing-flow {
@@ -2124,6 +2148,16 @@ button {
   transform: rotate(var(--panel-flow-angle));
 }
 
+.flow-orbit-entry {
+  top: calc(var(--active-flow-y) - 7px);
+  left: var(--orbit-entry-x);
+  width: var(--orbit-entry-width);
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.92), #ffffff 52%, rgba(255, 255, 255, 0.92));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.42),
+    0 0 4px rgba(255, 255, 255, 0.12);
+}
+
 .flow-orbit-to-row {
   top: calc(var(--active-flow-y) - 7px);
   left: var(--orbit-out-x);
@@ -2142,12 +2176,12 @@ button {
   z-index: 1;
   display: grid;
   gap: 18px;
-  align-content: space-between;
-  height: 408px;
+  align-content: start;
+  height: 448px;
   min-width: 0;
   border: 1px solid rgba(255, 255, 255, 0.32);
   border-radius: 8px;
-  padding: 22px;
+  padding: 22px 22px 48px;
   background: #f7f7f7;
   box-shadow: 0 22px 48px rgba(0, 0, 0, 0.18);
   overflow: hidden;
@@ -2222,6 +2256,7 @@ button {
 .manufacturing-suite-metrics {
   flex-wrap: wrap;
   gap: 8px;
+  margin-bottom: 14px;
 }
 
 .manufacturing-suite-metrics span {
@@ -2353,8 +2388,8 @@ button {
   z-index: 3;
   width: 528px;
   flex: 0 0 528px;
-  height: 440px;
-  min-height: 440px;
+  height: 480px;
+  min-height: 480px;
   margin: 8px auto 0;
   border: 1px solid rgba(255, 138, 31, 0.18);
   border-radius: 34px;
@@ -2367,9 +2402,36 @@ button {
 
 .manufacturing-app-launcher.compact {
   width: 528px;
-  height: 440px;
-  min-height: 440px;
+  height: 480px;
+  min-height: 480px;
   border-radius: 34px;
+}
+
+.manufacturing-app-launcher-header {
+  position: absolute;
+  top: 30px;
+  left: 36px;
+  right: 36px;
+  z-index: 2;
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  text-align: center;
+  pointer-events: none;
+}
+
+.manufacturing-app-launcher-header strong {
+  color: rgba(255, 255, 255, 0.96);
+  font-size: 18px;
+  font-weight: 950;
+  letter-spacing: 0;
+}
+
+.manufacturing-app-launcher-header span {
+  color: #ffb057;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.35;
 }
 
 .manufacturing-app-icon {
@@ -2413,16 +2475,16 @@ button {
     transform 0.18s ease;
 }
 
-.manufacturing-app-icon.position-1 { top: 22%; left: 27%; }
-.manufacturing-app-icon.position-2 { top: 19%; left: 50%; }
-.manufacturing-app-icon.position-3 { top: 22%; left: 73%; }
-.manufacturing-app-icon.position-4 { top: 52%; left: 17%; }
-.manufacturing-app-icon.position-5 { top: 52%; left: 39%; }
-.manufacturing-app-icon.position-6 { top: 52%; left: 61%; }
-.manufacturing-app-icon.position-7 { top: 52%; left: 83%; }
-.manufacturing-app-icon.position-8 { top: 80%; left: 28%; }
-.manufacturing-app-icon.position-9 { top: 83%; left: 50%; }
-.manufacturing-app-icon.position-10 { top: 80%; left: 72%; }
+.manufacturing-app-icon.position-1 { top: 36%; left: 28%; }
+.manufacturing-app-icon.position-2 { top: 34%; left: 50%; }
+.manufacturing-app-icon.position-3 { top: 36%; left: 72%; }
+.manufacturing-app-icon.position-4 { top: 61%; left: 17%; }
+.manufacturing-app-icon.position-5 { top: 61%; left: 39%; }
+.manufacturing-app-icon.position-6 { top: 61%; left: 61%; }
+.manufacturing-app-icon.position-7 { top: 61%; left: 83%; }
+.manufacturing-app-icon.position-8 { top: 85%; left: 28%; }
+.manufacturing-app-icon.position-9 { top: 87%; left: 50%; }
+.manufacturing-app-icon.position-10 { top: 85%; left: 72%; }
 
 .manufacturing-app-icon:nth-child(2n) .manufacturing-app-glyph {
   --app-glow: rgba(47, 107, 58, 0.72);
