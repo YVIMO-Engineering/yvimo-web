@@ -3050,24 +3050,14 @@ button {
   outline: none;
 }
 
-.production-orders-table tbody tr::after {
-  content: "";
-  position: absolute;
-  inset: 8px 0;
-  z-index: 0;
-  border: 3px solid transparent;
-  border-radius: 6px;
-  pointer-events: none;
-}
-
-.production-orders-table tbody tr.selected::after,
-.production-orders-table tbody tr:focus-visible::after {
-  border-color: #ff8a1f;
-  box-shadow: 0 0 0 2px rgba(255, 138, 31, 0.18);
-}
-
 .production-orders-table tbody tr.selected td {
   background: #fff0e3;
+  border-top: 3px solid #ff8a1f;
+  border-bottom: 3px solid #ff8a1f;
+}
+
+.production-orders-table tbody tr:focus-visible td {
+  background: #fff7ef;
   border-top: 3px solid #ff8a1f;
   border-bottom: 3px solid #ff8a1f;
 }
@@ -3081,6 +3071,14 @@ button {
 }
 
 .production-orders-table tbody tr.selected td:last-child {
+  border-right: 3px solid #ff8a1f;
+}
+
+.production-orders-table tbody tr:focus-visible td:first-child {
+  border-left: 3px solid #ff8a1f;
+}
+
+.production-orders-table tbody tr:focus-visible td:last-child {
   border-right: 3px solid #ff8a1f;
 }
 
@@ -12101,6 +12099,163 @@ button {
     top: 22px;
     left: 24px;
     right: 24px;
+  }
+
+  .production-orders-layout {
+    grid-template-columns: minmax(0, 1fr) 300px;
+    gap: 14px;
+  }
+
+  .production-orders-side-panel {
+    gap: 12px;
+  }
+
+  .production-orders-metric-grid {
+    gap: 8px;
+  }
+
+  .production-orders-metric-grid article,
+  .production-orders-total {
+    min-height: 50px;
+    padding: 0 12px;
+  }
+
+  .production-orders-search,
+  .production-orders-selection-card {
+    padding: 12px;
+  }
+
+  .production-orders-selection-card {
+    gap: 12px;
+  }
+
+  .production-orders-selection-card strong {
+    font-size: 1.34rem;
+  }
+
+  .production-orders-selection-card em {
+    font-size: 0.88rem;
+  }
+
+  .production-order-progress p {
+    font-size: 0.84rem;
+  }
+
+  .production-orders-create {
+    min-height: 40px;
+    font-size: 0.78rem;
+  }
+
+  .mes-action-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .mes-action-grid button {
+    min-height: 32px;
+    padding: 0 8px;
+    font-size: 0.76rem;
+  }
+
+  .production-orders-panel-title {
+    min-height: 58px;
+    gap: 8px;
+    padding: 8px 10px;
+  }
+
+  .production-orders-panel-title strong,
+  .production-orders-panel-title span {
+    font-size: 0.72rem;
+  }
+
+  .production-orders-view-toggle {
+    gap: 4px;
+  }
+
+  .production-orders-view-toggle button {
+    min-height: 30px;
+    padding: 0 9px;
+    font-size: 0.68rem;
+  }
+
+  .production-orders-table {
+    min-width: 720px;
+  }
+
+  .production-orders-table th,
+  .production-orders-table td {
+    padding: 12px 8px;
+  }
+
+  .production-orders-table th {
+    font-size: 0.68rem;
+  }
+
+  .production-orders-table tbody tr td {
+    height: 78px;
+  }
+
+  .production-orders-table td {
+    font-size: 0.78rem;
+  }
+
+  .production-orders-table td strong {
+    font-size: 0.78rem;
+  }
+
+  .production-orders-table td span:not(.mes-status-badge) {
+    font-size: 0.66rem;
+    line-height: 1.25;
+  }
+
+  .production-orders-table td.production-order-number-cell {
+    font-size: 20px;
+  }
+
+  .production-orders-table th:nth-child(1),
+  .production-orders-table td:nth-child(1) {
+    width: 72px;
+  }
+
+  .production-orders-table th:nth-child(2),
+  .production-orders-table td:nth-child(2) {
+    width: 136px;
+  }
+
+  .production-orders-table th:nth-child(3),
+  .production-orders-table td:nth-child(3),
+  .production-orders-table th:nth-child(4),
+  .production-orders-table td:nth-child(4) {
+    width: 84px;
+  }
+
+  .production-orders-table th:nth-child(5),
+  .production-orders-table td:nth-child(5) {
+    width: 66px;
+  }
+
+  .production-orders-table th:nth-child(6),
+  .production-orders-table td:nth-child(6),
+  .production-orders-table th:nth-child(7),
+  .production-orders-table td:nth-child(7) {
+    width: 112px;
+  }
+
+  .production-orders-table th:nth-child(8),
+  .production-orders-table td:nth-child(8) {
+    width: 72px;
+  }
+
+  .production-orders-table th:nth-child(9),
+  .production-orders-table td:nth-child(9) {
+    width: 76px;
+  }
+
+  .mes-status-badge {
+    min-height: 22px;
+    padding: 0 8px;
+    font-size: 0.64rem;
   }
 }
 
