@@ -2012,6 +2012,7 @@ function LoggedDashboardPage({
   const [avatarPreview, setAvatarPreview] = React.useState<string | null>(null);
   const [avatarOffset, setAvatarOffset] = React.useState<AvatarOffset>({ x: 0, y: 0 });
   const [avatarZoom, setAvatarZoom] = React.useState(1);
+  const [tabletSidebarExpanded, setTabletSidebarExpanded] = React.useState(false);
   const avatarDragRef = React.useRef<{ pointerId: number; startX: number; startY: number; origin: AvatarOffset } | null>(null);
   const [avatarMessage, setAvatarMessage] = React.useState<string | null>(null);
   const [avatarSaving, setAvatarSaving] = React.useState(false);
@@ -2829,10 +2830,20 @@ function LoggedDashboardPage({
 
   return (
     <main className="logged-shell">
-      <aside className="logged-sidebar">
+      <aside className={['logged-sidebar', tabletSidebarExpanded ? 'tablet-expanded' : ''].filter(Boolean).join(' ')}>
         <div className="logged-sidebar-title">
-          <span>YVIMO</span>
-          <strong>{t('Dashboard')}</strong>
+          <div>
+            <span>YVIMO</span>
+            <strong>{t('Dashboard')}</strong>
+          </div>
+          <button
+            className="logged-sidebar-toggle"
+            type="button"
+            aria-label={tabletSidebarExpanded ? 'Collapse dashboard menu' : 'Expand dashboard menu'}
+            onClick={() => setTabletSidebarExpanded((expanded) => !expanded)}
+          >
+            <Menu size={18} />
+          </button>
         </div>
         <nav aria-label="Dashboard navigation">
           {navItems.map((item, index) => {
@@ -2853,17 +2864,21 @@ function LoggedDashboardPage({
                 className={[active || (index === 0 && activePath === '/dashboard') ? 'active' : '', item.featured ? 'featured' : ''].filter(Boolean).join(' ')}
                 type="button"
                 key={item.label}
-                onClick={() => onNavigate(item.path)}
+                title={t(item.label)}
+                onClick={() => {
+                  setTabletSidebarExpanded(false);
+                  onNavigate(item.path);
+                }}
               >
                 <Icon size={18} />
-                {t(item.label)}
+                <span>{t(item.label)}</span>
               </button>
             );
           })}
         </nav>
-        <button className="logged-signout" type="button" onClick={onSignOut}>
+        <button className="logged-signout" type="button" title={t('Sign out')} onClick={onSignOut}>
           <LogIn size={18} />
-          {t('Sign out')}
+          <span>{t('Sign out')}</span>
         </button>
       </aside>
 

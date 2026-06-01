@@ -1230,9 +1230,17 @@ button {
 }
 
 .logged-sidebar-title {
-  display: grid;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 4px;
   padding: 0 8px 12px;
+}
+
+.logged-sidebar-title > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
 }
 
 .logged-sidebar-title span {
@@ -1245,6 +1253,18 @@ button {
 .logged-sidebar-title strong {
   color: #ffffff;
   font-size: 22px;
+}
+
+.logged-sidebar-toggle {
+  display: none;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 1px solid rgba(255, 138, 31, 0.28);
+  border-radius: 8px;
+  background: rgba(255, 138, 31, 0.12);
+  color: #ffd1a5;
+  cursor: pointer;
 }
 
 .logged-sidebar nav {
@@ -1266,6 +1286,11 @@ button {
   cursor: pointer;
   font-weight: 560;
   text-align: left;
+}
+
+.logged-sidebar nav button svg,
+.logged-signout svg {
+  flex: 0 0 auto;
 }
 
 .logged-sidebar nav button:hover,
@@ -11846,6 +11871,236 @@ button {
   .license-staff-grid {
     grid-template-columns: repeat(2, minmax(300px, 420px));
     justify-content: center;
+  }
+}
+
+@media (min-width: 761px) and (max-width: 1660px) {
+  .logged-shell {
+    grid-template-columns: 76px minmax(0, 1fr);
+  }
+
+  .logged-sidebar {
+    width: 76px;
+    padding: 18px 10px;
+    gap: 18px;
+    overflow-x: hidden;
+    transition: width 180ms ease, box-shadow 180ms ease;
+  }
+
+  .logged-sidebar:hover,
+  .logged-sidebar:focus-within,
+  .logged-sidebar.tablet-expanded {
+    width: 260px;
+    box-shadow: 24px 0 54px rgba(0, 0, 0, 0.26);
+  }
+
+  .logged-sidebar-title {
+    justify-content: center;
+    padding: 0 0 10px;
+  }
+
+  .logged-sidebar-title > div {
+    display: none;
+  }
+
+  .logged-sidebar:hover .logged-sidebar-title,
+  .logged-sidebar:focus-within .logged-sidebar-title,
+  .logged-sidebar.tablet-expanded .logged-sidebar-title {
+    justify-content: space-between;
+    padding: 0 8px 12px;
+  }
+
+  .logged-sidebar:hover .logged-sidebar-title > div,
+  .logged-sidebar:focus-within .logged-sidebar-title > div,
+  .logged-sidebar.tablet-expanded .logged-sidebar-title > div {
+    display: grid;
+  }
+
+  .logged-sidebar-toggle {
+    display: grid;
+  }
+
+  .logged-sidebar nav button,
+  .logged-signout {
+    justify-content: center;
+    gap: 0;
+    padding: 10px;
+  }
+
+  .logged-sidebar nav button span,
+  .logged-signout span {
+    display: none;
+    white-space: nowrap;
+  }
+
+  .logged-sidebar:hover nav button,
+  .logged-sidebar:focus-within nav button,
+  .logged-sidebar.tablet-expanded nav button,
+  .logged-sidebar:hover .logged-signout,
+  .logged-sidebar:focus-within .logged-signout,
+  .logged-sidebar.tablet-expanded .logged-signout {
+    justify-content: flex-start;
+    gap: 10px;
+    padding: 10px 12px;
+  }
+
+  .logged-sidebar:hover nav button span,
+  .logged-sidebar:focus-within nav button span,
+  .logged-sidebar.tablet-expanded nav button span,
+  .logged-sidebar:hover .logged-signout span,
+  .logged-sidebar:focus-within .logged-signout span,
+  .logged-sidebar.tablet-expanded .logged-signout span {
+    display: inline;
+  }
+
+  .logged-workspace {
+    padding-right: clamp(16px, 2.2vw, 28px);
+    padding-left: clamp(16px, 2.2vw, 28px);
+  }
+
+  .mes-workspace-back {
+    min-width: 0;
+    max-width: 196px;
+    padding: 0 12px;
+    font-size: 0.86rem;
+  }
+
+  .mes-screen-header {
+    grid-template-columns: 196px minmax(0, 1fr) 196px;
+  }
+
+  .manufacturing-suite-stage {
+    grid-template-columns:
+      minmax(280px, 390px)
+      minmax(70px, 90px)
+      minmax(220px, 280px)
+      minmax(400px, 520px);
+    gap: clamp(12px, 1.5vw, 24px);
+    justify-content: center;
+    width: min(100%, 1420px);
+    margin-right: auto;
+    margin-left: auto;
+    padding: 42px 28px;
+    overflow: visible;
+  }
+
+  .manufacturing-specialty-stage {
+    grid-template-columns:
+      minmax(280px, 390px)
+      minmax(70px, 90px)
+      minmax(220px, 280px)
+      minmax(400px, 520px);
+  }
+
+  .manufacturing-suite-panel {
+    height: 420px;
+    padding: 20px;
+    transform: none;
+  }
+
+  .manufacturing-suite-panel::after {
+    display: block;
+    right: -28px;
+    width: 56px;
+  }
+
+  .manufacturing-flow {
+    display: none;
+  }
+
+  .manufacturing-suite-panel h2 {
+    font-size: clamp(24px, 3vw, 36px);
+  }
+
+  .manufacturing-suite-metrics span {
+    max-width: 100%;
+    font-size: 11px;
+  }
+
+  .manufacturing-suite-right {
+    display: contents;
+  }
+
+  .manufacturing-suite-menu {
+    grid-column: 3;
+    align-self: center;
+  }
+
+  .manufacturing-suite-row {
+    min-height: 58px;
+  }
+
+  .manufacturing-app-launcher,
+  .manufacturing-app-launcher.compact {
+    grid-column: 4;
+    align-self: center;
+    width: min(100%, 430px);
+    height: 430px;
+    min-height: 430px;
+    border-radius: 28px;
+  }
+
+  .manufacturing-suite-orbit {
+    grid-column: 2;
+    align-self: center;
+  }
+
+  .manufacturing-suite-orbit button,
+  .manufacturing-suite-row {
+    position: relative;
+  }
+
+  .manufacturing-suite-orbit button.active::before,
+  .manufacturing-suite-orbit button.active::after,
+  .manufacturing-suite-row.active::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    z-index: -1;
+    height: 12px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0.92), #ffffff, rgba(255, 255, 255, 0.9));
+    box-shadow:
+      0 0 14px rgba(255, 255, 255, 0.48),
+      0 0 28px rgba(255, 138, 31, 0.38);
+    pointer-events: none;
+    transform: translateY(-50%);
+  }
+
+  .manufacturing-suite-orbit button.active::before {
+    right: 100%;
+    width: clamp(24px, 4vw, 64px);
+  }
+
+  .manufacturing-suite-orbit button.active::after {
+    left: 100%;
+    width: clamp(18px, 3vw, 42px);
+  }
+
+  .manufacturing-suite-row.active::after {
+    left: 100%;
+    width: clamp(14px, 2vw, 30px);
+  }
+
+  .manufacturing-app-glyph {
+    width: 64px;
+    height: 64px;
+  }
+
+  .manufacturing-app-icon {
+    width: 100px;
+    min-height: 92px;
+  }
+
+  .manufacturing-app-icon strong {
+    max-width: 108px;
+    font-size: 11px;
+  }
+
+  .manufacturing-app-launcher-header {
+    top: 22px;
+    left: 24px;
+    right: 24px;
   }
 }
 
