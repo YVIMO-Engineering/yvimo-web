@@ -42,6 +42,7 @@ import {
 import type { Session, User } from '@supabase/supabase-js';
 import { createSessionSupabaseClient, supabase } from './lib/supabaseClient';
 import { AcademyActivityPage, AcademyCatalogPage, AcademyCertificatesPage, AcademyCoursePage, AcademyHomePage, AcademyLessonPage, AcademyProgressPage, AcademyTrackPage } from './pages/AcademyPages';
+import { ProductionOrdersWorkspace, TraceabilityWorkspace, WorkCentersWorkspace } from './manufacturing/MesWorkspaces';
 import './styles.css';
 
 type BusinessLine = {
@@ -2510,6 +2511,19 @@ function LoggedDashboardPage({
       ? intelligenceModules
       : mesModules;
   const activeMesModule = mesModules.find((module) => activePath === module.path);
+  const renderActiveMesWorkspace = () => {
+    if (activePath === '/workspace/manufacturing-ops/mes/orders') {
+      return <ProductionOrdersWorkspace onNavigate={onNavigate} />;
+    }
+    if (activePath === '/workspace/manufacturing-ops/mes/work-centers') {
+      return <WorkCentersWorkspace onNavigate={onNavigate} />;
+    }
+    if (activePath === '/workspace/manufacturing-ops/mes/traceability') {
+      return <TraceabilityWorkspace onNavigate={onNavigate} />;
+    }
+    return null;
+  };
+  const activeMesWorkspace = renderActiveMesWorkspace();
   const gatewayOnlineFeatures = [
     {
       label: 'Virtual Gateway Sandbox',
@@ -2853,7 +2867,13 @@ function LoggedDashboardPage({
         </button>
       </aside>
 
-      <section className={['logged-workspace', isManufacturingOpsPage ? 'manufacturing-workspace-active' : ''].filter(Boolean).join(' ')}>
+      <section
+        className={[
+          'logged-workspace',
+          isManufacturingOpsPage ? 'manufacturing-workspace-active' : '',
+          activeMesWorkspace ? 'mes-application-screen-active' : '',
+        ].filter(Boolean).join(' ')}
+      >
         {isLicensesPage ? (
           <div className="license-page">
             <section className="license-pricing-hero">
@@ -3106,18 +3126,22 @@ function LoggedDashboardPage({
           </div>
         ) : isManufacturingOpsPage ? (
           <div className="engineering-tools-page manufacturing-ops-page">
-            <div className="manufacturing-page-header">
-              <button className="academy-back-button engineering-back-button" type="button" onClick={() => onNavigate('/dashboard')}>
-                <ArrowLeft size={16} />
-                Go Back
-              </button>
-              <section className="engineering-tools-hero manufacturing-ops-hero">
-                <p className="eyebrow">{t('YVIMO PORTAL')}</p>
-                <h1>{t('Manufacturing Ops')}</h1>
-                <p>{t('Plan, execute, track, and improve manufacturing operations from one connected YVIMO workspace.')}</p>
-              </section>
-            </div>
-            {isMesPage || isApsPage || isOperationsIntelligencePage ? (
+            {activeMesWorkspace ? (
+              activeMesWorkspace
+            ) : (
+              <>
+                <div className="manufacturing-page-header">
+                  <button className="academy-back-button engineering-back-button" type="button" onClick={() => onNavigate('/dashboard')}>
+                    <ArrowLeft size={16} />
+                    Go Back
+                  </button>
+                  <section className="engineering-tools-hero manufacturing-ops-hero">
+                    <p className="eyebrow">{t('YVIMO PORTAL')}</p>
+                    <h1>{t('Manufacturing Ops')}</h1>
+                    <p>{t('Plan, execute, track, and improve manufacturing operations from one connected YVIMO workspace.')}</p>
+                  </section>
+                </div>
+                {isMesPage || isApsPage || isOperationsIntelligencePage ? (
               <>
                 <section
                   className={[
@@ -3293,6 +3317,8 @@ function LoggedDashboardPage({
                     </section>
                   </div>
                 </section>
+              </>
+            )}
               </>
             )}
           </div>
@@ -3603,6 +3629,10 @@ function App() {
     || currentPath.startsWith('/portal/engineering-tools/')
     || currentPath === '/workspace/manufacturing-ops'
     || currentPath.startsWith('/workspace/manufacturing-ops/');
+  const isMesApplicationScreen =
+    currentPath === '/workspace/manufacturing-ops/mes/orders'
+    || currentPath === '/workspace/manufacturing-ops/mes/work-centers'
+    || currentPath === '/workspace/manufacturing-ops/mes/traceability';
   const isWorkspacePage = currentPath === '/dashboard';
   const isAcademyPage = currentPath === '/academy' || currentPath.startsWith('/academy/');
   const isAuthPage = isLoginPage || isSignUpPage;
@@ -4181,7 +4211,7 @@ function App() {
 
   return (
     <div
-      className="site-shell"
+      className={['site-shell', isMesApplicationScreen ? 'site-shell-mes-application' : ''].filter(Boolean).join(' ')}
       style={
         {
           '--header-height': `${headerHeight}px`,
