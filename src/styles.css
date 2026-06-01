@@ -1355,6 +1355,7 @@ button {
 .logged-workspace.manufacturing-workspace-active.mes-application-screen-active {
   background: #ffffff;
   box-shadow: inset 0 1px 0 rgba(255, 138, 31, 0.18);
+  padding-top: 18px;
 }
 
 .logged-workspace.manufacturing-workspace-active.mes-application-screen-active::before {
@@ -3115,6 +3116,41 @@ button {
   vertical-align: middle;
 }
 
+.production-orders-table-empty {
+  height: 220px;
+  padding: 28px;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.production-orders-table-empty > div {
+  display: grid;
+  gap: 8px;
+  width: min(100%, 620px);
+  margin: 0 auto;
+  border: 1px solid rgba(217, 119, 6, 0.36);
+  border-radius: 8px;
+  padding: 18px 20px;
+  background: #fff7d6;
+  color: #5f3b00;
+  box-shadow: 0 14px 34px rgba(217, 119, 6, 0.12);
+}
+
+.production-orders-table-empty span {
+  color: #d96f00;
+  font-size: 0.75rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.production-orders-table-empty strong {
+  color: #5f3b00;
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
 .production-orders-pagination {
   display: flex;
   align-items: center;
@@ -3268,6 +3304,37 @@ button {
   text-transform: uppercase;
 }
 
+.production-orders-manage-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.production-orders-manage-actions button {
+  min-height: 38px;
+  border: 1px solid rgba(18, 29, 41, 0.14);
+  border-radius: 8px;
+  background: #f1f5f9;
+  color: #17202a;
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.production-orders-manage-actions button:last-child {
+  border-color: #dc2626;
+  background: #dc2626;
+  color: #ffffff;
+}
+
+.production-orders-manage-actions button:disabled {
+  border-color: rgba(18, 29, 41, 0.1);
+  background: #e5e7eb;
+  color: #94a3b8;
+  cursor: not-allowed;
+}
+
 .production-orders-selection-card {
   display: grid;
   gap: 16px;
@@ -3371,6 +3438,182 @@ button {
   padding: 16px;
   color: #516173;
   font-weight: 700;
+}
+
+.production-orders-database-message {
+  border: 1px solid rgba(255, 138, 31, 0.32);
+  border-radius: 8px;
+  padding: 12px;
+  background: #fff7ed;
+  color: #7a3300;
+  font-size: 0.82rem;
+  font-weight: 800;
+  line-height: 1.4;
+}
+
+.mes-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(7, 12, 18, 0.58);
+}
+
+.mes-order-modal {
+  display: grid;
+  gap: 18px;
+  width: min(100%, 760px);
+  max-height: min(88vh, 760px);
+  overflow-y: auto;
+  border: 1px solid rgba(255, 138, 31, 0.34);
+  border-radius: 8px;
+  padding: 22px;
+  background: #ffffff;
+  color: #07111c;
+  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.34);
+}
+
+.mes-order-modal h3 {
+  margin: 4px 0 0;
+  font-size: 1.55rem;
+}
+
+.mes-order-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.mes-order-form label {
+  display: grid;
+  gap: 7px;
+  color: #455769;
+  font-size: 0.76rem;
+  font-weight: 560;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.mes-order-form input,
+.mes-order-form select {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid rgba(18, 29, 41, 0.16);
+  border-radius: 8px;
+  padding: 0 12px;
+  background: #f8fafc;
+  color: #07111c;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 520;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.mes-order-form input:focus,
+.mes-order-form select:focus {
+  border-color: #ff8a1f;
+  outline: 2px solid rgba(255, 138, 31, 0.22);
+}
+
+.mes-order-form-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 8px;
+}
+
+.mes-order-form-actions button {
+  min-height: 40px;
+  border: 1px solid rgba(18, 29, 41, 0.14);
+  border-radius: 8px;
+  padding: 0 16px;
+  background: #f1f5f9;
+  color: #17202a;
+  font: inherit;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.mes-order-form-actions button[type="submit"] {
+  border-color: #d96f00;
+  background: #ff8a1f;
+  color: #17110b;
+}
+
+.mes-confirm-modal {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr);
+  gap: 16px;
+  width: min(100%, 520px);
+  border: 1px solid rgba(255, 138, 31, 0.34);
+  border-radius: 8px;
+  padding: 22px;
+  background: #ffffff;
+  color: #07111c;
+  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.34);
+}
+
+.mes-confirm-mark {
+  display: grid;
+  width: 46px;
+  height: 46px;
+  place-items: center;
+  border-radius: 999px;
+  background: #fff3e8;
+  color: #ff8a1f;
+}
+
+.mes-confirm-modal.danger .mes-confirm-mark {
+  background: #ffe0e0;
+  color: #dc2626;
+}
+
+.mes-confirm-modal h3 {
+  margin: 4px 0 8px;
+  color: #07111c;
+  font-size: 1.35rem;
+}
+
+.mes-confirm-modal p:last-child {
+  margin: 0;
+  color: #405162;
+  line-height: 1.5;
+}
+
+.mes-confirm-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.mes-confirm-actions button {
+  min-height: 40px;
+  border: 1px solid rgba(18, 29, 41, 0.14);
+  border-radius: 8px;
+  padding: 0 16px;
+  background: #f1f5f9;
+  color: #17202a;
+  font: inherit;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.mes-confirm-actions button:last-child {
+  border-color: #d96f00;
+  background: #ff8a1f;
+  color: #17110b;
+}
+
+.mes-confirm-modal.danger .mes-confirm-actions button:last-child {
+  border-color: #b91c1c;
+  background: #dc2626;
+  color: #ffffff;
 }
 
 .mes-action-grid {
@@ -3789,6 +4032,10 @@ button {
   .production-orders-view-toggle {
     margin-left: 0;
     flex-wrap: wrap;
+  }
+
+  .mes-order-form {
+    grid-template-columns: 1fr;
   }
 
   .mes-event-row {
@@ -12155,6 +12402,11 @@ button {
   .mes-action-grid button {
     min-height: 32px;
     padding: 0 8px;
+    font-size: 0.76rem;
+  }
+
+  .production-orders-manage-actions button {
+    min-height: 34px;
     font-size: 0.76rem;
   }
 

@@ -1,7 +1,8 @@
 import React from 'react';
 import { Activity, AlertTriangle, ArrowLeft, Check, Eye, Factory, Pause, Play, Plus, RadioTower, Search, Timer, Wrench } from 'lucide-react';
-import { mockProductionOrders, mockTraceabilityEvents, mockWorkCenters } from './mesMockData';
-import type { ProductionOrder, ProductionOrderStatus, TraceabilityEvent, WorkCenterStatus } from './mesTypes';
+import { supabase } from '../lib/supabaseClient';
+import { mockTraceabilityEvents, mockWorkCenters } from './mesMockData';
+import type { ProductionOrder, ProductionOrderPriority, ProductionOrderStatus, TraceabilityEvent, WorkCenterStatus } from './mesTypes';
 
 type WorkspaceProps = {
   onNavigate: (path: string) => void;
@@ -19,6 +20,41 @@ type ProductionOrderAction = {
   traceability?: boolean;
 };
 
+type ProductionOrderFormState = {
+  orderNumber: string;
+  partNumber: string;
+  partName: string;
+  plannedQuantity: string;
+  completedQuantity: string;
+  scrapQuantity: string;
+  status: ProductionOrderStatus;
+  priority: ProductionOrderPriority;
+  dueDate: string;
+  assignedWorkCenter: string;
+};
+
+type ProductionOrderRow = {
+  id: string;
+  order_number: string;
+  part_number: string;
+  part_name: string;
+  planned_quantity: number;
+  completed_quantity: number;
+  scrap_quantity: number;
+  status: ProductionOrderStatus;
+  priority: ProductionOrderPriority;
+  due_date: string;
+  assigned_work_center: string;
+};
+
+type ConfirmationState = {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  tone: 'primary' | 'danger';
+  onConfirm: () => Promise<void> | void;
+};
+
 const formatLabel = (value: string) => value.replace(/-/g, ' ');
 
 const formatDate = (value: string) =>
@@ -34,6 +70,71 @@ const formatTimestamp = (value: string) =>
 
 export function MesStatusBadge({ value, tone = 'status' }: StatusBadgeProps) {
   return <span className={`mes-status-badge ${tone}-${value}`}>{formatLabel(value)}</span>;
+}
+
+const productionOrderStatuses: ProductionOrderStatus[] = ['planned', 'released', 'running', 'paused', 'completed', 'cancelled'];
+const productionOrderPriorities: ProductionOrderPriority[] = ['low', 'normal', 'high', 'expedite'];
+
+function mapProductionOrderRow(row: ProductionOrderRow): ProductionOrder {
+  return {
+    id: row.id,
+    orderNumber: row.order_number,
+    partNumber: row.part_number,
+    partName: row.part_name,
+    plannedQuantity: row.planned_quantity,
+    completedQuantity: row.completed_quantity,
+    scrapQuantity: row.scrap_quantity,
+    status: row.status,
+    priority: row.priority,
+    dueDate: row.due_date,
+    assignedWorkCenter: row.assigned_work_center,
+  };
+}
+
+function toProductionOrderPayload(order: ProductionOrder | Omit<ProductionOrder, 'id'>) {
+  return {
+    order_number: order.orderNumber,
+    part_number: order.partNumber,
+    part_name: order.partName,
+    planned_quantity: order.plannedQuantity,
+    completed_quantity: order.completedQuantity,
+    scrap_quantity: order.scrapQuantity,
+    status: order.status,
+    priority: order.priority,
+    due_date: order.dueDate,
+    assigned_work_center: order.assignedWorkCenter,
+  };
+}
+
+function toFormState(order?: ProductionOrder): ProductionOrderFormState {
+  return {
+    orderNumber: order?.orderNumber ?? '',
+    partNumber: order?.partNumber ?? '',
+    partName: order?.partName ?? '',
+    plannedQuantity: String(order?.plannedQuantity ?? 0),
+    completedQuantity: String(order?.completedQuantity ?? 0),
+    scrapQuantity: String(order?.scrapQuantity ?? 0),
+    status: order?.status ?? 'planned',
+    priority: order?.priority ?? 'normal',
+    dueDate: order?.dueDate ?? new Date().toISOString().slice(0, 10),
+    assignedWorkCenter: order?.assignedWorkCenter ?? '',
+  };
+}
+
+function formStateToProductionOrder(formState: ProductionOrderFormState, id?: string): ProductionOrder {
+  return {
+    id: id ?? `po-${Date.now()}`,
+    orderNumber: formState.orderNumber.trim(),
+    partNumber: formState.partNumber.trim(),
+    partName: formState.partName.trim(),
+    plannedQuantity: Number(formState.plannedQuantity) || 0,
+    completedQuantity: Number(formState.completedQuantity) || 0,
+    scrapQuantity: Number(formState.scrapQuantity) || 0,
+    status: formState.status,
+    priority: formState.priority,
+    dueDate: formState.dueDate,
+    assignedWorkCenter: formState.assignedWorkCenter.trim(),
+  };
 }
 
 function MesWorkspaceShell({ title, eyebrow, description, children }: React.PropsWithChildren<{
@@ -105,12 +206,17 @@ function getProductionOrderActions(status: ProductionOrderStatus): ProductionOrd
 }
 
 export function ProductionOrdersWorkspace({ onNavigate }: WorkspaceProps) {
-  const [orders, setOrders] = React.useState<ProductionOrder[]>(mockProductionOrders);
-  const [selectedOrderNumber, setSelectedOrderNumber] = React.useState(mockProductionOrders[0]?.orderNumber ?? '');
+  const [orders, setOrders] = React.useState<ProductionOrder[]>([]);
+  const [selectedOrderNumber, setSelectedOrderNumber] = React.useState('');
   const [searchTerm, setSearchTerm] = React.useState('');
   const [orderView, setOrderView] = React.useState<'all' | 'in-progress' | 'completed'>('all');
   const [sortByPriority, setSortByPriority] = React.useState(false);
   const [page, setPage] = React.useState(1);
+  const [formMode, setFormMode] = React.useState<'create' | 'edit' | null>(null);
+  const [formState, setFormState] = React.useState<ProductionOrderFormState>(() => toFormState());
+  const [tableMessage, setTableMessage] = React.useState<string | null>('Loading production orders...');
+  const [savingOrder, setSavingOrder] = React.useState(false);
+  const [confirmation, setConfirmation] = React.useState<ConfirmationState | null>(null);
 
   const selectedOrder = orders.find((order) => order.orderNumber === selectedOrderNumber) ?? null;
   const filteredOrders = orders.filter((order) => {
@@ -141,6 +247,9 @@ export function ProductionOrdersWorkspace({ onNavigate }: WorkspaceProps) {
       return new Date(firstOrder.dueDate).getTime() - new Date(secondOrder.dueDate).getTime();
     })
     : filteredOrders;
+  const tableEmptyMessage = tableMessage ?? (orders.length > 0 && visibleOrders.length === 0
+    ? 'No Production Orders match the current filters.'
+    : null);
   const pageSize = 10;
   const pageCount = Math.max(1, Math.ceil(visibleOrders.length / pageSize));
   const currentPage = Math.min(page, pageCount);
@@ -148,7 +257,7 @@ export function ProductionOrdersWorkspace({ onNavigate }: WorkspaceProps) {
   const currentOrders = orders.filter((order) => ['released', 'running', 'paused'].includes(order.status)).length;
   const completedOrders = orders.filter((order) => order.status === 'completed').length;
   const todayTotalProduction = orders.reduce((total, order) => total + order.completedQuantity, 0);
-  const selectedOrderProgress = selectedOrder
+  const selectedOrderProgress = selectedOrder && selectedOrder.plannedQuantity > 0
     ? Math.min(100, Math.round((selectedOrder.completedQuantity / selectedOrder.plannedQuantity) * 100))
     : 0;
   const selectedOrderProgressTone = selectedOrderProgress >= 100
@@ -163,42 +272,170 @@ export function ProductionOrdersWorkspace({ onNavigate }: WorkspaceProps) {
     setPage(1);
   }, [searchTerm, orderView]);
 
+  React.useEffect(() => {
+    let active = true;
+    const loadProductionOrders = async () => {
+      const { data, error } = await supabase
+        .from('mes_production_orders')
+        .select('*')
+        .order('due_date', { ascending: true });
+
+      if (!active) return;
+      if (error) {
+        setOrders([]);
+        setSelectedOrderNumber('');
+        setTableMessage('Production Orders are not available right now. Add a new order from the control panel on the right or try again in a moment.');
+        return;
+      }
+      const nextOrders = ((data ?? []) as ProductionOrderRow[]).map(mapProductionOrderRow);
+      setOrders(nextOrders);
+      setSelectedOrderNumber(nextOrders[0]?.orderNumber ?? '');
+      setTableMessage(nextOrders.length === 0 ? 'You do not have any Production Orders registered yet. Add new orders using the control panel on the right.' : null);
+    };
+
+    void loadProductionOrders();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const persistOrder = async (order: ProductionOrder) => {
+    const { error } = await supabase
+      .from('mes_production_orders')
+      .update(toProductionOrderPayload(order))
+      .eq('id', order.id);
+    if (error) {
+      setTableMessage('This Production Order could not be synced right now. Try again in a moment.');
+    }
+  };
+
   const updateOrder = (orderNumber: string, action: string) => {
+    let updatedOrder: ProductionOrder | null = null;
     setOrders((currentOrders) =>
       currentOrders.map((order) => {
         if (order.orderNumber !== orderNumber) return order;
         if (action === 'production') {
           const nextCompleted = Math.min(order.plannedQuantity, order.completedQuantity + 24);
-          return {
+          updatedOrder = {
             ...order,
             completedQuantity: nextCompleted,
             status: nextCompleted >= order.plannedQuantity ? 'completed' : order.status,
           };
+          return updatedOrder;
         }
         if (action === 'scrap') {
-          return { ...order, scrapQuantity: order.scrapQuantity + 2 };
+          updatedOrder = { ...order, scrapQuantity: order.scrapQuantity + 2 };
+          return updatedOrder;
         }
-        return { ...order, status: actionStatus(order.status, action) };
+        updatedOrder = { ...order, status: actionStatus(order.status, action) };
+        return updatedOrder;
       }),
     );
+    window.setTimeout(() => {
+      if (updatedOrder) void persistOrder(updatedOrder);
+    }, 0);
   };
 
-  const createOrder = () => {
-    const nextOrder: ProductionOrder = {
-      id: `po-${Date.now()}`,
+  const openCreateOrderForm = () => {
+    setFormState(toFormState({
+      id: '',
       orderNumber: `MO-24${orders.length + 26}`,
-      partNumber: 'YN-7001-A',
-      partName: 'New production kit',
-      plannedQuantity: 250,
+      partNumber: '',
+      partName: '',
+      plannedQuantity: 0,
       completedQuantity: 0,
       scrapQuantity: 0,
       status: 'planned',
       priority: 'normal',
-      dueDate: '2026-06-18',
-      assignedWorkCenter: 'CNC-03',
-    };
-    setOrders((currentOrders) => [nextOrder, ...currentOrders]);
-    setSelectedOrderNumber(nextOrder.orderNumber);
+      dueDate: new Date().toISOString().slice(0, 10),
+      assignedWorkCenter: '',
+    }));
+    setFormMode('create');
+  };
+
+  const openEditOrderForm = () => {
+    if (!selectedOrder) return;
+    setFormState(toFormState(selectedOrder));
+    setFormMode('edit');
+  };
+
+  const closeOrderForm = () => {
+    setFormMode(null);
+    setSavingOrder(false);
+  };
+
+  const saveOrderForm = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!formState.orderNumber.trim() || !formState.partNumber.trim() || !formState.partName.trim()) return;
+    const orderFromForm = formStateToProductionOrder(formState, formMode === 'edit' ? selectedOrder?.id : undefined);
+
+    if (formMode === 'edit' && selectedOrder) {
+      setConfirmation({
+        title: 'Save production order changes?',
+        message: `This will update ${selectedOrder.orderNumber} with the values currently entered in the form.`,
+        confirmLabel: 'Save changes',
+        tone: 'primary',
+        onConfirm: async () => {
+          setSavingOrder(true);
+          setOrders((currentOrders) => currentOrders.map((order) => (order.id === selectedOrder.id ? orderFromForm : order)));
+          setSelectedOrderNumber(orderFromForm.orderNumber);
+          const { error } = await supabase
+            .from('mes_production_orders')
+            .update(toProductionOrderPayload(orderFromForm))
+            .eq('id', selectedOrder.id);
+          if (error) setTableMessage('This Production Order could not be updated right now. Try again in a moment.');
+          closeOrderForm();
+        },
+      });
+      return;
+    }
+
+    setConfirmation({
+      title: 'Create production order?',
+      message: `This will create ${orderFromForm.orderNumber} and add it to the Production Orders workspace.`,
+      confirmLabel: 'Create order',
+      tone: 'primary',
+      onConfirm: async () => {
+        setSavingOrder(true);
+        const { data, error } = await supabase
+          .from('mes_production_orders')
+          .insert(toProductionOrderPayload(orderFromForm))
+          .select('*')
+          .single();
+        const nextOrder = error ? orderFromForm : mapProductionOrderRow(data as ProductionOrderRow);
+        if (error) setTableMessage('This Production Order could not be created right now. Try again in a moment.');
+        if (!error) setTableMessage(null);
+        setOrders((currentOrders) => [nextOrder, ...currentOrders]);
+        setSelectedOrderNumber(nextOrder.orderNumber);
+        closeOrderForm();
+      },
+    });
+  };
+
+  const deleteSelectedOrder = async () => {
+    if (!selectedOrder) return;
+    setConfirmation({
+      title: 'Delete production order?',
+      message: `This will delete ${selectedOrder.orderNumber}. This action cannot be undone.`,
+      confirmLabel: 'Delete order',
+      tone: 'danger',
+      onConfirm: async () => {
+        const nextOrders = orders.filter((order) => order.id !== selectedOrder.id);
+        setOrders(nextOrders);
+        setSelectedOrderNumber(nextOrders[0]?.orderNumber ?? '');
+        const { error } = await supabase.from('mes_production_orders').delete().eq('id', selectedOrder.id);
+        if (error) setTableMessage('This Production Order could not be deleted right now. Try again in a moment.');
+        if (!error && nextOrders.length === 0) setTableMessage('You do not have any Production Orders registered yet. Add new orders using the control panel on the right.');
+      },
+    });
+  };
+
+  const confirmPendingAction = async () => {
+    if (!confirmation) return;
+    const pendingConfirmation = confirmation;
+    setConfirmation(null);
+    await pendingConfirmation.onConfirm();
   };
 
   return (
@@ -250,7 +487,16 @@ export function ProductionOrdersWorkspace({ onNavigate }: WorkspaceProps) {
                 </tr>
               </thead>
               <tbody>
-                {paginatedOrders.map((order) => {
+                {tableEmptyMessage ? (
+                  <tr>
+                    <td className="production-orders-table-empty" colSpan={9}>
+                      <div>
+                        <span>{tableMessage === 'Loading production orders...' ? 'Loading' : 'Production Orders'}</span>
+                        <strong>{tableEmptyMessage}</strong>
+                      </div>
+                    </td>
+                  </tr>
+                ) : paginatedOrders.map((order) => {
                   const selected = order.orderNumber === selectedOrderNumber;
                   return (
                     <tr
@@ -283,27 +529,29 @@ export function ProductionOrdersWorkspace({ onNavigate }: WorkspaceProps) {
               </tbody>
             </table>
           </div>
-          <div className="production-orders-pagination">
-            <span>Page {currentPage} of {pageCount}</span>
-            <div>
-              <button type="button" disabled={currentPage === 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>
-                Previous
-              </button>
-              {Array.from({ length: pageCount }, (_, index) => index + 1).map((pageNumber) => (
-                <button
-                  className={pageNumber === currentPage ? 'active' : ''}
-                  type="button"
-                  key={pageNumber}
-                  onClick={() => setPage(pageNumber)}
-                >
-                  {pageNumber}
+          {visibleOrders.length > 0 ? (
+            <div className="production-orders-pagination">
+              <span>Page {currentPage} of {pageCount}</span>
+              <div>
+                <button type="button" disabled={currentPage === 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>
+                  Previous
                 </button>
-              ))}
-              <button type="button" disabled={currentPage === pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))}>
-                Next
-              </button>
+                {Array.from({ length: pageCount }, (_, index) => index + 1).map((pageNumber) => (
+                  <button
+                    className={pageNumber === currentPage ? 'active' : ''}
+                    type="button"
+                    key={pageNumber}
+                    onClick={() => setPage(pageNumber)}
+                  >
+                    {pageNumber}
+                  </button>
+                ))}
+                <button type="button" disabled={currentPage === pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))}>
+                  Next
+                </button>
+              </div>
             </div>
-          </div>
+          ) : null}
         </div>
 
         <aside className="production-orders-side-panel" aria-label="Production order controls">
@@ -330,10 +578,18 @@ export function ProductionOrdersWorkspace({ onNavigate }: WorkspaceProps) {
               placeholder="Order, part, status, work center"
             />
           </label>
-          <button className="mes-primary-action production-orders-create" type="button" onClick={createOrder}>
+          <button className="mes-primary-action production-orders-create" type="button" onClick={openCreateOrderForm}>
             <Plus size={16} />
             Add new production order
           </button>
+          <div className="production-orders-manage-actions">
+            <button type="button" onClick={openEditOrderForm} disabled={!selectedOrder}>
+              Edit
+            </button>
+            <button type="button" onClick={deleteSelectedOrder} disabled={!selectedOrder}>
+              Delete
+            </button>
+          </div>
           {selectedOrder ? (
             <div className="production-orders-selection-card">
               <div>
@@ -386,6 +642,93 @@ export function ProductionOrdersWorkspace({ onNavigate }: WorkspaceProps) {
           )}
         </aside>
       </div>
+      {formMode ? (
+        <div className="mes-modal-backdrop" role="presentation">
+          <section className="mes-order-modal" role="dialog" aria-modal="true" aria-labelledby="production-order-form-title">
+            <div>
+              <p className="eyebrow">Production Order</p>
+              <h3 id="production-order-form-title">{formMode === 'create' ? 'Add new production order' : 'Edit production order'}</h3>
+            </div>
+            <form className="mes-order-form" onSubmit={saveOrderForm}>
+              <label>
+                Order number
+                <input value={formState.orderNumber} onChange={(event) => setFormState((current) => ({ ...current, orderNumber: event.target.value }))} required />
+              </label>
+              <label>
+                Part number
+                <input value={formState.partNumber} onChange={(event) => setFormState((current) => ({ ...current, partNumber: event.target.value }))} required />
+              </label>
+              <label>
+                Part name
+                <input value={formState.partName} onChange={(event) => setFormState((current) => ({ ...current, partName: event.target.value }))} required />
+              </label>
+              <label>
+                Planned quantity
+                <input type="number" min="0" value={formState.plannedQuantity} onChange={(event) => setFormState((current) => ({ ...current, plannedQuantity: event.target.value }))} required />
+              </label>
+              <label>
+                Completed quantity
+                <input type="number" min="0" value={formState.completedQuantity} onChange={(event) => setFormState((current) => ({ ...current, completedQuantity: event.target.value }))} required />
+              </label>
+              <label>
+                Scrap quantity
+                <input type="number" min="0" value={formState.scrapQuantity} onChange={(event) => setFormState((current) => ({ ...current, scrapQuantity: event.target.value }))} required />
+              </label>
+              <label>
+                Status
+                <select value={formState.status} onChange={(event) => setFormState((current) => ({ ...current, status: event.target.value as ProductionOrderStatus }))}>
+                  {productionOrderStatuses.map((status) => <option value={status} key={status}>{formatLabel(status)}</option>)}
+                </select>
+              </label>
+              <label>
+                Priority
+                <select value={formState.priority} onChange={(event) => setFormState((current) => ({ ...current, priority: event.target.value as ProductionOrderPriority }))}>
+                  {productionOrderPriorities.map((priority) => <option value={priority} key={priority}>{formatLabel(priority)}</option>)}
+                </select>
+              </label>
+              <label>
+                Due date
+                <input type="date" value={formState.dueDate} onChange={(event) => setFormState((current) => ({ ...current, dueDate: event.target.value }))} required />
+              </label>
+              <label>
+                Assigned work center
+                <input value={formState.assignedWorkCenter} onChange={(event) => setFormState((current) => ({ ...current, assignedWorkCenter: event.target.value }))} required />
+              </label>
+              <div className="mes-order-form-actions">
+                <button type="button" onClick={closeOrderForm}>Cancel</button>
+                <button type="submit" disabled={savingOrder}>{savingOrder ? 'Saving...' : 'Save order'}</button>
+              </div>
+            </form>
+          </section>
+        </div>
+      ) : null}
+      {confirmation ? (
+        <div className="mes-modal-backdrop" role="presentation">
+          <section
+            className={['mes-confirm-modal', confirmation.tone === 'danger' ? 'danger' : ''].filter(Boolean).join(' ')}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="production-order-confirm-title"
+          >
+            <div className="mes-confirm-mark" aria-hidden="true">
+              {confirmation.tone === 'danger' ? <AlertTriangle size={24} /> : <Check size={24} />}
+            </div>
+            <div>
+              <p className="eyebrow">Production Order</p>
+              <h3 id="production-order-confirm-title">{confirmation.title}</h3>
+              <p>{confirmation.message}</p>
+            </div>
+            <div className="mes-confirm-actions">
+              <button type="button" onClick={() => setConfirmation(null)}>
+                Cancel
+              </button>
+              <button type="button" onClick={() => void confirmPendingAction()}>
+                {confirmation.confirmLabel}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </section>
   );
 }
