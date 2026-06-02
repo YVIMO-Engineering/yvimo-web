@@ -18,6 +18,8 @@ create table if not exists public.mes_production_orders (
 
 alter table public.mes_production_orders enable row level security;
 
+grant select, insert, update, delete on public.mes_production_orders to authenticated;
+
 create policy "Users can read their own MES production orders"
   on public.mes_production_orders
   for select

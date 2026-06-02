@@ -2,7 +2,7 @@ export type ProductionOrderStatus = 'planned' | 'released' | 'running' | 'paused
 
 export type ProductionOrderPriority = 'low' | 'normal' | 'high' | 'expedite';
 
-export type WorkCenterStatus = 'available' | 'running' | 'down' | 'maintenance' | 'offline';
+export type WorkCenterStatus = 'available' | 'idle' | 'running' | 'setup' | 'down' | 'maintenance' | 'offline';
 
 export type TraceabilityEventType =
   | 'order-created'
