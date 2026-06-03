@@ -1,6 +1,6 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { Activity, AlertTriangle, ArrowLeft, CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, Eye, Factory, Plus, RadioTower, Search, Timer } from 'lucide-react';
+import { Activity, AlertTriangle, ArrowLeft, CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, CircleHelp, Eye, Factory, Frown, Meh, Plus, RadioTower, Search, Smile, Timer } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { mockTraceabilityEvents, mockWorkCenters } from './mesMockData';
 import type { ProductionOrder, ProductionOrderPriority, ProductionOrderStatus, TraceabilityEvent, WorkCenterStatus } from './mesTypes';
@@ -1189,6 +1189,20 @@ type WorkCenterFormState = {
   maintenanceNotes: string;
 };
 
+type WorkCenterKpiHelpKey = 'stationAvailability' | 'wipLoad' | 'dueRisk' | 'stationRunning' | 'stationIdle' | 'stationDown' | 'stationMaintenance';
+type WorkCenterKpiFilter = 'availability' | 'wip' | 'risk';
+type StationKpiFilter = 'running' | 'idle' | 'down' | 'maintenance';
+type RiskBreakdown = {
+  overdue: number;
+  dueSoon: number;
+  blocked: number;
+  constrained: number;
+};
+type KpiThreshold = {
+  label: string;
+  tone: 'good' | 'info' | 'warning' | 'critical';
+};
+
 const workCenterTypes = ['Manufacturing Site', 'Production Area', 'Grinding Cell', 'Quality Area', 'Receiving / Shipping Center', 'External Branch'];
 const stationTypes = ['Machine', 'Manual Station', 'Inspection Station', 'Assembly Cell', 'Grinding Machine', 'Packaging Station', 'Storage / Buffer', 'Resource Group'];
 const workCenterStatuses: WorkCenterStatus[] = ['running', 'idle', 'setup', 'down', 'maintenance', 'offline'];
@@ -1860,30 +1874,239 @@ function getWorkCenterStations(workCenter: MesWorkCenter): WorkCenterStation[] {
   });
 }
 
+function getWorkCenterStationCapabilities(workCenter: MesWorkCenter) {
+  return Array.from(new Set(getWorkCenterStations(workCenter).flatMap((station) => station.capabilities)));
+}
+
+function formatRiskLabel(risk: WorkCenterStation['dueRisk']) {
+  return risk.charAt(0).toUpperCase() + risk.slice(1);
+}
+
+function getCapabilityTone(capability: string) {
+  const capabilityToneByName: Record<string, string> = {
+    Receiving: 'receiving',
+    Packaging: 'packaging',
+    'Incoming Inspection': 'incoming-inspection',
+    'Final QC': 'final-qc',
+    'Hob Grinding': 'hob-grinding',
+    Rework: 'rework',
+    CNC: 'cnc',
+    'Skiving Grinding': 'skiving-grinding',
+    Deburr: 'deburr',
+    Assembly: 'assembly',
+  };
+
+  return capabilityToneByName[capability] ?? 'default';
+}
+
+function WorkCenterRiskIcon({ risk }: { risk: WorkCenterStation['dueRisk'] }) {
+  if (risk === 'high') return <Frown size={22} strokeWidth={2.35} aria-hidden="true" />;
+  if (risk === 'medium') return <Meh size={22} strokeWidth={2.35} aria-hidden="true" />;
+  return <Smile size={22} strokeWidth={2.35} aria-hidden="true" />;
+}
+
+function getTodayIsoDate() {
+  const now = new Date();
+  const localDate = new Date(now.getTime() - (now.getTimezoneOffset() * 60_000));
+  return localDate.toISOString().slice(0, 10);
+}
+
+function getWorkCenterRiskBreakdown(workCenter: MesWorkCenter, todayIsoDate: string): RiskBreakdown {
+  return workCenter.queue.reduce<RiskBreakdown>((breakdown, job) => {
+    const normalizedStatus = job.status.trim().toLowerCase().replace(/[\s_-]+/g, '');
+    if (normalizedStatus.includes('blocked')) breakdown.blocked += 1;
+    if (normalizedStatus.includes('maintenance') || workCenter.activeDowntime) breakdown.constrained += 1;
+    if (job.dueDate < todayIsoDate) breakdown.overdue += 1;
+    if (job.dueDate === todayIsoDate || normalizedStatus.includes('duesoon')) breakdown.dueSoon += 1;
+    return breakdown;
+  }, { overdue: 0, dueSoon: 0, blocked: 0, constrained: 0 });
+}
+
+function getRiskBreakdownTotal(breakdown: RiskBreakdown) {
+  return breakdown.overdue + breakdown.dueSoon + breakdown.blocked + breakdown.constrained;
+}
+
+function isRiskyWorkCenterJob(workCenter: MesWorkCenter, todayIsoDate: string) {
+  if (!workCenter.currentJob) return false;
+  if (workCenter.activeDowntime) return true;
+  return getRiskBreakdownTotal(getWorkCenterRiskBreakdown(workCenter, todayIsoDate)) > 0;
+}
+
+function getWorkCenterRisk(workCenter: MesWorkCenter, todayIsoDate = getTodayIsoDate()): WorkCenterStation['dueRisk'] {
+  const stations = getWorkCenterStations(workCenter);
+  const availableStations = stations.filter((station) => ['idle', 'running'].includes(station.status)).length;
+  const availabilityRatio = stations.length ? availableStations / stations.length : 1;
+  const wipCapacity = stations.length * 2;
+  const wipRatio = wipCapacity ? workCenter.wipCount / wipCapacity : 0;
+  const breakdown = getWorkCenterRiskBreakdown(workCenter, todayIsoDate);
+
+  // Future live MES data should connect due-date risk, blocked operations, and station dependency criticality here.
+  if (
+    breakdown.overdue > 0
+    || breakdown.blocked > 0
+    || (workCenter.activeDowntime && Boolean(workCenter.currentJob))
+    || (availabilityRatio < 0.7 && Boolean(workCenter.currentJob))
+  ) {
+    return 'high';
+  }
+
+  if (breakdown.dueSoon > 0 || breakdown.constrained > 0 || wipRatio > 0.6 || workCenter.queueCount > 2) return 'medium';
+  return 'low';
+}
+
+function getAvailabilityStatus(availabilityRatio: number) {
+  if (availabilityRatio >= 0.85) return 'healthy';
+  if (availabilityRatio >= 0.7) return 'limited';
+  return 'critical';
+}
+
+function getLoadStatus(loadRatio: number) {
+  if (loadRatio <= 0.6) return 'low';
+  if (loadRatio <= 0.85) return 'medium';
+  return 'high';
+}
+
+function getRiskStatus(riskRatio: number) {
+  if (riskRatio <= 0.2) return 'low';
+  if (riskRatio <= 0.5) return 'medium';
+  return 'high';
+}
+
+function getStationRunningStatus(totalStations: number, runningStations: number) {
+  if (!totalStations) return 'neutral';
+  const runningRatio = runningStations / totalStations;
+  if (runningRatio >= 0.7) return 'high-activity';
+  if (runningRatio >= 0.3) return 'moderate-activity';
+  return 'low-activity';
+}
+
+function getStationUtilizationStatus(utilization: number) {
+  const utilizationRatio = utilization / 100;
+  if (utilizationRatio >= 0.7) return 'high-activity';
+  if (utilizationRatio >= 0.3) return 'moderate-activity';
+  return 'low-activity';
+}
+
+function getStationIdleStatus(totalStations: number, idleStations: number) {
+  if (!totalStations) return 'neutral';
+  const idleRatio = idleStations / totalStations;
+  if (idleRatio <= 0.2) return 'fully-loaded';
+  if (idleRatio <= 0.6) return 'available-capacity';
+  return 'underutilized';
+}
+
+function getStationDownStatus(totalStations: number, downStations: number) {
+  if (!totalStations) return 'neutral';
+  const downRatio = downStations / totalStations;
+  if (downStations === 0) return 'healthy';
+  if (totalStations <= 3 && downStations >= 1) return 'critical';
+  if (downRatio <= 0.25) return 'degraded';
+  return 'critical';
+}
+
+function getStationMaintenanceStatus(totalStations: number, maintenanceStations: number) {
+  if (!totalStations) return 'neutral';
+  const maintenanceRatio = maintenanceStations / totalStations;
+  if (maintenanceStations === 0) return 'clear';
+  if (totalStations <= 2 && maintenanceStations >= 1) return 'constrained';
+  if (maintenanceRatio <= 0.3) return 'limited';
+  return 'constrained';
+}
+
+function formatKpiStatusLabel(status: string) {
+  return status.split('-').map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+}
+
+function getMaintenanceTone(maintenanceStatus: string) {
+  const normalizedStatus = maintenanceStatus.toLowerCase();
+  if (normalizedStatus.includes('healthy')) return 'low';
+  if (normalizedStatus.includes('due')) return 'medium';
+  if (normalizedStatus.includes('required') || normalizedStatus.includes('maintenance')) return 'high';
+  return 'medium';
+}
+
+function formatPercent(ratio: number) {
+  return `${Math.round(ratio * 100)}%`;
+}
+
+function getWorkCenterOperationalSummary(workCenter: MesWorkCenter | null, stations: WorkCenterStation[]) {
+  if (!workCenter) return { tone: 'info', items: ['Select a Work Center to review station execution, availability, and operational constraints.'] };
+
+  const runningStations = stations.filter((station) => station.status === 'running').length;
+  const idleStations = stations.filter((station) => ['idle', 'available'].includes(station.status)).length;
+  const downStations = stations.filter((station) => station.status === 'down').length;
+  const maintenanceStations = stations.filter((station) => station.status === 'maintenance').length;
+  const unavailableStations = downStations + maintenanceStations;
+  const availabilityRatio = stations.length ? (runningStations + idleStations) / stations.length : 1;
+  const risk = getWorkCenterRisk(workCenter);
+
+  if (risk === 'high' || availabilityRatio < 0.7 || unavailableStations > 0) {
+    return {
+      tone: 'critical',
+      items: [
+        `${workCenter.name} requires attention.`,
+        `${unavailableStations} station${unavailableStations === 1 ? '' : 's'} unavailable.`,
+        `${workCenter.wipCount} WIP active and ${workCenter.queueCount} job${workCenter.queueCount === 1 ? '' : 's'} waiting in queue.`,
+      ],
+    };
+  }
+
+  if (workCenter.wipCount > stations.length || workCenter.queueCount > 2 || risk === 'medium') {
+    return {
+      tone: 'warning',
+      items: [
+        `${workCenter.name} is operating with constraints.`,
+        `${runningStations} of ${stations.length} station${stations.length === 1 ? '' : 's'} running; ${idleStations} idle.`,
+        `${workCenter.queueCount} job${workCenter.queueCount === 1 ? '' : 's'} queued for execution.`,
+      ],
+    };
+  }
+
+  if (runningStations > 0) {
+    return {
+      tone: 'healthy',
+      items: [
+        `${workCenter.name} is actively running.`,
+        `${runningStations} of ${stations.length} station${stations.length === 1 ? '' : 's'} are running.`,
+        'WIP is controlled and no downtime is active.',
+      ],
+    };
+  }
+
+  return {
+    tone: 'info',
+    items: [
+      `${workCenter.name} is healthy but underutilized.`,
+      `${idleStations} station${idleStations === 1 ? '' : 's'} idle and no downtime is active.`,
+      `${workCenter.queueCount} job${workCenter.queueCount === 1 ? '' : 's'} waiting in queue.`,
+    ],
+  };
+}
+
 export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
   const [workCenters, setWorkCenters] = React.useState<MesWorkCenter[]>(mockMesWorkCenters);
   const [selectedWorkCenterId, setSelectedWorkCenterId] = React.useState(mockMesWorkCenters[0]?.id ?? '');
   const [filters, setFilters] = React.useState({
     search: '',
-    plant: '',
-    area: '',
-    type: '',
-    status: '',
     capability: '',
+    risk: '',
   });
   const [stationFilters, setStationFilters] = React.useState({
     search: '',
-    type: '',
     status: '',
     capability: '',
   });
   const [workCenterMapOpacityMode, setWorkCenterMapOpacityMode] = React.useState(false);
   const [showAddForm, setShowAddForm] = React.useState(false);
   const [showDetailModal, setShowDetailModal] = React.useState(false);
+  const [openKpiHelp, setOpenKpiHelp] = React.useState<WorkCenterKpiHelpKey | null>(null);
+  const [activeWorkCenterKpiFilter, setActiveWorkCenterKpiFilter] = React.useState<WorkCenterKpiFilter | null>(null);
+  const [activeStationKpiFilter, setActiveStationKpiFilter] = React.useState<StationKpiFilter | null>(null);
   const [formState, setFormState] = React.useState<WorkCenterFormState>(() => createWorkCenterFormState());
 
   const selectedWorkCenter = workCenters.find((workCenter) => workCenter.id === selectedWorkCenterId) ?? workCenters[0] ?? null;
   const selectedStations = selectedWorkCenter ? getWorkCenterStations(selectedWorkCenter) : [];
+  const todayIsoDate = getTodayIsoDate();
   const filteredStations = selectedStations.filter((station) => {
     const stationHaystack = [
       station.name,
@@ -1895,37 +2118,68 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
     ].join(' ').toLowerCase();
 
     return (!stationFilters.search || stationHaystack.includes(stationFilters.search.trim().toLowerCase()))
-      && (!stationFilters.type || station.type === stationFilters.type)
       && (!stationFilters.status || station.status === stationFilters.status)
       && (!stationFilters.capability || station.capabilities.includes(stationFilters.capability));
   });
   const filteredWorkCenters = workCenters.filter((workCenter) => {
+    const stationCapabilities = getWorkCenterStationCapabilities(workCenter);
+    const stations = getWorkCenterStations(workCenter);
+    const availableStationCount = stations.filter((station) => ['idle', 'running'].includes(station.status)).length;
+    const availabilityStatus = getAvailabilityStatus(stations.length ? availableStationCount / stations.length : 1);
+    const wipStatus = getLoadStatus(stations.length ? workCenter.wipCount / (stations.length * 2) : 0);
+    const riskStatus = getWorkCenterRisk(workCenter, todayIsoDate);
+    const risk = formatRiskLabel(riskStatus);
     const searchHaystack = [
       workCenter.name,
       workCenter.code,
-      workCenter.area,
-      workCenter.type,
-      workCenter.currentJob ?? '',
-      workCenter.capabilities.join(' '),
+      stationCapabilities.join(' '),
+      `${risk} risk`,
     ].join(' ').toLowerCase();
 
     return (!filters.search || searchHaystack.includes(filters.search.trim().toLowerCase()))
-      && (!filters.plant || workCenter.plant === filters.plant)
-      && (!filters.area || workCenter.area === filters.area)
-      && (!filters.type || workCenter.type === filters.type)
-      && (!filters.status || workCenter.status === filters.status)
-      && (!filters.capability || workCenter.capabilities.includes(filters.capability));
+      && (!filters.capability || stationCapabilities.includes(filters.capability))
+      && (!filters.risk || riskStatus === filters.risk)
+      && (!activeWorkCenterKpiFilter
+        || (activeWorkCenterKpiFilter === 'availability' && ['limited', 'critical'].includes(availabilityStatus))
+        || (activeWorkCenterKpiFilter === 'wip' && ['medium', 'high'].includes(wipStatus))
+        || (activeWorkCenterKpiFilter === 'risk' && ['medium', 'high'].includes(riskStatus)));
   });
 
+  const allWorkCenterStations = workCenters.flatMap((workCenter) => getWorkCenterStations(workCenter));
   const totalWorkCenters = workCenters.length;
-  const idleWorkCenters = workCenters.filter((workCenter) => ['idle', 'available'].includes(workCenter.status)).length;
+  const totalStations = allWorkCenterStations.length;
+  const availableStations = allWorkCenterStations.filter((station) => ['idle', 'running'].includes(station.status)).length;
+  const stationAvailabilityRatio = totalStations ? availableStations / totalStations : 1;
+  const stationAvailabilityPercent = Math.round(stationAvailabilityRatio * 100);
+  const stationAvailabilityStatus = getAvailabilityStatus(stationAvailabilityRatio);
   const activeJobOrders = workCenters.filter((workCenter) => workCenter.currentJob).length;
-  const dueRiskWorkCenters = workCenters.filter((workCenter) => workCenter.queueCount >= 4 || workCenter.activeDowntime).length;
+  const activeWip = workCenters.reduce((total, workCenter) => total + workCenter.wipCount, 0);
+  const wipCapacity = totalStations * 2;
+  const wipLoadRatio = wipCapacity ? activeWip / wipCapacity : 0;
+  const wipLoadStatus = getLoadStatus(wipLoadRatio);
+  const riskyJobOrders = workCenters.filter((workCenter) => isRiskyWorkCenterJob(workCenter, todayIsoDate)).length;
+  const dueRiskRatio = activeJobOrders ? riskyJobOrders / activeJobOrders : 0;
+  const dueRiskStatus = getRiskStatus(dueRiskRatio);
+  const dueRiskBreakdown = workCenters.reduce<RiskBreakdown>((breakdown, workCenter) => {
+    if (!workCenter.currentJob) return breakdown;
+    const workCenterBreakdown = getWorkCenterRiskBreakdown(workCenter, todayIsoDate);
+    return {
+      overdue: breakdown.overdue + workCenterBreakdown.overdue,
+      dueSoon: breakdown.dueSoon + workCenterBreakdown.dueSoon,
+      blocked: breakdown.blocked + workCenterBreakdown.blocked,
+      constrained: breakdown.constrained + workCenterBreakdown.constrained + (workCenter.activeDowntime && workCenterBreakdown.constrained === 0 ? 1 : 0),
+    };
+  }, { overdue: 0, dueSoon: 0, blocked: 0, constrained: 0 });
   const stationTotal = selectedStations.length;
   const stationRunning = selectedStations.filter((station) => station.status === 'running').length;
   const stationIdle = selectedStations.filter((station) => ['idle', 'available'].includes(station.status)).length;
   const stationDown = selectedStations.filter((station) => station.status === 'down').length;
   const stationMaintenance = selectedStations.filter((station) => station.status === 'maintenance').length;
+  const stationRunningStatus = getStationRunningStatus(stationTotal, stationRunning);
+  const stationIdleStatus = getStationIdleStatus(stationTotal, stationIdle);
+  const stationDownStatus = getStationDownStatus(stationTotal, stationDown);
+  const stationMaintenanceStatus = getStationMaintenanceStatus(stationTotal, stationMaintenance);
+  const operationalSummary = getWorkCenterOperationalSummary(selectedWorkCenter, selectedStations);
   const mapBounds = getWorkCenterMapBounds(workCenters);
   const mapSource = `https://www.openstreetmap.org/export/embed.html?bbox=${mapBounds.west}%2C${mapBounds.south}%2C${mapBounds.east}%2C${mapBounds.north}&layer=mapnik`;
   const mapPinLayouts = getWorkCenterMapPinLayouts(workCenters, mapBounds);
@@ -1940,12 +2194,38 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
 
   const setStationFilter = (key: keyof typeof stationFilters, value: string) => {
     setStationFilters((currentFilters) => ({ ...currentFilters, [key]: value }));
+    if (key === 'status') setActiveStationKpiFilter(null);
+  };
+
+  const toggleWorkCenterKpiFilter = (filter: WorkCenterKpiFilter) => {
+    setActiveWorkCenterKpiFilter((current) => (current === filter ? null : filter));
+  };
+
+  const toggleStationKpiFilter = (filter: StationKpiFilter) => {
+    const nextFilter = activeStationKpiFilter === filter ? null : filter;
+    setActiveStationKpiFilter(nextFilter);
+    const statusByFilter: Record<StationKpiFilter, WorkCenterStatus> = {
+      running: 'running',
+      idle: 'idle',
+      down: 'down',
+      maintenance: 'maintenance',
+    };
+    setStationFilters((currentFilters) => ({ ...currentFilters, status: nextFilter ? statusByFilter[nextFilter] : '' }));
   };
 
   const openAddWorkCenterForm = () => {
     setFormState(createWorkCenterFormState());
     setShowAddForm(true);
   };
+
+  React.useEffect(() => {
+    if (!showDetailModal) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [showDetailModal]);
 
   const saveWorkCenterForm = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -2035,6 +2315,57 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
     );
   };
 
+  const renderKpiHelp = (
+    key: WorkCenterKpiHelpKey,
+    title: string,
+    description: string,
+    formula: string,
+    thresholds: KpiThreshold[],
+    currentReason: string,
+    breakdown?: RiskBreakdown,
+  ) => (
+    <span className={['kpi-help-wrap', openKpiHelp === key ? 'open' : ''].filter(Boolean).join(' ')}>
+      <button
+        className="kpi-help-button"
+        type="button"
+        aria-label={`Explain ${title} KPI`}
+        aria-expanded={openKpiHelp === key}
+        onClick={(event) => {
+          event.stopPropagation();
+          setOpenKpiHelp((current) => (current === key ? null : key));
+        }}
+      >
+        <CircleHelp size={14} strokeWidth={2.4} />
+      </button>
+      <div className="kpi-help-popover" role="dialog" aria-label={`${title} calculation`} onClick={(event) => event.stopPropagation()}>
+        <div>
+          <span>KPI Logic</span>
+          <strong>{title}</strong>
+        </div>
+        <p>{description}</p>
+        <dl>
+          <div><dt>Formula</dt><dd>{formula}</dd></div>
+          <div><dt>Current reason</dt><dd>{currentReason}</dd></div>
+        </dl>
+        {breakdown ? (
+          <div className="kpi-risk-breakdown">
+            <span>Risk breakdown</span>
+            <ul>
+              <li>Overdue: {breakdown.overdue}</li>
+              <li>Due soon: {breakdown.dueSoon}</li>
+              <li>Blocked: {breakdown.blocked}</li>
+              <li>Constrained: {breakdown.constrained}</li>
+            </ul>
+          </div>
+        ) : null}
+        <ul>
+          {thresholds.map((threshold) => <li className={`threshold-${threshold.tone}`} key={threshold.label}>{threshold.label}</li>)}
+        </ul>
+        <button type="button" onClick={(event) => { event.stopPropagation(); setOpenKpiHelp(null); }}>Close</button>
+      </div>
+    </span>
+  );
+
   return (
     <section className="mes-workspace-panel work-centers-workspace">
       <div className="work-centers-header">
@@ -2049,9 +2380,7 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
         </div>
         <div className="work-centers-actions">
           <button type="button" onClick={openAddWorkCenterForm}><Plus size={16} /> Add Work Center</button>
-          <button type="button">Import</button>
-          <button type="button">Export</button>
-          <button type="button">Refresh</button>
+          <button type="button"><Plus size={16} /> Add Station</button>
         </div>
       </div>
 
@@ -2149,47 +2478,43 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
           </section>
 
           {selectedWorkCenter ? (
-            <>
-              <section className="work-center-selected-card">
-                <p className="eyebrow">Selected Work Center</p>
-                <h3>{selectedWorkCenter.name}</h3>
-                <strong>{selectedWorkCenter.code}</strong>
-                <span>{selectedWorkCenter.area} / {selectedWorkCenter.plant}</span>
-                <small>{selectedWorkCenter.address}</small>
-                <MesStatusBadge value={selectedWorkCenter.status} />
-              </section>
-              <section className="work-center-detail-panel" aria-label="Selected Work Center summary">
-                <div className="work-center-detail-heading">
-                  <div>
-                    <p className="eyebrow">Details</p>
-                    <h3>{selectedWorkCenter.area}</h3>
+            <section className="work-center-selected-card" aria-label="Selected Work Center summary">
+              <div className="work-center-selected-header">
+                <div>
+                  <div className="work-center-selected-heading">
+                    <span>Selected Work Center</span>
+                    <MesStatusBadge value={selectedWorkCenter.status} />
                   </div>
-                  <button type="button" onClick={() => setShowDetailModal(true)}>View Details</button>
+                  <strong>{selectedWorkCenter.name}</strong>
+                  <em>{selectedWorkCenter.code} / {selectedWorkCenter.area}</em>
+                  <small>{selectedWorkCenter.plant} / {selectedWorkCenter.address}</small>
                 </div>
-                <dl className="work-center-detail-list">
-                  <div><dt>Stations</dt><dd>{selectedStations.length}</dd></div>
-                  <div><dt>Active jobs</dt><dd>{selectedStations.filter((station) => station.currentJob).length}</dd></div>
-                  <div><dt>Station availability</dt><dd>{stationIdle} idle</dd></div>
-                  <div><dt>WIP load</dt><dd>{selectedWorkCenter.wipCount}</dd></div>
-                  <div><dt>Queue</dt><dd>{selectedWorkCenter.queueCount} jobs</dd></div>
-                  <div><dt>Due risk</dt><dd>{selectedWorkCenter.queueCount >= 4 ? 'High' : selectedWorkCenter.queueCount > 1 ? 'Medium' : 'Low'}</dd></div>
-                  <div><dt>Maintenance</dt><dd>{selectedWorkCenter.maintenanceStatus}</dd></div>
-                  <div><dt>Last event</dt><dd>{selectedWorkCenter.lastEvent}</dd></div>
-                </dl>
+              </div>
+              <dl className="work-center-detail-list">
+                <div><dt>Stations</dt><dd>{selectedStations.length}</dd></div>
+                <div><dt>Active jobs</dt><dd>{selectedStations.filter((station) => station.currentJob).length}</dd></div>
+                <div><dt>Station availability</dt><dd>{stationIdle} idle</dd></div>
+                <div><dt>WIP load</dt><dd>{selectedWorkCenter.wipCount}</dd></div>
+                <div><dt>Queue</dt><dd>{selectedWorkCenter.queueCount} jobs</dd></div>
+                <div><dt>Due risk</dt><dd><span className={`selected-state-text state-${getWorkCenterRisk(selectedWorkCenter)}`}>{formatRiskLabel(getWorkCenterRisk(selectedWorkCenter))}</span></dd></div>
+                <div><dt>Maintenance</dt><dd><span className={`selected-state-text state-${getMaintenanceTone(selectedWorkCenter.maintenanceStatus)}`}>{selectedWorkCenter.maintenanceStatus}</span></dd></div>
+                <div><dt>Last event</dt><dd>{selectedWorkCenter.lastEvent}</dd></div>
+              </dl>
+              <div className="work-center-selected-copy">
                 <p>{selectedWorkCenter.description}</p>
                 <div className="work-center-detail-tags">
-                  {selectedWorkCenter.capabilities.map((capability) => <span key={capability}>{capability}</span>)}
+                  {getWorkCenterStationCapabilities(selectedWorkCenter).map((capability) => <span className={`capability-pill capability-${getCapabilityTone(capability)}`} key={capability}>{capability}</span>)}
                 </div>
-                <div className="work-center-quick-actions">
-                  <button type="button">Assign Job</button>
-                  <button type="button" onClick={() => updateSelectedStatus('setup')}>Start Setup</button>
-                  <button type="button" onClick={() => updateSelectedStatus('down')}>Mark Down</button>
-                  <button type="button" onClick={() => updateSelectedStatus('idle')}>Mark Available</button>
-                  <button type="button">Open Downtime</button>
-                  <button type="button" onClick={() => setShowDetailModal(true)}>View Events</button>
-                </div>
-              </section>
-            </>
+              </div>
+              <div className="work-center-quick-actions">
+                <button type="button">Assign Job</button>
+                <button type="button" onClick={() => updateSelectedStatus('setup')}>Start Setup</button>
+                <button type="button" onClick={() => updateSelectedStatus('down')}>Mark Down</button>
+                <button type="button" onClick={() => updateSelectedStatus('idle')}>Mark Available</button>
+                <button type="button">Open Downtime</button>
+                <button type="button" onClick={() => setShowDetailModal(true)}>View Details</button>
+              </div>
+            </section>
           ) : null}
         </aside>
 
@@ -2198,39 +2523,104 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
             <div className="work-centers-panel-heading">
               <div>
                 <p className="eyebrow">Work Centers</p>
-                <h3>Locations of manufacturing, receiving, quality, and shipping operations</h3>
+                <h3>Operational control points across manufacturing, receiving, quality, and shipping</h3>
+                <p className="work-centers-panel-copy">Track each Work Center as a capacity node: station availability, active job load, WIP pressure, due-date exposure, and the capabilities available through its stations.</p>
               </div>
               <span>{filteredWorkCenters.length} showing / {workCenters.length} total</span>
             </div>
+            <p className="kpi-interaction-hint">Hover or click the <CircleHelp size={13} strokeWidth={2.4} aria-hidden="true" /> icon for KPI logic. Click a dynamic KPI card to filter the table to Work Centers that need attention.</p>
             <div className="work-centers-kpi-grid compact">
               <article><span>Total</span><strong>{totalWorkCenters}</strong></article>
-              <article><span>Station Availability</span><strong>{idleWorkCenters}</strong></article>
+              <article
+                className={`kpi-status-card status-${stationAvailabilityStatus} ${activeWorkCenterKpiFilter === 'availability' ? 'active' : ''}`}
+                role="button"
+                tabIndex={0}
+                onClick={() => toggleWorkCenterKpiFilter('availability')}
+                onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') toggleWorkCenterKpiFilter('availability'); }}
+              >
+                <div className="kpi-card-label">
+                  <span>Station Availability</span>
+                  {renderKpiHelp(
+                    'stationAvailability',
+                    'Station Availability',
+                    'Measures how many stations are currently available for production across configured Work Centers.',
+                    'Available Stations / Total Stations',
+                    [{ label: 'Healthy: 85% or higher', tone: 'good' }, { label: 'Limited: 70% to 84%', tone: 'warning' }, { label: 'Critical: below 70%', tone: 'critical' }],
+                    `${stationAvailabilityPercent}% is ${formatKpiStatusLabel(stationAvailabilityStatus)}: ${stationAvailabilityStatus === 'healthy' ? 'at or above 85%' : stationAvailabilityStatus === 'limited' ? 'between 70% and 84%' : 'below 70%'}. Available = Running + Idle.`,
+                  )}
+                </div>
+                <strong>{stationAvailabilityPercent}%</strong>
+                <em>{formatKpiStatusLabel(stationAvailabilityStatus)}</em>
+              </article>
               <article><span>Active Job Orders</span><strong>{activeJobOrders}</strong></article>
-              <article><span>WIP Load</span><strong>{workCenters.reduce((total, workCenter) => total + workCenter.wipCount, 0)}</strong></article>
-              <article><span>Due Risk</span><strong>{dueRiskWorkCenters}</strong></article>
+              <article
+                className={`kpi-status-card status-${wipLoadStatus} ${activeWorkCenterKpiFilter === 'wip' ? 'active' : ''}`}
+                role="button"
+                tabIndex={0}
+                onClick={() => toggleWorkCenterKpiFilter('wip')}
+                onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') toggleWorkCenterKpiFilter('wip'); }}
+              >
+                <div className="kpi-card-label">
+                  <span>WIP Load</span>
+                  {renderKpiHelp(
+                    'wipLoad',
+                    'WIP Load',
+                    'Measures how much work-in-process is currently loaded compared to estimated station capacity.',
+                    'Current WIP / WIP Capacity',
+                    [{ label: 'Low: 60% or lower', tone: 'good' }, { label: 'Medium: above 60% up to 85%', tone: 'warning' }, { label: 'High: above 85%', tone: 'critical' }],
+                    `${activeWip} / ${wipCapacity} is ${formatKpiStatusLabel(wipLoadStatus)}: ${wipLoadStatus === 'low' ? 'at or below 60% capacity' : wipLoadStatus === 'medium' ? 'between 61% and 85% capacity' : 'above 85% capacity'}.`,
+                  )}
+                </div>
+                <strong>{activeWip} / {wipCapacity}</strong>
+                <em>{formatKpiStatusLabel(wipLoadStatus)}</em>
+              </article>
+              <article
+                className={`kpi-status-card status-${dueRiskStatus} ${activeWorkCenterKpiFilter === 'risk' ? 'active' : ''}`}
+                role="button"
+                tabIndex={0}
+                onClick={() => toggleWorkCenterKpiFilter('risk')}
+                onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') toggleWorkCenterKpiFilter('risk'); }}
+              >
+                <div className="kpi-card-label">
+                  <span>Due Risk</span>
+                  {renderKpiHelp(
+                    'dueRisk',
+                    'Due Risk',
+                    'Measures how many active jobs are at risk of missing their due date or are blocked.',
+                    'Risky Jobs / Active Jobs',
+                    [{ label: 'Low: 20% or lower', tone: 'good' }, { label: 'Medium: above 20% up to 50%', tone: 'warning' }, { label: 'High: above 50%', tone: 'critical' }],
+                    `${riskyJobOrders} / ${activeJobOrders} is ${formatKpiStatusLabel(dueRiskStatus)}: ${activeJobOrders ? `${formatPercent(dueRiskRatio)} of active jobs are at risk` : 'no active jobs in the denominator'}.`,
+                    dueRiskBreakdown,
+                  )}
+                </div>
+                <strong>{riskyJobOrders} / {activeJobOrders}</strong>
+                <em>{formatKpiStatusLabel(dueRiskStatus)}</em>
+              </article>
             </div>
+            {activeWorkCenterKpiFilter ? (
+              <div className="kpi-active-filter">
+                <span>Filtered by: {activeWorkCenterKpiFilter === 'availability' ? 'Limited or critical availability' : activeWorkCenterKpiFilter === 'wip' ? 'Medium or high WIP load' : 'Medium or high due risk'}</span>
+                <button type="button" onClick={() => setActiveWorkCenterKpiFilter(null)}>Clear</button>
+              </div>
+            ) : null}
             <div className="work-centers-filter-bar compact">
               <label>
                 <span>Search</span>
-                <input value={filters.search} onChange={(event) => setFilter('search', event.target.value)} placeholder="Name, code, area, type, job" />
-              </label>
-              <label>
-                <span>Plant / Site</span>
-                <MesOrderDropdown id="work-center-plant-filter" value={filters.plant} placeholder="All plants" options={[{ value: '', label: 'All plants' }, ...workCenterPlants.map((plant) => ({ value: plant, label: plant }))]} onChange={(value) => setFilter('plant', value)} />
-              </label>
-              <label>
-                <span>Status</span>
-                <MesOrderDropdown id="work-center-status-filter" value={filters.status} placeholder="All statuses" options={[{ value: '', label: 'All statuses' }, ...workCenterStatuses.map((status) => ({ value: status, label: formatLabel(status) }))]} onChange={(value) => setFilter('status', value)} />
+                <input value={filters.search} onChange={(event) => setFilter('search', event.target.value)} placeholder="Work Center, code, capability, risk" />
               </label>
               <label>
                 <span>Capability</span>
                 <MesOrderDropdown id="work-center-capability-filter" value={filters.capability} placeholder="All capabilities" options={[{ value: '', label: 'All capabilities' }, ...workCenterCapabilityTags.map((capability) => ({ value: capability, label: capability }))]} onChange={(value) => setFilter('capability', value)} />
               </label>
+              <label>
+                <span>Risk</span>
+                <MesOrderDropdown id="work-center-risk-filter" value={filters.risk} placeholder="All risks" options={[{ value: '', label: 'All risks' }, { value: 'low', label: 'Low' }, { value: 'medium', label: 'Medium' }, { value: 'high', label: 'High' }]} onChange={(value) => setFilter('risk', value)} />
+              </label>
             </div>
             <div className="work-centers-table" role="table" aria-label="Work Centers">
               <div className="work-centers-table-row header" role="row">
                 <span>Work Center</span>
-                <span>Location</span>
+                <span>Capabilities</span>
                 <span>Stations</span>
                 <span>Active Jobs</span>
                 <span>WIP</span>
@@ -2238,6 +2628,8 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
               </div>
               {filteredWorkCenters.map((workCenter) => {
                 const stations = getWorkCenterStations(workCenter);
+                const stationCapabilities = Array.from(new Set(stations.flatMap((station) => station.capabilities)));
+                const risk = getWorkCenterRisk(workCenter);
                 const selected = workCenter.id === selectedWorkCenter?.id;
                 return (
                   <button
@@ -2251,11 +2643,16 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
                       <span className="work-center-index-badge">{workCenterNumberById.get(workCenter.id)}</span>
                       <span><strong>{workCenter.name}</strong><em>{workCenter.code}</em></span>
                     </span>
-                    <span>{workCenter.area} / {workCenter.plant}</span>
+                    <span className="work-center-capability-pills">
+                      {stationCapabilities.map((capability) => <span className={`capability-pill capability-${getCapabilityTone(capability)}`} key={capability}>{capability}</span>)}
+                    </span>
                     <span>{stations.length}</span>
                     <span>{stations.filter((station) => station.currentJob).length}</span>
                     <span>{workCenter.wipCount}</span>
-                    <span>{workCenter.queueCount >= 4 ? 'High' : workCenter.queueCount > 1 ? 'Medium' : 'Low'}</span>
+                    <span className={`work-center-risk-label risk-${risk}`}>
+                      <span className="risk-face"><WorkCenterRiskIcon risk={risk} /></span>
+                      {formatRiskLabel(risk)}
+                    </span>
                   </button>
                 );
               })}
@@ -2266,25 +2663,125 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
             <div className="work-centers-panel-heading">
               <div>
                 <p className="eyebrow">Stations</p>
-                <h3>Individual machines and process steps inside {selectedWorkCenter?.name ?? 'the selected Work Center'}</h3>
+                <div className="stations-heading-content">
+                  <div className="stations-selected-work-center">
+                    <span>Selected Work Center</span>
+                    <strong>{selectedWorkCenter?.name ?? 'No Work Center selected'}</strong>
+                    {selectedWorkCenter ? <em>{selectedWorkCenter.code} / {selectedWorkCenter.area}</em> : null}
+                  </div>
+                  <div className="stations-heading-description">
+                    <h3>Station-level execution inside this Work Center</h3>
+                    <p>Monitor the machines, benches, buffers, and process steps that make up the selected Work Center, including active utilization, available capacity, downtime, maintenance constraints, and capability coverage.</p>
+                  </div>
+                </div>
               </div>
               <span>{filteredStations.length} showing / {selectedStations.length} total</span>
             </div>
+            <div className={`work-center-operational-summary summary-${operationalSummary.tone}`}>
+              <span>Operational summary</span>
+              <small>Executive readout generated from the selected Work Center status, station availability, WIP, queue, downtime, and due-risk signals.</small>
+              <ul>
+                {operationalSummary.items.map((item) => <li key={item}>{item}</li>)}
+              </ul>
+            </div>
+            <p className="kpi-interaction-hint stations-kpi-hint">Hover or click the <CircleHelp size={13} strokeWidth={2.4} aria-hidden="true" /> icon for station KPI logic. Click a dynamic KPI card to filter the station list by that operational state.</p>
             <div className="station-kpi-grid">
               <article><span>Total</span><strong>{stationTotal}</strong></article>
-              <article><span>Running</span><strong>{stationRunning}</strong></article>
-              <article><span>Idle</span><strong>{stationIdle}</strong></article>
-              <article><span>Down</span><strong>{stationDown}</strong></article>
-              <article><span>Maintenance</span><strong>{stationMaintenance}</strong></article>
+              <article
+                className={`station-kpi-status-card station-status-${stationRunningStatus} ${activeStationKpiFilter === 'running' ? 'active' : ''}`}
+                role="button"
+                tabIndex={0}
+                onClick={() => toggleStationKpiFilter('running')}
+                onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') toggleStationKpiFilter('running'); }}
+              >
+                <div className="kpi-card-label">
+                  <span>Running</span>
+                  {renderKpiHelp(
+                    'stationRunning',
+                    'Running Stations',
+                    'Shows how many stations are actively executing production, setup, inspection, or material handling work.',
+                    'Running Stations / Total Stations',
+                    [{ label: 'High Activity: 70% or higher', tone: 'good' }, { label: 'Moderate Activity: 30% to 69%', tone: 'warning' }, { label: 'Low Activity: below 30%', tone: 'info' }],
+                    `${stationRunning} / ${stationTotal} is ${formatKpiStatusLabel(stationRunningStatus)}: ${stationRunningStatus === 'high-activity' ? '70% or more running' : stationRunningStatus === 'moderate-activity' ? '30% to 69% running' : 'below 30% running'}.`,
+                  )}
+                </div>
+                <strong>{stationRunning} / {stationTotal}</strong>
+                <em>{formatKpiStatusLabel(stationRunningStatus)}</em>
+              </article>
+              <article
+                className={`station-kpi-status-card station-status-${stationIdleStatus} ${activeStationKpiFilter === 'idle' ? 'active' : ''}`}
+                role="button"
+                tabIndex={0}
+                onClick={() => toggleStationKpiFilter('idle')}
+                onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') toggleStationKpiFilter('idle'); }}
+              >
+                <div className="kpi-card-label">
+                  <span>Idle</span>
+                  {renderKpiHelp(
+                    'stationIdle',
+                    'Idle Stations',
+                    'Shows how many stations are available but not currently running a job.',
+                    'Idle Stations / Total Stations',
+                    [{ label: 'Fully Loaded: 20% idle or lower', tone: 'info' }, { label: 'Available Capacity: above 20% up to 60%', tone: 'good' }, { label: 'Underutilized: above 60% idle', tone: 'warning' }],
+                    `${stationIdle} / ${stationTotal} is ${formatKpiStatusLabel(stationIdleStatus)}: ${stationIdleStatus === 'fully-loaded' ? '20% or fewer idle' : stationIdleStatus === 'available-capacity' ? '21% to 60% idle' : 'above 60% idle'}.`,
+                  )}
+                </div>
+                <strong>{stationIdle} / {stationTotal}</strong>
+                <em>{formatKpiStatusLabel(stationIdleStatus)}</em>
+              </article>
+              <article
+                className={`station-kpi-status-card station-status-${stationDownStatus} ${activeStationKpiFilter === 'down' ? 'active' : ''}`}
+                role="button"
+                tabIndex={0}
+                onClick={() => toggleStationKpiFilter('down')}
+                onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') toggleStationKpiFilter('down'); }}
+              >
+                <div className="kpi-card-label">
+                  <span>Down</span>
+                  {renderKpiHelp(
+                    'stationDown',
+                    'Down Stations',
+                    'Shows how many stations are unavailable due to failures, faults, or downtime.',
+                    'Down Stations / Total Stations',
+                    [{ label: 'Healthy: 0 down stations', tone: 'good' }, { label: 'Degraded: more than 0 up to 25%', tone: 'warning' }, { label: 'Critical: above 25% or small-center rule', tone: 'critical' }],
+                    `${stationDown} / ${stationTotal} is ${formatKpiStatusLabel(stationDownStatus)}: ${stationDown === 0 ? 'no stations are down' : stationTotal <= 3 ? 'small Work Center rule applies' : stationDownStatus === 'degraded' ? 'at or below 25% down' : 'above 25% down'}.`,
+                  )}
+                </div>
+                <strong>{stationDown} / {stationTotal}</strong>
+                <em>{formatKpiStatusLabel(stationDownStatus)}</em>
+              </article>
+              <article
+                className={`station-kpi-status-card station-status-${stationMaintenanceStatus} ${activeStationKpiFilter === 'maintenance' ? 'active' : ''}`}
+                role="button"
+                tabIndex={0}
+                onClick={() => toggleStationKpiFilter('maintenance')}
+                onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') toggleStationKpiFilter('maintenance'); }}
+              >
+                <div className="kpi-card-label">
+                  <span>Maintenance</span>
+                  {renderKpiHelp(
+                    'stationMaintenance',
+                    'Maintenance Stations',
+                    'Shows how many stations are unavailable due to planned or unplanned maintenance.',
+                    'Maintenance Stations / Total Stations',
+                    [{ label: 'Clear: 0 stations in maintenance', tone: 'good' }, { label: 'Limited: more than 0 up to 30%', tone: 'warning' }, { label: 'Constrained: above 30% or small-center rule', tone: 'critical' }],
+                    `${stationMaintenance} / ${stationTotal} is ${formatKpiStatusLabel(stationMaintenanceStatus)}: ${stationMaintenance === 0 ? 'no stations in maintenance' : stationTotal <= 2 ? 'small Work Center rule applies' : stationMaintenanceStatus === 'limited' ? 'at or below 30% maintenance' : 'above 30% maintenance'}.`,
+                  )}
+                </div>
+                <strong>{stationMaintenance} / {stationTotal}</strong>
+                <em>{formatKpiStatusLabel(stationMaintenanceStatus)}</em>
+              </article>
             </div>
+            {activeStationKpiFilter ? (
+              <div className="kpi-active-filter">
+                <span>Filtered by: {formatKpiStatusLabel(activeStationKpiFilter)} stations</span>
+                <button type="button" onClick={() => { setActiveStationKpiFilter(null); setStationFilter('status', ''); }}>Clear</button>
+              </div>
+            ) : null}
             <div className="station-filter-bar">
               <label>
                 <span>Search</span>
                 <input value={stationFilters.search} onChange={(event) => setStationFilter('search', event.target.value)} placeholder="Station, process, job" />
-              </label>
-              <label>
-                <span>Type</span>
-                <MesOrderDropdown id="station-type-filter" value={stationFilters.type} placeholder="All types" options={[{ value: '', label: 'All types' }, ...stationTypes.map((type) => ({ value: type, label: type }))]} onChange={(value) => setStationFilter('type', value)} />
               </label>
               <label>
                 <span>Status</span>
@@ -2299,27 +2796,32 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
               {filteredStations.map((station) => (
                 <article className="station-card" key={station.id}>
                   <div className="station-card-header">
-                    <div>
-                      <h4>{station.name}</h4>
-                      <span>{station.code}</span>
+                    <div className="station-card-visual" aria-hidden="true">
+                      <span>{station.type.split(' ').map((word) => word[0]).join('').slice(0, 2)}</span>
                     </div>
-                    <MesStatusBadge value={station.status} />
+                    <div className="station-card-title">
+                      <div>
+                        <h4>{station.name}</h4>
+                        <span>{station.code}</span>
+                      </div>
+                      <span className={`station-status-pill station-status-${station.status}`}>{formatLabel(station.status)}</span>
+                    </div>
                   </div>
                   <dl>
                     <div><dt>Type</dt><dd>{station.type}</dd></div>
                     <div><dt>Process</dt><dd>{station.processStep}</dd></div>
                     <div><dt>Current Job</dt><dd>{station.currentJob ?? 'Unassigned'}</dd></div>
-                    <div><dt>Operator</dt><dd>{station.operator}</dd></div>
+                    <div><dt>Operator</dt><dd><span className="station-operator-pill">{station.operator}</span></dd></div>
                     <div><dt>Queue</dt><dd>{station.queueCount}</dd></div>
                     <div><dt>WIP</dt><dd>{station.wipCount}</dd></div>
                   </dl>
-                  <div className="work-center-utilization" aria-hidden="true"><span style={{ width: `${station.utilization}%` }} /></div>
+                  <div className={`work-center-utilization utilization-${getStationUtilizationStatus(station.utilization)}`} aria-hidden="true"><span style={{ width: `${station.utilization}%` }} /></div>
                   <div className="station-card-footer">
                     <span>{station.utilization}% utilization</span>
                     <strong className={`risk-${station.dueRisk}`}>{station.dueRisk} risk</strong>
                   </div>
                   <div className="work-center-tags">
-                    {station.capabilities.map((capability) => <span key={capability}>{capability}</span>)}
+                    {station.capabilities.map((capability) => <span className={`capability-pill capability-${getCapabilityTone(capability)}`} key={capability}>{capability}</span>)}
                   </div>
                 </article>
               ))}
@@ -2370,7 +2872,7 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
       ) : null}
 
       {showDetailModal && selectedWorkCenter ? (
-        <div className="mes-modal-backdrop" role="presentation">
+        <div className="mes-modal-backdrop work-center-detail-backdrop" role="presentation">
           <section className="work-center-detail-modal" role="dialog" aria-modal="true" aria-labelledby="work-center-detail-title">
             <div className="work-center-detail-modal-header">
               <div>
