@@ -1144,6 +1144,7 @@ type MesWorkCenter = {
   capabilities: string[];
   queue: WorkCenterQueueJob[];
   events: WorkCenterEvent[];
+  stationsConfigured?: boolean;
 };
 
 type WorkCenterStation = {
@@ -1189,6 +1190,17 @@ type WorkCenterFormState = {
   maintenanceNotes: string;
 };
 
+type StationFormState = {
+  workCenterId: string;
+  name: string;
+  code: string;
+  type: string;
+  operator: string;
+  capability: string;
+  newCapabilityName: string;
+  newCapabilityColor: string;
+};
+
 type WorkCenterKpiHelpKey = 'stationAvailability' | 'wipLoad' | 'dueRisk' | 'stationRunning' | 'stationIdle' | 'stationDown' | 'stationMaintenance';
 type WorkCenterKpiFilter = 'availability' | 'wip' | 'risk';
 type StationKpiFilter = 'running' | 'idle' | 'down' | 'maintenance';
@@ -1202,21 +1214,226 @@ type KpiThreshold = {
   label: string;
   tone: 'good' | 'info' | 'warning' | 'critical';
 };
+type AddressLookupState = {
+  status: 'idle' | 'loading' | 'success' | 'error';
+  message: string;
+};
+type AddressLookupMatch = {
+  address: string;
+  latitude: string;
+  longitude: string;
+  approximate?: boolean;
+};
+type AddressSuggestionMenuPosition = {
+  top: number;
+  left: number;
+  width: number;
+  maxHeight: number;
+};
+type CapabilityColorPickerPosition = {
+  top: number;
+  left: number;
+  width: number;
+};
 
 const workCenterTypes = ['Manufacturing Site', 'Production Area', 'Grinding Cell', 'Quality Area', 'Receiving / Shipping Center', 'External Branch'];
-const stationTypes = ['Machine', 'Manual Station', 'Inspection Station', 'Assembly Cell', 'Grinding Machine', 'Packaging Station', 'Storage / Buffer', 'Resource Group'];
+const stationFormTypes = ['Manual Station', 'Semi-automatic Station', 'Automatic Station'];
 const workCenterStatuses: WorkCenterStatus[] = ['running', 'idle', 'setup', 'down', 'maintenance', 'offline'];
 const workCenterPlants = ['Main Plant', 'Tooling Shop', 'Distribution Dock'];
 const workCenterAreas = ['Receiving', 'Inspection', 'Grinding', 'Finishing', 'Quality', 'Shipping'];
 const workCenterCapabilityTags = ['Hob Grinding', 'Skiving Grinding', 'Incoming Inspection', 'Final QC', 'Assembly', 'Packaging', 'Rework', 'CNC', 'Deburr'];
+const registerNewCapabilityValue = '__register_new_capability__';
+const capabilityColorOptions = ['#ff8a1f', '#1d4ed8', '#00a676', '#dc2626', '#8b5cf6', '#f59e0b', '#14b8a6', '#ec4899'];
 const maintenanceStatuses = ['Healthy', 'Due soon', 'Maintenance required', 'In maintenance'];
 const plantCoordinateDefaults: Record<string, { address: string; latitude: number; longitude: number }> = {
   'Main Plant': { address: '500 Woodward Ave, Detroit, MI 48226', latitude: 42.3299, longitude: -83.0398 },
   'Tooling Shop': { address: '461 Burroughs St, Detroit, MI 48202', latitude: 42.3678, longitude: -83.0736 },
   'Distribution Dock': { address: '3400 E Lafayette St, Detroit, MI 48207', latitude: 42.3428, longitude: -83.0174 },
 };
+const knownMexicanCityCoordinates: Record<string, { latitude: string; longitude: string }> = {
+  'saltillo|coahuila': { latitude: '25.43819', longitude: '-100.97367' },
+};
+
+function getAddressSearchVariants(query: string) {
+  const trimmedQuery = query.trim();
+  const normalizedQuery = trimmedQuery
+    .replace(/\bCoah\.?\b/gi, 'Coahuila')
+    .replace(/\bMéx\.?\b/gi, 'Mexico')
+    .replace(/\bMex\.?\b/gi, 'Mexico')
+    .replace(/\s+/g, ' ');
+  const variants: Array<{ query: string; approximate: boolean }> = [{ query: normalizedQuery, approximate: false }];
+  const hasMexico = /\b(mexico|méxico)\b/i.test(normalizedQuery);
+  const mexicoLikely = /\b(saltillo|torre[oó]n|coahuila|monterrey|nuevo le[oó]n|guadalajara|jalisco|quer[eé]taro|cdmx|ciudad de m[eé]xico|puebla|le[oó]n|guanajuato|chihuahua|tijuana|baja california)\b/i.test(normalizedQuery);
+  const streetPrefixVariant = normalizedQuery.replace(/^([A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+)\s+(\d+)/, 'Calle $1 $2');
+  const postalCode = normalizedQuery.match(/\b\d{5}\b/)?.[0] ?? '';
+  const withoutPostalCode = normalizedQuery.replace(/\b\d{5}\b/g, '').replace(/\s*,\s*,/g, ',').replace(/\s+/g, ' ').trim();
+  const withoutStreetNumber = normalizedQuery.replace(/^([^,]*?)\s+\d+\s*,\s*/i, '').trim();
+  const addressParts = normalizedQuery.split(',').map((part) => part.trim()).filter(Boolean);
+  const localityParts = addressParts.slice(1);
+  const localityQuery = localityParts.join(', ');
+  const cityPart = (addressParts.find((part) => /\bsaltillo\b/i.test(part)) ?? (/\bsaltillo\b/i.test(normalizedQuery) ? 'Saltillo' : ''))
+    .replace(/\b\d{5}\b/g, '')
+    .trim();
+  const statePart = /\bcoahuila\b/i.test(normalizedQuery) ? 'Coahuila' : '';
+  const postalCityStateQuery = [postalCode, cityPart, statePart, hasMexico ? '' : 'Mexico'].filter(Boolean).join(', ');
+  const cityStateQuery = [
+    cityPart,
+    statePart,
+    hasMexico ? '' : 'Mexico',
+  ].filter(Boolean).join(', ');
+
+  const addVariant = (variant: string, approximate = false) => {
+    const cleanVariant = variant.replace(/\s*,\s*,/g, ',').replace(/\s+/g, ' ').replace(/^,\s*|\s*,$/g, '').trim();
+    if (cleanVariant) variants.push({ query: cleanVariant, approximate });
+  };
+
+  if (streetPrefixVariant !== normalizedQuery) addVariant(streetPrefixVariant);
+  if (!hasMexico) addVariant(`${normalizedQuery}, Mexico`);
+  if (!hasMexico && streetPrefixVariant !== normalizedQuery) addVariant(`${streetPrefixVariant}, Mexico`);
+  if (!/\bcoahuila\b/i.test(normalizedQuery) && /\bsaltillo\b/i.test(normalizedQuery)) addVariant(`${normalizedQuery}, Coahuila, Mexico`);
+  if (postalCityStateQuery) addVariant(postalCityStateQuery, true);
+  if (withoutPostalCode !== normalizedQuery) addVariant(hasMexico ? withoutPostalCode : `${withoutPostalCode}, Mexico`, true);
+  if (withoutStreetNumber && withoutStreetNumber !== normalizedQuery) addVariant(hasMexico ? withoutStreetNumber : `${withoutStreetNumber}, Mexico`, true);
+  if (localityQuery) addVariant(hasMexico ? localityQuery : `${localityQuery}, Mexico`, true);
+  if (cityStateQuery) addVariant(cityStateQuery, true);
+
+  return {
+    countryCode: hasMexico || mexicoLikely ? 'mx' : '',
+    cityPart,
+    hasMexico,
+    postalCode,
+    statePart,
+    variants: Array.from(new Map(variants.map((variant) => [variant.query, variant])).values()),
+  };
+}
+
+function getPostalCodeFromAddress(address: string) {
+  return address.match(/\b\d{5}\b/)?.[0] ?? '';
+}
+
+function getKnownCityCoordinate(city: string, state: string) {
+  return knownMexicanCityCoordinates[`${city.toLowerCase()}|${state.toLowerCase()}`] ?? null;
+}
+
+function prioritizePostalCodeMatches(
+  matches: AddressLookupMatch[],
+  context: ReturnType<typeof getAddressSearchVariants>,
+  limit: number,
+) {
+  if (!context.postalCode) return matches.slice(0, limit);
+
+  const exactPostalMatches = matches.filter((match) => getPostalCodeFromAddress(match.address) === context.postalCode);
+  if (exactPostalMatches.length > 0) return exactPostalMatches.slice(0, limit);
+
+  const matchesWithoutPostalCode = matches.filter((match) => !getPostalCodeFromAddress(match.address));
+  const coordinateSource = matchesWithoutPostalCode[0] ?? getKnownCityCoordinate(context.cityPart, context.statePart);
+  if (!coordinateSource || !context.cityPart || !context.statePart) return [];
+
+  return [
+    {
+      address: `CP ${context.postalCode}, ${context.cityPart}, ${context.statePart}, Mexico`,
+      latitude: coordinateSource.latitude,
+      longitude: coordinateSource.longitude,
+      approximate: true,
+    },
+  ].slice(0, limit);
+}
+
+async function fetchAddressMatches(query: string, limit = 5, signal?: AbortSignal, countryCode = '', approximate = false): Promise<AddressLookupMatch[]> {
+  const params = new URLSearchParams({ addressdetails: '1', dedupe: '1', format: 'json', limit: String(limit), q: query });
+  if (countryCode) params.set('countrycodes', countryCode);
+  const response = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, { signal });
+  if (!response.ok) throw new Error('Address lookup failed.');
+  const results = await response.json() as Array<{ display_name?: string; lat: string; lon: string }>;
+
+  return results
+    .filter((result) => result.display_name && result.lat && result.lon)
+    .map((result) => ({
+      address: result.display_name ?? query,
+      latitude: result.lat,
+      longitude: result.lon,
+      approximate,
+    }));
+}
+
+async function fetchPhotonAddressMatches(query: string, limit = 5, signal?: AbortSignal, approximate = true): Promise<AddressLookupMatch[]> {
+  const params = new URLSearchParams({ lang: 'en', limit: String(limit), q: query });
+  const response = await fetch(`https://photon.komoot.io/api/?${params.toString()}`, { signal });
+  if (!response.ok) throw new Error('Photon address lookup failed.');
+  const result = await response.json() as {
+    features?: Array<{
+      geometry?: { coordinates?: [number, number] };
+      properties?: {
+        city?: string;
+        country?: string;
+        district?: string;
+        housenumber?: string;
+        name?: string;
+        postcode?: string;
+        state?: string;
+        street?: string;
+      };
+    }>;
+  };
+
+  return (result.features ?? [])
+    .filter((feature) => feature.geometry?.coordinates)
+    .map((feature) => {
+      const properties = feature.properties ?? {};
+      const [longitude, latitude] = feature.geometry?.coordinates ?? [0, 0];
+      const address = [
+        [properties.street, properties.housenumber].filter(Boolean).join(' ') || properties.name,
+        properties.district,
+        properties.postcode,
+        properties.city,
+        properties.state,
+        properties.country,
+      ].filter(Boolean).join(', ');
+
+      return {
+        address: address || query,
+        latitude: String(latitude),
+        longitude: String(longitude),
+        approximate,
+      };
+    });
+}
+
+async function searchAddressMatches(query: string, limit = 5, signal?: AbortSignal): Promise<AddressLookupMatch[]> {
+  const searchContext = getAddressSearchVariants(query);
+  const { countryCode, variants } = searchContext;
+  const matchesByKey = new Map<string, AddressLookupMatch>();
+
+  for (const variant of variants) {
+    if (signal?.aborted) break;
+    const matches = await fetchAddressMatches(variant.query, limit, signal, countryCode, variant.approximate);
+    matches.forEach((match) => {
+      const key = `${Number(match.latitude).toFixed(5)}:${Number(match.longitude).toFixed(5)}:${match.address}`;
+      if (!matchesByKey.has(key)) matchesByKey.set(key, match);
+    });
+    if (matchesByKey.size >= limit) break;
+  }
+
+  if (matchesByKey.size === 0) {
+    for (const variant of variants) {
+      if (signal?.aborted) break;
+      const matches = await fetchPhotonAddressMatches(variant.query, limit, signal, true);
+      matches.forEach((match) => {
+        const key = `${Number(match.latitude).toFixed(5)}:${Number(match.longitude).toFixed(5)}:${match.address}`;
+        if (!matchesByKey.has(key)) matchesByKey.set(key, match);
+      });
+      if (matchesByKey.size >= limit) break;
+    }
+  }
+
+  return prioritizePostalCodeMatches(Array.from(matchesByKey.values()), searchContext, limit);
+}
 
 function getWorkCenterMapBounds(workCenters: MesWorkCenter[]) {
+  if (workCenters.length === 0) {
+    return { south: 42.30, north: 42.39, west: -83.09, east: -82.99 };
+  }
+
   const latitudes = workCenters.map((workCenter) => workCenter.latitude);
   const longitudes = workCenters.map((workCenter) => workCenter.longitude);
   const minLatitude = Math.min(...latitudes);
@@ -1801,9 +2018,9 @@ function createWorkCenterFormState(): WorkCenterFormState {
     type: workCenterTypes[0],
     plant: workCenterPlants[0],
     area: workCenterAreas[0],
-    address: plantCoordinateDefaults[workCenterPlants[0]].address,
-    latitude: String(plantCoordinateDefaults[workCenterPlants[0]].latitude),
-    longitude: String(plantCoordinateDefaults[workCenterPlants[0]].longitude),
+    address: '',
+    latitude: '',
+    longitude: '',
     description: '',
     status: 'idle',
     capacityMode: 'Cycle time',
@@ -1821,7 +2038,67 @@ function createWorkCenterFormState(): WorkCenterFormState {
   };
 }
 
+function workCenterToFormState(workCenter: MesWorkCenter): WorkCenterFormState {
+  return {
+    name: workCenter.name,
+    code: workCenter.code,
+    type: workCenter.type,
+    plant: workCenter.plant,
+    area: workCenter.area,
+    address: workCenter.address,
+    latitude: String(workCenter.latitude),
+    longitude: String(workCenter.longitude),
+    description: workCenter.description,
+    status: workCenter.status,
+    capacityMode: workCenter.capacityMode,
+    defaultCycleTime: workCenter.defaultCycleTime,
+    unitOfMeasure: workCenter.unitOfMeasure,
+    queueCapacity: String(workCenter.queueCapacity),
+    wipCapacity: String(workCenter.wipCapacity),
+    requiresOperator: workCenter.requiresOperator,
+    bottleneckCandidate: workCenter.bottleneckCandidate,
+    capabilities: workCenter.capabilities.join(', '),
+    maintenanceStatus: workCenter.maintenanceStatus,
+    maintenanceInterval: workCenter.maintenanceInterval,
+    lastMaintenanceDate: workCenter.lastMaintenanceDate,
+    maintenanceNotes: workCenter.maintenanceNotes,
+  };
+}
+
+function createStationFormState(workCenterId: string): StationFormState {
+  return {
+    workCenterId,
+    name: '',
+    code: '',
+    type: stationFormTypes[0],
+    operator: 'Unassigned',
+    capability: '',
+    newCapabilityName: '',
+    newCapabilityColor: capabilityColorOptions[0],
+  };
+}
+
+function normalizeHexColor(color: string) {
+  return /^#[0-9a-f]{6}$/i.test(color) ? color : capabilityColorOptions[0];
+}
+
+function hexToRgb(color: string) {
+  const normalizedColor = normalizeHexColor(color).replace('#', '');
+  return {
+    red: parseInt(normalizedColor.slice(0, 2), 16),
+    green: parseInt(normalizedColor.slice(2, 4), 16),
+    blue: parseInt(normalizedColor.slice(4, 6), 16),
+  };
+}
+
+function rgbToHex(red: number, green: number, blue: number) {
+  const clampChannel = (value: number) => Math.max(0, Math.min(255, Math.round(value)));
+  return `#${[clampChannel(red), clampChannel(green), clampChannel(blue)].map((value) => value.toString(16).padStart(2, '0')).join('')}`;
+}
+
 function getWorkCenterStations(workCenter: MesWorkCenter): WorkCenterStation[] {
+  if (workCenter.stationsConfigured === false || (workCenter.stationsConfigured === undefined && /^wc-\d+$/.test(workCenter.id))) return [];
+
   const baseStationsByArea: Record<string, Array<Pick<WorkCenterStation, 'name' | 'type' | 'capabilities' | 'processStep'>>> = {
     Receiving: [
       { name: 'Dock Intake Lane 01', type: 'Manual Station', capabilities: ['Receiving'], processStep: 'Inbound intake' },
@@ -1872,10 +2149,6 @@ function getWorkCenterStations(workCenter: MesWorkCenter): WorkCenterStation[] {
       lastEvent: isPrimary ? workCenter.lastEvent : 'No recent activity',
     };
   });
-}
-
-function getWorkCenterStationCapabilities(workCenter: MesWorkCenter) {
-  return Array.from(new Set(getWorkCenterStations(workCenter).flatMap((station) => station.capabilities)));
 }
 
 function formatRiskLabel(risk: WorkCenterStation['dueRisk']) {
@@ -2086,6 +2359,10 @@ function getWorkCenterOperationalSummary(workCenter: MesWorkCenter | null, stati
 export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
   const [workCenters, setWorkCenters] = React.useState<MesWorkCenter[]>(mockMesWorkCenters);
   const [selectedWorkCenterId, setSelectedWorkCenterId] = React.useState(mockMesWorkCenters[0]?.id ?? '');
+  const [selectedStationId, setSelectedStationId] = React.useState('');
+  const [customStationsByWorkCenter, setCustomStationsByWorkCenter] = React.useState<Record<string, WorkCenterStation[]>>({});
+  const [customCapabilityColors, setCustomCapabilityColors] = React.useState<Record<string, string>>({});
+  const [stationStatusOverrides, setStationStatusOverrides] = React.useState<Record<string, WorkCenterStatus>>({});
   const [filters, setFilters] = React.useState({
     search: '',
     capability: '',
@@ -2096,16 +2373,45 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
     status: '',
     capability: '',
   });
+  const [editingWorkCenterId, setEditingWorkCenterId] = React.useState<string | null>(null);
+  const [workCenterConfirmation, setWorkCenterConfirmation] = React.useState<ConfirmationState | null>(null);
   const [workCenterMapOpacityMode, setWorkCenterMapOpacityMode] = React.useState(false);
   const [showAddForm, setShowAddForm] = React.useState(false);
+  const [showStationForm, setShowStationForm] = React.useState(false);
   const [showDetailModal, setShowDetailModal] = React.useState(false);
   const [openKpiHelp, setOpenKpiHelp] = React.useState<WorkCenterKpiHelpKey | null>(null);
   const [activeWorkCenterKpiFilter, setActiveWorkCenterKpiFilter] = React.useState<WorkCenterKpiFilter | null>(null);
   const [activeStationKpiFilter, setActiveStationKpiFilter] = React.useState<StationKpiFilter | null>(null);
   const [formState, setFormState] = React.useState<WorkCenterFormState>(() => createWorkCenterFormState());
+  const [stationFormState, setStationFormState] = React.useState<StationFormState>(() => createStationFormState(mockMesWorkCenters[0]?.id ?? ''));
+  const [showCapabilityColorPicker, setShowCapabilityColorPicker] = React.useState(false);
+  const [showCapabilitySpectrumControls, setShowCapabilitySpectrumControls] = React.useState(false);
+  const [addressLookup, setAddressLookup] = React.useState<AddressLookupState>({ status: 'idle', message: '' });
+  const [addressSuggestions, setAddressSuggestions] = React.useState<AddressLookupMatch[]>([]);
+  const [showAddressSuggestions, setShowAddressSuggestions] = React.useState(false);
+  const [addressSuggestionsLoading, setAddressSuggestionsLoading] = React.useState(false);
+  const [addressSuggestionPosition, setAddressSuggestionPosition] = React.useState<AddressSuggestionMenuPosition | null>(null);
+  const [capabilityColorPickerPosition, setCapabilityColorPickerPosition] = React.useState<CapabilityColorPickerPosition | null>(null);
+  const addressLookupControlRef = React.useRef<HTMLDivElement | null>(null);
+  const addressSuggestionMenuRef = React.useRef<HTMLDivElement | null>(null);
+  const capabilityColorTriggerRef = React.useRef<HTMLSpanElement | null>(null);
+  const capabilityColorPickerRef = React.useRef<HTMLDivElement | null>(null);
 
+  const getStationsForWorkCenter = React.useCallback((workCenter: MesWorkCenter) => [
+    ...getWorkCenterStations(workCenter),
+    ...(customStationsByWorkCenter[workCenter.id] ?? []),
+  ], [customStationsByWorkCenter]);
+  const getStationCapabilitiesForWorkCenter = React.useCallback((workCenter: MesWorkCenter) => (
+    Array.from(new Set(getStationsForWorkCenter(workCenter).flatMap((station) => station.capabilities)))
+  ), [getStationsForWorkCenter]);
   const selectedWorkCenter = workCenters.find((workCenter) => workCenter.id === selectedWorkCenterId) ?? workCenters[0] ?? null;
-  const selectedStations = selectedWorkCenter ? getWorkCenterStations(selectedWorkCenter) : [];
+  const selectedStations = selectedWorkCenter
+    ? getStationsForWorkCenter(selectedWorkCenter).map((station) => ({
+      ...station,
+      status: stationStatusOverrides[station.id] ?? station.status,
+    }))
+    : [];
+  const selectedStation = selectedStations.find((station) => station.id === selectedStationId) ?? selectedStations[0] ?? null;
   const todayIsoDate = getTodayIsoDate();
   const filteredStations = selectedStations.filter((station) => {
     const stationHaystack = [
@@ -2121,9 +2427,19 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
       && (!stationFilters.status || station.status === stationFilters.status)
       && (!stationFilters.capability || station.capabilities.includes(stationFilters.capability));
   });
+  const allCapabilityTags = React.useMemo(() => Array.from(new Set([
+    ...workCenterCapabilityTags,
+    ...workCenters.flatMap((workCenter) => workCenter.capabilities),
+    ...workCenters.flatMap((workCenter) => getStationCapabilitiesForWorkCenter(workCenter)),
+    ...Object.keys(customCapabilityColors),
+  ])), [customCapabilityColors, getStationCapabilitiesForWorkCenter, workCenters]);
+  const registeredOperatorOptions = React.useMemo(() => Array.from(new Set([
+    'Unassigned',
+    ...workCenters.flatMap((workCenter) => [workCenter.currentOperator, ...getStationsForWorkCenter(workCenter).map((station) => station.operator)]),
+  ].filter((operator) => operator && !['Automatic', 'MES Admin'].includes(operator)))), [getStationsForWorkCenter, workCenters]);
   const filteredWorkCenters = workCenters.filter((workCenter) => {
-    const stationCapabilities = getWorkCenterStationCapabilities(workCenter);
-    const stations = getWorkCenterStations(workCenter);
+    const stationCapabilities = getStationCapabilitiesForWorkCenter(workCenter);
+    const stations = getStationsForWorkCenter(workCenter);
     const availableStationCount = stations.filter((station) => ['idle', 'running'].includes(station.status)).length;
     const availabilityStatus = getAvailabilityStatus(stations.length ? availableStationCount / stations.length : 1);
     const wipStatus = getLoadStatus(stations.length ? workCenter.wipCount / (stations.length * 2) : 0);
@@ -2145,7 +2461,7 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
         || (activeWorkCenterKpiFilter === 'risk' && ['medium', 'high'].includes(riskStatus)));
   });
 
-  const allWorkCenterStations = workCenters.flatMap((workCenter) => getWorkCenterStations(workCenter));
+  const allWorkCenterStations = workCenters.flatMap((workCenter) => getStationsForWorkCenter(workCenter));
   const totalWorkCenters = workCenters.length;
   const totalStations = allWorkCenterStations.length;
   const availableStations = allWorkCenterStations.filter((station) => ['idle', 'running'].includes(station.status)).length;
@@ -2197,6 +2513,11 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
     if (key === 'status') setActiveStationKpiFilter(null);
   };
 
+  const selectWorkCenter = (workCenterId: string) => {
+    setSelectedWorkCenterId(workCenterId);
+    setSelectedStationId('');
+  };
+
   const toggleWorkCenterKpiFilter = (filter: WorkCenterKpiFilter) => {
     setActiveWorkCenterKpiFilter((current) => (current === filter ? null : filter));
   };
@@ -2215,49 +2536,371 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
 
   const openAddWorkCenterForm = () => {
     setFormState(createWorkCenterFormState());
+    setEditingWorkCenterId(null);
+    setAddressLookup({ status: 'idle', message: '' });
+    setAddressSuggestions([]);
+    setShowAddressSuggestions(false);
     setShowAddForm(true);
   };
 
+  const openEditWorkCenterForm = () => {
+    if (!selectedWorkCenter) return;
+    setFormState(workCenterToFormState(selectedWorkCenter));
+    setEditingWorkCenterId(selectedWorkCenter.id);
+    setAddressLookup({
+      status: 'success',
+      message: `Location found: ${selectedWorkCenter.latitude.toFixed(5)}, ${selectedWorkCenter.longitude.toFixed(5)}`,
+    });
+    setAddressSuggestions([]);
+    setShowAddressSuggestions(false);
+    setShowAddForm(true);
+  };
+
+  const openAddStationForm = () => {
+    if (!selectedWorkCenter) return;
+    setStationFormState(createStationFormState(selectedWorkCenter.id));
+    setShowCapabilityColorPicker(false);
+    setShowStationForm(true);
+  };
+
+  const saveStationForm = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const targetWorkCenter = workCenters.find((workCenter) => workCenter.id === stationFormState.workCenterId);
+    if (!targetWorkCenter || !stationFormState.name.trim() || !stationFormState.code.trim()) return;
+
+    const selectedCapability = stationFormState.capability === registerNewCapabilityValue
+      ? stationFormState.newCapabilityName.trim()
+      : stationFormState.capability;
+    if (!selectedCapability) return;
+
+    if (stationFormState.capability === registerNewCapabilityValue) {
+      setCustomCapabilityColors((currentColors) => ({
+        ...currentColors,
+        [selectedCapability]: stationFormState.newCapabilityColor,
+      }));
+    }
+
+    const nextStation: WorkCenterStation = {
+      id: `${targetWorkCenter.id}-custom-station-${Date.now()}`,
+      code: stationFormState.code.trim(),
+      name: stationFormState.name.trim(),
+      type: stationFormState.type,
+      status: 'idle',
+      currentJob: null,
+      operator: stationFormState.operator,
+      processStep: selectedCapability,
+      queueCount: 0,
+      wipCount: 0,
+      utilization: 0,
+      dueRisk: 'low',
+      maintenanceStatus: 'Healthy',
+      capabilities: [selectedCapability],
+      lastEvent: 'No recent activity',
+    };
+
+    setCustomStationsByWorkCenter((currentStations) => ({
+      ...currentStations,
+      [targetWorkCenter.id]: [...(currentStations[targetWorkCenter.id] ?? []), nextStation],
+    }));
+    setWorkCenters((currentWorkCenters) => currentWorkCenters.map((workCenter) => (
+      workCenter.id === targetWorkCenter.id ? { ...workCenter, stationsConfigured: true } : workCenter
+    )));
+    selectWorkCenter(targetWorkCenter.id);
+    setSelectedStationId(nextStation.id);
+    setShowCapabilityColorPicker(false);
+    setShowCapabilitySpectrumControls(false);
+    setShowStationForm(false);
+  };
+
+  const deleteSelectedWorkCenter = () => {
+    if (!selectedWorkCenter) return;
+    const deletingWorkCenterId = selectedWorkCenter.id;
+    setWorkCenters((currentWorkCenters) => {
+      const nextWorkCenters = currentWorkCenters.filter((workCenter) => workCenter.id !== deletingWorkCenterId);
+      const nextSelectedWorkCenter = nextWorkCenters[0] ?? null;
+      setSelectedWorkCenterId(nextSelectedWorkCenter?.id ?? '');
+      setSelectedStationId('');
+      return nextWorkCenters;
+    });
+    setStationStatusOverrides((currentOverrides) => Object.fromEntries(
+      Object.entries(currentOverrides).filter(([stationId]) => !stationId.startsWith(`${deletingWorkCenterId}-`)),
+    ));
+    setCustomStationsByWorkCenter((currentStations) => {
+      const remainingStations = { ...currentStations };
+      delete remainingStations[deletingWorkCenterId];
+      return remainingStations;
+    });
+  };
+
+  const confirmDeleteSelectedWorkCenter = () => {
+    if (!selectedWorkCenter) return;
+    setWorkCenterConfirmation({
+      title: 'Delete Work Center?',
+      message: 'Estas seguro que quieres eliminar el workcenter? Esto eliminara las stations de la workcenter tambien.',
+      confirmLabel: 'Delete Work Center',
+      tone: 'danger',
+      onConfirm: deleteSelectedWorkCenter,
+    });
+  };
+
+  const confirmPendingWorkCenterAction = async () => {
+    if (!workCenterConfirmation) return;
+    const pendingConfirmation = workCenterConfirmation;
+    setWorkCenterConfirmation(null);
+    await pendingConfirmation.onConfirm();
+  };
+
   React.useEffect(() => {
-    if (!showDetailModal) return undefined;
+    if (!showAddForm && !showStationForm && !showDetailModal && !workCenterConfirmation) return undefined;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => {
       document.body.style.overflow = previousOverflow;
     };
-  }, [showDetailModal]);
+  }, [showAddForm, showStationForm, showDetailModal, workCenterConfirmation]);
 
-  const saveWorkCenterForm = (event: React.FormEvent<HTMLFormElement>) => {
+  const renderCapabilityPill = (capability: string) => {
+    const customColor = customCapabilityColors[capability];
+    return (
+      <span
+        className={`capability-pill capability-${getCapabilityTone(capability)}`}
+        key={capability}
+        style={customColor ? {
+          borderColor: customColor,
+          backgroundColor: `${customColor}1a`,
+          color: customColor,
+        } : undefined}
+      >
+        {capability}
+      </span>
+    );
+  };
+
+  const updateNewCapabilityColor = (color: string) => {
+    setStationFormState((current) => ({ ...current, newCapabilityColor: normalizeHexColor(color) }));
+  };
+
+  const updateNewCapabilityRgbChannel = (channel: 'red' | 'green' | 'blue', value: string) => {
+    const currentRgb = hexToRgb(stationFormState.newCapabilityColor);
+    const nextRgb = { ...currentRgb, [channel]: Number(value) || 0 };
+    updateNewCapabilityColor(rgbToHex(nextRgb.red, nextRgb.green, nextRgb.blue));
+  };
+
+  const newCapabilityRgb = hexToRgb(stationFormState.newCapabilityColor);
+
+  const updateCapabilityColorPickerPosition = React.useCallback(() => {
+    const trigger = capabilityColorTriggerRef.current;
+    if (!trigger) return;
+    const rect = trigger.getBoundingClientRect();
+    const viewportPadding = 16;
+    const width = Math.min(246, window.innerWidth - (viewportPadding * 2));
+    const left = Math.max(viewportPadding, Math.min(rect.right - width, window.innerWidth - width - viewportPadding));
+    const availableBelow = window.innerHeight - rect.bottom - viewportPadding;
+    const pickerHeight = showCapabilitySpectrumControls ? 252 : 92;
+    const openUp = availableBelow < pickerHeight && rect.top > availableBelow;
+
+    setCapabilityColorPickerPosition({
+      top: openUp ? Math.max(viewportPadding, rect.top - pickerHeight - 8) : rect.bottom + 8,
+      left,
+      width,
+    });
+  }, [showCapabilitySpectrumControls]);
+
+  React.useLayoutEffect(() => {
+    if (!showCapabilityColorPicker) return;
+    updateCapabilityColorPickerPosition();
+  }, [showCapabilityColorPicker, showCapabilitySpectrumControls, updateCapabilityColorPickerPosition]);
+
+  React.useEffect(() => {
+    if (!showCapabilityColorPicker) return undefined;
+
+    const closeIfOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (capabilityColorTriggerRef.current?.contains(target) || capabilityColorPickerRef.current?.contains(target)) return;
+      setShowCapabilityColorPicker(false);
+      setShowCapabilitySpectrumControls(false);
+    };
+    const reposition = () => updateCapabilityColorPickerPosition();
+
+    document.addEventListener('mousedown', closeIfOutside);
+    window.addEventListener('resize', reposition);
+    window.addEventListener('scroll', reposition, true);
+
+    return () => {
+      document.removeEventListener('mousedown', closeIfOutside);
+      window.removeEventListener('resize', reposition);
+      window.removeEventListener('scroll', reposition, true);
+    };
+  }, [showCapabilityColorPicker, updateCapabilityColorPickerPosition]);
+
+  const updateAddressSuggestionPosition = React.useCallback(() => {
+    const control = addressLookupControlRef.current;
+    if (!control) return;
+    const rect = control.getBoundingClientRect();
+    const viewportPadding = 16;
+    const availableBelow = window.innerHeight - rect.bottom - viewportPadding;
+    const availableAbove = rect.top - viewportPadding;
+    const maxHeight = Math.max(132, Math.min(246, availableBelow >= 150 ? availableBelow - 8 : availableAbove - 8));
+    const openUp = availableBelow < 150 && availableAbove > availableBelow;
+    const width = Math.min(rect.width, window.innerWidth - (viewportPadding * 2));
+    const left = Math.max(viewportPadding, Math.min(rect.left, window.innerWidth - width - viewportPadding));
+
+    setAddressSuggestionPosition({
+      top: openUp ? Math.max(viewportPadding, rect.top - maxHeight - 7) : rect.bottom + 7,
+      left,
+      width,
+      maxHeight,
+    });
+  }, []);
+
+  React.useLayoutEffect(() => {
+    if (!(showAddressSuggestions || addressSuggestionsLoading)) return;
+    if (addressSuggestions.length === 0 && !addressSuggestionsLoading) return;
+    updateAddressSuggestionPosition();
+  }, [addressSuggestions.length, addressSuggestionsLoading, showAddressSuggestions, updateAddressSuggestionPosition]);
+
+  React.useEffect(() => {
+    const menuOpen = (showAddressSuggestions || addressSuggestionsLoading) && (addressSuggestions.length > 0 || addressSuggestionsLoading);
+    if (!menuOpen) return undefined;
+
+    const closeIfOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (addressLookupControlRef.current?.contains(target) || addressSuggestionMenuRef.current?.contains(target)) return;
+      setShowAddressSuggestions(false);
+    };
+    const reposition = () => updateAddressSuggestionPosition();
+
+    document.addEventListener('mousedown', closeIfOutside);
+    window.addEventListener('resize', reposition);
+    window.addEventListener('scroll', reposition, true);
+
+    return () => {
+      document.removeEventListener('mousedown', closeIfOutside);
+      window.removeEventListener('resize', reposition);
+      window.removeEventListener('scroll', reposition, true);
+    };
+  }, [addressSuggestions.length, addressSuggestionsLoading, showAddressSuggestions, updateAddressSuggestionPosition]);
+
+  React.useEffect(() => {
+    const query = formState.address.trim();
+    if (!showAddForm || formState.latitude || query.length < 3) {
+      setAddressSuggestions([]);
+      setShowAddressSuggestions(false);
+      setAddressSuggestionsLoading(false);
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => {
+      setAddressSuggestionsLoading(true);
+      searchAddressMatches(query, 5, controller.signal)
+        .then((matches) => {
+          if (controller.signal.aborted) return;
+          setAddressSuggestions(matches);
+          setShowAddressSuggestions(matches.length > 0);
+        })
+        .catch((error) => {
+          if ((error as Error).name !== 'AbortError') {
+            setAddressSuggestions([]);
+          }
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setAddressSuggestionsLoading(false);
+        });
+    }, 350);
+
+    return () => {
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [formState.address, formState.latitude, showAddForm]);
+
+  const lookupWorkCenterAddress = async (): Promise<AddressLookupMatch | null> => {
+    const address = formState.address.trim();
+    if (!address) {
+      setAddressLookup({ status: 'error', message: 'Enter an address before searching.' });
+      return null;
+    }
+
+    setAddressLookup({ status: 'loading', message: 'Searching address...' });
+    try {
+      const match = (await searchAddressMatches(address, 1))[0];
+      if (!match) {
+        setAddressLookup({ status: 'error', message: 'No match found. Try street, neighborhood, city, full state, and country. Example: Tercera 156, La Aurora, Saltillo, Coahuila, Mexico.' });
+        return null;
+      }
+
+      setFormState((current) => ({
+        ...current,
+        address: match.address,
+        latitude: match.latitude,
+        longitude: match.longitude,
+      }));
+      setAddressSuggestions([]);
+      setShowAddressSuggestions(false);
+      setAddressLookup({ status: 'success', message: `${match.approximate ? 'Approximate location found' : 'Location found'}: ${Number(match.latitude).toFixed(5)}, ${Number(match.longitude).toFixed(5)}` });
+      return match;
+    } catch {
+      setAddressLookup({ status: 'error', message: 'Could not reach the address lookup service. Try again in a moment.' });
+      return null;
+    }
+  };
+
+  const selectAddressSuggestion = (match: AddressLookupMatch) => {
+    setFormState((current) => ({
+      ...current,
+      address: match.address,
+      latitude: match.latitude,
+      longitude: match.longitude,
+    }));
+    setAddressSuggestions([]);
+    setShowAddressSuggestions(false);
+    setAddressLookup({ status: 'success', message: `${match.approximate ? 'Approximate location found' : 'Location found'}: ${Number(match.latitude).toFixed(5)}, ${Number(match.longitude).toFixed(5)}` });
+  };
+
+  const saveWorkCenterForm = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!formState.name.trim() || !formState.code.trim()) return;
+    if (!formState.name.trim() || !formState.code.trim() || !formState.address.trim()) return;
+    let resolvedAddress = formState.address.trim();
+    let resolvedLatitude = formState.latitude;
+    let resolvedLongitude = formState.longitude;
+    if (!formState.latitude || !formState.longitude) {
+      const addressFound = await lookupWorkCenterAddress();
+      if (!addressFound) return;
+      resolvedAddress = addressFound.address;
+      resolvedLatitude = addressFound.latitude;
+      resolvedLongitude = addressFound.longitude;
+    }
 
     // Future integration: persist Work Centers to Supabase and expose capabilities to Production Flows.
     const capabilities = formState.capabilities
       .split(',')
       .map((capability) => capability.trim())
       .filter(Boolean);
+    const currentEditingWorkCenter = editingWorkCenterId ? workCenters.find((workCenter) => workCenter.id === editingWorkCenterId) : null;
     const nextWorkCenter: MesWorkCenter = {
+      ...(currentEditingWorkCenter ?? {}),
       id: `wc-${Date.now()}`,
       code: formState.code.trim(),
       name: formState.name.trim(),
       type: formState.type,
       plant: formState.plant,
       area: formState.area,
-      address: formState.address.trim() || plantCoordinateDefaults[formState.plant]?.address || 'Address not configured',
-      latitude: Number(formState.latitude) || plantCoordinateDefaults[formState.plant]?.latitude || 42.3299,
-      longitude: Number(formState.longitude) || plantCoordinateDefaults[formState.plant]?.longitude || -83.0398,
+      address: resolvedAddress,
+      latitude: Number(resolvedLatitude),
+      longitude: Number(resolvedLongitude),
       status: formState.status,
       description: formState.description.trim() || 'New Work Center ready for MES configuration.',
-      currentJob: null,
-      currentOperator: formState.requiresOperator ? 'Unassigned' : 'Automatic',
-      currentStep: 'Ready for assignment',
-      queueCount: 0,
-      wipCount: 0,
-      utilization: 0,
+      currentJob: currentEditingWorkCenter?.currentJob ?? null,
+      currentOperator: currentEditingWorkCenter?.currentOperator ?? (formState.requiresOperator ? 'Unassigned' : 'Automatic'),
+      currentStep: currentEditingWorkCenter?.currentStep ?? 'Ready for assignment',
+      queueCount: currentEditingWorkCenter?.queueCount ?? 0,
+      wipCount: currentEditingWorkCenter?.wipCount ?? 0,
+      utilization: currentEditingWorkCenter?.utilization ?? 0,
       lastEvent: 'Just now',
-      activeDowntime: ['down', 'maintenance'].includes(formState.status),
-      downtimeTodayMinutes: 0,
-      nextAvailable: formState.status === 'idle' ? 'Available now' : 'Pending status review',
+      activeDowntime: currentEditingWorkCenter?.activeDowntime ?? ['down', 'maintenance'].includes(formState.status),
+      downtimeTodayMinutes: currentEditingWorkCenter?.downtimeTodayMinutes ?? 0,
+      nextAvailable: currentEditingWorkCenter?.nextAvailable ?? (formState.status === 'idle' ? 'Available now' : 'Pending status review'),
       capacityMode: formState.capacityMode,
       defaultCycleTime: formState.defaultCycleTime.trim() || 'Not configured',
       unitOfMeasure: formState.unitOfMeasure.trim() || 'Unit',
@@ -2271,8 +2914,19 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
       nextMaintenanceDate: formState.lastMaintenanceDate,
       maintenanceNotes: formState.maintenanceNotes.trim() || 'No maintenance notes yet.',
       capabilities,
-      queue: [],
-      events: [
+      queue: currentEditingWorkCenter?.queue ?? [],
+      events: currentEditingWorkCenter
+        ? [
+          {
+            timestamp: 'Just now',
+            eventType: 'WORK_CENTER_UPDATED',
+            relatedOrder: 'N/A',
+            operator: 'MES Admin',
+            notes: 'Work Center details updated.',
+          },
+          ...currentEditingWorkCenter.events,
+        ]
+        : [
         {
           timestamp: 'Just now',
           eventType: 'WORK_CENTER_CREATED',
@@ -2281,38 +2935,28 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
           notes: 'Work Center created from local draft form.',
         },
       ],
+      stationsConfigured: currentEditingWorkCenter ? currentEditingWorkCenter.stationsConfigured : false,
     };
 
-    setWorkCenters((currentWorkCenters) => [nextWorkCenter, ...currentWorkCenters]);
-    setSelectedWorkCenterId(nextWorkCenter.id);
+    if (currentEditingWorkCenter) {
+      nextWorkCenter.id = currentEditingWorkCenter.id;
+      setWorkCenters((currentWorkCenters) => currentWorkCenters.map((workCenter) => (workCenter.id === currentEditingWorkCenter.id ? nextWorkCenter : workCenter)));
+    } else {
+      setWorkCenters((currentWorkCenters) => [nextWorkCenter, ...currentWorkCenters]);
+    }
+    selectWorkCenter(nextWorkCenter.id);
+    setEditingWorkCenterId(null);
+    setShowAddressSuggestions(false);
     setShowAddForm(false);
   };
 
-  const updateSelectedStatus = (status: WorkCenterStatus) => {
-    if (!selectedWorkCenter) return;
-    // Future integration: Downtime Events and Operator Terminal should own live status transitions.
-    setWorkCenters((currentWorkCenters) =>
-      currentWorkCenters.map((workCenter) => (
-        workCenter.id === selectedWorkCenter.id
-          ? {
-            ...workCenter,
-            status,
-            activeDowntime: ['down', 'maintenance'].includes(status),
-            lastEvent: 'Just now',
-            events: [
-              {
-                timestamp: 'Just now',
-                eventType: 'WORK_CENTER_STATUS_CHANGED',
-                relatedOrder: workCenter.currentJob ?? 'N/A',
-                operator: 'MES Admin',
-                notes: `Status changed to ${formatLabel(status)}.`,
-              },
-              ...workCenter.events,
-            ],
-          }
-          : workCenter
-      )),
-    );
+  const updateSelectedStationStatus = (status: WorkCenterStatus) => {
+    if (!selectedStation) return;
+    setSelectedStationId(selectedStation.id);
+    setStationStatusOverrides((currentOverrides) => ({
+      ...currentOverrides,
+      [selectedStation.id]: status,
+    }));
   };
 
   const renderKpiHelp = (
@@ -2366,8 +3010,75 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
     </span>
   );
 
+  const addressSuggestionMenu = (showAddressSuggestions || addressSuggestionsLoading) && (addressSuggestions.length > 0 || addressSuggestionsLoading) && addressSuggestionPosition
+    ? createPortal(
+      <div
+        className="address-suggestion-menu"
+        role="listbox"
+        aria-label="Address suggestions"
+        ref={addressSuggestionMenuRef}
+        style={{
+          top: addressSuggestionPosition.top,
+          left: addressSuggestionPosition.left,
+          width: addressSuggestionPosition.width,
+          maxHeight: addressSuggestionPosition.maxHeight,
+        }}
+      >
+        {addressSuggestionsLoading ? <span className="address-suggestion-loading">Searching locations...</span> : null}
+        {addressSuggestions.map((suggestion) => (
+          <button type="button" role="option" key={`${suggestion.latitude}-${suggestion.longitude}-${suggestion.address}`} onClick={() => selectAddressSuggestion(suggestion)}>
+            <strong>{suggestion.address.split(',')[0]}{suggestion.approximate ? <em>Approx.</em> : null}</strong>
+            <span>{suggestion.address.split(',').slice(1).join(',').trim()}</span>
+          </button>
+        ))}
+      </div>,
+      document.body,
+    )
+    : null;
+
+  const capabilityColorPicker = showCapabilityColorPicker && capabilityColorPickerPosition
+    ? createPortal(
+      <div
+        className="capability-color-popover"
+        ref={capabilityColorPickerRef}
+        role="dialog"
+        aria-label="Custom capability color"
+        style={{
+          top: capabilityColorPickerPosition.top,
+          left: capabilityColorPickerPosition.left,
+          width: capabilityColorPickerPosition.width,
+        }}
+      >
+        <button
+          className="capability-color-preview"
+          type="button"
+          aria-expanded={showCapabilitySpectrumControls}
+          onClick={() => setShowCapabilitySpectrumControls((current) => !current)}
+        >
+          <span style={{ backgroundColor: stationFormState.newCapabilityColor }} />
+          <strong>{stationFormState.newCapabilityColor.toUpperCase()}</strong>
+        </button>
+        {showCapabilitySpectrumControls ? (
+          <div className="capability-spectrum-controls">
+            <label className="rgb-red">R<input type="range" min="0" max="255" value={newCapabilityRgb.red} onChange={(event) => updateNewCapabilityRgbChannel('red', event.target.value)} /></label>
+            <label className="rgb-green">G<input type="range" min="0" max="255" value={newCapabilityRgb.green} onChange={(event) => updateNewCapabilityRgbChannel('green', event.target.value)} /></label>
+            <label className="rgb-blue">B<input type="range" min="0" max="255" value={newCapabilityRgb.blue} onChange={(event) => updateNewCapabilityRgbChannel('blue', event.target.value)} /></label>
+            <div className="capability-rgb-fields">
+              <label>R<input type="number" min="0" max="255" value={newCapabilityRgb.red} onChange={(event) => updateNewCapabilityRgbChannel('red', event.target.value)} /></label>
+              <label>G<input type="number" min="0" max="255" value={newCapabilityRgb.green} onChange={(event) => updateNewCapabilityRgbChannel('green', event.target.value)} /></label>
+              <label>B<input type="number" min="0" max="255" value={newCapabilityRgb.blue} onChange={(event) => updateNewCapabilityRgbChannel('blue', event.target.value)} /></label>
+            </div>
+          </div>
+        ) : null}
+      </div>,
+      document.body,
+    )
+    : null;
+
   return (
     <section className="mes-workspace-panel work-centers-workspace">
+      {addressSuggestionMenu}
+      {capabilityColorPicker}
       <div className="work-centers-header">
         <button className="academy-back-button engineering-back-button mes-workspace-back" type="button" onClick={() => onNavigate('/workspace/manufacturing-ops/mes')}>
           <ArrowLeft size={16} />
@@ -2380,7 +3091,7 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
         </div>
         <div className="work-centers-actions">
           <button type="button" onClick={openAddWorkCenterForm}><Plus size={16} /> Add Work Center</button>
-          <button type="button"><Plus size={16} /> Add Station</button>
+          <button type="button" onClick={openAddStationForm} disabled={!selectedWorkCenter}><Plus size={16} /> Add Station</button>
         </div>
       </div>
 
@@ -2463,7 +3174,7 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
                           className={workCenter.id === selectedWorkCenter?.id ? 'selected' : ''}
                           type="button"
                           key={workCenter.id}
-                          onClick={() => setSelectedWorkCenterId(workCenter.id)}
+                          onClick={() => selectWorkCenter(workCenter.id)}
                         >
                           <span>{workCenterNumberById.get(workCenter.id) ?? index + 1}</span>
                           <strong>{workCenter.name}</strong>
@@ -2495,22 +3206,55 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
                 <div><dt>Active jobs</dt><dd>{selectedStations.filter((station) => station.currentJob).length}</dd></div>
                 <div><dt>Station availability</dt><dd>{stationIdle} idle</dd></div>
                 <div><dt>WIP load</dt><dd>{selectedWorkCenter.wipCount}</dd></div>
-                <div><dt>Queue</dt><dd>{selectedWorkCenter.queueCount} jobs</dd></div>
-                <div><dt>Due risk</dt><dd><span className={`selected-state-text state-${getWorkCenterRisk(selectedWorkCenter)}`}>{formatRiskLabel(getWorkCenterRisk(selectedWorkCenter))}</span></dd></div>
-                <div><dt>Maintenance</dt><dd><span className={`selected-state-text state-${getMaintenanceTone(selectedWorkCenter.maintenanceStatus)}`}>{selectedWorkCenter.maintenanceStatus}</span></dd></div>
-                <div><dt>Last event</dt><dd>{selectedWorkCenter.lastEvent}</dd></div>
               </dl>
               <div className="work-center-selected-copy">
                 <p>{selectedWorkCenter.description}</p>
                 <div className="work-center-detail-tags">
-                  {getWorkCenterStationCapabilities(selectedWorkCenter).map((capability) => <span className={`capability-pill capability-${getCapabilityTone(capability)}`} key={capability}>{capability}</span>)}
+                  {getStationCapabilitiesForWorkCenter(selectedWorkCenter).map((capability) => renderCapabilityPill(capability))}
+                </div>
+              </div>
+              <div className="work-center-admin-actions">
+                <button type="button" onClick={openEditWorkCenterForm}>Edit Work Center</button>
+                <button type="button" onClick={confirmDeleteSelectedWorkCenter}>Delete Work Center</button>
+              </div>
+            </section>
+          ) : null}
+
+          {selectedStation ? (
+            <section className="work-center-selected-card selected-station-card" aria-label="Selected Station summary">
+              <div className="work-center-selected-header">
+                <div>
+                  <div className="work-center-selected-heading">
+                    <span>Selected Station</span>
+                    <MesStatusBadge value={selectedStation.status} />
+                  </div>
+                  <strong>{selectedStation.name}</strong>
+                  <em>{selectedStation.code} / {selectedStation.processStep}</em>
+                  <small>{selectedStation.type} / Operator: {selectedStation.operator}</small>
+                </div>
+              </div>
+              <div className="selected-station-visual station-card-visual" aria-hidden="true">
+                <span>{selectedStation.type.split(' ').map((word) => word[0]).join('').slice(0, 2)}</span>
+              </div>
+              <dl className="work-center-detail-list">
+                <div><dt>Current job</dt><dd>{selectedStation.currentJob ?? 'Unassigned'}</dd></div>
+                <div><dt>Queue</dt><dd>{selectedStation.queueCount} jobs</dd></div>
+                <div><dt>WIP</dt><dd>{selectedStation.wipCount}</dd></div>
+                <div><dt>Utilization</dt><dd>{selectedStation.utilization}%</dd></div>
+                <div><dt>Due risk</dt><dd><span className={`selected-state-text state-${selectedStation.dueRisk}`}>{formatRiskLabel(selectedStation.dueRisk)}</span></dd></div>
+                <div><dt>Maintenance</dt><dd><span className={`selected-state-text state-${getMaintenanceTone(selectedStation.maintenanceStatus)}`}>{selectedStation.maintenanceStatus}</span></dd></div>
+                <div><dt>Last event</dt><dd>{selectedStation.lastEvent}</dd></div>
+              </dl>
+              <div className="work-center-selected-copy">
+                <div className="work-center-detail-tags">
+                  {selectedStation.capabilities.map((capability) => renderCapabilityPill(capability))}
                 </div>
               </div>
               <div className="work-center-quick-actions">
                 <button type="button">Assign Job</button>
-                <button type="button" onClick={() => updateSelectedStatus('setup')}>Start Setup</button>
-                <button type="button" onClick={() => updateSelectedStatus('down')}>Mark Down</button>
-                <button type="button" onClick={() => updateSelectedStatus('idle')}>Mark Available</button>
+                <button type="button" onClick={() => updateSelectedStationStatus('setup')}>Start Setup</button>
+                <button type="button" onClick={() => updateSelectedStationStatus('down')}>Mark Down</button>
+                <button type="button" onClick={() => updateSelectedStationStatus('idle')}>Mark Available</button>
                 <button type="button">Open Downtime</button>
                 <button type="button" onClick={() => setShowDetailModal(true)}>View Details</button>
               </div>
@@ -2610,7 +3354,7 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
               </label>
               <label>
                 <span>Capability</span>
-                <MesOrderDropdown id="work-center-capability-filter" value={filters.capability} placeholder="All capabilities" options={[{ value: '', label: 'All capabilities' }, ...workCenterCapabilityTags.map((capability) => ({ value: capability, label: capability }))]} onChange={(value) => setFilter('capability', value)} />
+                <MesOrderDropdown id="work-center-capability-filter" value={filters.capability} placeholder="All capabilities" options={[{ value: '', label: 'All capabilities' }, ...allCapabilityTags.map((capability) => ({ value: capability, label: capability }))]} onChange={(value) => setFilter('capability', value)} />
               </label>
               <label>
                 <span>Risk</span>
@@ -2627,7 +3371,7 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
                 <span>Risk</span>
               </div>
               {filteredWorkCenters.map((workCenter) => {
-                const stations = getWorkCenterStations(workCenter);
+                const stations = getStationsForWorkCenter(workCenter);
                 const stationCapabilities = Array.from(new Set(stations.flatMap((station) => station.capabilities)));
                 const risk = getWorkCenterRisk(workCenter);
                 const selected = workCenter.id === selectedWorkCenter?.id;
@@ -2637,14 +3381,14 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
                     type="button"
                     role="row"
                     key={workCenter.id}
-                    onClick={() => setSelectedWorkCenterId(workCenter.id)}
+                    onClick={() => selectWorkCenter(workCenter.id)}
                   >
                     <span className="work-center-table-identity">
                       <span className="work-center-index-badge">{workCenterNumberById.get(workCenter.id)}</span>
                       <span><strong>{workCenter.name}</strong><em>{workCenter.code}</em></span>
                     </span>
                     <span className="work-center-capability-pills">
-                      {stationCapabilities.map((capability) => <span className={`capability-pill capability-${getCapabilityTone(capability)}`} key={capability}>{capability}</span>)}
+                      {stationCapabilities.map((capability) => renderCapabilityPill(capability))}
                     </span>
                     <span>{stations.length}</span>
                     <span>{stations.filter((station) => station.currentJob).length}</span>
@@ -2789,42 +3533,58 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
               </label>
               <label>
                 <span>Capability</span>
-                <MesOrderDropdown id="station-capability-filter" value={stationFilters.capability} placeholder="All capabilities" options={[{ value: '', label: 'All capabilities' }, ...workCenterCapabilityTags.map((capability) => ({ value: capability, label: capability }))]} onChange={(value) => setStationFilter('capability', value)} />
+                <MesOrderDropdown id="station-capability-filter" value={stationFilters.capability} placeholder="All capabilities" options={[{ value: '', label: 'All capabilities' }, ...allCapabilityTags.map((capability) => ({ value: capability, label: capability }))]} onChange={(value) => setStationFilter('capability', value)} />
               </label>
             </div>
             <div className="station-card-grid">
-              {filteredStations.map((station) => (
-                <article className="station-card" key={station.id}>
-                  <div className="station-card-header">
-                    <div className="station-card-visual" aria-hidden="true">
-                      <span>{station.type.split(' ').map((word) => word[0]).join('').slice(0, 2)}</span>
-                    </div>
-                    <div className="station-card-title">
-                      <div>
-                        <h4>{station.name}</h4>
-                        <span>{station.code}</span>
+              {filteredStations.map((station) => {
+                const stationSelected = station.id === selectedStation?.id;
+                return (
+                  <article
+                    className={['station-card', stationSelected ? 'selected' : ''].filter(Boolean).join(' ')}
+                    key={station.id}
+                    role="button"
+                    tabIndex={0}
+                    aria-pressed={stationSelected}
+                    onClick={() => setSelectedStationId(station.id)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        setSelectedStationId(station.id);
+                      }
+                    }}
+                  >
+                    <div className="station-card-header">
+                      <div className="station-card-visual" aria-hidden="true">
+                        <span>{station.type.split(' ').map((word) => word[0]).join('').slice(0, 2)}</span>
                       </div>
-                      <span className={`station-status-pill station-status-${station.status}`}>{formatLabel(station.status)}</span>
+                      <div className="station-card-title">
+                        <div>
+                          <h4>{station.name}</h4>
+                          <span>{station.code}</span>
+                        </div>
+                        <span className={`station-status-pill station-status-${station.status}`}>{formatLabel(station.status)}</span>
+                      </div>
                     </div>
-                  </div>
-                  <dl>
-                    <div><dt>Type</dt><dd>{station.type}</dd></div>
-                    <div><dt>Process</dt><dd>{station.processStep}</dd></div>
-                    <div><dt>Current Job</dt><dd>{station.currentJob ?? 'Unassigned'}</dd></div>
-                    <div><dt>Operator</dt><dd><span className="station-operator-pill">{station.operator}</span></dd></div>
-                    <div><dt>Queue</dt><dd>{station.queueCount}</dd></div>
-                    <div><dt>WIP</dt><dd>{station.wipCount}</dd></div>
-                  </dl>
-                  <div className={`work-center-utilization utilization-${getStationUtilizationStatus(station.utilization)}`} aria-hidden="true"><span style={{ width: `${station.utilization}%` }} /></div>
-                  <div className="station-card-footer">
-                    <span>{station.utilization}% utilization</span>
-                    <strong className={`risk-${station.dueRisk}`}>{station.dueRisk} risk</strong>
-                  </div>
-                  <div className="work-center-tags">
-                    {station.capabilities.map((capability) => <span className={`capability-pill capability-${getCapabilityTone(capability)}`} key={capability}>{capability}</span>)}
-                  </div>
-                </article>
-              ))}
+                    <dl>
+                      <div><dt>Type</dt><dd>{station.type}</dd></div>
+                      <div><dt>Process</dt><dd>{station.processStep}</dd></div>
+                      <div><dt>Current Job</dt><dd>{station.currentJob ?? 'Unassigned'}</dd></div>
+                      <div><dt>Operator</dt><dd><span className="station-operator-pill">{station.operator}</span></dd></div>
+                      <div><dt>Queue</dt><dd>{station.queueCount}</dd></div>
+                      <div><dt>WIP</dt><dd>{station.wipCount}</dd></div>
+                    </dl>
+                    <div className={`work-center-utilization utilization-${getStationUtilizationStatus(station.utilization)}`} aria-hidden="true"><span style={{ width: `${station.utilization}%` }} /></div>
+                    <div className="station-card-footer">
+                      <span>{station.utilization}% utilization</span>
+                      <strong className={`risk-${station.dueRisk}`}>{station.dueRisk} risk</strong>
+                    </div>
+                    <div className="work-center-tags">
+                      {station.capabilities.map((capability) => renderCapabilityPill(capability))}
+                    </div>
+                  </article>
+                );
+              })}
             </div>
           </section>
         </main>
@@ -2835,36 +3595,138 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
           <section className="mes-order-modal work-center-form-modal" role="dialog" aria-modal="true" aria-labelledby="work-center-form-title">
             <div>
               <p className="eyebrow">Work Center</p>
-              <h3 id="work-center-form-title">Add Work Center</h3>
+              <h3 id="work-center-form-title">{editingWorkCenterId ? 'Edit Work Center' : 'Add Work Center'}</h3>
             </div>
             <form className="mes-order-form" onSubmit={saveWorkCenterForm}>
               <label>Work Center Name<input value={formState.name} onChange={(event) => setFormState((current) => ({ ...current, name: event.target.value }))} required /></label>
               <label>Work Center Code<input value={formState.code} onChange={(event) => setFormState((current) => ({ ...current, code: event.target.value }))} required /></label>
-              <label>Type<MesOrderDropdown id="work-center-form-type" value={formState.type} options={workCenterTypes.map((type) => ({ value: type, label: type }))} onChange={(type) => setFormState((current) => ({ ...current, type }))} /></label>
-              <label>Plant / Site<MesOrderDropdown id="work-center-form-plant" value={formState.plant} options={workCenterPlants.map((plant) => ({ value: plant, label: plant }))} onChange={(plant) => setFormState((current) => ({ ...current, plant, address: plantCoordinateDefaults[plant]?.address ?? current.address, latitude: String(plantCoordinateDefaults[plant]?.latitude ?? current.latitude), longitude: String(plantCoordinateDefaults[plant]?.longitude ?? current.longitude) }))} /></label>
-              <label>Area<MesOrderDropdown id="work-center-form-area" value={formState.area} options={workCenterAreas.map((area) => ({ value: area, label: area }))} onChange={(area) => setFormState((current) => ({ ...current, area }))} /></label>
-              <label>Status<MesOrderDropdown id="work-center-form-status" value={formState.status} options={workCenterStatuses.map((status) => ({ value: status, label: formatLabel(status) }))} onChange={(status) => setFormState((current) => ({ ...current, status: status as WorkCenterStatus }))} /></label>
-              <label className="mes-order-form-wide">Address<input value={formState.address} onChange={(event) => setFormState((current) => ({ ...current, address: event.target.value }))} placeholder="Street, city, state, country" /></label>
-              <label>Latitude<input type="number" step="0.000001" value={formState.latitude} onChange={(event) => setFormState((current) => ({ ...current, latitude: event.target.value }))} /></label>
-              <label>Longitude<input type="number" step="0.000001" value={formState.longitude} onChange={(event) => setFormState((current) => ({ ...current, longitude: event.target.value }))} /></label>
-              <label className="mes-order-form-wide">Description<input value={formState.description} onChange={(event) => setFormState((current) => ({ ...current, description: event.target.value }))} /></label>
-              <label>Capacity Mode<input value={formState.capacityMode} onChange={(event) => setFormState((current) => ({ ...current, capacityMode: event.target.value }))} /></label>
-              <label>Default Cycle Time<input value={formState.defaultCycleTime} onChange={(event) => setFormState((current) => ({ ...current, defaultCycleTime: event.target.value }))} placeholder="34 min / tool" /></label>
-              <label>Unit of Measure<input value={formState.unitOfMeasure} onChange={(event) => setFormState((current) => ({ ...current, unitOfMeasure: event.target.value }))} /></label>
-              <label>Queue Capacity<input type="number" min="0" value={formState.queueCapacity} onChange={(event) => setFormState((current) => ({ ...current, queueCapacity: event.target.value }))} /></label>
-              <label>WIP Capacity<input type="number" min="0" value={formState.wipCapacity} onChange={(event) => setFormState((current) => ({ ...current, wipCapacity: event.target.value }))} /></label>
-              <label>Maintenance Status<MesOrderDropdown id="work-center-form-maintenance" value={formState.maintenanceStatus} options={maintenanceStatuses.map((status) => ({ value: status, label: status }))} onChange={(maintenanceStatus) => setFormState((current) => ({ ...current, maintenanceStatus }))} /></label>
-              <label>Maintenance Interval<input value={formState.maintenanceInterval} onChange={(event) => setFormState((current) => ({ ...current, maintenanceInterval: event.target.value }))} /></label>
-              <label>Last Maintenance Date<MesOrderDatePicker id="work-center-last-maintenance" value={formState.lastMaintenanceDate} onChange={(lastMaintenanceDate) => setFormState((current) => ({ ...current, lastMaintenanceDate }))} /></label>
-              <label className="mes-order-form-wide">Process Tags / Compatible Steps<input value={formState.capabilities} onChange={(event) => setFormState((current) => ({ ...current, capabilities: event.target.value }))} placeholder="Hob Grinding, Rework, CNC" /></label>
-              <label className="mes-order-form-wide">Maintenance Notes<input value={formState.maintenanceNotes} onChange={(event) => setFormState((current) => ({ ...current, maintenanceNotes: event.target.value }))} /></label>
-              <div className="work-center-form-toggles">
-                <label><input type="checkbox" checked={formState.requiresOperator} onChange={(event) => setFormState((current) => ({ ...current, requiresOperator: event.target.checked }))} /> Requires operator</label>
-                <label><input type="checkbox" checked={formState.bottleneckCandidate} onChange={(event) => setFormState((current) => ({ ...current, bottleneckCandidate: event.target.checked }))} /> Bottleneck candidate</label>
-              </div>
+              <label className="mes-order-form-wide work-center-address-field">
+                Address
+                <div className="address-lookup-control" ref={addressLookupControlRef}>
+                  <input
+                    value={formState.address}
+                    onChange={(event) => {
+                      setFormState((current) => ({ ...current, address: event.target.value, latitude: '', longitude: '' }));
+                      setAddressLookup({ status: 'idle', message: '' });
+                      setShowAddressSuggestions(true);
+                    }}
+                    onFocus={() => setShowAddressSuggestions(addressSuggestions.length > 0)}
+                    placeholder="Street, city, state, country"
+                    required
+                  />
+                  <button type="button" onClick={() => { void lookupWorkCenterAddress(); }} disabled={addressLookup.status === 'loading'}>
+                    {addressLookup.status === 'loading' ? 'Searching...' : 'Find address'}
+                  </button>
+                </div>
+                {addressLookup.message ? <small className={`address-lookup-message ${addressLookup.status}`}>{addressLookup.message}</small> : null}
+              </label>
+              <label className="mes-order-form-wide">Description<input value={formState.description} onChange={(event) => setFormState((current) => ({ ...current, description: event.target.value }))} placeholder="Receiving dock, quality area, branch office..." /></label>
               <div className="mes-order-form-actions">
-                <button type="button" onClick={() => setShowAddForm(false)}>Cancel</button>
-                <button type="submit">Save Work Center</button>
+                <button type="button" onClick={() => { setEditingWorkCenterId(null); setShowAddressSuggestions(false); setShowAddForm(false); }}>Cancel</button>
+                <button type="submit" disabled={addressLookup.status === 'loading'}>{editingWorkCenterId ? 'Save Changes' : 'Save Work Center'}</button>
+              </div>
+            </form>
+          </section>
+        </div>
+      ) : null}
+
+      {showStationForm ? (
+        <div className="mes-modal-backdrop" role="presentation">
+          <section className="mes-order-modal work-center-form-modal station-form-modal" role="dialog" aria-modal="true" aria-labelledby="station-form-title">
+            <div>
+              <p className="eyebrow">Station</p>
+              <h3 id="station-form-title">Add Station</h3>
+            </div>
+            <form className="mes-order-form" onSubmit={saveStationForm}>
+              <label className="mes-order-form-wide">
+                Work Center
+                <MesOrderDropdown
+                  id="station-work-center-field"
+                  value={stationFormState.workCenterId}
+                  placeholder="Select Work Center"
+                  options={workCenters.map((workCenter) => ({ value: workCenter.id, label: `${workCenter.name} / ${workCenter.code}` }))}
+                  onChange={(value) => setStationFormState((current) => ({ ...current, workCenterId: value }))}
+                />
+              </label>
+              <label>Station Name<input value={stationFormState.name} onChange={(event) => setStationFormState((current) => ({ ...current, name: event.target.value }))} required /></label>
+              <label>Station Code<input value={stationFormState.code} onChange={(event) => setStationFormState((current) => ({ ...current, code: event.target.value }))} required /></label>
+              <label>
+                Type
+                <MesOrderDropdown
+                  id="station-type-field"
+                  value={stationFormState.type}
+                  options={stationFormTypes.map((type) => ({ value: type, label: type }))}
+                  onChange={(value) => setStationFormState((current) => ({ ...current, type: value }))}
+                />
+              </label>
+              <label>
+                Operator
+                <MesOrderDropdown
+                  id="station-operator-field"
+                  value={stationFormState.operator}
+                  options={registeredOperatorOptions.map((operator) => ({ value: operator, label: operator }))}
+                  onChange={(value) => setStationFormState((current) => ({ ...current, operator: value }))}
+                />
+              </label>
+              <label className="mes-order-form-wide">
+                Capability
+                <MesOrderDropdown
+                  id="station-capability-field"
+                  value={stationFormState.capability}
+                  placeholder="Select capability"
+                  options={[
+                    ...allCapabilityTags.map((capability) => ({ value: capability, label: capability })),
+                    { value: registerNewCapabilityValue, label: '+ Register new capability' },
+                  ]}
+                  onChange={(value) => {
+                    setStationFormState((current) => ({ ...current, capability: value }));
+                    setShowCapabilityColorPicker(false);
+                    setShowCapabilitySpectrumControls(false);
+                  }}
+                />
+              </label>
+              {stationFormState.capability === registerNewCapabilityValue ? (
+                <div className="station-new-capability mes-order-form-wide">
+                  <label>Capability Name<input value={stationFormState.newCapabilityName} onChange={(event) => setStationFormState((current) => ({ ...current, newCapabilityName: event.target.value }))} required /></label>
+                  <fieldset>
+                    <legend>Capability Color</legend>
+                    <div className="capability-color-picker">
+                      {capabilityColorOptions.slice(0, 6).map((color) => (
+                        <button
+                          className={stationFormState.newCapabilityColor === color ? 'selected' : ''}
+                          type="button"
+                          key={color}
+                          aria-label={`Select capability color ${color}`}
+                          style={{ backgroundColor: color }}
+                          onClick={() => {
+                            updateNewCapabilityColor(color);
+                            setShowCapabilityColorPicker(false);
+                            setShowCapabilitySpectrumControls(false);
+                          }}
+                        />
+                      ))}
+                      <span className="capability-custom-color-wrap" ref={capabilityColorTriggerRef}>
+                        <button
+                          className={showCapabilityColorPicker ? 'selected custom' : 'custom'}
+                          type="button"
+                          aria-label="Pick custom capability color"
+                          onClick={() => {
+                            setShowCapabilityColorPicker((current) => {
+                              if (current) setShowCapabilitySpectrumControls(false);
+                              return !current;
+                            });
+                          }}
+                        >
+                          <Plus size={16} />
+                        </button>
+                      </span>
+                    </div>
+                  </fieldset>
+                </div>
+              ) : null}
+              <div className="mes-order-form-actions">
+                <button type="button" onClick={() => { setShowCapabilityColorPicker(false); setShowCapabilitySpectrumControls(false); setShowStationForm(false); }}>Cancel</button>
+                <button type="submit">Save Station</button>
               </div>
             </form>
           </section>
@@ -2888,6 +3750,34 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
               <section><h4>Queue</h4>{selectedWorkCenter.queue.length > 0 ? selectedWorkCenter.queue.map((job) => <article className="work-center-list-row" key={job.orderId}><strong>{job.orderId}</strong><span>{job.product}</span><em>{formatLabel(job.priority)} / {formatDate(job.dueDate)} / {job.estimatedMinutes} min</em></article>) : <p>No queued jobs.</p>}</section>
               <section><h4>Events</h4>{selectedWorkCenter.events.map((event) => <article className="work-center-list-row" key={`${event.timestamp}-${event.eventType}`}><strong>{event.eventType}</strong><span>{event.relatedOrder} / {event.operator}</span><em>{event.timestamp} - {event.notes}</em></article>)}</section>
               <section><h4>Maintenance</h4><dl><div><dt>Status</dt><dd>{selectedWorkCenter.maintenanceStatus}</dd></div><div><dt>Last</dt><dd>{formatDate(selectedWorkCenter.lastMaintenanceDate)}</dd></div><div><dt>Next</dt><dd>{formatDate(selectedWorkCenter.nextMaintenanceDate)}</dd></div><div><dt>Today / Week</dt><dd>{selectedWorkCenter.downtimeTodayMinutes} min / {selectedWorkCenter.downtimeTodayMinutes + 42} min</dd></div></dl><p>{selectedWorkCenter.maintenanceNotes}</p></section>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {workCenterConfirmation ? (
+        <div className="mes-modal-backdrop" role="presentation">
+          <section
+            className={['mes-confirm-modal', workCenterConfirmation.tone === 'danger' ? 'danger' : ''].filter(Boolean).join(' ')}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="work-center-confirm-title"
+          >
+            <div className="mes-confirm-mark" aria-hidden="true">
+              {workCenterConfirmation.tone === 'danger' ? <AlertTriangle size={24} /> : <Check size={24} />}
+            </div>
+            <div>
+              <p className="eyebrow">Work Center</p>
+              <h3 id="work-center-confirm-title">{workCenterConfirmation.title}</h3>
+              <p>{workCenterConfirmation.message}</p>
+            </div>
+            <div className="mes-confirm-actions">
+              <button type="button" onClick={() => setWorkCenterConfirmation(null)}>
+                Cancel
+              </button>
+              <button type="button" onClick={() => void confirmPendingWorkCenterAction()}>
+                {workCenterConfirmation.confirmLabel}
+              </button>
             </div>
           </section>
         </div>
