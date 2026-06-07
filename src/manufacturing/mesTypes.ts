@@ -2,6 +2,8 @@ export type ProductionOrderStatus = 'planned' | 'released' | 'running' | 'paused
 
 export type ProductionOrderPriority = 'low' | 'normal' | 'high' | 'expedite';
 
+export type ProductionOrderManufacturingType = 'multi-step' | 'single-operation';
+
 export type WorkCenterStatus = 'available' | 'idle' | 'running' | 'setup' | 'down' | 'maintenance' | 'offline';
 
 export type TraceabilityEventType =
@@ -38,6 +40,9 @@ export type ProductionOrder = {
   priority: ProductionOrderPriority;
   dueDate: string;
   assignedWorkCenter: string;
+  manufacturingType: ProductionOrderManufacturingType;
+  productionFlow: string;
+  assignedStation: string;
 };
 
 export type TraceabilityEvent = {

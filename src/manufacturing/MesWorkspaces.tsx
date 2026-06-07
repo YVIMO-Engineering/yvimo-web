@@ -1,9 +1,9 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { Activity, AlertTriangle, ArrowLeft, CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, CircleHelp, Eye, Factory, Frown, Meh, Plus, RadioTower, Search, Smile, Timer } from 'lucide-react';
+import { Activity, AlertTriangle, ArrowLeft, CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, CircleHelp, Eye, Factory, Frown, ImagePlus, Meh, Plus, RadioTower, Search, Smile, Timer } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
-import { mockTraceabilityEvents, mockWorkCenters } from './mesMockData';
-import type { ProductionOrder, ProductionOrderPriority, ProductionOrderStatus, TraceabilityEvent, WorkCenterStatus } from './mesTypes';
+import { mockTraceabilityEvents } from './mesMockData';
+import type { ProductionOrder, ProductionOrderManufacturingType, ProductionOrderPriority, ProductionOrderStatus, TraceabilityEvent, WorkCenterStatus } from './mesTypes';
 
 type WorkspaceProps = {
   onNavigate: (path: string) => void;
@@ -32,7 +32,9 @@ type ProductionOrderFormState = {
   priority: ProductionOrderPriority;
   dueDate: string;
   assignedWorkCenter: string;
+  manufacturingType: ProductionOrderManufacturingType;
   productionFlow: string;
+  assignedStation: string;
 };
 
 type ProductionOrderRow = {
@@ -47,6 +49,21 @@ type ProductionOrderRow = {
   priority: ProductionOrderPriority;
   due_date: string;
   assigned_work_center: string;
+  manufacturing_type?: ProductionOrderManufacturingType | null;
+  production_flow?: string | null;
+  assigned_station?: string | null;
+};
+
+type ProductionOrderWorkCenterOptionRow = {
+  id: string;
+  code: string;
+  name: string;
+};
+
+type ProductionOrderStationOptionRow = {
+  work_center_id: string;
+  code: string;
+  name: string;
 };
 
 type ConfirmationState = {
@@ -67,6 +84,8 @@ type MesOrderDropdownProps = {
   value: string;
   options: MesOrderDropdownOption[];
   placeholder?: string;
+  disabled?: boolean;
+  placement?: 'auto' | 'bottom';
   onChange: (value: string) => void;
 };
 
@@ -84,6 +103,10 @@ type MesOrderCalendarPosition = {
 };
 
 const formatLabel = (value: string) => value.replace(/-/g, ' ');
+const formatTitleLabel = (value: string) => {
+  const label = formatLabel(value);
+  return `${label.charAt(0).toUpperCase()}${label.slice(1)}`;
+};
 
 const formatDate = (value: string) =>
   new Intl.DateTimeFormat('en-US', { month: 'short', day: '2-digit', year: 'numeric' }).format(new Date(`${value}T12:00:00`));
@@ -105,6 +128,10 @@ export function MesStatusBadge({ value, tone = 'status' }: StatusBadgeProps) {
 
 const productionOrderStatuses: ProductionOrderStatus[] = ['planned', 'released', 'running', 'paused', 'completed', 'cancelled'];
 const productionOrderPriorities: ProductionOrderPriority[] = ['low', 'normal', 'high', 'expedite'];
+const productionOrderManufacturingTypes: Array<{ value: ProductionOrderManufacturingType; label: string; description: string }> = [
+  { value: 'multi-step', label: 'Multi-step', description: 'Route this order through a production flow.' },
+  { value: 'single-operation', label: 'Single Operation', description: 'Run this order on one station.' },
+];
 const productionFlowOptions = [
   { id: 'standard-assembly-flow', name: 'Standard assembly flow' },
   { id: 'machining-inspection-flow', name: 'Machining + inspection flow' },
@@ -265,7 +292,7 @@ function MesOrderDatePicker({ id, value, onChange }: { id: string; value: string
   );
 }
 
-function MesOrderDropdown({ id, value, options, placeholder = 'Select option', onChange }: MesOrderDropdownProps) {
+function MesOrderDropdown({ id, value, options, placeholder = 'Select option', disabled = false, placement = 'auto', onChange }: MesOrderDropdownProps) {
   const [open, setOpen] = React.useState(false);
   const [menuPosition, setMenuPosition] = React.useState<MesOrderDropdownMenuPosition | null>(null);
   const triggerRef = React.useRef<HTMLDivElement | null>(null);
@@ -274,13 +301,14 @@ function MesOrderDropdown({ id, value, options, placeholder = 'Select option', o
 
   const updateMenuPosition = React.useCallback(() => {
     const trigger = triggerRef.current;
-    if (!trigger) return;
+    if (!trigger || disabled) return;
     const rect = trigger.getBoundingClientRect();
     const viewportPadding = 16;
     const availableBelow = window.innerHeight - rect.bottom - viewportPadding;
     const availableAbove = rect.top - viewportPadding;
-    const openUp = availableBelow < 180 && availableAbove > availableBelow;
-    const maxHeight = Math.max(132, Math.min(220, openUp ? availableAbove - 6 : availableBelow - 6));
+    const desiredMenuHeight = Math.min(220, Math.max(44, (options.length * 36) + 12));
+    const openUp = placement === 'auto' && availableBelow < desiredMenuHeight && availableAbove > availableBelow;
+    const maxHeight = Math.max(44, Math.min(desiredMenuHeight, openUp ? availableAbove - 6 : availableBelow - 6));
 
     setMenuPosition({
       top: openUp ? Math.max(viewportPadding, rect.top - maxHeight - 6) : rect.bottom + 6,
@@ -288,15 +316,15 @@ function MesOrderDropdown({ id, value, options, placeholder = 'Select option', o
       width: rect.width,
       maxHeight,
     });
-  }, []);
+  }, [disabled, options.length, placement]);
 
   React.useLayoutEffect(() => {
-    if (!open) return;
+    if (!open || disabled) return;
     updateMenuPosition();
-  }, [open, updateMenuPosition]);
+  }, [disabled, open, updateMenuPosition]);
 
   React.useEffect(() => {
-    if (!open) return undefined;
+    if (!open || disabled) return undefined;
 
     const closeIfOutside = (event: MouseEvent) => {
       const target = event.target as Node;
@@ -314,9 +342,9 @@ function MesOrderDropdown({ id, value, options, placeholder = 'Select option', o
       window.removeEventListener('resize', reposition);
       window.removeEventListener('scroll', reposition, true);
     };
-  }, [open, updateMenuPosition]);
+  }, [disabled, open, updateMenuPosition]);
 
-  const dropdownMenu = open && menuPosition
+  const dropdownMenu = open && !disabled && menuPosition
     ? createPortal(
       <div
         className="mes-order-dropdown-menu"
@@ -364,10 +392,14 @@ function MesOrderDropdown({ id, value, options, placeholder = 'Select option', o
       <button
         className={!selectedOption ? 'placeholder' : ''}
         type="button"
+        disabled={disabled}
         aria-haspopup="listbox"
-        aria-expanded={open}
+        aria-expanded={disabled ? false : open}
         aria-controls={`${id}-listbox`}
-        onClick={() => setOpen((current) => !current)}
+        onClick={() => {
+          if (disabled) return;
+          setOpen((current) => !current);
+        }}
       >
         <span>{selectedOption?.label ?? placeholder}</span>
         <ChevronDown size={16} />
@@ -390,6 +422,9 @@ function mapProductionOrderRow(row: ProductionOrderRow): ProductionOrder {
     priority: row.priority,
     dueDate: row.due_date,
     assignedWorkCenter: row.assigned_work_center,
+    manufacturingType: row.manufacturing_type ?? 'multi-step',
+    productionFlow: row.production_flow ?? productionFlowOptions[0]?.id ?? '',
+    assignedStation: row.assigned_station ?? '',
   };
 }
 
@@ -405,6 +440,9 @@ function toProductionOrderPayload(order: ProductionOrder | Omit<ProductionOrder,
     priority: order.priority,
     due_date: order.dueDate,
     assigned_work_center: order.assignedWorkCenter,
+    manufacturing_type: order.manufacturingType,
+    production_flow: order.manufacturingType === 'multi-step' ? order.productionFlow : '',
+    assigned_station: order.manufacturingType === 'single-operation' ? order.assignedStation : '',
   };
 }
 
@@ -420,7 +458,9 @@ function toFormState(order?: ProductionOrder): ProductionOrderFormState {
     priority: order?.priority ?? 'normal',
     dueDate: order?.dueDate ?? new Date().toISOString().slice(0, 10),
     assignedWorkCenter: order?.assignedWorkCenter ?? '',
-    productionFlow: productionFlowOptions[0]?.id ?? '',
+    manufacturingType: order?.manufacturingType ?? 'multi-step',
+    productionFlow: order?.productionFlow ?? productionFlowOptions[0]?.id ?? '',
+    assignedStation: order?.assignedStation ?? '',
   };
 }
 
@@ -437,6 +477,9 @@ function formStateToProductionOrder(formState: ProductionOrderFormState, id?: st
     priority: formState.priority,
     dueDate: formState.dueDate,
     assignedWorkCenter: formState.assignedWorkCenter.trim(),
+    manufacturingType: formState.manufacturingType,
+    productionFlow: formState.manufacturingType === 'multi-step' ? formState.productionFlow : '',
+    assignedStation: formState.manufacturingType === 'single-operation' ? formState.assignedStation : '',
   };
 }
 
@@ -514,6 +557,9 @@ export function ProductionOrdersWorkspace({ onNavigate }: WorkspaceProps) {
   const [searchTerm, setSearchTerm] = React.useState('');
   const [orderView, setOrderView] = React.useState<'all' | 'in-progress' | 'completed'>('all');
   const [sortByPriority, setSortByPriority] = React.useState(false);
+  const [workCenterOptions, setWorkCenterOptions] = React.useState<MesOrderDropdownOption[]>([]);
+  const [stationOptionsByWorkCenter, setStationOptionsByWorkCenter] = React.useState<Record<string, MesOrderDropdownOption[]>>({});
+  const [workCenterOptionsMessage, setWorkCenterOptionsMessage] = React.useState('');
   const [page, setPage] = React.useState(1);
   const [formMode, setFormMode] = React.useState<'create' | 'edit' | null>(null);
   const [formState, setFormState] = React.useState<ProductionOrderFormState>(() => toFormState());
@@ -522,6 +568,7 @@ export function ProductionOrdersWorkspace({ onNavigate }: WorkspaceProps) {
   const [confirmation, setConfirmation] = React.useState<ConfirmationState | null>(null);
 
   const selectedOrder = orders.find((order) => order.orderNumber === selectedOrderNumber) ?? null;
+  const selectedWorkCenterStationOptions = stationOptionsByWorkCenter[formState.assignedWorkCenter] ?? [];
   const filteredOrders = orders.filter((order) => {
     const haystack = [
       order.orderNumber,
@@ -578,12 +625,42 @@ export function ProductionOrdersWorkspace({ onNavigate }: WorkspaceProps) {
   React.useEffect(() => {
     let active = true;
     const loadProductionOrders = async () => {
-      const { data, error } = await supabase
-        .from('mes_production_orders')
-        .select('*')
-        .order('due_date', { ascending: true });
+      const [{ data, error }, { data: workCenterData, error: workCenterError }, { data: stationData, error: stationError }] = await Promise.all([
+        supabase
+          .from('mes_production_orders')
+          .select('*')
+          .order('due_date', { ascending: true }),
+        supabase
+          .from('mes_work_centers')
+          .select('id, code, name')
+          .order('name', { ascending: true }),
+        supabase
+          .from('mes_work_center_stations')
+          .select('work_center_id, code, name')
+          .order('name', { ascending: true }),
+      ]);
 
       if (!active) return;
+      if (workCenterError || stationError) {
+        setWorkCenterOptions([]);
+        setStationOptionsByWorkCenter({});
+        setWorkCenterOptionsMessage(workCenterError?.message ?? stationError?.message ?? 'Unable to load Work Centers.');
+      } else {
+        const nextWorkCenterOptions = ((workCenterData ?? []) as ProductionOrderWorkCenterOptionRow[]).map((workCenter) => ({
+          value: workCenter.code,
+          label: `${workCenter.code} - ${workCenter.name}`,
+        }));
+        const workCenterCodeById = new Map(((workCenterData ?? []) as ProductionOrderWorkCenterOptionRow[]).map((workCenter) => [workCenter.id, workCenter.code]));
+        const nextStationOptionsByWorkCenter = ((stationData ?? []) as ProductionOrderStationOptionRow[]).reduce<Record<string, MesOrderDropdownOption[]>>((groups, station) => {
+          const workCenterCode = workCenterCodeById.get(station.work_center_id);
+          if (!workCenterCode) return groups;
+          groups[workCenterCode] = [...(groups[workCenterCode] ?? []), { value: station.code, label: `${station.code} - ${station.name}` }];
+          return groups;
+        }, {});
+        setWorkCenterOptions(nextWorkCenterOptions);
+        setStationOptionsByWorkCenter(nextStationOptionsByWorkCenter);
+        setWorkCenterOptionsMessage(nextWorkCenterOptions.length ? '' : 'No Work Centers configured yet.');
+      }
       if (error) {
         console.error('Unable to load MES production orders', error);
         setOrders([]);
@@ -645,7 +722,7 @@ export function ProductionOrdersWorkspace({ onNavigate }: WorkspaceProps) {
   const openCreateOrderForm = () => {
     setFormState(toFormState({
       id: '',
-      orderNumber: `MO-24${orders.length + 26}`,
+      orderNumber: '',
       partNumber: '',
       partName: '',
       plannedQuantity: 0,
@@ -673,6 +750,7 @@ export function ProductionOrdersWorkspace({ onNavigate }: WorkspaceProps) {
   const saveOrderForm = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!formState.orderNumber.trim() || !formState.partNumber.trim() || !formState.partName.trim() || !formState.assignedWorkCenter.trim()) return;
+    if (formState.manufacturingType === 'single-operation' && !formState.assignedStation.trim()) return;
     const orderFromForm = formStateToProductionOrder(formState, formMode === 'edit' ? selectedOrder?.id : undefined);
 
     if (formMode === 'edit' && selectedOrder) {
@@ -963,7 +1041,7 @@ export function ProductionOrdersWorkspace({ onNavigate }: WorkspaceProps) {
         </aside>
       </div>
       {formMode ? (
-        <div className="mes-modal-backdrop" role="presentation">
+        <div className="mes-modal-backdrop production-order-form-backdrop" role="presentation">
           <section className="mes-order-modal" role="dialog" aria-modal="true" aria-labelledby="production-order-form-title">
             <div>
               <p className="eyebrow">Production Order</p>
@@ -972,7 +1050,7 @@ export function ProductionOrdersWorkspace({ onNavigate }: WorkspaceProps) {
             <form className="mes-order-form" onSubmit={saveOrderForm}>
               <label>
                 Order number
-                <input value={formState.orderNumber} onChange={(event) => setFormState((current) => ({ ...current, orderNumber: event.target.value }))} required />
+                <input value={formState.orderNumber} onChange={(event) => setFormState((current) => ({ ...current, orderNumber: event.target.value }))} placeholder="PO-0000" required />
               </label>
               <label>
                 Part number
@@ -990,16 +1068,18 @@ export function ProductionOrdersWorkspace({ onNavigate }: WorkspaceProps) {
                 Completed quantity
                 <input type="number" min="0" value={formState.completedQuantity} onChange={(event) => setFormState((current) => ({ ...current, completedQuantity: event.target.value }))} required />
               </label>
-              <label>
-                Scrap quantity
-                <input type="number" min="0" value={formState.scrapQuantity} onChange={(event) => setFormState((current) => ({ ...current, scrapQuantity: event.target.value }))} required />
-              </label>
-              <label>
+              {formMode === 'edit' ? (
+                <label>
+                  Scrap quantity
+                  <input type="number" min="0" value={formState.scrapQuantity} onChange={(event) => setFormState((current) => ({ ...current, scrapQuantity: event.target.value }))} required />
+                </label>
+              ) : null}
+              <label className={formMode === 'create' ? 'production-order-status-field-create' : ''}>
                 Status
                 <MesOrderDropdown
                   id="production-order-status"
                   value={formState.status}
-                  options={productionOrderStatuses.map((status) => ({ value: status, label: formatLabel(status) }))}
+                  options={productionOrderStatuses.map((status) => ({ value: status, label: formatTitleLabel(status) }))}
                   onChange={(status) => setFormState((current) => ({ ...current, status: status as ProductionOrderStatus }))}
                 />
               </label>
@@ -1038,18 +1118,59 @@ export function ProductionOrdersWorkspace({ onNavigate }: WorkspaceProps) {
                   id="production-order-work-center"
                   value={formState.assignedWorkCenter}
                   placeholder="Select work center"
-                  options={mockWorkCenters.map((workCenter) => ({ value: workCenter.code, label: `${workCenter.code} - ${workCenter.name}` }))}
-                  onChange={(assignedWorkCenter) => setFormState((current) => ({ ...current, assignedWorkCenter }))}
+                  options={workCenterOptions}
+                  onChange={(assignedWorkCenter) => setFormState((current) => ({ ...current, assignedWorkCenter, assignedStation: '' }))}
                 />
+                {workCenterOptionsMessage ? <small className="mes-form-field-note">{workCenterOptionsMessage}</small> : null}
               </label>
+              <fieldset className="production-order-manufacturing-type mes-order-form-wide">
+                <legend>Manufacturing Type</legend>
+                <div role="radiogroup" aria-label="Production order manufacturing type">
+                  {productionOrderManufacturingTypes.map((type) => (
+                    <button
+                      className={formState.manufacturingType === type.value ? 'active' : ''}
+                      type="button"
+                      key={type.value}
+                      role="radio"
+                      aria-checked={formState.manufacturingType === type.value}
+                      onClick={() => setFormState((current) => ({
+                        ...current,
+                        manufacturingType: type.value,
+                        assignedStation: type.value === 'multi-step' ? '' : current.assignedStation,
+                        productionFlow: type.value === 'single-operation' ? '' : current.productionFlow || productionFlowOptions[0]?.id || '',
+                      }))}
+                    >
+                      {type.value === 'multi-step' ? <Factory size={18} /> : <RadioTower size={18} />}
+                      <span>{type.label}</span>
+                      <small>{type.description}</small>
+                    </button>
+                  ))}
+                </div>
+              </fieldset>
               <label className="mes-order-form-wide">
-                Production flow
-                <MesOrderDropdown
-                  id="production-order-flow"
-                  value={formState.productionFlow}
-                  options={productionFlowOptions.map((flow) => ({ value: flow.id, label: flow.name }))}
-                  onChange={(productionFlow) => setFormState((current) => ({ ...current, productionFlow }))}
-                />
+                {formState.manufacturingType === 'multi-step' ? 'Production Flow' : 'Station'}
+                {formState.manufacturingType === 'multi-step' ? (
+                  <MesOrderDropdown
+                    id="production-order-flow"
+                    value={formState.productionFlow}
+                    options={productionFlowOptions.map((flow) => ({ value: flow.id, label: flow.name }))}
+                    placement="bottom"
+                    onChange={(productionFlow) => setFormState((current) => ({ ...current, productionFlow }))}
+                  />
+                ) : (
+                  <>
+                    <MesOrderDropdown
+                      id="production-order-station"
+                      value={formState.assignedStation}
+                      placeholder={formState.assignedWorkCenter ? 'Select station' : 'Select work center first'}
+                      options={selectedWorkCenterStationOptions}
+                      disabled={!formState.assignedWorkCenter}
+                      placement="bottom"
+                      onChange={(assignedStation) => setFormState((current) => ({ ...current, assignedStation }))}
+                    />
+                    {formState.assignedWorkCenter && selectedWorkCenterStationOptions.length === 0 ? <small className="mes-form-field-note">No stations configured for this Work Center yet.</small> : null}
+                  </>
+                )}
               </label>
               <div className="mes-order-form-actions">
                 <button type="button" onClick={closeOrderForm}>Cancel</button>
@@ -1144,14 +1265,17 @@ type MesWorkCenter = {
   capabilities: string[];
   queue: WorkCenterQueueJob[];
   events: WorkCenterEvent[];
-  stationsConfigured?: boolean;
+  stations: WorkCenterStation[];
 };
 
 type WorkCenterStation = {
   id: string;
+  workCenterId: string;
   code: string;
   name: string;
   type: string;
+  imageUrl?: string;
+  capabilityColor?: string;
   status: WorkCenterStatus;
   currentJob: string | null;
   operator: string;
@@ -1236,20 +1360,74 @@ type CapabilityColorPickerPosition = {
   width: number;
 };
 
+type MesWorkCenterRow = {
+  id: string;
+  code: string;
+  name: string;
+  type: string;
+  plant: string;
+  area: string;
+  address: string;
+  latitude: number;
+  longitude: number;
+  status: WorkCenterStatus;
+  description: string;
+  current_job: string | null;
+  current_operator: string;
+  current_step: string;
+  queue_count: number;
+  wip_count: number;
+  utilization: number;
+  last_event: string;
+  active_downtime: boolean;
+  downtime_today_minutes: number;
+  next_available: string;
+  capacity_mode: string;
+  default_cycle_time: string;
+  unit_of_measure: string;
+  queue_capacity: number;
+  wip_capacity: number;
+  requires_operator: boolean;
+  bottleneck_candidate: boolean;
+  maintenance_status: string;
+  maintenance_interval: string;
+  last_maintenance_date: string;
+  next_maintenance_date: string;
+  maintenance_notes: string;
+  capabilities: string[];
+  queue: WorkCenterQueueJob[];
+  events: WorkCenterEvent[];
+};
+
+type MesWorkCenterStationRow = {
+  id: string;
+  work_center_id: string;
+  code: string;
+  name: string;
+  type: string;
+  image_url: string | null;
+  capability_color: string | null;
+  status: WorkCenterStatus;
+  current_job: string | null;
+  operator: string;
+  process_step: string;
+  queue_count: number;
+  wip_count: number;
+  utilization: number;
+  due_risk: 'low' | 'medium' | 'high';
+  maintenance_status: string;
+  capabilities: string[];
+  last_event: string;
+};
+
 const workCenterTypes = ['Manufacturing Site', 'Production Area', 'Grinding Cell', 'Quality Area', 'Receiving / Shipping Center', 'External Branch'];
 const stationFormTypes = ['Manual Station', 'Semi-automatic Station', 'Automatic Station'];
 const workCenterStatuses: WorkCenterStatus[] = ['running', 'idle', 'setup', 'down', 'maintenance', 'offline'];
-const workCenterPlants = ['Main Plant', 'Tooling Shop', 'Distribution Dock'];
-const workCenterAreas = ['Receiving', 'Inspection', 'Grinding', 'Finishing', 'Quality', 'Shipping'];
 const workCenterCapabilityTags = ['Hob Grinding', 'Skiving Grinding', 'Incoming Inspection', 'Final QC', 'Assembly', 'Packaging', 'Rework', 'CNC', 'Deburr'];
 const registerNewCapabilityValue = '__register_new_capability__';
 const capabilityColorOptions = ['#ff8a1f', '#1d4ed8', '#00a676', '#dc2626', '#8b5cf6', '#f59e0b', '#14b8a6', '#ec4899'];
+const stationImageBucket = 'station-images';
 const maintenanceStatuses = ['Healthy', 'Due soon', 'Maintenance required', 'In maintenance'];
-const plantCoordinateDefaults: Record<string, { address: string; latitude: number; longitude: number }> = {
-  'Main Plant': { address: '500 Woodward Ave, Detroit, MI 48226', latitude: 42.3299, longitude: -83.0398 },
-  'Tooling Shop': { address: '461 Burroughs St, Detroit, MI 48202', latitude: 42.3678, longitude: -83.0736 },
-  'Distribution Dock': { address: '3400 E Lafayette St, Detroit, MI 48207', latitude: 42.3428, longitude: -83.0174 },
-};
 const knownMexicanCityCoordinates: Record<string, { latitude: string; longitude: string }> = {
   'saltillo|coahuila': { latitude: '25.43819', longitude: '-100.97367' },
 };
@@ -1581,7 +1759,7 @@ function getWorkCenterMapPinLayouts(workCenters: MesWorkCenter[], bounds: Return
 // Production Orders should assign queued jobs, Operator Terminal should publish live operations,
 // Downtime/Production Events should update status and logs, and MES Dashboard/Traceability should
 // consume queue, WIP, utilization, bottleneck, serial, lot, and event data from this model.
-const mockMesWorkCenters: MesWorkCenter[] = [
+const mockMesWorkCenters = [
   {
     id: 'wc-receiving-dock',
     code: 'WC-RCV-DOCK',
@@ -2016,8 +2194,8 @@ function createWorkCenterFormState(): WorkCenterFormState {
     name: '',
     code: '',
     type: workCenterTypes[0],
-    plant: workCenterPlants[0],
-    area: workCenterAreas[0],
+    plant: '',
+    area: '',
     address: '',
     latitude: '',
     longitude: '',
@@ -2096,59 +2274,185 @@ function rgbToHex(red: number, green: number, blue: number) {
   return `#${[clampChannel(red), clampChannel(green), clampChannel(blue)].map((value) => value.toString(16).padStart(2, '0')).join('')}`;
 }
 
-function getWorkCenterStations(workCenter: MesWorkCenter): WorkCenterStation[] {
-  if (workCenter.stationsConfigured === false || (workCenter.stationsConfigured === undefined && /^wc-\d+$/.test(workCenter.id))) return [];
+function rgbToHsv(red: number, green: number, blue: number) {
+  const r = red / 255;
+  const g = green / 255;
+  const b = blue / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const delta = max - min;
+  let hue = 0;
 
-  const baseStationsByArea: Record<string, Array<Pick<WorkCenterStation, 'name' | 'type' | 'capabilities' | 'processStep'>>> = {
-    Receiving: [
-      { name: 'Dock Intake Lane 01', type: 'Manual Station', capabilities: ['Receiving'], processStep: 'Inbound intake' },
-      { name: 'Material Staging Buffer', type: 'Storage / Buffer', capabilities: ['Receiving', 'Packaging'], processStep: 'Staging' },
-    ],
-    Inspection: [
-      { name: 'Inspection Bench 01', type: 'Inspection Station', capabilities: ['Incoming Inspection'], processStep: 'Dimensional check' },
-      { name: 'Gauge Verification Desk', type: 'Inspection Station', capabilities: ['Incoming Inspection', 'Final QC'], processStep: 'Gauge verification' },
-    ],
-    Grinding: [
-      { name: 'Primary Grinding Spindle', type: 'Grinding Machine', capabilities: workCenter.capabilities, processStep: workCenter.currentStep },
-      { name: 'Wheel Dressing Station', type: 'Manual Station', capabilities: ['CNC', 'Rework'], processStep: 'Wheel prep' },
-      { name: 'Coolant & Wash Station', type: 'Manual Station', capabilities: ['Rework'], processStep: 'Post-grind wash' },
-    ],
-    Finishing: [
-      { name: 'Deburr Bench A', type: 'Manual Station', capabilities: ['Deburr', 'Rework'], processStep: 'Manual deburr' },
-      { name: 'Edge Polish Bench', type: 'Manual Station', capabilities: ['Deburr'], processStep: 'Edge finishing' },
-    ],
-    Quality: [
-      { name: 'Profile Measurement Cell', type: 'Inspection Station', capabilities: ['Final QC'], processStep: 'Profile check' },
-      { name: 'Release Documentation Desk', type: 'Manual Station', capabilities: ['Final QC', 'Packaging'], processStep: 'Release package' },
-    ],
-    Shipping: [
-      { name: 'Packout Lane 01', type: 'Packaging Station', capabilities: ['Packaging'], processStep: 'Packout' },
-      { name: 'Shipment Staging Buffer', type: 'Storage / Buffer', capabilities: ['Packaging'], processStep: 'Ship staging' },
-    ],
+  if (delta) {
+    if (max === r) hue = 60 * (((g - b) / delta) % 6);
+    if (max === g) hue = 60 * ((b - r) / delta + 2);
+    if (max === b) hue = 60 * ((r - g) / delta + 4);
+  }
+
+  return {
+    hue: Math.round((hue + 360) % 360),
+    saturation: max ? Math.round((delta / max) * 100) : 0,
+    value: Math.round(max * 100),
   };
-  const stationTemplates = baseStationsByArea[workCenter.area] ?? baseStationsByArea.Grinding;
+}
 
-  return stationTemplates.map((template, index) => {
-    const isPrimary = index === 0;
-    const status = isPrimary ? workCenter.status : (workCenter.status === 'down' ? 'idle' : index === 1 ? 'idle' : 'maintenance') as WorkCenterStatus;
-    return {
-      id: `${workCenter.id}-station-${index + 1}`,
-      code: `${workCenter.code}-ST${index + 1}`,
-      name: template.name,
-      type: template.type,
-      status,
-      currentJob: isPrimary ? workCenter.currentJob : null,
-      operator: isPrimary ? workCenter.currentOperator : 'Unassigned',
-      processStep: template.processStep,
-      queueCount: Math.max(0, workCenter.queueCount - index),
-      wipCount: isPrimary ? workCenter.wipCount : 0,
-      utilization: Math.max(0, Math.min(100, workCenter.utilization - (index * 18))),
-      dueRisk: workCenter.queueCount > 4 ? 'high' : workCenter.queueCount > 1 ? 'medium' : 'low',
-      maintenanceStatus: isPrimary ? workCenter.maintenanceStatus : 'Healthy',
-      capabilities: template.capabilities,
-      lastEvent: isPrimary ? workCenter.lastEvent : 'No recent activity',
-    };
-  });
+function hsvToHex(hue: number, saturation: number, value: number) {
+  const h = ((hue % 360) + 360) % 360;
+  const s = Math.max(0, Math.min(100, saturation)) / 100;
+  const v = Math.max(0, Math.min(100, value)) / 100;
+  const chroma = v * s;
+  const x = chroma * (1 - Math.abs(((h / 60) % 2) - 1));
+  const match = v - chroma;
+  const [r1, g1, b1] = h < 60 ? [chroma, x, 0]
+    : h < 120 ? [x, chroma, 0]
+      : h < 180 ? [0, chroma, x]
+        : h < 240 ? [0, x, chroma]
+          : h < 300 ? [x, 0, chroma]
+            : [chroma, 0, x];
+
+  return rgbToHex((r1 + match) * 255, (g1 + match) * 255, (b1 + match) * 255);
+}
+
+function hexToHsv(color: string) {
+  const rgb = hexToRgb(color);
+  return rgbToHsv(rgb.red, rgb.green, rgb.blue);
+}
+
+function getStationInitials(station: Pick<WorkCenterStation, 'type'>) {
+  return station.type.split(' ').map((word) => word[0]).join('').slice(0, 2);
+}
+
+function mapWorkCenterStationRow(row: MesWorkCenterStationRow): WorkCenterStation {
+  return {
+    id: row.id,
+    workCenterId: row.work_center_id,
+    code: row.code,
+    name: row.name,
+    type: row.type,
+    imageUrl: row.image_url ?? undefined,
+    capabilityColor: row.capability_color ?? undefined,
+    status: row.status,
+    currentJob: row.current_job,
+    operator: row.operator,
+    processStep: row.process_step,
+    queueCount: row.queue_count,
+    wipCount: row.wip_count,
+    utilization: row.utilization,
+    dueRisk: row.due_risk,
+    maintenanceStatus: row.maintenance_status,
+    capabilities: row.capabilities ?? [],
+    lastEvent: row.last_event,
+  };
+}
+
+function mapWorkCenterRow(row: MesWorkCenterRow, stations: WorkCenterStation[] = []): MesWorkCenter {
+  return {
+    id: row.id,
+    code: row.code,
+    name: row.name,
+    type: row.type,
+    plant: row.plant,
+    area: row.area,
+    address: row.address,
+    latitude: row.latitude,
+    longitude: row.longitude,
+    status: row.status,
+    description: row.description,
+    currentJob: row.current_job,
+    currentOperator: row.current_operator,
+    currentStep: row.current_step,
+    queueCount: row.queue_count,
+    wipCount: row.wip_count,
+    utilization: row.utilization,
+    lastEvent: row.last_event,
+    activeDowntime: row.active_downtime,
+    downtimeTodayMinutes: row.downtime_today_minutes,
+    nextAvailable: row.next_available,
+    capacityMode: row.capacity_mode,
+    defaultCycleTime: row.default_cycle_time,
+    unitOfMeasure: row.unit_of_measure,
+    queueCapacity: row.queue_capacity,
+    wipCapacity: row.wip_capacity,
+    requiresOperator: row.requires_operator,
+    bottleneckCandidate: row.bottleneck_candidate,
+    maintenanceStatus: row.maintenance_status,
+    maintenanceInterval: row.maintenance_interval,
+    lastMaintenanceDate: row.last_maintenance_date,
+    nextMaintenanceDate: row.next_maintenance_date,
+    maintenanceNotes: row.maintenance_notes,
+    capabilities: row.capabilities ?? [],
+    queue: row.queue ?? [],
+    events: row.events ?? [],
+    stations,
+  };
+}
+
+function toWorkCenterPayload(workCenter: MesWorkCenter) {
+  return {
+    id: workCenter.id,
+    code: workCenter.code,
+    name: workCenter.name,
+    type: workCenter.type,
+    plant: workCenter.plant,
+    area: workCenter.area,
+    address: workCenter.address,
+    latitude: workCenter.latitude,
+    longitude: workCenter.longitude,
+    status: workCenter.status,
+    description: workCenter.description,
+    current_job: workCenter.currentJob,
+    current_operator: workCenter.currentOperator,
+    current_step: workCenter.currentStep,
+    queue_count: workCenter.queueCount,
+    wip_count: workCenter.wipCount,
+    utilization: workCenter.utilization,
+    last_event: workCenter.lastEvent,
+    active_downtime: workCenter.activeDowntime,
+    downtime_today_minutes: workCenter.downtimeTodayMinutes,
+    next_available: workCenter.nextAvailable,
+    capacity_mode: workCenter.capacityMode,
+    default_cycle_time: workCenter.defaultCycleTime,
+    unit_of_measure: workCenter.unitOfMeasure,
+    queue_capacity: workCenter.queueCapacity,
+    wip_capacity: workCenter.wipCapacity,
+    requires_operator: workCenter.requiresOperator,
+    bottleneck_candidate: workCenter.bottleneckCandidate,
+    maintenance_status: workCenter.maintenanceStatus,
+    maintenance_interval: workCenter.maintenanceInterval,
+    last_maintenance_date: workCenter.lastMaintenanceDate,
+    next_maintenance_date: workCenter.nextMaintenanceDate,
+    maintenance_notes: workCenter.maintenanceNotes,
+    capabilities: workCenter.capabilities,
+    queue: workCenter.queue,
+    events: workCenter.events,
+  };
+}
+
+function toStationPayload(station: WorkCenterStation) {
+  return {
+    id: station.id,
+    work_center_id: station.workCenterId,
+    code: station.code,
+    name: station.name,
+    type: station.type,
+    image_url: station.imageUrl ?? null,
+    capability_color: station.capabilityColor ?? null,
+    status: station.status,
+    current_job: station.currentJob,
+    operator: station.operator,
+    process_step: station.processStep,
+    queue_count: station.queueCount,
+    wip_count: station.wipCount,
+    utilization: station.utilization,
+    due_risk: station.dueRisk,
+    maintenance_status: station.maintenanceStatus,
+    capabilities: station.capabilities,
+    last_event: station.lastEvent,
+  };
+}
+
+function getWorkCenterStations(workCenter: MesWorkCenter): WorkCenterStation[] {
+  return workCenter.stations;
 }
 
 function formatRiskLabel(risk: WorkCenterStation['dueRisk']) {
@@ -2357,12 +2661,12 @@ function getWorkCenterOperationalSummary(workCenter: MesWorkCenter | null, stati
 }
 
 export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
-  const [workCenters, setWorkCenters] = React.useState<MesWorkCenter[]>(mockMesWorkCenters);
-  const [selectedWorkCenterId, setSelectedWorkCenterId] = React.useState(mockMesWorkCenters[0]?.id ?? '');
+  const [workCenters, setWorkCenters] = React.useState<MesWorkCenter[]>([]);
+  const [selectedWorkCenterId, setSelectedWorkCenterId] = React.useState('');
   const [selectedStationId, setSelectedStationId] = React.useState('');
-  const [customStationsByWorkCenter, setCustomStationsByWorkCenter] = React.useState<Record<string, WorkCenterStation[]>>({});
   const [customCapabilityColors, setCustomCapabilityColors] = React.useState<Record<string, string>>({});
-  const [stationStatusOverrides, setStationStatusOverrides] = React.useState<Record<string, WorkCenterStatus>>({});
+  const [workCentersLoading, setWorkCentersLoading] = React.useState(true);
+  const [workCentersError, setWorkCentersError] = React.useState('');
   const [filters, setFilters] = React.useState({
     search: '',
     capability: '',
@@ -2383,9 +2687,12 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
   const [activeWorkCenterKpiFilter, setActiveWorkCenterKpiFilter] = React.useState<WorkCenterKpiFilter | null>(null);
   const [activeStationKpiFilter, setActiveStationKpiFilter] = React.useState<StationKpiFilter | null>(null);
   const [formState, setFormState] = React.useState<WorkCenterFormState>(() => createWorkCenterFormState());
-  const [stationFormState, setStationFormState] = React.useState<StationFormState>(() => createStationFormState(mockMesWorkCenters[0]?.id ?? ''));
+  const [stationFormState, setStationFormState] = React.useState<StationFormState>(() => createStationFormState(''));
+  const [stationImageFile, setStationImageFile] = React.useState<File | null>(null);
+  const [stationImagePreviewUrl, setStationImagePreviewUrl] = React.useState('');
+  const [stationImageUploadError, setStationImageUploadError] = React.useState('');
+  const [stationImageUploading, setStationImageUploading] = React.useState(false);
   const [showCapabilityColorPicker, setShowCapabilityColorPicker] = React.useState(false);
-  const [showCapabilitySpectrumControls, setShowCapabilitySpectrumControls] = React.useState(false);
   const [addressLookup, setAddressLookup] = React.useState<AddressLookupState>({ status: 'idle', message: '' });
   const [addressSuggestions, setAddressSuggestions] = React.useState<AddressLookupMatch[]>([]);
   const [showAddressSuggestions, setShowAddressSuggestions] = React.useState(false);
@@ -2397,20 +2704,51 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
   const capabilityColorTriggerRef = React.useRef<HTMLSpanElement | null>(null);
   const capabilityColorPickerRef = React.useRef<HTMLDivElement | null>(null);
 
-  const getStationsForWorkCenter = React.useCallback((workCenter: MesWorkCenter) => [
-    ...getWorkCenterStations(workCenter),
-    ...(customStationsByWorkCenter[workCenter.id] ?? []),
-  ], [customStationsByWorkCenter]);
+  const loadWorkCenters = React.useCallback(async () => {
+    setWorkCentersLoading(true);
+    setWorkCentersError('');
+
+    const [{ data: workCenterRows, error: workCenterError }, { data: stationRows, error: stationError }] = await Promise.all([
+      supabase.from('mes_work_centers').select('*').order('created_at', { ascending: false }),
+      supabase.from('mes_work_center_stations').select('*').order('created_at', { ascending: true }),
+    ]);
+
+    if (workCenterError || stationError) {
+      setWorkCentersError(workCenterError?.message ?? stationError?.message ?? 'Could not load Work Centers.');
+      setWorkCenters([]);
+      setWorkCentersLoading(false);
+      return;
+    }
+
+    const stationsByWorkCenter = (stationRows as MesWorkCenterStationRow[] | null ?? []).reduce<Record<string, WorkCenterStation[]>>((groups, row) => {
+      const station = mapWorkCenterStationRow(row);
+      groups[station.workCenterId] = [...(groups[station.workCenterId] ?? []), station];
+      return groups;
+    }, {});
+    const nextWorkCenters = (workCenterRows as MesWorkCenterRow[] | null ?? []).map((row) => mapWorkCenterRow(row, stationsByWorkCenter[row.id] ?? []));
+    const capabilityColors = Object.fromEntries(
+      nextWorkCenters.flatMap((workCenter) => workCenter.stations)
+        .filter((station) => station.capabilityColor)
+        .flatMap((station) => station.capabilities.map((capability) => [capability, station.capabilityColor as string])),
+    );
+
+    setCustomCapabilityColors(capabilityColors);
+    setWorkCenters(nextWorkCenters);
+    setSelectedWorkCenterId((currentId) => (nextWorkCenters.some((workCenter) => workCenter.id === currentId) ? currentId : nextWorkCenters[0]?.id ?? ''));
+    setSelectedStationId((currentId) => (nextWorkCenters.some((workCenter) => workCenter.stations.some((station) => station.id === currentId)) ? currentId : ''));
+    setWorkCentersLoading(false);
+  }, []);
+
+  React.useEffect(() => {
+    void loadWorkCenters();
+  }, [loadWorkCenters]);
+
+  const getStationsForWorkCenter = React.useCallback((workCenter: MesWorkCenter) => getWorkCenterStations(workCenter), []);
   const getStationCapabilitiesForWorkCenter = React.useCallback((workCenter: MesWorkCenter) => (
     Array.from(new Set(getStationsForWorkCenter(workCenter).flatMap((station) => station.capabilities)))
   ), [getStationsForWorkCenter]);
   const selectedWorkCenter = workCenters.find((workCenter) => workCenter.id === selectedWorkCenterId) ?? workCenters[0] ?? null;
-  const selectedStations = selectedWorkCenter
-    ? getStationsForWorkCenter(selectedWorkCenter).map((station) => ({
-      ...station,
-      status: stationStatusOverrides[station.id] ?? station.status,
-    }))
-    : [];
+  const selectedStations = selectedWorkCenter ? getStationsForWorkCenter(selectedWorkCenter) : [];
   const selectedStation = selectedStations.find((station) => station.id === selectedStationId) ?? selectedStations[0] ?? null;
   const todayIsoDate = getTodayIsoDate();
   const filteredStations = selectedStations.filter((station) => {
@@ -2559,11 +2897,59 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
   const openAddStationForm = () => {
     if (!selectedWorkCenter) return;
     setStationFormState(createStationFormState(selectedWorkCenter.id));
+    setStationImageFile(null);
+    setStationImagePreviewUrl('');
+    setStationImageUploadError('');
+    setStationImageUploading(false);
     setShowCapabilityColorPicker(false);
     setShowStationForm(true);
   };
 
-  const saveStationForm = (event: React.FormEvent<HTMLFormElement>) => {
+  const selectStationImageFile = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] ?? null;
+    setStationImageUploadError('');
+    if (file && !file.type.startsWith('image/')) {
+      setStationImageUploadError('Please upload an image file.');
+      event.target.value = '';
+      return;
+    }
+    if (file && file.size > 10485760) {
+      setStationImageUploadError('Station photos must be 10 MB or smaller.');
+      event.target.value = '';
+      return;
+    }
+    setStationImageFile(file);
+    setStationImagePreviewUrl((currentPreviewUrl) => {
+      if (currentPreviewUrl) URL.revokeObjectURL(currentPreviewUrl);
+      return file ? URL.createObjectURL(file) : '';
+    });
+  };
+
+  const clearStationImageFile = () => {
+    setStationImageFile(null);
+    setStationImageUploadError('');
+    setStationImagePreviewUrl((currentPreviewUrl) => {
+      if (currentPreviewUrl) URL.revokeObjectURL(currentPreviewUrl);
+      return '';
+    });
+  };
+
+  const uploadStationImage = async (stationId: string) => {
+    if (!stationImageFile) return '';
+    const extension = stationImageFile.name.split('.').pop()?.toLowerCase() || 'jpg';
+    const filePath = `${stationId}/${Date.now()}.${extension}`;
+    const { error } = await supabase.storage.from(stationImageBucket).upload(filePath, stationImageFile, {
+      cacheControl: '3600',
+      contentType: stationImageFile.type,
+      upsert: true,
+    });
+
+    if (error) throw error;
+    const { data } = supabase.storage.from(stationImageBucket).getPublicUrl(filePath);
+    return data.publicUrl;
+  };
+
+  const saveStationForm = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const targetWorkCenter = workCenters.find((workCenter) => workCenter.id === stationFormState.workCenterId);
     if (!targetWorkCenter || !stationFormState.name.trim() || !stationFormState.code.trim()) return;
@@ -2580,11 +2966,28 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
       }));
     }
 
+    const stationId = crypto.randomUUID();
+    let imageUrl = '';
+    if (stationImageFile) {
+      setStationImageUploading(true);
+      setStationImageUploadError('');
+      try {
+        imageUrl = await uploadStationImage(stationId);
+      } catch (error) {
+        setStationImageUploadError(error instanceof Error ? error.message : 'Unable to upload station image.');
+        setStationImageUploading(false);
+        return;
+      }
+    }
+
     const nextStation: WorkCenterStation = {
-      id: `${targetWorkCenter.id}-custom-station-${Date.now()}`,
+      id: stationId,
+      workCenterId: targetWorkCenter.id,
       code: stationFormState.code.trim(),
       name: stationFormState.name.trim(),
       type: stationFormState.type,
+      imageUrl: imageUrl || undefined,
+      capabilityColor: stationFormState.capability === registerNewCapabilityValue ? stationFormState.newCapabilityColor : undefined,
       status: 'idle',
       currentJob: null,
       operator: stationFormState.operator,
@@ -2598,37 +3001,48 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
       lastEvent: 'No recent activity',
     };
 
-    setCustomStationsByWorkCenter((currentStations) => ({
-      ...currentStations,
-      [targetWorkCenter.id]: [...(currentStations[targetWorkCenter.id] ?? []), nextStation],
-    }));
+    const { data: stationRow, error: stationError } = await supabase
+      .from('mes_work_center_stations')
+      .insert(toStationPayload(nextStation))
+      .select('*')
+      .single();
+
+    if (stationError) {
+      setStationImageUploadError(stationError.message);
+      setStationImageUploading(false);
+      return;
+    }
+
+    const savedStation = mapWorkCenterStationRow(stationRow as MesWorkCenterStationRow);
     setWorkCenters((currentWorkCenters) => currentWorkCenters.map((workCenter) => (
-      workCenter.id === targetWorkCenter.id ? { ...workCenter, stationsConfigured: true } : workCenter
+      workCenter.id === targetWorkCenter.id ? { ...workCenter, stations: [...workCenter.stations, savedStation] } : workCenter
     )));
     selectWorkCenter(targetWorkCenter.id);
-    setSelectedStationId(nextStation.id);
+    setSelectedStationId(savedStation.id);
+    setStationImageFile(null);
+    setStationImagePreviewUrl((currentPreviewUrl) => {
+      if (currentPreviewUrl) URL.revokeObjectURL(currentPreviewUrl);
+      return '';
+    });
+    setStationImageUploading(false);
     setShowCapabilityColorPicker(false);
-    setShowCapabilitySpectrumControls(false);
     setShowStationForm(false);
   };
 
-  const deleteSelectedWorkCenter = () => {
+  const deleteSelectedWorkCenter = async () => {
     if (!selectedWorkCenter) return;
     const deletingWorkCenterId = selectedWorkCenter.id;
+    const { error } = await supabase.from('mes_work_centers').delete().eq('id', deletingWorkCenterId);
+    if (error) {
+      setWorkCentersError(error.message);
+      return;
+    }
     setWorkCenters((currentWorkCenters) => {
       const nextWorkCenters = currentWorkCenters.filter((workCenter) => workCenter.id !== deletingWorkCenterId);
       const nextSelectedWorkCenter = nextWorkCenters[0] ?? null;
       setSelectedWorkCenterId(nextSelectedWorkCenter?.id ?? '');
       setSelectedStationId('');
       return nextWorkCenters;
-    });
-    setStationStatusOverrides((currentOverrides) => Object.fromEntries(
-      Object.entries(currentOverrides).filter(([stationId]) => !stationId.startsWith(`${deletingWorkCenterId}-`)),
-    ));
-    setCustomStationsByWorkCenter((currentStations) => {
-      const remainingStations = { ...currentStations };
-      delete remainingStations[deletingWorkCenterId];
-      return remainingStations;
     });
   };
 
@@ -2659,6 +3073,10 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
     };
   }, [showAddForm, showStationForm, showDetailModal, workCenterConfirmation]);
 
+  React.useEffect(() => () => {
+    if (stationImagePreviewUrl) URL.revokeObjectURL(stationImagePreviewUrl);
+  }, [stationImagePreviewUrl]);
+
   const renderCapabilityPill = (capability: string) => {
     const customColor = customCapabilityColors[capability];
     return (
@@ -2676,17 +3094,51 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
     );
   };
 
+  const renderStationVisual = (station: WorkCenterStation, className = 'station-card-visual') => (
+    <div className={className} aria-hidden="true">
+      {station.imageUrl ? (
+        <img src={station.imageUrl} alt="" />
+      ) : (
+        <span>{getStationInitials(station)}</span>
+      )}
+    </div>
+  );
+
   const updateNewCapabilityColor = (color: string) => {
     setStationFormState((current) => ({ ...current, newCapabilityColor: normalizeHexColor(color) }));
   };
 
-  const updateNewCapabilityRgbChannel = (channel: 'red' | 'green' | 'blue', value: string) => {
-    const currentRgb = hexToRgb(stationFormState.newCapabilityColor);
-    const nextRgb = { ...currentRgb, [channel]: Number(value) || 0 };
-    updateNewCapabilityColor(rgbToHex(nextRgb.red, nextRgb.green, nextRgb.blue));
+  const newCapabilityHsv = hexToHsv(stationFormState.newCapabilityColor);
+  const presetCapabilityColorOptions = capabilityColorOptions.slice(0, 6);
+  const usesCustomCapabilityColor = !presetCapabilityColorOptions.includes(stationFormState.newCapabilityColor.toLowerCase());
+
+  const updateNewCapabilityHue = (value: string) => {
+    updateNewCapabilityColor(hsvToHex(Number(value) || 0, newCapabilityHsv.saturation, newCapabilityHsv.value));
   };
 
-  const newCapabilityRgb = hexToRgb(stationFormState.newCapabilityColor);
+  const updateNewCapabilityColorField = (event: React.PointerEvent<HTMLDivElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const x = Math.max(0, Math.min(rect.width, event.clientX - rect.left));
+    const y = Math.max(0, Math.min(rect.height, event.clientY - rect.top));
+    updateNewCapabilityColor(hsvToHex(newCapabilityHsv.hue, (x / rect.width) * 100, 100 - ((y / rect.height) * 100)));
+  };
+
+  const startNewCapabilityColorFieldDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+    event.currentTarget.setPointerCapture(event.pointerId);
+    updateNewCapabilityColorField(event);
+  };
+
+  const moveNewCapabilityColorField = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const colorStep = event.shiftKey ? 10 : 2;
+    const nextHsv = { ...newCapabilityHsv };
+    if (event.key === 'ArrowLeft') nextHsv.saturation -= colorStep;
+    else if (event.key === 'ArrowRight') nextHsv.saturation += colorStep;
+    else if (event.key === 'ArrowUp') nextHsv.value += colorStep;
+    else if (event.key === 'ArrowDown') nextHsv.value -= colorStep;
+    else return;
+    event.preventDefault();
+    updateNewCapabilityColor(hsvToHex(nextHsv.hue, nextHsv.saturation, nextHsv.value));
+  };
 
   const updateCapabilityColorPickerPosition = React.useCallback(() => {
     const trigger = capabilityColorTriggerRef.current;
@@ -2696,7 +3148,7 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
     const width = Math.min(246, window.innerWidth - (viewportPadding * 2));
     const left = Math.max(viewportPadding, Math.min(rect.right - width, window.innerWidth - width - viewportPadding));
     const availableBelow = window.innerHeight - rect.bottom - viewportPadding;
-    const pickerHeight = showCapabilitySpectrumControls ? 252 : 92;
+    const pickerHeight = 286;
     const openUp = availableBelow < pickerHeight && rect.top > availableBelow;
 
     setCapabilityColorPickerPosition({
@@ -2704,12 +3156,12 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
       left,
       width,
     });
-  }, [showCapabilitySpectrumControls]);
+  }, []);
 
   React.useLayoutEffect(() => {
     if (!showCapabilityColorPicker) return;
     updateCapabilityColorPickerPosition();
-  }, [showCapabilityColorPicker, showCapabilitySpectrumControls, updateCapabilityColorPickerPosition]);
+  }, [showCapabilityColorPicker, updateCapabilityColorPickerPosition]);
 
   React.useEffect(() => {
     if (!showCapabilityColorPicker) return undefined;
@@ -2718,7 +3170,6 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
       const target = event.target as Node;
       if (capabilityColorTriggerRef.current?.contains(target) || capabilityColorPickerRef.current?.contains(target)) return;
       setShowCapabilityColorPicker(false);
-      setShowCapabilitySpectrumControls(false);
     };
     const reposition = () => updateCapabilityColorPickerPosition();
 
@@ -2880,7 +3331,7 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
     const currentEditingWorkCenter = editingWorkCenterId ? workCenters.find((workCenter) => workCenter.id === editingWorkCenterId) : null;
     const nextWorkCenter: MesWorkCenter = {
       ...(currentEditingWorkCenter ?? {}),
-      id: `wc-${Date.now()}`,
+      id: currentEditingWorkCenter?.id ?? crypto.randomUUID(),
       code: formState.code.trim(),
       name: formState.name.trim(),
       type: formState.type,
@@ -2935,28 +3386,53 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
           notes: 'Work Center created from local draft form.',
         },
       ],
-      stationsConfigured: currentEditingWorkCenter ? currentEditingWorkCenter.stationsConfigured : false,
+      stations: currentEditingWorkCenter?.stations ?? [],
     };
 
-    if (currentEditingWorkCenter) {
-      nextWorkCenter.id = currentEditingWorkCenter.id;
-      setWorkCenters((currentWorkCenters) => currentWorkCenters.map((workCenter) => (workCenter.id === currentEditingWorkCenter.id ? nextWorkCenter : workCenter)));
-    } else {
-      setWorkCenters((currentWorkCenters) => [nextWorkCenter, ...currentWorkCenters]);
+    const { data: savedWorkCenterRow, error } = await supabase
+      .from('mes_work_centers')
+      .upsert(toWorkCenterPayload(nextWorkCenter))
+      .select('*')
+      .single();
+
+    if (error) {
+      setWorkCentersError(error.message);
+      return;
     }
-    selectWorkCenter(nextWorkCenter.id);
+
+    const savedWorkCenter = mapWorkCenterRow(savedWorkCenterRow as MesWorkCenterRow, nextWorkCenter.stations);
+
+    if (currentEditingWorkCenter) {
+      setWorkCenters((currentWorkCenters) => currentWorkCenters.map((workCenter) => (workCenter.id === currentEditingWorkCenter.id ? savedWorkCenter : workCenter)));
+    } else {
+      setWorkCenters((currentWorkCenters) => [savedWorkCenter, ...currentWorkCenters]);
+    }
+    selectWorkCenter(savedWorkCenter.id);
     setEditingWorkCenterId(null);
     setShowAddressSuggestions(false);
     setShowAddForm(false);
   };
 
-  const updateSelectedStationStatus = (status: WorkCenterStatus) => {
-    if (!selectedStation) return;
-    setSelectedStationId(selectedStation.id);
-    setStationStatusOverrides((currentOverrides) => ({
-      ...currentOverrides,
-      [selectedStation.id]: status,
-    }));
+  const updateSelectedStationStatus = async (status: WorkCenterStatus) => {
+    if (!selectedStation || !selectedWorkCenter) return;
+    const { data, error } = await supabase
+      .from('mes_work_center_stations')
+      .update({ status, last_event: 'Just now' })
+      .eq('id', selectedStation.id)
+      .select('*')
+      .single();
+    if (error) {
+      setWorkCentersError(error.message);
+      return;
+    }
+
+    const updatedStation = mapWorkCenterStationRow(data as MesWorkCenterStationRow);
+    setSelectedStationId(updatedStation.id);
+    setWorkCenters((currentWorkCenters) => currentWorkCenters.map((workCenter) => (
+      workCenter.id === selectedWorkCenter.id
+        ? { ...workCenter, stations: workCenter.stations.map((station) => (station.id === updatedStation.id ? updatedStation : station)) }
+        : workCenter
+    )));
   };
 
   const renderKpiHelp = (
@@ -3049,27 +3525,41 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
           width: capabilityColorPickerPosition.width,
         }}
       >
-        <button
-          className="capability-color-preview"
-          type="button"
-          aria-expanded={showCapabilitySpectrumControls}
-          onClick={() => setShowCapabilitySpectrumControls((current) => !current)}
-        >
+        <div className="capability-color-preview" aria-live="polite">
           <span style={{ backgroundColor: stationFormState.newCapabilityColor }} />
           <strong>{stationFormState.newCapabilityColor.toUpperCase()}</strong>
-        </button>
-        {showCapabilitySpectrumControls ? (
-          <div className="capability-spectrum-controls">
-            <label className="rgb-red">R<input type="range" min="0" max="255" value={newCapabilityRgb.red} onChange={(event) => updateNewCapabilityRgbChannel('red', event.target.value)} /></label>
-            <label className="rgb-green">G<input type="range" min="0" max="255" value={newCapabilityRgb.green} onChange={(event) => updateNewCapabilityRgbChannel('green', event.target.value)} /></label>
-            <label className="rgb-blue">B<input type="range" min="0" max="255" value={newCapabilityRgb.blue} onChange={(event) => updateNewCapabilityRgbChannel('blue', event.target.value)} /></label>
-            <div className="capability-rgb-fields">
-              <label>R<input type="number" min="0" max="255" value={newCapabilityRgb.red} onChange={(event) => updateNewCapabilityRgbChannel('red', event.target.value)} /></label>
-              <label>G<input type="number" min="0" max="255" value={newCapabilityRgb.green} onChange={(event) => updateNewCapabilityRgbChannel('green', event.target.value)} /></label>
-              <label>B<input type="number" min="0" max="255" value={newCapabilityRgb.blue} onChange={(event) => updateNewCapabilityRgbChannel('blue', event.target.value)} /></label>
-            </div>
+        </div>
+        <div className="capability-visual-picker">
+          <div
+            className="capability-color-field"
+            role="slider"
+            tabIndex={0}
+            aria-label="Capability color saturation and brightness"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={Math.round(newCapabilityHsv.value)}
+            aria-valuetext={`${Math.round(newCapabilityHsv.saturation)} percent saturation, ${Math.round(newCapabilityHsv.value)} percent brightness`}
+            style={{ backgroundColor: hsvToHex(newCapabilityHsv.hue, 100, 100) }}
+            onPointerDown={startNewCapabilityColorFieldDrag}
+            onPointerMove={(event) => { if (event.buttons || event.pointerType !== 'mouse') updateNewCapabilityColorField(event); }}
+            onKeyDown={moveNewCapabilityColorField}
+          >
+            <span
+              style={{
+                left: `${newCapabilityHsv.saturation}%`,
+                top: `${100 - newCapabilityHsv.value}%`,
+              }}
+            />
           </div>
-        ) : null}
+          <label className="capability-hue-slider">
+            <span aria-hidden="true">#</span>
+            <input type="range" min="0" max="359" value={newCapabilityHsv.hue} onChange={(event) => updateNewCapabilityHue(event.target.value)} aria-label="Capability color hue" />
+          </label>
+        </div>
+        <button className="capability-color-apply" type="button" onClick={() => setShowCapabilityColorPicker(false)}>
+          <Check size={15} />
+          Use color
+        </button>
       </div>,
       document.body,
     )
@@ -3094,6 +3584,12 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
           <button type="button" onClick={openAddStationForm} disabled={!selectedWorkCenter}><Plus size={16} /> Add Station</button>
         </div>
       </div>
+
+      {workCentersLoading || workCentersError || (!workCentersLoading && workCenters.length === 0) ? (
+        <div className={`mes-data-state ${workCentersError ? 'error' : ''}`}>
+          {workCentersLoading ? 'Loading Work Centers from Supabase...' : workCentersError || 'No Work Centers found yet. Add one to start configuring stations.'}
+        </div>
+      ) : null}
 
       <div className="work-centers-operations-layout">
         <aside className="work-centers-location-rail">
@@ -3197,8 +3693,8 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
                     <MesStatusBadge value={selectedWorkCenter.status} />
                   </div>
                   <strong>{selectedWorkCenter.name}</strong>
-                  <em>{selectedWorkCenter.code} / {selectedWorkCenter.area}</em>
-                  <small>{selectedWorkCenter.plant} / {selectedWorkCenter.address}</small>
+                  <em>{selectedWorkCenter.code}</em>
+                  <small>{selectedWorkCenter.address}</small>
                 </div>
               </div>
               <dl className="work-center-detail-list">
@@ -3233,9 +3729,7 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
                   <small>{selectedStation.type} / Operator: {selectedStation.operator}</small>
                 </div>
               </div>
-              <div className="selected-station-visual station-card-visual" aria-hidden="true">
-                <span>{selectedStation.type.split(' ').map((word) => word[0]).join('').slice(0, 2)}</span>
-              </div>
+              {renderStationVisual(selectedStation, 'selected-station-visual station-card-visual')}
               <dl className="work-center-detail-list">
                 <div><dt>Current job</dt><dd>{selectedStation.currentJob ?? 'Unassigned'}</dd></div>
                 <div><dt>Queue</dt><dd>{selectedStation.queueCount} jobs</dd></div>
@@ -3411,7 +3905,7 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
                   <div className="stations-selected-work-center">
                     <span>Selected Work Center</span>
                     <strong>{selectedWorkCenter?.name ?? 'No Work Center selected'}</strong>
-                    {selectedWorkCenter ? <em>{selectedWorkCenter.code} / {selectedWorkCenter.area}</em> : null}
+                    {selectedWorkCenter ? <em>{selectedWorkCenter.code}</em> : null}
                   </div>
                   <div className="stations-heading-description">
                     <h3>Station-level execution inside this Work Center</h3>
@@ -3555,9 +4049,7 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
                     }}
                   >
                     <div className="station-card-header">
-                      <div className="station-card-visual" aria-hidden="true">
-                        <span>{station.type.split(' ').map((word) => word[0]).join('').slice(0, 2)}</span>
-                      </div>
+                      {renderStationVisual(station)}
                       <div className="station-card-title">
                         <div>
                           <h4>{station.name}</h4>
@@ -3668,6 +4160,31 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
                   onChange={(value) => setStationFormState((current) => ({ ...current, operator: value }))}
                 />
               </label>
+              <div className="station-image-upload mes-order-form-wide">
+                <div className="station-image-upload-copy">
+                  <span>Station Photo</span>
+                  <small>Optional. Upload from your device; stations without a photo keep the initials image.</small>
+                </div>
+                <div className="station-image-upload-control">
+                  <div className="station-image-preview" aria-hidden="true">
+                    {stationImagePreviewUrl ? (
+                      <img src={stationImagePreviewUrl} alt="" />
+                    ) : (
+                      <span>{stationFormState.type.split(' ').map((word) => word[0]).join('').slice(0, 2)}</span>
+                    )}
+                  </div>
+                  <div className="station-image-upload-actions">
+                    <label>
+                      <ImagePlus size={16} />
+                      <span>{stationImageFile ? 'Change Photo' : 'Upload Photo'}</span>
+                      <input key={stationImageFile ? stationImageFile.name : 'empty'} type="file" accept="image/*" onChange={selectStationImageFile} />
+                    </label>
+                    {stationImageFile ? <button type="button" onClick={clearStationImageFile}>Remove</button> : null}
+                  </div>
+                </div>
+                {stationImageFile ? <small className="station-image-file-name">{stationImageFile.name}</small> : null}
+                {stationImageUploadError ? <small className="station-image-upload-error">{stationImageUploadError}</small> : null}
+              </div>
               <label className="mes-order-form-wide">
                 Capability
                 <MesOrderDropdown
@@ -3681,17 +4198,16 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
                   onChange={(value) => {
                     setStationFormState((current) => ({ ...current, capability: value }));
                     setShowCapabilityColorPicker(false);
-                    setShowCapabilitySpectrumControls(false);
                   }}
                 />
               </label>
               {stationFormState.capability === registerNewCapabilityValue ? (
                 <div className="station-new-capability mes-order-form-wide">
                   <label>Capability Name<input value={stationFormState.newCapabilityName} onChange={(event) => setStationFormState((current) => ({ ...current, newCapabilityName: event.target.value }))} required /></label>
-                  <fieldset>
-                    <legend>Capability Color</legend>
+                  <div className="station-new-capability-color" role="group" aria-labelledby="station-new-capability-color-label">
+                    <span id="station-new-capability-color-label">Capability Color</span>
                     <div className="capability-color-picker">
-                      {capabilityColorOptions.slice(0, 6).map((color) => (
+                      {presetCapabilityColorOptions.map((color) => (
                         <button
                           className={stationFormState.newCapabilityColor === color ? 'selected' : ''}
                           type="button"
@@ -3701,32 +4217,32 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
                           onClick={() => {
                             updateNewCapabilityColor(color);
                             setShowCapabilityColorPicker(false);
-                            setShowCapabilitySpectrumControls(false);
                           }}
                         />
                       ))}
                       <span className="capability-custom-color-wrap" ref={capabilityColorTriggerRef}>
                         <button
-                          className={showCapabilityColorPicker ? 'selected custom' : 'custom'}
+                          className={showCapabilityColorPicker || usesCustomCapabilityColor ? 'selected custom' : 'custom'}
                           type="button"
                           aria-label="Pick custom capability color"
+                          style={usesCustomCapabilityColor ? {
+                            backgroundColor: stationFormState.newCapabilityColor,
+                            color: newCapabilityHsv.value > 72 ? '#07111c' : '#ffffff',
+                          } : undefined}
                           onClick={() => {
-                            setShowCapabilityColorPicker((current) => {
-                              if (current) setShowCapabilitySpectrumControls(false);
-                              return !current;
-                            });
+                            setShowCapabilityColorPicker((current) => !current);
                           }}
                         >
-                          <Plus size={16} />
+                          {usesCustomCapabilityColor ? <Check size={16} /> : <Plus size={16} />}
                         </button>
                       </span>
                     </div>
-                  </fieldset>
+                  </div>
                 </div>
               ) : null}
               <div className="mes-order-form-actions">
-                <button type="button" onClick={() => { setShowCapabilityColorPicker(false); setShowCapabilitySpectrumControls(false); setShowStationForm(false); }}>Cancel</button>
-                <button type="submit">Save Station</button>
+                <button type="button" onClick={() => { setShowCapabilityColorPicker(false); clearStationImageFile(); setShowStationForm(false); }} disabled={stationImageUploading}>Cancel</button>
+                <button type="submit" disabled={stationImageUploading}>{stationImageUploading ? 'Uploading...' : 'Save Station'}</button>
               </div>
             </form>
           </section>
@@ -3745,7 +4261,19 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
               <button type="button" onClick={() => setShowDetailModal(false)}>Close</button>
             </div>
             <div className="work-center-detail-modal-grid">
-              <section><h4>Overview</h4><p>{selectedWorkCenter.description}</p><dl><div><dt>Plant</dt><dd>{selectedWorkCenter.plant}</dd></div><div><dt>Area</dt><dd>{selectedWorkCenter.area}</dd></div><div><dt>Status</dt><dd>{formatLabel(selectedWorkCenter.status)}</dd></div></dl><div className="work-center-detail-tags">{selectedWorkCenter.capabilities.map((capability) => <span key={capability}>{capability}</span>)}</div></section>
+              <section><h4>Overview</h4><p>{selectedWorkCenter.description}</p><dl><div><dt>Address</dt><dd>{selectedWorkCenter.address}</dd></div><div><dt>Status</dt><dd>{formatLabel(selectedWorkCenter.status)}</dd></div></dl><div className="work-center-detail-tags">{selectedWorkCenter.capabilities.map((capability) => <span key={capability}>{capability}</span>)}</div></section>
+              {selectedStation ? (
+                <section className="station-detail-image-section">
+                  <h4>Selected Station</h4>
+                  {renderStationVisual(selectedStation, 'station-detail-visual station-card-visual')}
+                  <dl>
+                    <div><dt>Station</dt><dd>{selectedStation.name}</dd></div>
+                    <div><dt>Code</dt><dd>{selectedStation.code}</dd></div>
+                    <div><dt>Type</dt><dd>{selectedStation.type}</dd></div>
+                    <div><dt>Capability</dt><dd>{selectedStation.processStep}</dd></div>
+                  </dl>
+                </section>
+              ) : null}
               <section><h4>Live Status</h4><dl><div><dt>Current job</dt><dd>{selectedWorkCenter.currentJob ?? 'Unassigned'}</dd></div><div><dt>Operator</dt><dd>{selectedWorkCenter.currentOperator}</dd></div><div><dt>Step</dt><dd>{selectedWorkCenter.currentStep}</dd></div><div><dt>Queue / WIP</dt><dd>{selectedWorkCenter.queueCount} / {selectedWorkCenter.wipCount}</dd></div><div><dt>Last event</dt><dd>{selectedWorkCenter.lastEvent}</dd></div><div><dt>Downtime</dt><dd>{selectedWorkCenter.activeDowntime ? 'Active' : 'None active'}</dd></div></dl></section>
               <section><h4>Queue</h4>{selectedWorkCenter.queue.length > 0 ? selectedWorkCenter.queue.map((job) => <article className="work-center-list-row" key={job.orderId}><strong>{job.orderId}</strong><span>{job.product}</span><em>{formatLabel(job.priority)} / {formatDate(job.dueDate)} / {job.estimatedMinutes} min</em></article>) : <p>No queued jobs.</p>}</section>
               <section><h4>Events</h4>{selectedWorkCenter.events.map((event) => <article className="work-center-list-row" key={`${event.timestamp}-${event.eventType}`}><strong>{event.eventType}</strong><span>{event.relatedOrder} / {event.operator}</span><em>{event.timestamp} - {event.notes}</em></article>)}</section>
