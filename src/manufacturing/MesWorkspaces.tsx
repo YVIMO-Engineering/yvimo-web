@@ -1,6 +1,6 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { Activity, AlertTriangle, ArrowLeft, CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, CircleHelp, Eye, Factory, Frown, ImagePlus, Meh, Plus, RadioTower, Search, Smile, Timer } from 'lucide-react';
+import { Activity, AlertTriangle, ArrowLeft, CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleHelp, Eye, Factory, Frown, ImagePlus, Meh, Plus, RadioTower, Search, Smile, Timer } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { mockTraceabilityEvents } from './mesMockData';
 import type { ProductionOrder, ProductionOrderManufacturingType, ProductionOrderPriority, ProductionOrderStatus, TraceabilityEvent, WorkCenterStatus } from './mesTypes';
@@ -72,6 +72,24 @@ type ConfirmationState = {
   confirmLabel: string;
   tone: 'primary' | 'danger';
   onConfirm: () => Promise<void> | void;
+};
+
+type JobQueueMachine = {
+  workCenterCode: string;
+  stationCode: string;
+  stationName: string;
+};
+
+type JobQueueItem = {
+  order: ProductionOrder;
+  position: number;
+};
+
+type JobQueueSummary = {
+  machine: JobQueueMachine;
+  currentJob: ProductionOrder | null;
+  queuedJobs: JobQueueItem[];
+  totalQuantity: number;
 };
 
 type MesOrderDropdownOption = {
@@ -483,6 +501,213 @@ function formStateToProductionOrder(formState: ProductionOrderFormState, id?: st
   };
 }
 
+function getProductionOrderStationLabel(stationOptionsByWorkCenter: Record<string, MesOrderDropdownOption[]>, workCenterCode: string, stationCode: string) {
+  const stationOption = stationOptionsByWorkCenter[workCenterCode]?.find((option) => option.value === stationCode);
+  return stationOption?.label.replace(`${stationCode} - `, '') ?? stationCode;
+}
+
+function getJobQueueSummary(
+  orders: ProductionOrder[],
+  machine: JobQueueMachine | null,
+  focusOrderId?: string,
+): JobQueueSummary | null {
+  if (!machine?.workCenterCode || !machine.stationCode) return null;
+
+  const stationOrders = orders
+    .filter((order) => (
+      order.manufacturingType === 'single-operation'
+      && order.assignedWorkCenter === machine.workCenterCode
+      && order.assignedStation === machine.stationCode
+      && ['released', 'running', 'paused'].includes(order.status)
+    ))
+    .sort((firstOrder, secondOrder) => {
+      if (firstOrder.status === 'running' && secondOrder.status !== 'running') return -1;
+      if (firstOrder.status !== 'running' && secondOrder.status === 'running') return 1;
+      if (firstOrder.id === focusOrderId) return 1;
+      if (secondOrder.id === focusOrderId) return -1;
+      return new Date(firstOrder.dueDate).getTime() - new Date(secondOrder.dueDate).getTime();
+    });
+  const currentJob = stationOrders.find((order) => order.status === 'running') ?? null;
+  const queuedJobs = stationOrders
+    .filter((order) => order.status !== 'running')
+    .map((order, index) => ({ order, position: index + 1 }));
+
+  return {
+    machine,
+    currentJob,
+    queuedJobs,
+    totalQuantity: stationOrders.reduce((total, order) => total + Math.max(0, order.plannedQuantity - order.completedQuantity), 0),
+  };
+}
+
+function shouldStartSingleOperationOrder(order: ProductionOrder, orders: ProductionOrder[]) {
+  if (order.manufacturingType !== 'single-operation' || !order.assignedStation) return true;
+  const machineOrders = orders.filter((candidate) => (
+    candidate.id !== order.id
+    && candidate.manufacturingType === 'single-operation'
+    && candidate.assignedWorkCenter === order.assignedWorkCenter
+    && candidate.assignedStation === order.assignedStation
+    && ['released', 'running', 'paused'].includes(candidate.status)
+  ));
+  const hasQueue = machineOrders.some((candidate) => ['released', 'paused'].includes(candidate.status));
+  const hasActiveProduction = machineOrders.some((candidate) => candidate.status === 'running');
+  return !hasQueue && !hasActiveProduction;
+}
+
+function JobQueueModal({ summary, onClose }: { summary: JobQueueSummary; onClose: () => void }) {
+  const currentRemaining = summary.currentJob
+    ? Math.max(0, summary.currentJob.plannedQuantity - summary.currentJob.completedQuantity)
+    : 0;
+  const currentProgress = summary.currentJob && summary.currentJob.plannedQuantity > 0
+    ? Math.min(100, Math.round((summary.currentJob.completedQuantity / summary.currentJob.plannedQuantity) * 100))
+    : 0;
+  const queuedJobRows = Array.from(
+    { length: Math.ceil(summary.queuedJobs.length / 4) },
+    (_, rowIndex) => summary.queuedJobs.slice(rowIndex * 4, (rowIndex * 4) + 4),
+  );
+
+  return (
+    <div className="mes-modal-backdrop job-queue-backdrop" role="presentation">
+      <section className="job-queue-modal" role="dialog" aria-modal="true" aria-labelledby="job-queue-title">
+        <div className="job-queue-modal-header">
+          <div>
+            <p className="eyebrow">Manufacturing Queue</p>
+            <h3 id="job-queue-title">{summary.machine.stationName}</h3>
+            <span>{summary.machine.stationCode} / {summary.machine.workCenterCode}</span>
+          </div>
+          <button type="button" onClick={onClose}>Close</button>
+        </div>
+        <div className="job-queue-status-grid">
+          <article>
+            <span>Current job</span>
+            <strong>{summary.currentJob?.orderNumber ?? 'Unassigned'}</strong>
+            <em>{summary.currentJob?.partName ?? 'Machine is available'}</em>
+          </article>
+          <article>
+            <span>Queue</span>
+            <strong>{summary.queuedJobs.length}</strong>
+            <em>{summary.queuedJobs.length === 1 ? 'job waiting' : 'jobs waiting'}</em>
+          </article>
+          <article>
+            <span>Open quantity</span>
+            <strong>{summary.totalQuantity.toLocaleString()}</strong>
+            <em>parts remaining</em>
+          </article>
+        </div>
+        <section className="job-queue-current">
+          <div className="job-queue-section-title">
+            <Activity size={16} />
+            <h4>Now Running</h4>
+          </div>
+          {summary.currentJob ? (
+            <article className="job-queue-current-card">
+              <div className="job-queue-current-details">
+                <dl>
+                  <div><dt>Order number:</dt><dd>{summary.currentJob.orderNumber}</dd></div>
+                  <div><dt>Part name:</dt><dd>{summary.currentJob.partName}</dd></div>
+                  <div><dt>Part number:</dt><dd>{summary.currentJob.partNumber}</dd></div>
+                  <div><dt>Due date:</dt><dd>{formatDate(summary.currentJob.dueDate)}</dd></div>
+                </dl>
+              </div>
+              <div className="job-queue-current-progress">
+                <div>
+                  <span><i className="job-queue-progress-spinner" aria-hidden="true" />Progress</span>
+                  <strong>{currentProgress}%</strong>
+                </div>
+                <div className="job-queue-progress-track" aria-hidden="true">
+                  <span style={{ width: `${currentProgress}%` }} />
+                </div>
+                <em>{currentRemaining.toLocaleString()} parts remaining</em>
+              </div>
+              <div className="job-queue-current-count">
+                <strong>{summary.currentJob.completedQuantity.toLocaleString()}</strong>
+                <span>of {summary.currentJob.plannedQuantity.toLocaleString()}</span>
+              </div>
+            </article>
+          ) : (
+            <div className="job-queue-empty-state">No active production on this machine.</div>
+          )}
+        </section>
+        <section className="job-queue-lineup">
+          <div className="job-queue-section-title">
+            <Timer size={16} />
+            <h4>Production Queue</h4>
+          </div>
+          {summary.queuedJobs.length > 0 ? (
+            <div className="job-queue-track">
+              {queuedJobRows.map((row, rowIndex) => (
+                <React.Fragment key={`queue-row-${rowIndex}`}>
+                  {rowIndex > 0 ? (
+                    <div className="job-queue-row-bridge" aria-hidden="true">
+                      <svg viewBox="0 0 100 100" preserveAspectRatio="none">
+                        <polyline points="0,100 0,36 100,36 100,0" />
+                      </svg>
+                      <span className="job-queue-bridge-run job-queue-bridge-run-start-up">
+                        <ChevronUp size={22} />
+                        <ChevronUp size={22} />
+                        <ChevronUp size={22} />
+                      </span>
+                      <span className="job-queue-bridge-run job-queue-bridge-run-main">
+                        <ChevronRight size={22} />
+                        <ChevronRight size={22} />
+                        <ChevronRight size={22} />
+                        <ChevronRight size={22} />
+                        <ChevronRight size={22} />
+                        <ChevronRight size={22} />
+                        <ChevronRight size={22} />
+                        <ChevronRight size={22} />
+                        <ChevronRight size={22} />
+                        <ChevronRight size={22} />
+                        <ChevronRight size={22} />
+                        <ChevronRight size={22} />
+                      </span>
+                      <span className="job-queue-bridge-run job-queue-bridge-run-end-up">
+                        <ChevronUp size={22} />
+                        <ChevronUp size={22} />
+                        <ChevronUp size={22} />
+                      </span>
+                    </div>
+                  ) : null}
+                  <div className="job-queue-row">
+                    {row.map(({ order, position }, index) => {
+                      const remainingQuantity = Math.max(0, order.plannedQuantity - order.completedQuantity);
+                      return (
+                        <div className="job-queue-step" key={order.id}>
+                          {index > 0 ? (
+                            <span className="job-queue-flow-arrow" aria-hidden="true">
+                              <ChevronLeft size={24} />
+                              <ChevronLeft size={24} />
+                              <ChevronLeft size={24} />
+                            </span>
+                          ) : null}
+                          <article className="job-queue-ticket">
+                            <span className="job-queue-position">{position}</span>
+                            <div className="job-queue-quantity-ring">
+                              <strong>{remainingQuantity.toLocaleString()}</strong>
+                              <span>Parts</span>
+                            </div>
+                            <div>
+                              <strong>{order.orderNumber}</strong>
+                              <span>{order.partName}</span>
+                              <em>{formatLabel(order.priority)} / {formatDate(order.dueDate)}</em>
+                            </div>
+                          </article>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </React.Fragment>
+              ))}
+            </div>
+          ) : (
+            <div className="job-queue-empty-state">No queued jobs for this machine.</div>
+          )}
+        </section>
+      </section>
+    </div>
+  );
+}
+
 function MesWorkspaceShell({ title, eyebrow, description, children }: React.PropsWithChildren<{
   title: string;
   eyebrow: string;
@@ -566,6 +791,7 @@ export function ProductionOrdersWorkspace({ onNavigate }: WorkspaceProps) {
   const [tableMessage, setTableMessage] = React.useState<string | null>('Loading production orders...');
   const [savingOrder, setSavingOrder] = React.useState(false);
   const [confirmation, setConfirmation] = React.useState<ConfirmationState | null>(null);
+  const [jobQueueSummary, setJobQueueSummary] = React.useState<JobQueueSummary | null>(null);
 
   const selectedOrder = orders.find((order) => order.orderNumber === selectedOrderNumber) ?? null;
   const selectedWorkCenterStationOptions = stationOptionsByWorkCenter[formState.assignedWorkCenter] ?? [];
@@ -692,6 +918,15 @@ export function ProductionOrdersWorkspace({ onNavigate }: WorkspaceProps) {
     }
   };
 
+  const openSelectedOrderJobQueue = () => {
+    if (!selectedOrder || selectedOrder.manufacturingType !== 'single-operation' || !selectedOrder.assignedStation) return;
+    setJobQueueSummary(getJobQueueSummary(orders, {
+      workCenterCode: selectedOrder.assignedWorkCenter,
+      stationCode: selectedOrder.assignedStation,
+      stationName: getProductionOrderStationLabel(stationOptionsByWorkCenter, selectedOrder.assignedWorkCenter, selectedOrder.assignedStation),
+    }, selectedOrder.id));
+  };
+
   const updateOrder = (orderNumber: string, action: string) => {
     let updatedOrder: ProductionOrder | null = null;
     setOrders((currentOrders) =>
@@ -710,7 +945,10 @@ export function ProductionOrdersWorkspace({ onNavigate }: WorkspaceProps) {
           updatedOrder = { ...order, scrapQuantity: order.scrapQuantity + 2 };
           return updatedOrder;
         }
-        updatedOrder = { ...order, status: actionStatus(order.status, action) };
+        const nextStatus = action === 'start' && ['released', 'paused'].includes(order.status)
+          ? (shouldStartSingleOperationOrder(order, currentOrders) ? 'running' : 'released')
+          : actionStatus(order.status, action);
+        updatedOrder = { ...order, status: nextStatus };
         return updatedOrder;
       }),
     );
@@ -835,6 +1073,18 @@ export function ProductionOrdersWorkspace({ onNavigate }: WorkspaceProps) {
     setConfirmation(null);
     await pendingConfirmation.onConfirm();
   };
+
+  React.useEffect(() => {
+    if (!formMode && !confirmation && !jobQueueSummary) return undefined;
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousDocumentOverflow = document.documentElement.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousBodyOverflow;
+      document.documentElement.style.overflow = previousDocumentOverflow;
+    };
+  }, [formMode, confirmation, jobQueueSummary]);
 
   return (
     <section className="mes-workspace-panel production-orders-workspace">
@@ -1015,6 +1265,11 @@ export function ProductionOrdersWorkspace({ onNavigate }: WorkspaceProps) {
                 <p>Due {formatDate(selectedOrder.dueDate)}</p>
               </div>
               <div className="mes-action-grid">
+                {selectedOrder.manufacturingType === 'single-operation' && selectedOrder.assignedStation ? (
+                  <button className="mes-action-info job-queue-action" type="button" onClick={openSelectedOrderJobQueue}>
+                    Job Queue
+                  </button>
+                ) : null}
                 {getProductionOrderActions(selectedOrder.status).map((orderAction) => (
                   <button
                     className={`mes-action-${orderAction.tone}`}
@@ -1207,6 +1462,7 @@ export function ProductionOrdersWorkspace({ onNavigate }: WorkspaceProps) {
           </section>
         </div>
       ) : null}
+      {jobQueueSummary ? <JobQueueModal summary={jobQueueSummary} onClose={() => setJobQueueSummary(null)} /> : null}
     </section>
   );
 }
@@ -2662,6 +2918,7 @@ function getWorkCenterOperationalSummary(workCenter: MesWorkCenter | null, stati
 
 export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
   const [workCenters, setWorkCenters] = React.useState<MesWorkCenter[]>([]);
+  const [productionOrders, setProductionOrders] = React.useState<ProductionOrder[]>([]);
   const [selectedWorkCenterId, setSelectedWorkCenterId] = React.useState('');
   const [selectedStationId, setSelectedStationId] = React.useState('');
   const [customCapabilityColors, setCustomCapabilityColors] = React.useState<Record<string, string>>({});
@@ -2683,6 +2940,7 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
   const [showAddForm, setShowAddForm] = React.useState(false);
   const [showStationForm, setShowStationForm] = React.useState(false);
   const [showDetailModal, setShowDetailModal] = React.useState(false);
+  const [jobQueueSummary, setJobQueueSummary] = React.useState<JobQueueSummary | null>(null);
   const [openKpiHelp, setOpenKpiHelp] = React.useState<WorkCenterKpiHelpKey | null>(null);
   const [activeWorkCenterKpiFilter, setActiveWorkCenterKpiFilter] = React.useState<WorkCenterKpiFilter | null>(null);
   const [activeStationKpiFilter, setActiveStationKpiFilter] = React.useState<StationKpiFilter | null>(null);
@@ -2708,14 +2966,16 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
     setWorkCentersLoading(true);
     setWorkCentersError('');
 
-    const [{ data: workCenterRows, error: workCenterError }, { data: stationRows, error: stationError }] = await Promise.all([
+    const [{ data: workCenterRows, error: workCenterError }, { data: stationRows, error: stationError }, { data: productionOrderRows, error: productionOrderError }] = await Promise.all([
       supabase.from('mes_work_centers').select('*').order('created_at', { ascending: false }),
       supabase.from('mes_work_center_stations').select('*').order('created_at', { ascending: true }),
+      supabase.from('mes_production_orders').select('*').order('due_date', { ascending: true }),
     ]);
 
-    if (workCenterError || stationError) {
-      setWorkCentersError(workCenterError?.message ?? stationError?.message ?? 'Could not load Work Centers.');
+    if (workCenterError || stationError || productionOrderError) {
+      setWorkCentersError(workCenterError?.message ?? stationError?.message ?? productionOrderError?.message ?? 'Could not load Work Centers.');
       setWorkCenters([]);
+      setProductionOrders([]);
       setWorkCentersLoading(false);
       return;
     }
@@ -2734,6 +2994,7 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
 
     setCustomCapabilityColors(capabilityColors);
     setWorkCenters(nextWorkCenters);
+    setProductionOrders((productionOrderRows as ProductionOrderRow[] | null ?? []).map(mapProductionOrderRow));
     setSelectedWorkCenterId((currentId) => (nextWorkCenters.some((workCenter) => workCenter.id === currentId) ? currentId : nextWorkCenters[0]?.id ?? ''));
     setSelectedStationId((currentId) => (nextWorkCenters.some((workCenter) => workCenter.stations.some((station) => station.id === currentId)) ? currentId : ''));
     setWorkCentersLoading(false);
@@ -2750,6 +3011,16 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
   const selectedWorkCenter = workCenters.find((workCenter) => workCenter.id === selectedWorkCenterId) ?? workCenters[0] ?? null;
   const selectedStations = selectedWorkCenter ? getStationsForWorkCenter(selectedWorkCenter) : [];
   const selectedStation = selectedStations.find((station) => station.id === selectedStationId) ?? selectedStations[0] ?? null;
+  const getStationJobQueueSummary = React.useCallback((workCenter: MesWorkCenter | null, station: WorkCenterStation | null) => (
+    getJobQueueSummary(productionOrders, workCenter && station ? {
+      workCenterCode: workCenter.code,
+      stationCode: station.code,
+      stationName: station.name,
+    } : null)
+  ), [productionOrders]);
+  const selectedStationQueueSummary = getStationJobQueueSummary(selectedWorkCenter, selectedStation);
+  const selectedStationCurrentJob = selectedStationQueueSummary?.currentJob?.orderNumber ?? selectedStation?.currentJob ?? null;
+  const selectedStationQueueCount = selectedStationQueueSummary?.queuedJobs.length ?? selectedStation?.queueCount ?? 0;
   const todayIsoDate = getTodayIsoDate();
   const filteredStations = selectedStations.filter((station) => {
     const stationHaystack = [
@@ -2854,6 +3125,11 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
   const selectWorkCenter = (workCenterId: string) => {
     setSelectedWorkCenterId(workCenterId);
     setSelectedStationId('');
+  };
+
+  const openStationJobQueue = () => {
+    const summary = getStationJobQueueSummary(selectedWorkCenter, selectedStation);
+    if (summary) setJobQueueSummary(summary);
   };
 
   const toggleWorkCenterKpiFilter = (filter: WorkCenterKpiFilter) => {
@@ -3065,13 +3341,16 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
   };
 
   React.useEffect(() => {
-    if (!showAddForm && !showStationForm && !showDetailModal && !workCenterConfirmation) return undefined;
-    const previousOverflow = document.body.style.overflow;
+    if (!showAddForm && !showStationForm && !showDetailModal && !jobQueueSummary && !workCenterConfirmation) return undefined;
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousDocumentOverflow = document.documentElement.style.overflow;
     document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
     return () => {
-      document.body.style.overflow = previousOverflow;
+      document.body.style.overflow = previousBodyOverflow;
+      document.documentElement.style.overflow = previousDocumentOverflow;
     };
-  }, [showAddForm, showStationForm, showDetailModal, workCenterConfirmation]);
+  }, [showAddForm, showStationForm, showDetailModal, jobQueueSummary, workCenterConfirmation]);
 
   React.useEffect(() => () => {
     if (stationImagePreviewUrl) URL.revokeObjectURL(stationImagePreviewUrl);
@@ -3731,8 +4010,8 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
               </div>
               {renderStationVisual(selectedStation, 'selected-station-visual station-card-visual')}
               <dl className="work-center-detail-list">
-                <div><dt>Current job</dt><dd>{selectedStation.currentJob ?? 'Unassigned'}</dd></div>
-                <div><dt>Queue</dt><dd>{selectedStation.queueCount} jobs</dd></div>
+                <div><dt>Current job</dt><dd>{selectedStationCurrentJob ?? 'Unassigned'}</dd></div>
+                <div><dt>Queue</dt><dd>{selectedStationQueueCount} jobs</dd></div>
                 <div><dt>WIP</dt><dd>{selectedStation.wipCount}</dd></div>
                 <div><dt>Utilization</dt><dd>{selectedStation.utilization}%</dd></div>
                 <div><dt>Due risk</dt><dd><span className={`selected-state-text state-${selectedStation.dueRisk}`}>{formatRiskLabel(selectedStation.dueRisk)}</span></dd></div>
@@ -3745,7 +4024,7 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
                 </div>
               </div>
               <div className="work-center-quick-actions">
-                <button type="button">Assign Job</button>
+                <button type="button" onClick={openStationJobQueue}>Job Queue</button>
                 <button type="button" onClick={() => updateSelectedStationStatus('setup')}>Start Setup</button>
                 <button type="button" onClick={() => updateSelectedStationStatus('down')}>Mark Down</button>
                 <button type="button" onClick={() => updateSelectedStationStatus('idle')}>Mark Available</button>
@@ -4033,6 +4312,9 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
             <div className="station-card-grid">
               {filteredStations.map((station) => {
                 const stationSelected = station.id === selectedStation?.id;
+                const stationQueueSummary = getStationJobQueueSummary(selectedWorkCenter, station);
+                const stationCurrentJob = stationQueueSummary?.currentJob?.orderNumber ?? station.currentJob ?? 'Unassigned';
+                const stationQueueCount = stationQueueSummary?.queuedJobs.length ?? station.queueCount;
                 return (
                   <article
                     className={['station-card', stationSelected ? 'selected' : ''].filter(Boolean).join(' ')}
@@ -4061,9 +4343,9 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
                     <dl>
                       <div><dt>Type</dt><dd>{station.type}</dd></div>
                       <div><dt>Process</dt><dd>{station.processStep}</dd></div>
-                      <div><dt>Current Job</dt><dd>{station.currentJob ?? 'Unassigned'}</dd></div>
+                      <div><dt>Current Job</dt><dd>{stationCurrentJob}</dd></div>
                       <div><dt>Operator</dt><dd><span className="station-operator-pill">{station.operator}</span></dd></div>
-                      <div><dt>Queue</dt><dd>{station.queueCount}</dd></div>
+                      <div><dt>Queue</dt><dd>{stationQueueCount}</dd></div>
                       <div><dt>WIP</dt><dd>{station.wipCount}</dd></div>
                     </dl>
                     <div className={`work-center-utilization utilization-${getStationUtilizationStatus(station.utilization)}`} aria-hidden="true"><span style={{ width: `${station.utilization}%` }} /></div>
@@ -4282,6 +4564,8 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
           </section>
         </div>
       ) : null}
+
+      {jobQueueSummary ? <JobQueueModal summary={jobQueueSummary} onClose={() => setJobQueueSummary(null)} /> : null}
 
       {workCenterConfirmation ? (
         <div className="mes-modal-backdrop" role="presentation">
