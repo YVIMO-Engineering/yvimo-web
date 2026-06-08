@@ -43,6 +43,7 @@ import type { Session, User } from '@supabase/supabase-js';
 import { createSessionSupabaseClient, supabase } from './lib/supabaseClient';
 import { AcademyActivityPage, AcademyCatalogPage, AcademyCertificatesPage, AcademyCoursePage, AcademyHomePage, AcademyLessonPage, AcademyProgressPage, AcademyTrackPage } from './pages/AcademyPages';
 import { ProductionOrdersWorkspace, TraceabilityWorkspace, WorkCentersWorkspace } from './manufacturing/MesWorkspaces';
+import { OperatorTerminalWorkspace } from './manufacturing/OperatorTerminalWorkspace';
 import './styles.css';
 
 type BusinessLine = {
@@ -2512,12 +2513,16 @@ function LoggedDashboardPage({
       ? intelligenceModules
       : mesModules;
   const activeMesModule = mesModules.find((module) => activePath === module.path);
+  const isOperatorTerminalPage = activePath === '/workspace/manufacturing-ops/mes/operator-terminal';
   const renderActiveMesWorkspace = () => {
     if (activePath === '/workspace/manufacturing-ops/mes/orders') {
       return <ProductionOrdersWorkspace onNavigate={onNavigate} />;
     }
     if (activePath === '/workspace/manufacturing-ops/mes/work-centers') {
       return <WorkCentersWorkspace onNavigate={onNavigate} />;
+    }
+    if (isOperatorTerminalPage) {
+      return <OperatorTerminalWorkspace onNavigate={onNavigate} />;
     }
     if (activePath === '/workspace/manufacturing-ops/mes/traceability') {
       return <TraceabilityWorkspace onNavigate={onNavigate} />;
@@ -2829,7 +2834,7 @@ function LoggedDashboardPage({
   };
 
   return (
-    <main className="logged-shell">
+    <main className={['logged-shell', isOperatorTerminalPage ? 'operator-terminal-shell' : ''].filter(Boolean).join(' ')}>
       <aside className={['logged-sidebar', tabletSidebarExpanded ? 'tablet-expanded' : ''].filter(Boolean).join(' ')}>
         <div className="logged-sidebar-title">
           <div>
@@ -2887,6 +2892,7 @@ function LoggedDashboardPage({
           'logged-workspace',
           isManufacturingOpsPage ? 'manufacturing-workspace-active' : '',
           activeMesWorkspace ? 'mes-application-screen-active' : '',
+          isOperatorTerminalPage ? 'operator-terminal-workspace-active' : '',
         ].filter(Boolean).join(' ')}
       >
         {isLicensesPage ? (
@@ -3647,6 +3653,7 @@ function App() {
   const isMesApplicationScreen =
     currentPath === '/workspace/manufacturing-ops/mes/orders'
     || currentPath === '/workspace/manufacturing-ops/mes/work-centers'
+    || currentPath === '/workspace/manufacturing-ops/mes/operator-terminal'
     || currentPath === '/workspace/manufacturing-ops/mes/traceability';
   const isWorkspacePage = currentPath === '/dashboard';
   const isAcademyPage = currentPath === '/academy' || currentPath.startsWith('/academy/');

@@ -74,18 +74,18 @@ type ConfirmationState = {
   onConfirm: () => Promise<void> | void;
 };
 
-type JobQueueMachine = {
+export type JobQueueMachine = {
   workCenterCode: string;
   stationCode: string;
   stationName: string;
 };
 
-type JobQueueItem = {
+export type JobQueueItem = {
   order: ProductionOrder;
   position: number;
 };
 
-type JobQueueSummary = {
+export type JobQueueSummary = {
   machine: JobQueueMachine;
   currentJob: ProductionOrder | null;
   queuedJobs: JobQueueItem[];
@@ -554,7 +554,7 @@ function shouldStartSingleOperationOrder(order: ProductionOrder, orders: Product
   return !hasQueue && !hasActiveProduction;
 }
 
-function JobQueueModal({ summary, onClose }: { summary: JobQueueSummary; onClose: () => void }) {
+export function JobQueueModal({ summary, onClose }: { summary: JobQueueSummary; onClose: () => void }) {
   const currentRemaining = summary.currentJob
     ? Math.max(0, summary.currentJob.plannedQuantity - summary.currentJob.completedQuantity)
     : 0;
