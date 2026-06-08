@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   Camera,
   Check,
+  ChevronDown,
   ClipboardCheck,
   Clock3,
   ImagePlus,
@@ -17,6 +18,12 @@ import {
 } from 'lucide-react';
 import { JobQueueModal, type JobQueueSummary } from './MesWorkspaces';
 import type { ProductionOrder } from './mesTypes';
+import {
+  fetchOperatorTerminalSnapshot,
+  reportOperatorProduction,
+  setOperatorTerminalState,
+  type OperatorTerminalSnapshot,
+} from './operatorTerminalApi';
 
 type OperatorTerminalProps = {
   onNavigate: (path: string) => void;
@@ -85,6 +92,23 @@ const queuedProductionOrders: ProductionOrder[] = queueJobs.map((job, index) => 
   productionFlow: '',
   assignedStation: 'CNC-01',
 }));
+
+const fallbackCurrentOrder: ProductionOrder = {
+  id: 'operator-terminal-demo-order',
+  orderNumber: 'SO-54651',
+  partNumber: 'HC-651646',
+  partName: 'Hob Cutter',
+  plannedQuantity: 100,
+  completedQuantity: 0,
+  scrapQuantity: 0,
+  status: 'released',
+  priority: 'normal',
+  dueDate: 'Jun 07, 2026',
+  assignedWorkCenter: 'TRC-HQ',
+  manufacturingType: 'single-operation',
+  productionFlow: '',
+  assignedStation: 'CNC-01',
+};
 
 const dataCards = [
   { label: 'Client', value: 'Client Name' },
@@ -199,38 +223,89 @@ export function OperatorTerminalWorkspace({ onNavigate }: OperatorTerminalProps)
   const [modal, setModal] = React.useState<TerminalModal>(null);
   const [toast, setToast] = React.useState('');
   const [events, setEvents] = React.useState<ReportEvent[]>([]);
-  const totalQty = 100;
-  const completedQty = goodQty + scrapQty;
+  const [snapshot, setSnapshot] = React.useState<OperatorTerminalSnapshot | null>(null);
+  const [terminalMessage, setTerminalMessage] = React.useState('');
+  const [syncPending, setSyncPending] = React.useState(false);
+  const [selectedWorkCenterCode, setSelectedWorkCenterCode] = React.useState('');
+  const [selectedStationCode, setSelectedStationCode] = React.useState('');
+  const [dimensionUnit, setDimensionUnit] = React.useState<'in' | 'mm'>('in');
+  const [templateId, setTemplateId] = React.useState('sharpening');
+  const [selectedShift, setSelectedShift] = React.useState<'1st' | '2nd' | '3rd'>('1st');
+  const baseSnapshotOrder = snapshot?.currentOrder ?? fallbackCurrentOrder;
+  const baseWorkCenterCode = snapshot?.workCenter?.code ?? baseSnapshotOrder.assignedWorkCenter;
+  const baseWorkCenterName = snapshot?.workCenter?.name ?? 'Sharpening Area 01';
+  const baseStationCode = snapshot?.station?.code ?? baseSnapshotOrder.assignedStation;
+  const baseStationName = snapshot?.station?.name ?? 'Grinder Station 03';
+  const workCenterOptions = snapshot?.workCenterOptions.length
+    ? snapshot.workCenterOptions
+    : [{ id: 'fallback-work-center', code: baseWorkCenterCode, name: baseWorkCenterName }];
+  const workCenterCode = selectedWorkCenterCode || baseWorkCenterCode;
+  const selectedWorkCenter = workCenterOptions.find((workCenter) => workCenter.code === workCenterCode) ?? workCenterOptions[0];
+  const workCenterName = selectedWorkCenter?.name ?? baseWorkCenterName;
+  const stationOptions = snapshot?.stationOptions.length
+    ? snapshot.stationOptions.filter((station) => station.workCenterCode === workCenterCode)
+    : [{
+      id: 'fallback-station',
+      workCenterId: 'fallback-work-center',
+      workCenterCode,
+      code: baseStationCode,
+      name: baseStationName,
+      type: 'Station',
+      imageUrl: snapshot?.station?.imageUrl ?? '',
+      status: snapshot?.station?.status ?? 'idle',
+      operator: snapshot?.station?.operator ?? 'Carlos Mota',
+      shift: snapshot?.station?.shift ?? 'A / Day',
+      processStep: snapshot?.station?.processStep ?? 'Ready',
+    }];
+  const stationCode = stationOptions.some((station) => station.code === selectedStationCode)
+    ? selectedStationCode
+    : stationOptions[0]?.code ?? baseStationCode;
+  const selectedStation = stationOptions.find((station) => station.code === stationCode) ?? stationOptions[0];
+  const stationName = selectedStation?.name ?? baseStationName;
+  const stationOperator = selectedStation?.operator ?? snapshot?.station?.operator ?? 'Carlos Mota';
+  const stationImageUrl = selectedStation?.imageUrl ?? snapshot?.station?.imageUrl ?? '';
+  const stationOrders = snapshot
+    ? snapshot.activeOrders.filter((order) => order.assignedStation === stationCode && order.assignedWorkCenter === workCenterCode)
+    : [fallbackCurrentOrder];
+  const currentOrder = stationOrders.find((order) => order.status === 'running' || order.status === 'paused')
+    ?? stationOrders.find((order) => order.status === 'released')
+    ?? null;
+  const queuedOrders = snapshot
+    ? stationOrders.filter((order) => order.id !== currentOrder?.id)
+    : queuedProductionOrders;
+  const hasAssignedOrder = Boolean(currentOrder);
+  const hasSupabaseOrder = Boolean(snapshot && currentOrder);
+  const totalQty = currentOrder?.plannedQuantity ?? 0;
+  const completedQty = hasAssignedOrder ? goodQty + scrapQty : 0;
   const remainingQty = Math.max(0, totalQty - completedQty);
-  const isQuantityComplete = completedQty >= totalQty;
-  const stationState = state === 'running' ? 'Running' : state === 'paused' ? 'Paused' : state === 'down' ? 'Down' : state === 'completed' ? 'Available' : 'Available';
-  const operationState = state === 'running' ? 'In Progress' : state === 'paused' ? 'Paused' : state === 'down' ? 'Interrupted' : state === 'completed' ? 'Completed' : 'Not Started';
-  const canReport = state === 'running';
+  const activePartSequence = totalQty > 0 ? Math.min(totalQty, completedQty + 1) : 0;
+  const isQuantityComplete = hasAssignedOrder && completedQty >= totalQty;
+  const canReport = hasAssignedOrder && state === 'running';
   const startLabel = state === 'paused' || state === 'down' ? 'Resume' : 'Start Job';
   const jobQueueSummary: JobQueueSummary = {
     machine: {
-      workCenterCode: 'TRC-HQ',
-      stationCode: 'CNC-01',
-      stationName: 'Grinder Station 03',
+      workCenterCode,
+      stationCode,
+      stationName,
     },
-    currentJob: {
-      id: 'operator-current-so-54651',
-      orderNumber: 'SO-54651',
-      partNumber: 'HC-651646',
-      partName: 'Hob Cutter',
+    currentJob: currentOrder ? {
+      id: currentOrder.id,
+      orderNumber: currentOrder.orderNumber,
+      partNumber: currentOrder.partNumber,
+      partName: currentOrder.partName,
       plannedQuantity: totalQty,
       completedQuantity: completedQty,
       scrapQuantity: scrapQty,
       status: state === 'completed' ? 'completed' : state === 'paused' ? 'paused' : state === 'running' ? 'running' : 'released',
       priority: 'normal',
-      dueDate: 'Jun 07, 2026',
-      assignedWorkCenter: 'TRC-HQ',
-      manufacturingType: 'single-operation',
-      productionFlow: '',
-      assignedStation: 'CNC-01',
-    },
-    queuedJobs: queuedProductionOrders.map((order, index) => ({ order, position: index + 1 })),
-    totalQuantity: remainingQty + queuedProductionOrders.reduce((total, order) => total + Math.max(0, order.plannedQuantity - order.completedQuantity), 0),
+      dueDate: currentOrder.dueDate,
+      assignedWorkCenter: currentOrder.assignedWorkCenter,
+      manufacturingType: currentOrder.manufacturingType,
+      productionFlow: currentOrder.productionFlow,
+      assignedStation: currentOrder.assignedStation,
+    } : null,
+    queuedJobs: queuedOrders.map((order, index) => ({ order, position: index + 1 })),
+    totalQuantity: remainingQty + queuedOrders.reduce((total, order) => total + Math.max(0, order.plannedQuantity - order.completedQuantity), 0),
   };
 
   const showToast = (message: string) => {
@@ -238,28 +313,159 @@ export function OperatorTerminalWorkspace({ onNavigate }: OperatorTerminalProps)
     window.setTimeout(() => setToast(''), 2200);
   };
 
-  const reportGood = () => {
-    if (!canReport || completedQty >= totalQty) return;
-    setGoodQty((quantity) => Math.min(totalQty - scrapQty, quantity + 1));
-    setEvents((current) => [{ type: 'good', timestamp: formatToastTime() }, ...current].slice(0, 8));
-    showToast('Good part reported');
+  const applyOrder = (order: ProductionOrder) => {
+    setGoodQty(order.completedQuantity);
+    setScrapQty(order.scrapQuantity);
+    setState(order.status === 'running' ? 'running' : order.status === 'paused' ? 'paused' : order.status === 'completed' ? 'completed' : 'not-started');
   };
 
-  const submitModal = () => {
+  React.useEffect(() => {
+    let active = true;
+    const loadSnapshot = async () => {
+      try {
+        const nextSnapshot = await fetchOperatorTerminalSnapshot();
+        if (!active) return;
+        setSnapshot(nextSnapshot);
+        setTerminalMessage(nextSnapshot.activeOrders.length ? '' : 'No single-operation production orders are assigned yet.');
+        setSelectedWorkCenterCode(nextSnapshot.workCenter?.code ?? nextSnapshot.workCenterOptions[0]?.code ?? '');
+        setSelectedStationCode(nextSnapshot.station?.code ?? nextSnapshot.currentOrder?.assignedStation ?? '');
+        if (nextSnapshot.currentOrder) applyOrder(nextSnapshot.currentOrder);
+      } catch (error) {
+        console.error('Unable to load Operator Terminal snapshot', error);
+        if (!active) return;
+        setTerminalMessage('Operator Terminal backend is not available yet. Showing demo terminal data.');
+      }
+    };
+
+    void loadSnapshot();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  React.useEffect(() => {
+    if (!snapshot) return;
+    const nextOrder = snapshot.activeOrders.find((order) => (
+      order.assignedStation === stationCode
+      && order.assignedWorkCenter === workCenterCode
+      && (order.status === 'running' || order.status === 'paused')
+    )) ?? snapshot.activeOrders.find((order) => (
+      order.assignedStation === stationCode
+      && order.assignedWorkCenter === workCenterCode
+      && order.status === 'released'
+    ));
+
+    if (nextOrder) {
+      applyOrder(nextOrder);
+      setTerminalMessage('');
+      return;
+    }
+
+    setGoodQty(0);
+    setScrapQty(0);
+    setState('not-started');
+    setEvents([]);
+    setTerminalMessage('');
+  }, [snapshot, stationCode, workCenterCode]);
+
+  const reportGood = async () => {
+    if (!currentOrder) return;
+    if (!canReport || completedQty >= totalQty) return;
+    if (!hasSupabaseOrder) {
+      setGoodQty((quantity) => Math.min(totalQty - scrapQty, quantity + 1));
+      setEvents((current) => [{ type: 'good', timestamp: formatToastTime() }, ...current].slice(0, 8));
+      showToast('Good part reported');
+      return;
+    }
+
+    setSyncPending(true);
+    try {
+      const order = await reportOperatorProduction({ orderId: currentOrder.id, stationCode, goodDelta: 1 });
+      applyOrder(order);
+      setSnapshot((current) => current ? { ...current, currentOrder: order } : current);
+      setEvents((current) => [{ type: 'good', timestamp: formatToastTime() }, ...current].slice(0, 8));
+      showToast('Good part reported');
+    } catch (error) {
+      console.error('Unable to report good production', error);
+      showToast('Could not sync good part');
+    } finally {
+      setSyncPending(false);
+    }
+  };
+
+  const submitModal = async (reason = '', comment = '') => {
+    if (!currentOrder && modal !== 'undo') {
+      setModal(null);
+      return;
+    }
     if (modal === 'scrap') {
-      setScrapQty((quantity) => Math.min(totalQty - goodQty, quantity + 1));
-      setEvents((current) => [{ type: 'scrap', timestamp: formatToastTime() }, ...current].slice(0, 8));
-      showToast('Scrap reported');
+      if (!hasSupabaseOrder) {
+        setScrapQty((quantity) => Math.min(totalQty - goodQty, quantity + 1));
+        setEvents((current) => [{ type: 'scrap', timestamp: formatToastTime() }, ...current].slice(0, 8));
+        showToast('Scrap reported');
+      } else {
+        setSyncPending(true);
+        try {
+          const order = await reportOperatorProduction({ orderId: currentOrder.id, stationCode, scrapDelta: 1, reason, comment });
+          applyOrder(order);
+          setSnapshot((current) => current ? { ...current, currentOrder: order } : current);
+          setEvents((current) => [{ type: 'scrap', timestamp: formatToastTime() }, ...current].slice(0, 8));
+          showToast('Scrap reported');
+        } catch (error) {
+          console.error('Unable to report scrap', error);
+          showToast('Could not sync scrap');
+        } finally {
+          setSyncPending(false);
+        }
+      }
     }
     if (modal === 'pause') {
+      if (hasSupabaseOrder) {
+        setSyncPending(true);
+        try {
+          const order = await setOperatorTerminalState({ orderId: currentOrder.id, stationCode, state: 'paused', reason, comment });
+          setSnapshot((current) => current ? { ...current, currentOrder: order } : current);
+        } catch (error) {
+          console.error('Unable to pause job', error);
+          showToast('Could not sync pause');
+        } finally {
+          setSyncPending(false);
+        }
+      }
       setState('paused');
       showToast('Job paused');
     }
     if (modal === 'downtime') {
+      if (hasSupabaseOrder) {
+        setSyncPending(true);
+        try {
+          const order = await setOperatorTerminalState({ orderId: currentOrder.id, stationCode, state: 'down', reason, comment });
+          setSnapshot((current) => current ? { ...current, currentOrder: order } : current);
+        } catch (error) {
+          console.error('Unable to report downtime', error);
+          showToast('Could not sync downtime');
+        } finally {
+          setSyncPending(false);
+        }
+      }
       setState('down');
       showToast('Downtime reported');
     }
     if (modal === 'complete') {
+      if (hasSupabaseOrder) {
+        setSyncPending(true);
+        try {
+          const order = await setOperatorTerminalState({ orderId: currentOrder.id, stationCode, state: 'completed', reason, comment });
+          applyOrder(order);
+          setSnapshot((current) => current ? { ...current, currentOrder: order } : current);
+        } catch (error) {
+          console.error('Unable to complete operation', error);
+          showToast('Could not sync completion');
+        } finally {
+          setSyncPending(false);
+        }
+      }
       setState('completed');
       showToast('Operation completed');
     }
@@ -273,9 +479,23 @@ export function OperatorTerminalWorkspace({ onNavigate }: OperatorTerminalProps)
     setModal(null);
   };
 
-  const startOrResume = () => {
+  const startOrResume = async () => {
+    if (!currentOrder) return;
+    const nextMessage = state === 'paused' || state === 'down' ? 'Job resumed' : 'Job started';
+    if (hasSupabaseOrder) {
+      setSyncPending(true);
+      try {
+        const order = await setOperatorTerminalState({ orderId: currentOrder.id, stationCode, state: 'running' });
+        setSnapshot((current) => current ? { ...current, currentOrder: order } : current);
+      } catch (error) {
+        console.error('Unable to start or resume job', error);
+        showToast('Could not sync job state');
+      } finally {
+        setSyncPending(false);
+      }
+    }
     setState('running');
-    showToast(state === 'paused' || state === 'down' ? 'Job resumed' : 'Job started');
+    showToast(nextMessage);
   };
 
   return (
@@ -294,72 +514,103 @@ export function OperatorTerminalWorkspace({ onNavigate }: OperatorTerminalProps)
             </div>
             <small>{remainingQty} left</small>
           </article>
-          <article className={`operator-terminal-state state-${stationState.toLowerCase().replace(/\s+/g, '-')}`}>
-            <span>Station</span>
-            <strong>{stationState}</strong>
-            <em>{operationState}</em>
+          <article className="operator-terminal-scrap-count" aria-label="Scrap count">
+            <span>Scrap</span>
+            <strong>{scrapQty}</strong>
           </article>
-          <article className="operator-terminal-context-card">
+          <article className="operator-terminal-context-card operator-terminal-selector-card">
             <span>Work Center</span>
-            <strong>Sharpening Area 01</strong>
+            <OperatorTerminalDropdown
+              ariaLabel="Work Center"
+              value={workCenterCode}
+              options={workCenterOptions.map((workCenter) => ({ value: workCenter.code, label: workCenter.name }))}
+              onChange={(nextWorkCenterCode) => {
+                setSelectedWorkCenterCode(nextWorkCenterCode);
+                const nextStation = snapshot?.stationOptions.find((station) => station.workCenterCode === nextWorkCenterCode);
+                setSelectedStationCode(nextStation?.code ?? '');
+              }}
+            />
           </article>
           <article className="operator-terminal-station-card">
             <span>Station</span>
+            <OperatorTerminalDropdown
+              ariaLabel="Station"
+              value={stationCode}
+              options={stationOptions.map((station) => ({ value: station.code, label: station.name }))}
+              onChange={setSelectedStationCode}
+            />
             <div className="operator-terminal-station-visual">
-              <SquareTerminal size={42} />
+              {stationImageUrl ? <img src={stationImageUrl} alt="" /> : <SquareTerminal size={42} />}
             </div>
-            <strong>Grinder Station 03</strong>
             <dl>
-              <div><dt>Operator</dt><dd>Carlos Mota</dd></div>
-              <div><dt>Shift</dt><dd>A / Day</dd></div>
+              <div><dt>Operator</dt><dd>{stationOperator}</dd></div>
+              <div className="operator-terminal-shift-control">
+                <dt>Shift</dt>
+                <dd>
+                  {(['1st', '2nd', '3rd'] as const).map((shift) => (
+                    <button
+                      className={selectedShift === shift ? 'active' : ''}
+                      type="button"
+                      key={shift}
+                      onClick={() => setSelectedShift(shift)}
+                    >
+                      {shift}
+                    </button>
+                  ))}
+                </dd>
+              </div>
             </dl>
           </article>
-          <button className="operator-terminal-queue-button" type="button" onClick={() => setModal('queue')}>
-            <Timer size={18} />
-            Job Queue
-            <strong>{queueJobs.length}</strong>
-          </button>
         </aside>
 
         <main className="operator-terminal-main">
+          {terminalMessage ? <div className="operator-terminal-sync-message">{terminalMessage}</div> : null}
           <section className="operator-terminal-now-card">
             <div className="operator-terminal-section-title">
               <ActivityPulse />
               <h3>Now Running</h3>
             </div>
             <div className="operator-terminal-now-content">
-              <div className="operator-terminal-job-fields">
-                <article><span>Order Number</span><strong>SO-54651</strong></article>
-                <article><span>Part Name</span><strong>Hob Cutter</strong></article>
-                <article><span>Part Number</span><strong>HC-651646</strong></article>
-                <article><span>Due Date</span><strong>Jun 07, 2026</strong></article>
-              </div>
+              {currentOrder ? (
+                <div className="operator-terminal-job-fields">
+                  <article><span>Order Number</span><strong>{currentOrder.orderNumber}</strong></article>
+                  <article><span>Part Name</span><strong>{currentOrder.partName}</strong></article>
+                  <article><span>Part Number</span><strong>{currentOrder.partNumber}</strong></article>
+                  <article><span>Due Date</span><strong>{currentOrder.dueDate}</strong></article>
+                </div>
+              ) : (
+                <div className="operator-terminal-empty-job" role="status">
+                  <SquareTerminal size={34} />
+                  <strong>No Production Order assigned to this station</strong>
+                  <span>Select another station or assign an order to enable the terminal.</span>
+                </div>
+              )}
             </div>
           </section>
 
           <section className="operator-terminal-actions" aria-label="Operator actions">
             <div className={`operator-terminal-report-actions ${isQuantityComplete ? 'complete-ready' : ''}`}>
               {isQuantityComplete ? (
-                <button className="operator-action complete-large" type="button" disabled={state === 'completed'} onClick={() => setModal('complete')}>
+                <button className="operator-action complete-large" type="button" disabled={!hasAssignedOrder || state === 'completed' || syncPending} onClick={() => setModal('complete')}>
                   <ClipboardCheck size={38} />
                   <strong>Complete Operation</strong>
                   <span>Final counts reached</span>
                 </button>
               ) : (
                 <>
-                  <button className="operator-action good" type="button" disabled={!canReport || completedQty >= totalQty} onClick={reportGood}>
+                  <button className="operator-action good" type="button" disabled={!hasAssignedOrder || syncPending || !canReport || completedQty >= totalQty} onClick={reportGood}>
                     <Check size={34} />
                     <strong>+1 Good</strong>
                     <span>Fast production report</span>
                   </button>
-                  <button className="operator-action scrap" type="button" disabled={!canReport || completedQty >= totalQty} onClick={() => setModal('scrap')}>
+                  <button className="operator-action scrap" type="button" disabled={!hasAssignedOrder || syncPending || !canReport || completedQty >= totalQty} onClick={() => setModal('scrap')}>
                     <AlertTriangle size={34} />
                     <strong>+1 Scrap</strong>
                     <span>Requires reason</span>
                   </button>
                 </>
               )}
-              <button className="operator-terminal-undo" type="button" disabled={!events.length} onClick={() => setModal('undo')}>
+              <button className="operator-terminal-undo" type="button" disabled={!hasAssignedOrder || syncPending || !events.length} onClick={() => setModal('undo')}>
                 <RotateCcw size={17} />
                 Undo Last
               </button>
@@ -368,89 +619,106 @@ export function OperatorTerminalWorkspace({ onNavigate }: OperatorTerminalProps)
               <button
                 className={`operator-control ${state === 'running' ? 'pause' : 'start'}`}
                 type="button"
-                disabled={state === 'completed'}
+                disabled={!hasAssignedOrder || syncPending || state === 'completed'}
                 onClick={() => {
                   if (state === 'running') {
                     setModal('pause');
                     return;
                   }
-                  startOrResume();
+                  void startOrResume();
                 }}
               >
                 {state === 'running' ? <Pause size={22} /> : <Play size={22} />}
                 {state === 'running' ? 'Pause' : startLabel}
               </button>
-              <button className="operator-control downtime" type="button" disabled={state === 'completed'} onClick={() => setModal('downtime')}>
+              <button className="operator-control downtime" type="button" disabled={!hasAssignedOrder || syncPending || state === 'completed'} onClick={() => setModal('downtime')}>
                 <AlertTriangle size={22} />
                 Report Downtime
               </button>
-              {isQuantityComplete ? (
-                <button className="operator-control queue" type="button" onClick={() => setModal('queue')}>
-                  <Timer size={22} />
-                  Job Queue
-                </button>
-              ) : (
-                <button className="operator-control complete" type="button" disabled={state === 'completed'} onClick={() => setModal('complete')}>
-                  <ClipboardCheck size={22} />
-                  Complete Operation
-                </button>
-              )}
+              <button className="operator-control queue" type="button" disabled={!hasAssignedOrder || syncPending} onClick={() => setModal('queue')}>
+                <Timer size={22} />
+                Job Queue
+              </button>
             </div>
           </section>
 
-          <section className="operator-terminal-traceability">
+          <section className={`operator-terminal-traceability ${!hasAssignedOrder ? 'disabled' : ''}`}>
             <div className="operator-terminal-trace-heading">
               <div>
                 <p className="eyebrow">Part Traceability</p>
                 <h3>Sharpening capture</h3>
               </div>
-              <div className="operator-terminal-trace-meta" aria-label="Job metadata">
+              {hasAssignedOrder ? <div className="operator-terminal-trace-meta" aria-label="Job metadata">
                 {dataCards.map((card) => (
-                  <article key={card.label}>
-                    <span>{card.label}</span>
-                    <strong>{card.value}</strong>
-                  </article>
+                  <label key={card.label}>
+                    {card.label}
+                    <input defaultValue={card.value} />
+                  </label>
                 ))}
                 <label>
                   Template
-                  <select defaultValue="sharpening">
-                    <option value="sharpening">Sharpening Data</option>
-                    <option value="inspection">Inspection Data</option>
-                  </select>
+                  <OperatorTerminalDropdown
+                    ariaLabel="Template"
+                    value={templateId}
+                    options={[
+                      { value: 'sharpening', label: 'Sharpening Data' },
+                      { value: 'inspection', label: 'Inspection Data' },
+                    ]}
+                    onChange={setTemplateId}
+                  />
                 </label>
-              </div>
-              <span>Dimensions: in / inches</span>
+              </div> : null}
             </div>
+            {hasAssignedOrder ? (
             <div className="operator-terminal-form-grid">
-              <label>Part<input defaultValue="001" /></label>
+              <div className="operator-terminal-part-reference">
+                <span>Part</span>
+                <strong>{activePartSequence.toLocaleString()}</strong>
+              </div>
               <label>Tool ID<input defaultValue="TOOL-1034" /></label>
               <label>Serial Number<input defaultValue="SN-928441" /></label>
+              <div className="operator-terminal-unit-switch" role="group" aria-label="Dimensions unit">
+                <span>Dimensions</span>
+                <div>
+                  <button className={dimensionUnit === 'in' ? 'active' : ''} type="button" onClick={() => setDimensionUnit('in')}>Inches</button>
+                  <button className={dimensionUnit === 'mm' ? 'active' : ''} type="button" onClick={() => setDimensionUnit('mm')}>Millimeters</button>
+                </div>
+              </div>
               <fieldset>
                 <legend>Before Sharpening</legend>
-                <label>Notch<input placeholder="0.000" inputMode="decimal" /></label>
-                <label>Tooth Length<input placeholder="0.000" inputMode="decimal" /></label>
+                <label>Notch<span className="operator-terminal-measure-field"><input placeholder="0.000" inputMode="decimal" /><em>{dimensionUnit}</em></span></label>
+                <label>Tooth Length<span className="operator-terminal-measure-field"><input placeholder="0.000" inputMode="decimal" /><em>{dimensionUnit}</em></span></label>
               </fieldset>
               <fieldset>
                 <legend>Tooth Damage</legend>
-                <div className="operator-terminal-damage-options">
-                  {['A', 'B', 'C'].map((option) => (
-                    <label key={option}><input type="checkbox" />{option}</label>
-                  ))}
+                <div className="operator-terminal-damage-capture">
+                  <div className="operator-terminal-damage-options">
+                    {['A', 'B', 'C'].map((option) => (
+                      <label key={option}>{option}<input placeholder="0" inputMode="numeric" /></label>
+                    ))}
+                  </div>
+                  <button type="button" className="operator-terminal-photo">
+                    <Camera size={22} />
+                    Damage Photo
+                  </button>
                 </div>
-                <button type="button" className="operator-terminal-photo">
-                  <Camera size={22} />
-                  Damage Photo
-                </button>
               </fieldset>
               <fieldset>
                 <legend>Sharpening Data</legend>
-                <label>Stock to Remove<input placeholder="0.000" inputMode="decimal" /></label>
+                <label>Stock to Remove<span className="operator-terminal-measure-field"><input placeholder="0.000" inputMode="decimal" /><em>{dimensionUnit}</em></span></label>
               </fieldset>
               <fieldset>
                 <legend>After Sharpening</legend>
-                <label>Tooth Length<input placeholder="0.000" inputMode="decimal" /></label>
+                <label>Tooth Length<span className="operator-terminal-measure-field"><input placeholder="0.000" inputMode="decimal" /><em>{dimensionUnit}</em></span></label>
               </fieldset>
             </div>
+            ) : (
+              <div className="operator-terminal-trace-disabled">
+                <ClipboardCheck size={30} />
+                <strong>Part traceability disabled</strong>
+                <span>Capture will be enabled when this station has an assigned Production Order.</span>
+              </div>
+            )}
           </section>
         </main>
       </div>
@@ -464,4 +732,65 @@ export function OperatorTerminalWorkspace({ onNavigate }: OperatorTerminalProps)
 
 function ActivityPulse() {
   return <span className="operator-terminal-pulse" aria-hidden="true"><Clock3 size={16} /></span>;
+}
+
+function OperatorTerminalDropdown({
+  ariaLabel,
+  value,
+  options,
+  onChange,
+}: {
+  ariaLabel: string;
+  value: string;
+  options: Array<{ value: string; label: string }>;
+  onChange: (value: string) => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const rootRef = React.useRef<HTMLDivElement | null>(null);
+  const selected = options.find((option) => option.value === value) ?? options[0];
+
+  React.useEffect(() => {
+    if (!open) return undefined;
+    const handlePointerDown = (event: PointerEvent) => {
+      if (rootRef.current?.contains(event.target as Node)) return;
+      setOpen(false);
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, [open]);
+
+  return (
+    <div className="operator-terminal-dropdown" ref={rootRef}>
+      <button
+        className="operator-terminal-dropdown-trigger"
+        type="button"
+        aria-label={ariaLabel}
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <span>{selected?.label ?? 'Select'}</span>
+        <ChevronDown size={16} />
+      </button>
+      {open ? (
+        <div className="operator-terminal-dropdown-menu" role="listbox" aria-label={ariaLabel}>
+          {options.map((option) => (
+            <button
+              className={option.value === selected?.value ? 'active' : ''}
+              type="button"
+              key={option.value}
+              role="option"
+              aria-selected={option.value === selected?.value}
+              onClick={() => {
+                onChange(option.value);
+                setOpen(false);
+              }}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
 }
