@@ -6,6 +6,7 @@ import {
   ArrowRight,
   ArrowLeft,
   Blocks,
+  Building2,
   Cable,
   Calculator,
   CalendarClock,
@@ -29,12 +30,15 @@ import {
   Menu,
   Network,
   Pencil,
+  Plus,
   RadioTower,
   Rocket,
   ServerCog,
   ShieldCheck,
   Star,
   TerminalSquare,
+  UserPlus,
+  Users,
   Workflow,
   Wrench,
   X,
@@ -124,7 +128,148 @@ type AppUser = {
   avatarUrl?: string;
 };
 
+type ManufacturingOrganizationRole = 'Owner' | 'Admin' | 'Operator' | 'Viewer';
+
+type ManufacturingOrganization = {
+  id: string;
+  name: string;
+  inviteCode: string;
+  logoUrl: string;
+  role: ManufacturingOrganizationRole;
+  inviteRole: ManufacturingOrganizationInviteRole;
+  memberCount: number;
+};
+
+type ManufacturingOrganizationInviteRole = Extract<ManufacturingOrganizationRole, 'Admin' | 'Operator' | 'Viewer'>;
+
+type ManufacturingOrganizationMemberRow = {
+  organization_id: string;
+  role: ManufacturingOrganizationRole;
+};
+
+type ManufacturingOrganizationRow = {
+  id: string;
+  name: string;
+  logo_url: string | null;
+};
+
+type ManufacturingOrganizationInviteRow = {
+  organization_id: string;
+  code: string;
+  default_role: ManufacturingOrganizationInviteRole;
+};
+
+type ManufacturingOrganizationMember = {
+  id: string;
+  userId: string;
+  role: ManufacturingOrganizationRole;
+};
+
+type ManufacturingOrganizationMemberTableRow = {
+  id: string;
+  user_id: string;
+  role: ManufacturingOrganizationRole;
+};
+
 type ProfileLoadState = 'idle' | 'loading' | 'loaded' | 'error';
+
+const getManufacturingOrganizationStorageKey = (userId: string) => `yvimo-manufacturing-organization:${userId}`;
+
+function createManufacturingInviteCode(name: string) {
+  const prefix = name
+    .replace(/[^a-z0-9]/gi, '')
+    .slice(0, 4)
+    .toUpperCase()
+    .padEnd(4, 'YVI');
+  const suffix = Math.random().toString(36).slice(2, 8).toUpperCase();
+  return `${prefix}-${suffix}`;
+}
+
+function getManufacturingOrganizationNameSuggestion(user: AppUser) {
+  return user.company?.trim() || `${user.name.split(' ')[0] || 'YVIMO'} Manufacturing`;
+}
+
+function isLegacyDefaultManufacturingOrganization(user: AppUser, organization: Partial<ManufacturingOrganization>) {
+  return organization.id === `local-${user.id}`
+    && organization.name === getManufacturingOrganizationNameSuggestion(user)
+    && (organization.role ?? 'Owner') === 'Owner'
+    && Math.max(1, Number(organization.memberCount) || 1) === 1
+    && !organization.logoUrl;
+}
+
+function loadManufacturingOrganization(user: AppUser): ManufacturingOrganization | null {
+  if (typeof window === 'undefined') return null;
+
+  try {
+    const storageKey = getManufacturingOrganizationStorageKey(user.id);
+    const storedOrganization = window.localStorage.getItem(storageKey);
+    if (!storedOrganization) return null;
+    const parsedOrganization = JSON.parse(storedOrganization) as Partial<ManufacturingOrganization>;
+    if (!parsedOrganization.name || !parsedOrganization.inviteCode) return null;
+    if (isLegacyDefaultManufacturingOrganization(user, parsedOrganization)) {
+      window.localStorage.removeItem(storageKey);
+      return null;
+    }
+    return {
+      id: parsedOrganization.id || `local-${user.id}`,
+      name: parsedOrganization.name,
+      inviteCode: parsedOrganization.inviteCode,
+      logoUrl: parsedOrganization.logoUrl || '',
+      role: parsedOrganization.role || 'Owner',
+      inviteRole: parsedOrganization.inviteRole || 'Operator',
+      memberCount: Math.max(1, Number(parsedOrganization.memberCount) || 1),
+    };
+  } catch (error) {
+    console.warn('Unable to load manufacturing organization', error);
+    return null;
+  }
+}
+
+async function loadSupabaseManufacturingOrganization(userId: string): Promise<ManufacturingOrganization | null> {
+  const { data: memberRows, error: memberError } = await supabase
+    .from('manufacturing_organization_members')
+    .select('organization_id, role')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: true })
+    .limit(1);
+
+  if (memberError) throw memberError;
+  const member = (memberRows?.[0] ?? null) as ManufacturingOrganizationMemberRow | null;
+  if (!member) return null;
+
+  const { data: organizationRow, error: organizationError } = await supabase
+    .from('manufacturing_organizations')
+    .select('id, name, logo_url')
+    .eq('id', member.organization_id)
+    .single();
+
+  if (organizationError) throw organizationError;
+
+  const { data: inviteRows } = await supabase
+    .from('manufacturing_organization_invites')
+    .select('organization_id, code, default_role')
+    .eq('organization_id', member.organization_id)
+    .eq('active', true)
+    .limit(1);
+
+  const { count } = await supabase
+    .from('manufacturing_organization_members')
+    .select('id', { count: 'exact', head: true })
+    .eq('organization_id', member.organization_id);
+
+  const organization = organizationRow as ManufacturingOrganizationRow;
+  const invite = (inviteRows?.[0] ?? null) as ManufacturingOrganizationInviteRow | null;
+
+  return {
+    id: organization.id,
+    name: organization.name,
+    logoUrl: organization.logo_url ?? '',
+    inviteCode: invite?.code ?? createManufacturingInviteCode(organization.name),
+    role: member.role,
+    inviteRole: invite?.default_role ?? 'Operator',
+    memberCount: Math.max(1, count ?? 1),
+  };
+}
 
 function normalizeNonNegativeNumber(value: number | null | undefined, fallback = 0) {
   return Number.isFinite(value) ? Math.max(0, Math.round(Number(value))) : fallback;
@@ -2029,6 +2174,461 @@ function LoggedDashboardPage({
   const profileLevelProgress = user.profileLevelProgress;
   const profileLevel = user.profileLevel;
   const yvimoPoints = user.yvimoPoints;
+  const [manufacturingOrganization, setManufacturingOrganization] = React.useState<ManufacturingOrganization | null>(() => loadManufacturingOrganization(user));
+  const [manufacturingOrganizationName, setManufacturingOrganizationName] = React.useState(getManufacturingOrganizationNameSuggestion(user));
+  const [manufacturingJoinCode, setManufacturingJoinCode] = React.useState('');
+  const [manufacturingOrganizationMessage, setManufacturingOrganizationMessage] = React.useState('');
+  const [manufacturingOrganizationDialogOpen, setManufacturingOrganizationDialogOpen] = React.useState(false);
+  const [manufacturingInviteRole, setManufacturingInviteRole] = React.useState<ManufacturingOrganizationInviteRole>('Operator');
+  const [manufacturingOrganizationUploadingLogo, setManufacturingOrganizationUploadingLogo] = React.useState(false);
+  const [manufacturingOrganizationMode, setManufacturingOrganizationMode] = React.useState<'manage' | 'edit' | 'switch'>('manage');
+  const [manufacturingOrganizationMembers, setManufacturingOrganizationMembers] = React.useState<ManufacturingOrganizationMember[]>([]);
+  const [manufacturingSwitchDialogOpen, setManufacturingSwitchDialogOpen] = React.useState(false);
+  const [manufacturingSwitchAction, setManufacturingSwitchAction] = React.useState<'leave' | 'transfer' | 'disband'>('leave');
+  const [manufacturingNewOwnerUserId, setManufacturingNewOwnerUserId] = React.useState('');
+  const [manufacturingSwitchBusy, setManufacturingSwitchBusy] = React.useState(false);
+
+  React.useEffect(() => {
+    const nextOrganization = loadManufacturingOrganization(user);
+    setManufacturingOrganization(nextOrganization);
+    setManufacturingOrganizationName(nextOrganization?.name || getManufacturingOrganizationNameSuggestion(user));
+    setManufacturingJoinCode('');
+    setManufacturingOrganizationMessage('');
+    setManufacturingOrganizationMode(nextOrganization ? 'manage' : 'switch');
+  }, [user.id]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    loadSupabaseManufacturingOrganization(user.id)
+      .then((organization) => {
+        if (cancelled || !organization) return;
+        setManufacturingOrganization(organization);
+        setManufacturingOrganizationName(organization.name);
+        setManufacturingInviteRole(organization.inviteRole);
+        setManufacturingOrganizationMessage('');
+      })
+      .catch((error) => {
+        console.warn('Unable to load Supabase manufacturing organization; using local fallback', error);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user.id]);
+
+  React.useEffect(() => {
+    try {
+      if (manufacturingOrganization) {
+        window.localStorage.setItem(getManufacturingOrganizationStorageKey(user.id), JSON.stringify(manufacturingOrganization));
+      } else {
+        window.localStorage.removeItem(getManufacturingOrganizationStorageKey(user.id));
+      }
+    } catch (error) {
+      console.warn('Unable to save manufacturing organization', error);
+    }
+  }, [manufacturingOrganization, user.id]);
+
+  React.useEffect(() => {
+    if (!manufacturingOrganization || manufacturingOrganization.id.startsWith('local-') || manufacturingOrganization.id.startsWith('joined-')) {
+      setManufacturingOrganizationMembers(manufacturingOrganization ? [{
+        id: 'local-current-user',
+        userId: user.id,
+        role: manufacturingOrganization.role,
+      }] : []);
+      return;
+    }
+
+    let cancelled = false;
+    supabase
+      .from('manufacturing_organization_members')
+      .select('id, user_id, role')
+      .eq('organization_id', manufacturingOrganization.id)
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) throw error;
+        const members = ((data ?? []) as ManufacturingOrganizationMemberTableRow[]).map((member) => ({
+          id: member.id,
+          userId: member.user_id,
+          role: member.role,
+        }));
+        setManufacturingOrganizationMembers(members);
+        const nextOwner = members.find((member) => member.userId !== user.id);
+        setManufacturingNewOwnerUserId((currentOwnerId) => currentOwnerId || nextOwner?.userId || '');
+      })
+      .catch((error) => {
+        console.warn('Unable to load manufacturing organization members', error);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [manufacturingOrganization?.id, manufacturingOrganization?.role, user.id]);
+
+  const createManufacturingOrganization = async () => {
+    const nextName = manufacturingOrganizationName.trim();
+    if (!nextName) {
+      setManufacturingOrganizationMessage('Enter an organization name first.');
+      return;
+    }
+
+    const localOrganization: ManufacturingOrganization = {
+      id: `local-${Date.now()}`,
+      name: nextName,
+      inviteCode: createManufacturingInviteCode(nextName),
+      logoUrl: manufacturingOrganization?.logoUrl ?? '',
+      role: 'Owner',
+      inviteRole: manufacturingInviteRole,
+      memberCount: 1,
+    };
+
+    try {
+      const { data: organization, error: organizationError } = await supabase
+        .from('manufacturing_organizations')
+        .insert({ name: nextName, created_by: user.id })
+        .select('id, name, logo_url')
+        .single();
+
+      if (organizationError) throw organizationError;
+
+      const organizationRow = organization as ManufacturingOrganizationRow;
+      const nextInviteCode = createManufacturingInviteCode(nextName);
+
+      const { error: memberError } = await supabase
+        .from('manufacturing_organization_members')
+        .insert({ organization_id: organizationRow.id, user_id: user.id, role: 'Owner' });
+
+      if (memberError) throw memberError;
+
+      const { error: inviteError } = await supabase
+        .from('manufacturing_organization_invites')
+        .insert({
+          organization_id: organizationRow.id,
+          code: nextInviteCode,
+          default_role: manufacturingInviteRole,
+          created_by: user.id,
+        });
+
+      if (inviteError) throw inviteError;
+
+      setManufacturingOrganization({
+        id: organizationRow.id,
+        name: organizationRow.name,
+        logoUrl: organizationRow.logo_url ?? '',
+        inviteCode: nextInviteCode,
+        role: 'Owner',
+        inviteRole: manufacturingInviteRole,
+        memberCount: 1,
+      });
+      setManufacturingOrganizationMode('manage');
+      setManufacturingOrganizationMessage('Organization created in Supabase.');
+    } catch (error) {
+      console.warn('Unable to create Supabase manufacturing organization; using local fallback', error);
+      setManufacturingOrganization(localOrganization);
+      setManufacturingOrganizationMode('manage');
+      setManufacturingOrganizationMessage('Organization created locally. Run migration 034 to sync with Supabase.');
+    }
+  };
+
+  const joinManufacturingOrganization = async () => {
+    const nextCode = manufacturingJoinCode.trim().toUpperCase();
+    if (!nextCode) {
+      setManufacturingOrganizationMessage('Enter an invite code to join.');
+      return;
+    }
+
+    try {
+      const { data: invite, error: inviteError } = await supabase
+        .from('manufacturing_organization_invites')
+        .select('organization_id, code, default_role')
+        .eq('code', nextCode)
+        .eq('active', true)
+        .single();
+
+      if (inviteError) throw inviteError;
+      const inviteRow = invite as ManufacturingOrganizationInviteRow;
+
+      const { error: memberError } = await supabase
+        .from('manufacturing_organization_members')
+        .insert({
+          organization_id: inviteRow.organization_id,
+          user_id: user.id,
+          role: inviteRow.default_role,
+        });
+
+      if (memberError) throw memberError;
+
+      const organization = await loadSupabaseManufacturingOrganization(user.id);
+      if (organization) {
+        setManufacturingOrganization(organization);
+        setManufacturingOrganizationName(organization.name);
+        setManufacturingInviteRole(organization.inviteRole);
+      }
+      setManufacturingOrganizationMode('manage');
+      setManufacturingOrganizationMessage('Joined organization in Supabase.');
+    } catch (error) {
+      console.warn('Unable to join Supabase manufacturing organization; using local fallback', error);
+      const codeName = nextCode.split('-')[0] || 'TEAM';
+      setManufacturingOrganization({
+        id: `joined-${nextCode}`,
+        name: `${codeName} Organization`,
+        inviteCode: nextCode,
+        logoUrl: '',
+        role: 'Operator',
+        inviteRole: 'Operator',
+        memberCount: 2,
+      });
+      setManufacturingOrganizationName(`${codeName} Organization`);
+      setManufacturingOrganizationMode('manage');
+      setManufacturingOrganizationMessage('Joined locally. Run migration 034 to sync with Supabase.');
+    }
+  };
+
+  const saveManufacturingOrganizationName = async () => {
+    const nextName = manufacturingOrganizationName.trim();
+    if (!manufacturingOrganization || !nextName) {
+      setManufacturingOrganizationMessage('Select an organization and enter a name.');
+      return;
+    }
+
+    setManufacturingOrganization((currentOrganization) => currentOrganization ? ({ ...currentOrganization, name: nextName }) : currentOrganization);
+
+    try {
+      const { error } = await supabase
+        .from('manufacturing_organizations')
+        .update({ name: nextName })
+        .eq('id', manufacturingOrganization.id);
+
+      if (error) throw error;
+      setManufacturingOrganizationMode('manage');
+      setManufacturingOrganizationMessage('Organization updated.');
+    } catch (error) {
+      console.warn('Unable to update manufacturing organization', error);
+      setManufacturingOrganizationMode('manage');
+      setManufacturingOrganizationMessage('Organization name updated locally.');
+    }
+  };
+
+  const resetManufacturingOrganizationSelection = (message = 'Create a new organization or join with an invite code.') => {
+    setManufacturingOrganization(null);
+    setManufacturingJoinCode('');
+    setManufacturingOrganizationName(getManufacturingOrganizationNameSuggestion(user));
+    setManufacturingOrganizationMode('switch');
+    setManufacturingOrganizationMessage(message);
+    setManufacturingSwitchDialogOpen(false);
+    setManufacturingSwitchAction('leave');
+    setManufacturingNewOwnerUserId('');
+    setManufacturingOrganizationMembers([]);
+  };
+
+  const openManufacturingSwitchConfirmation = () => {
+    if (!manufacturingOrganization) {
+      resetManufacturingOrganizationSelection();
+      return;
+    }
+
+    const nextMembers = manufacturingOrganizationMembers.filter((member) => member.userId !== user.id);
+    const ownerAction = nextMembers.length > 0 ? 'transfer' : 'disband';
+    setManufacturingSwitchAction(manufacturingOrganization.role === 'Owner' ? ownerAction : 'leave');
+    setManufacturingNewOwnerUserId((currentOwnerId) => currentOwnerId || nextMembers[0]?.userId || '');
+    setManufacturingSwitchDialogOpen(true);
+  };
+
+  const confirmManufacturingOrganizationSwitch = async () => {
+    if (!manufacturingOrganization) {
+      resetManufacturingOrganizationSelection();
+      return;
+    }
+
+    const isOwner = manufacturingOrganization.role === 'Owner';
+    const isSupabaseOrganization = !manufacturingOrganization.id.startsWith('local-') && !manufacturingOrganization.id.startsWith('joined-');
+
+    if (isOwner && manufacturingSwitchAction === 'transfer' && !manufacturingNewOwnerUserId) {
+      setManufacturingOrganizationMessage('Select a new Owner before switching organizations.');
+      return;
+    }
+
+    setManufacturingSwitchBusy(true);
+    try {
+      if (isSupabaseOrganization) {
+        if (isOwner && manufacturingSwitchAction === 'transfer') {
+          const { error: transferError } = await supabase
+            .from('manufacturing_organization_members')
+            .update({ role: 'Owner' })
+            .eq('organization_id', manufacturingOrganization.id)
+            .eq('user_id', manufacturingNewOwnerUserId);
+
+          if (transferError) throw transferError;
+
+          const { error: leaveError } = await supabase
+            .from('manufacturing_organization_members')
+            .delete()
+            .eq('organization_id', manufacturingOrganization.id)
+            .eq('user_id', user.id);
+
+          if (leaveError) throw leaveError;
+        } else if (isOwner && manufacturingSwitchAction === 'disband') {
+          const { error: inviteError } = await supabase
+            .from('manufacturing_organization_invites')
+            .update({ active: false })
+            .eq('organization_id', manufacturingOrganization.id);
+
+          if (inviteError) throw inviteError;
+
+          const { error: otherMembersError } = await supabase
+            .from('manufacturing_organization_members')
+            .delete()
+            .eq('organization_id', manufacturingOrganization.id)
+            .neq('user_id', user.id);
+
+          if (otherMembersError) throw otherMembersError;
+
+          const { error: currentMemberError } = await supabase
+            .from('manufacturing_organization_members')
+            .delete()
+            .eq('organization_id', manufacturingOrganization.id)
+            .eq('user_id', user.id);
+
+          if (currentMemberError) throw currentMemberError;
+        } else {
+          const { error: leaveError } = await supabase
+            .from('manufacturing_organization_members')
+            .delete()
+            .eq('organization_id', manufacturingOrganization.id)
+            .eq('user_id', user.id);
+
+          if (leaveError) throw leaveError;
+        }
+      }
+
+      resetManufacturingOrganizationSelection(
+        isOwner && manufacturingSwitchAction === 'disband'
+          ? 'Organization disbanded. Members and active invites were removed; historical data remains in Supabase.'
+          : 'Organization switched. Choose or join another organization.'
+      );
+    } catch (error) {
+      console.warn('Unable to switch manufacturing organization', error);
+      setManufacturingOrganizationMessage('Could not switch organization. Check Supabase permissions.');
+    } finally {
+      setManufacturingSwitchBusy(false);
+    }
+  };
+
+  const regenerateManufacturingInviteCode = async () => {
+    if (!manufacturingOrganization) {
+      setManufacturingOrganizationMessage('Create or join an organization first.');
+      return;
+    }
+    const nextInviteCode = createManufacturingInviteCode(manufacturingOrganization.name);
+    setManufacturingOrganization((currentOrganization) => currentOrganization ? ({
+      ...currentOrganization,
+      inviteCode: nextInviteCode,
+      inviteRole: manufacturingInviteRole,
+    }) : currentOrganization);
+
+    try {
+      await supabase
+        .from('manufacturing_organization_invites')
+        .update({ active: false })
+        .eq('organization_id', manufacturingOrganization.id)
+        .eq('active', true);
+
+      const { error } = await supabase
+        .from('manufacturing_organization_invites')
+        .insert({
+          organization_id: manufacturingOrganization.id,
+          code: nextInviteCode,
+          default_role: manufacturingInviteRole,
+          created_by: user.id,
+        });
+
+      if (error) throw error;
+      setManufacturingOrganizationMessage('New Supabase invite code generated.');
+    } catch (error) {
+      console.warn('Unable to regenerate Supabase invite code', error);
+      setManufacturingOrganizationMessage('New local invite code generated.');
+    }
+  };
+
+  const copyManufacturingInviteCode = async () => {
+    if (!manufacturingOrganization) {
+      setManufacturingOrganizationMessage('Create or join an organization first.');
+      return;
+    }
+    try {
+      await navigator.clipboard?.writeText(manufacturingOrganization.inviteCode);
+      setManufacturingOrganizationMessage('Invite code copied.');
+    } catch (error) {
+      console.warn('Unable to copy manufacturing invite code', error);
+      setManufacturingOrganizationMessage(`Invite code: ${manufacturingOrganization.inviteCode}`);
+    }
+  };
+
+  const updateManufacturingInviteRole = async (role: ManufacturingOrganizationInviteRole) => {
+    setManufacturingInviteRole(role);
+    setManufacturingOrganization((currentOrganization) => currentOrganization ? ({ ...currentOrganization, inviteRole: role }) : currentOrganization);
+    if (!manufacturingOrganization) return;
+
+    try {
+      const { error } = await supabase
+        .from('manufacturing_organization_invites')
+        .update({ default_role: role })
+        .eq('organization_id', manufacturingOrganization.id)
+        .eq('active', true);
+
+      if (error) throw error;
+      setManufacturingOrganizationMessage(`Invite role set to ${role}.`);
+    } catch (error) {
+      console.warn('Unable to update manufacturing invite role', error);
+      setManufacturingOrganizationMessage(`Invite role set locally to ${role}.`);
+    }
+  };
+
+  const uploadManufacturingOrganizationLogo = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] ?? null;
+    event.target.value = '';
+
+    if (!file) return;
+    if (!manufacturingOrganization) {
+      setManufacturingOrganizationMessage('Create or join an organization before uploading a logo.');
+      return;
+    }
+    if (!file.type.startsWith('image/')) {
+      setManufacturingOrganizationMessage('Choose an image file.');
+      return;
+    }
+
+    setManufacturingOrganizationUploadingLogo(true);
+    try {
+      const extension = file.name.split('.').pop()?.toLowerCase() || 'png';
+      const filePath = `${user.id}/${manufacturingOrganization.id}-${Date.now()}.${extension}`;
+      const { error: uploadError } = await supabase.storage
+        .from('manufacturing-organization-logos')
+        .upload(filePath, file, { upsert: true, contentType: file.type });
+
+      if (uploadError) throw uploadError;
+
+      const { data: publicUrlData } = supabase.storage
+        .from('manufacturing-organization-logos')
+        .getPublicUrl(filePath);
+
+      const logoUrl = publicUrlData.publicUrl;
+      const { error: updateError } = await supabase
+        .from('manufacturing_organizations')
+        .update({ logo_url: logoUrl })
+        .eq('id', manufacturingOrganization.id);
+
+      if (updateError) throw updateError;
+
+      setManufacturingOrganization((currentOrganization) => currentOrganization ? ({ ...currentOrganization, logoUrl }) : currentOrganization);
+      setManufacturingOrganizationMessage('Organization logo updated.');
+    } catch (error) {
+      console.warn('Unable to upload manufacturing organization logo', error);
+      setManufacturingOrganizationMessage('Logo upload failed. Check migration 034 and storage policies.');
+    } finally {
+      setManufacturingOrganizationUploadingLogo(false);
+    }
+  };
+
   React.useEffect(() => {
     if (!avatarDialogOpen) {
       setAvatarMessage(null);
@@ -2833,6 +3433,190 @@ function LoggedDashboardPage({
     }
   };
 
+  const manufacturingOrganizationTrigger = (
+    <button className="manufacturing-organization-trigger" type="button" onClick={() => setManufacturingOrganizationDialogOpen(true)}>
+      <span className="manufacturing-organization-icon">
+        {manufacturingOrganization?.logoUrl ? <img src={manufacturingOrganization.logoUrl} alt="" aria-hidden="true" /> : <Building2 size={19} />}
+      </span>
+      <span>
+        <em>Organization</em>
+        <strong>{manufacturingOrganization?.name || 'No organization'}</strong>
+        <small>
+          {manufacturingOrganization
+            ? `${manufacturingOrganization.role} access · ${manufacturingOrganization.memberCount} member${manufacturingOrganization.memberCount === 1 ? '' : 's'}`
+            : 'Create or join a team workspace'}
+        </small>
+      </span>
+    </button>
+  );
+
+  const assignableManufacturingOrganizationOwners = manufacturingOrganizationMembers.filter((member) => member.userId !== user.id);
+
+  const manufacturingOrganizationDialog = manufacturingOrganizationDialogOpen ? (
+    <div className="manufacturing-organization-dialog-backdrop" role="presentation" onMouseDown={() => setManufacturingOrganizationDialogOpen(false)}>
+      <section
+        className="manufacturing-organization-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="manufacturing-organization-dialog-title"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <button className="manufacturing-organization-dialog-close" type="button" aria-label="Close organization menu" onClick={() => setManufacturingOrganizationDialogOpen(false)}>
+          <X size={18} />
+        </button>
+        <div className="manufacturing-organization-dialog-heading">
+          <label className="manufacturing-organization-logo-control">
+            <span className="manufacturing-organization-icon">
+              {manufacturingOrganization?.logoUrl ? <img src={manufacturingOrganization.logoUrl} alt="" aria-hidden="true" /> : <Building2 size={22} />}
+            </span>
+            <input type="file" accept="image/*" onChange={uploadManufacturingOrganizationLogo} disabled={manufacturingOrganizationUploadingLogo} />
+          </label>
+          <div>
+            <span>Manufacturing organization</span>
+            <h2 id="manufacturing-organization-dialog-title">{manufacturingOrganization?.name || 'No organization selected'}</h2>
+            <p>{manufacturingOrganizationUploadingLogo ? 'Uploading logo...' : manufacturingOrganization ? `${manufacturingOrganization.role} access · ${manufacturingOrganization.memberCount} member${manufacturingOrganization.memberCount === 1 ? '' : 's'} · click logo to change it` : 'Create an organization or join one with an invite code.'}</p>
+          </div>
+        </div>
+        <div className="manufacturing-organization-code" aria-label="Organization invite code">
+          <span>Invite code</span>
+          <strong>{manufacturingOrganization?.inviteCode || 'Create or join first'}</strong>
+        </div>
+        <fieldset className="manufacturing-organization-roles" aria-label="Invite permission">
+          <legend>Invite permission</legend>
+          {(['Admin', 'Operator', 'Viewer'] as ManufacturingOrganizationInviteRole[]).map((role) => (
+            <button
+              type="button"
+              className={role === manufacturingInviteRole ? 'active' : ''}
+              key={role}
+              onClick={() => void updateManufacturingInviteRole(role)}
+            >
+              {role}
+            </button>
+          ))}
+        </fieldset>
+        {manufacturingOrganization && manufacturingOrganizationMode !== 'switch' ? (
+          <div className="manufacturing-organization-manage">
+            {manufacturingOrganizationMode === 'edit' ? (
+              <>
+                <label>
+                  <span>Organization name</span>
+                  <input value={manufacturingOrganizationName} onChange={(event) => setManufacturingOrganizationName(event.target.value)} placeholder="Organization name" />
+                </label>
+                <button type="button" onClick={() => void saveManufacturingOrganizationName()}>Save changes</button>
+                <button type="button" onClick={() => setManufacturingOrganizationMode('manage')}>Cancel</button>
+              </>
+            ) : (
+              <>
+                <button type="button" onClick={() => setManufacturingOrganizationMode('edit')}><Pencil size={15} /> Edit Organization</button>
+                <button type="button" onClick={() => setManufacturingOrganizationMessage('Members view will show users and roles after the member directory is connected.')}><Users size={15} /> View Members</button>
+                <button type="button" onClick={openManufacturingSwitchConfirmation}>Switch Organization</button>
+              </>
+            )}
+          </div>
+        ) : (
+          <div className="manufacturing-organization-controls">
+            <label>
+              <span>Create organization</span>
+              <input value={manufacturingOrganizationName} onChange={(event) => setManufacturingOrganizationName(event.target.value)} placeholder="Organization name" />
+            </label>
+            <button type="button" onClick={() => void createManufacturingOrganization()}><Plus size={15} /> Create</button>
+            <label>
+              <span>Join organization</span>
+              <input value={manufacturingJoinCode} onChange={(event) => setManufacturingJoinCode(event.target.value.toUpperCase())} placeholder="CODE-123ABC" />
+            </label>
+            <button type="button" onClick={() => void joinManufacturingOrganization()}><UserPlus size={15} /> Join</button>
+          </div>
+        )}
+        <div className="manufacturing-organization-actions">
+          <button type="button" onClick={copyManufacturingInviteCode}><Users size={15} /> Copy invite</button>
+          <button type="button" onClick={regenerateManufacturingInviteCode}>New code</button>
+          <span>{manufacturingOrganizationMessage || 'Shared MES data will use this organization context.'}</span>
+        </div>
+      </section>
+      {manufacturingSwitchDialogOpen ? (
+        <section
+          className="manufacturing-organization-switch-confirm"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="manufacturing-organization-switch-title"
+          onMouseDown={(event) => event.stopPropagation()}
+        >
+          <div>
+            <span>Organization switch</span>
+            <h3 id="manufacturing-organization-switch-title">Confirm switch</h3>
+            <p>
+              {manufacturingOrganization?.role === 'Owner'
+                ? 'Owner access needs a clean handoff before you leave this organization.'
+                : 'This removes your membership from the current organization and lets you choose another one.'}
+            </p>
+          </div>
+          {manufacturingOrganization?.role === 'Owner' ? (
+            <>
+              <div className="manufacturing-organization-switch-options">
+                {assignableManufacturingOrganizationOwners.length > 0 ? (
+                  <label className={manufacturingSwitchAction === 'transfer' ? 'active' : ''}>
+                    <input
+                      type="radio"
+                      name="manufacturing-switch-action"
+                      checked={manufacturingSwitchAction === 'transfer'}
+                      onChange={() => setManufacturingSwitchAction('transfer')}
+                    />
+                    <span>Assign another Owner</span>
+                  </label>
+                ) : null}
+                <label className={manufacturingSwitchAction === 'disband' ? 'active danger' : 'danger'}>
+                  <input
+                    type="radio"
+                    name="manufacturing-switch-action"
+                    checked={manufacturingSwitchAction === 'disband'}
+                    onChange={() => setManufacturingSwitchAction('disband')}
+                  />
+                  <span>Disband organization</span>
+                </label>
+              </div>
+              {manufacturingSwitchAction === 'transfer' ? (
+                <label className="manufacturing-organization-owner-select">
+                  <span>New Owner</span>
+                  <select value={manufacturingNewOwnerUserId} onChange={(event) => setManufacturingNewOwnerUserId(event.target.value)}>
+                    <option value="">Select member</option>
+                    {assignableManufacturingOrganizationOwners.map((member) => (
+                      <option key={member.id} value={member.userId}>
+                        {member.userId.slice(0, 8)} · {member.role}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                <p className="manufacturing-organization-switch-warning">
+                  Disbanding removes all organization members and disables active invite codes. The organization record and historical MES data stay in Supabase.
+                </p>
+              )}
+            </>
+          ) : (
+            <p className="manufacturing-organization-switch-warning">
+              You can join or create another organization right after leaving this one.
+            </p>
+          )}
+          <div className="manufacturing-organization-switch-actions">
+            <button type="button" onClick={() => setManufacturingSwitchDialogOpen(false)} disabled={manufacturingSwitchBusy}>Cancel</button>
+            <button
+              type="button"
+              className={manufacturingSwitchAction === 'disband' ? 'danger' : ''}
+              onClick={() => void confirmManufacturingOrganizationSwitch()}
+              disabled={manufacturingSwitchBusy || (manufacturingOrganization?.role === 'Owner' && manufacturingSwitchAction === 'transfer' && !manufacturingNewOwnerUserId)}
+            >
+              {manufacturingSwitchBusy
+                ? 'Working...'
+                : manufacturingSwitchAction === 'disband'
+                  ? 'Disband and switch'
+                  : 'Confirm switch'}
+            </button>
+          </div>
+        </section>
+      ) : null}
+    </div>
+  ) : null;
+
   return (
     <main className={['logged-shell', isOperatorTerminalPage ? 'operator-terminal-shell' : ''].filter(Boolean).join(' ')}>
       <aside className={['logged-sidebar', tabletSidebarExpanded ? 'tablet-expanded' : ''].filter(Boolean).join(' ')}>
@@ -3164,6 +3948,8 @@ function LoggedDashboardPage({
                 </div>
                 {isMesPage || isApsPage || isOperationsIntelligencePage ? (
               <>
+                {manufacturingOrganizationTrigger}
+                {manufacturingOrganizationDialog}
                 <section
                   className={[
                     'manufacturing-suite-stage',
@@ -3254,6 +4040,8 @@ function LoggedDashboardPage({
               </>
             ) : (
               <>
+                {manufacturingOrganizationTrigger}
+                {manufacturingOrganizationDialog}
                 <section
                   className={[
                     'manufacturing-suite-stage',
