@@ -22,6 +22,7 @@ import {
   fetchOperatorScrapEvents,
   fetchOperatorTerminalSnapshot,
   reportOperatorProduction,
+  saveOperatorTraceability,
   setOperatorTerminalState,
   switchOperatorActiveOrder,
   type OperatorScrapEvent,
@@ -43,6 +44,21 @@ type ReportEvent = {
   partName?: string;
   orderNumber?: string;
   reportedTotal?: number;
+};
+
+type TraceabilityFormState = {
+  client: string;
+  shipper: string;
+  reception: string;
+  toolId: string;
+  serialNumber: string;
+  beforeNotch: string;
+  beforeToothLength: string;
+  damageA: string;
+  damageB: string;
+  damageC: string;
+  stockToRemove: string;
+  afterToothLength: string;
 };
 
 const scrapReasons = [
@@ -120,10 +136,25 @@ const fallbackCurrentOrder: ProductionOrder = {
 };
 
 const dataCards = [
-  { label: 'Client', value: 'Client Name' },
-  { label: 'Shipper', value: 'SHIP-000245' },
-  { label: 'Reception', value: 'REC-000884' },
-];
+  { key: 'client', label: 'Client', value: 'Client Name' },
+  { key: 'shipper', label: 'Shipper', value: 'SHIP-000245' },
+  { key: 'reception', label: 'Reception', value: 'REC-000884' },
+] as const;
+
+const initialTraceabilityForm: TraceabilityFormState = {
+  client: 'Client Name',
+  shipper: 'SHIP-000245',
+  reception: 'REC-000884',
+  toolId: 'TOOL-1034',
+  serialNumber: 'SN-928441',
+  beforeNotch: '',
+  beforeToothLength: '',
+  damageA: '',
+  damageB: '',
+  damageC: '',
+  stockToRemove: '',
+  afterToothLength: '',
+};
 
 function formatToastTime() {
   return new Intl.DateTimeFormat('en-US', { hour: '2-digit', minute: '2-digit' }).format(new Date());
@@ -139,6 +170,26 @@ function formatEventTimestamp(timestamp: string) {
     hour: '2-digit',
     minute: '2-digit',
   }).format(date);
+}
+
+function parseTraceabilityNumber(value: string) {
+  const normalizedValue = value.trim();
+  if (!normalizedValue) return null;
+  const nextValue = Number(normalizedValue);
+  return Number.isFinite(nextValue) ? nextValue : null;
+}
+
+function getTraceabilityDamageCodes(form: TraceabilityFormState, reportType: 'good' | 'scrap', reason = '') {
+  const codes = ([
+    ['A', form.damageA],
+    ['B', form.damageB],
+    ['C', form.damageC],
+  ] as const)
+    .filter(([, value]) => Number(value) > 0)
+    .map(([code, value]) => `${code}:${value}`);
+
+  if (reportType === 'scrap' && reason) codes.push(`scrap:${reason}`);
+  return codes;
 }
 
 function ReasonModal({
@@ -366,6 +417,7 @@ export function OperatorTerminalWorkspace({ onNavigate }: OperatorTerminalProps)
   const [selectedStationCode, setSelectedStationCode] = React.useState('');
   const [dimensionUnit, setDimensionUnit] = React.useState<'in' | 'mm'>('in');
   const [templateId, setTemplateId] = React.useState('sharpening');
+  const [traceabilityForm, setTraceabilityForm] = React.useState<TraceabilityFormState>(initialTraceabilityForm);
   const [selectedShift, setSelectedShift] = React.useState<'1st' | '2nd' | '3rd'>('1st');
   const baseSnapshotOrder = snapshot?.currentOrder ?? fallbackCurrentOrder;
   const baseWorkCenterCode = snapshot?.workCenter?.code ?? baseSnapshotOrder.assignedWorkCenter;
@@ -454,10 +506,54 @@ export function OperatorTerminalWorkspace({ onNavigate }: OperatorTerminalProps)
     window.setTimeout(() => setToast(''), 2200);
   };
 
+  const setTraceField = (field: keyof TraceabilityFormState, value: string) => {
+    setTraceabilityForm((current) => ({ ...current, [field]: value }));
+  };
+
   const applyOrder = (order: ProductionOrder) => {
     setGoodQty(order.completedQuantity);
     setScrapQty(order.scrapQuantity);
     setState(order.status === 'running' ? 'running' : order.status === 'paused' ? 'paused' : order.status === 'completed' ? 'completed' : 'not-started');
+  };
+
+  const saveTraceabilityForUnit = async (
+    reportType: 'good' | 'scrap',
+    order: ProductionOrder,
+    reason = '',
+    comment = '',
+  ) => {
+    const reportedSequence = Math.max(1, order.completedQuantity + order.scrapQuantity);
+    await saveOperatorTraceability({
+      orderId: order.id,
+      stationCode,
+      templateId,
+      partLabel: `Piece ${reportedSequence}`,
+      toolId: traceabilityForm.toolId.trim() || undefined,
+      serialNumber: traceabilityForm.serialNumber.trim() || undefined,
+      dimensionsUnit: dimensionUnit,
+      beforeNotch: parseTraceabilityNumber(traceabilityForm.beforeNotch),
+      beforeToothLength: parseTraceabilityNumber(traceabilityForm.beforeToothLength),
+      damageCodes: getTraceabilityDamageCodes(traceabilityForm, reportType, reason),
+      stockToRemove: parseTraceabilityNumber(traceabilityForm.stockToRemove),
+      afterToothLength: parseTraceabilityNumber(traceabilityForm.afterToothLength),
+      payload: {
+        report_type: reportType,
+        piece_sequence: reportedSequence,
+        order_status: order.status,
+        order_number: order.orderNumber,
+        part_number: order.partNumber,
+        part_name: order.partName,
+        reason: reason || null,
+        comment: comment || null,
+        client: traceabilityForm.client,
+        shipper: traceabilityForm.shipper,
+        reception: traceabilityForm.reception,
+        station_name: stationName,
+        work_center_code: workCenterCode,
+        operator: stationOperator,
+        shift: selectedShift,
+      },
+    });
   };
 
   const localScrapEvents = React.useMemo<OperatorScrapEvent[]>(() => events
@@ -605,7 +701,13 @@ export function OperatorTerminalWorkspace({ onNavigate }: OperatorTerminalProps)
       applyOrder(order);
       syncSnapshotOrder(order);
       setEvents((current) => [{ type: 'good', timestamp: formatToastTime() }, ...current].slice(0, 8));
-      showToast('Good part reported');
+      try {
+        await saveTraceabilityForUnit('good', order);
+        showToast('Good part and traceability saved');
+      } catch (traceabilityError) {
+        console.error('Unable to save good traceability', traceabilityError);
+        showToast('Good part synced; traceability failed');
+      }
     } catch (error) {
       console.error('Unable to report good production', error);
       showToast('Could not sync good part');
@@ -650,7 +752,13 @@ export function OperatorTerminalWorkspace({ onNavigate }: OperatorTerminalProps)
             orderNumber: order.orderNumber,
             reportedTotal: order.completedQuantity + order.scrapQuantity,
           }, ...current].slice(0, 8));
-          showToast('Scrap reported');
+          try {
+            await saveTraceabilityForUnit('scrap', order, reason, comment);
+            showToast('Scrap and traceability saved');
+          } catch (traceabilityError) {
+            console.error('Unable to save scrap traceability', traceabilityError);
+            showToast('Scrap synced; traceability failed');
+          }
         } catch (error) {
           console.error('Unable to report scrap', error);
           showToast('Could not sync scrap');
@@ -952,7 +1060,7 @@ export function OperatorTerminalWorkspace({ onNavigate }: OperatorTerminalProps)
                 {dataCards.map((card) => (
                   <label key={card.label}>
                     {card.label}
-                    <input defaultValue={card.value} />
+                    <input value={traceabilityForm[card.key]} onChange={(event) => setTraceField(card.key, event.target.value)} />
                   </label>
                 ))}
                 <label>
@@ -975,8 +1083,8 @@ export function OperatorTerminalWorkspace({ onNavigate }: OperatorTerminalProps)
                 <span>Part</span>
                 <strong>{activePartSequence.toLocaleString()}</strong>
               </div>
-              <label>Tool ID<input defaultValue="TOOL-1034" /></label>
-              <label>Serial Number<input defaultValue="SN-928441" /></label>
+              <label>Tool ID<input value={traceabilityForm.toolId} onChange={(event) => setTraceField('toolId', event.target.value)} /></label>
+              <label>Serial Number<input value={traceabilityForm.serialNumber} onChange={(event) => setTraceField('serialNumber', event.target.value)} /></label>
               <div className="operator-terminal-unit-switch" role="group" aria-label="Dimensions unit">
                 <span>Dimensions</span>
                 <div>
@@ -986,16 +1094,16 @@ export function OperatorTerminalWorkspace({ onNavigate }: OperatorTerminalProps)
               </div>
               <fieldset>
                 <legend>Before Sharpening</legend>
-                <label>Notch<span className="operator-terminal-measure-field"><input placeholder="0.000" inputMode="decimal" /><em>{dimensionUnit}</em></span></label>
-                <label>Tooth Length<span className="operator-terminal-measure-field"><input placeholder="0.000" inputMode="decimal" /><em>{dimensionUnit}</em></span></label>
+                <label>Notch<span className="operator-terminal-measure-field"><input placeholder="0.000" inputMode="decimal" value={traceabilityForm.beforeNotch} onChange={(event) => setTraceField('beforeNotch', event.target.value)} /><em>{dimensionUnit}</em></span></label>
+                <label>Tooth Length<span className="operator-terminal-measure-field"><input placeholder="0.000" inputMode="decimal" value={traceabilityForm.beforeToothLength} onChange={(event) => setTraceField('beforeToothLength', event.target.value)} /><em>{dimensionUnit}</em></span></label>
               </fieldset>
               <fieldset>
                 <legend>Tooth Damage</legend>
                 <div className="operator-terminal-damage-capture">
                   <div className="operator-terminal-damage-options">
-                    {['A', 'B', 'C'].map((option) => (
-                      <label key={option}>{option}<input placeholder="0" inputMode="numeric" /></label>
-                    ))}
+                    <label>A<input placeholder="0" inputMode="numeric" value={traceabilityForm.damageA} onChange={(event) => setTraceField('damageA', event.target.value)} /></label>
+                    <label>B<input placeholder="0" inputMode="numeric" value={traceabilityForm.damageB} onChange={(event) => setTraceField('damageB', event.target.value)} /></label>
+                    <label>C<input placeholder="0" inputMode="numeric" value={traceabilityForm.damageC} onChange={(event) => setTraceField('damageC', event.target.value)} /></label>
                   </div>
                   <button type="button" className="operator-terminal-photo">
                     <Camera size={22} />
@@ -1005,11 +1113,11 @@ export function OperatorTerminalWorkspace({ onNavigate }: OperatorTerminalProps)
               </fieldset>
               <fieldset>
                 <legend>Sharpening Data</legend>
-                <label>Stock to Remove<span className="operator-terminal-measure-field"><input placeholder="0.000" inputMode="decimal" /><em>{dimensionUnit}</em></span></label>
+                <label>Stock to Remove<span className="operator-terminal-measure-field"><input placeholder="0.000" inputMode="decimal" value={traceabilityForm.stockToRemove} onChange={(event) => setTraceField('stockToRemove', event.target.value)} /><em>{dimensionUnit}</em></span></label>
               </fieldset>
               <fieldset>
                 <legend>After Sharpening</legend>
-                <label>Tooth Length<span className="operator-terminal-measure-field"><input placeholder="0.000" inputMode="decimal" /><em>{dimensionUnit}</em></span></label>
+                <label>Tooth Length<span className="operator-terminal-measure-field"><input placeholder="0.000" inputMode="decimal" value={traceabilityForm.afterToothLength} onChange={(event) => setTraceField('afterToothLength', event.target.value)} /><em>{dimensionUnit}</em></span></label>
               </fieldset>
             </div>
             ) : (

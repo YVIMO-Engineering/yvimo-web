@@ -1,9 +1,8 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { Activity, AlertTriangle, ArrowLeft, CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleHelp, Eye, Factory, Frown, ImagePlus, Meh, Plus, RadioTower, Search, Smile, Timer } from 'lucide-react';
+import { Activity, AlertTriangle, ArrowLeft, CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleHelp, Database, Eye, Factory, Frown, ImagePlus, Meh, Plus, RadioTower, Search, Smile, Timer } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
-import { mockTraceabilityEvents } from './mesMockData';
-import type { ProductionOrder, ProductionOrderManufacturingType, ProductionOrderPriority, ProductionOrderStatus, TraceabilityEvent, WorkCenterStatus } from './mesTypes';
+import type { ProductionOrder, ProductionOrderManufacturingType, ProductionOrderPriority, ProductionOrderStatus, WorkCenterStatus } from './mesTypes';
 
 type WorkspaceProps = {
   onNavigate: (path: string) => void;
@@ -66,6 +65,108 @@ type ProductionOrderStationOptionRow = {
   name: string;
 };
 
+type TraceabilityCaptureRow = {
+  id: string;
+  production_order_id: string | null;
+  work_center_code: string;
+  station_code: string;
+  template_id: string;
+  part_label: string | null;
+  tool_id: string | null;
+  serial_number: string | null;
+  dimensions_unit: string;
+  before_notch: number | null;
+  before_tooth_length: number | null;
+  damage_codes: string[] | null;
+  damage_image_url: string | null;
+  stock_to_remove: number | null;
+  after_tooth_length: number | null;
+  payload: Record<string, unknown> | null;
+  created_at: string;
+  mes_production_orders?: {
+    order_number: string;
+    part_number: string;
+    part_name: string;
+    planned_quantity: number;
+    completed_quantity: number;
+    scrap_quantity: number;
+    status: ProductionOrderStatus;
+  } | null;
+};
+
+type TraceabilityCapture = {
+  id: string;
+  productionOrderId: string;
+  timestamp: string;
+  productionOrder: string;
+  partNumber: string;
+  partName: string;
+  workCenter: string;
+  station: string;
+  stationName: string;
+  templateId: string;
+  partLabel: string;
+  toolId: string;
+  serialNumber: string;
+  dimensionsUnit: string;
+  beforeNotch: number | null;
+  beforeToothLength: number | null;
+  damageCodes: string[];
+  damageImageUrl: string;
+  stockToRemove: number | null;
+  afterToothLength: number | null;
+  orderStatus: ProductionOrderStatus | '';
+  statusAtCapture: ProductionOrderStatus | '';
+  pieceSequence: number | null;
+  plannedQuantity: number;
+  completionPercent: number;
+  shift: string;
+};
+
+type TraceabilityOperatorEventRow = {
+  id: string;
+  production_order_id: string | null;
+  work_center_code: string;
+  station_code: string;
+  event_type: string;
+  reason: string | null;
+  created_at: string;
+};
+
+type TraceabilityOrderOption = {
+  id: string;
+  orderNumber: string;
+  partNumber: string;
+  partName: string;
+  assignedWorkCenter: string;
+  assignedStation: string;
+  status: ProductionOrderStatus;
+};
+
+type TraceabilityOrderRow = {
+  id: string;
+  order_number: string;
+  part_number: string;
+  part_name: string;
+  assigned_work_center: string;
+  assigned_station: string | null;
+  status: ProductionOrderStatus;
+};
+
+type TraceabilityWorkCenterOption = {
+  id: string;
+  code: string;
+  name: string;
+};
+
+type TraceabilityStationOption = {
+  id: string;
+  workCenterId: string;
+  workCenterCode: string;
+  code: string;
+  name: string;
+};
+
 type ConfirmationState = {
   title: string;
   message: string;
@@ -120,6 +221,12 @@ type MesOrderCalendarPosition = {
   width: number;
 };
 
+type MesOrderDateRange = {
+  from: string;
+  to: string;
+};
+type MesOrderQuickRangeValue = 'today' | 'week' | 'month' | 'year';
+
 const formatLabel = (value: string) => value.replace(/-/g, ' ');
 const formatTitleLabel = (value: string) => {
   const label = formatLabel(value);
@@ -165,6 +272,32 @@ function toIsoDate(date: Date) {
   return `${year}-${month}-${day}`;
 }
 
+function getMesOrderQuickRange(range: MesOrderQuickRangeValue): MesOrderDateRange {
+  const today = new Date();
+  const startDate = new Date(today);
+  const endDate = new Date(today);
+
+  if (range === 'week') {
+    startDate.setDate(today.getDate() - today.getDay());
+    endDate.setDate(startDate.getDate() + 6);
+  }
+
+  if (range === 'month') {
+    startDate.setDate(1);
+    endDate.setFullYear(today.getFullYear(), today.getMonth() + 1, 0);
+  }
+
+  if (range === 'year') {
+    startDate.setFullYear(today.getFullYear(), 0, 1);
+    endDate.setFullYear(today.getFullYear(), 11, 31);
+  }
+
+  return {
+    from: toIsoDate(startDate),
+    to: toIsoDate(endDate),
+  };
+}
+
 function getMonthDates(displayDate: Date) {
   const year = displayDate.getFullYear();
   const month = displayDate.getMonth();
@@ -178,8 +311,20 @@ function getMonthDates(displayDate: Date) {
   });
 }
 
-function MesOrderDatePicker({ id, value, onChange }: { id: string; value: string; onChange: (value: string) => void }) {
-  const selectedDate = React.useMemo(() => new Date(`${value}T12:00:00`), [value]);
+function MesOrderDatePicker({
+  id,
+  value,
+  placeholder = 'Select date',
+  onChange,
+  onQuickRange,
+}: {
+  id: string;
+  value: string;
+  placeholder?: string;
+  onChange: (value: string) => void;
+  onQuickRange?: (range: MesOrderDateRange) => void;
+}) {
+  const selectedDate = React.useMemo(() => value ? new Date(`${value}T12:00:00`) : new Date(), [value]);
   const [open, setOpen] = React.useState(false);
   const [displayDate, setDisplayDate] = React.useState(selectedDate);
   const [calendarPosition, setCalendarPosition] = React.useState<MesOrderCalendarPosition | null>(null);
@@ -198,15 +343,16 @@ function MesOrderDatePicker({ id, value, onChange }: { id: string; value: string
     const calendarWidth = Math.min(Math.max(rect.width, 312), window.innerWidth - (viewportPadding * 2));
     const availableBelow = window.innerHeight - rect.bottom - viewportPadding;
     const availableAbove = rect.top - viewportPadding;
-    const openUp = availableBelow < 332 && availableAbove > availableBelow;
+    const calendarHeight = onQuickRange ? 454 : 374;
+    const openUp = availableBelow < calendarHeight && availableAbove > availableBelow;
     const left = Math.max(viewportPadding, Math.min(rect.left, window.innerWidth - calendarWidth - viewportPadding));
 
     setCalendarPosition({
-      top: openUp ? Math.max(viewportPadding, rect.top - 326) : rect.bottom + 6,
+      top: openUp ? Math.max(viewportPadding, rect.top - calendarHeight) : rect.bottom + 6,
       left,
       width: calendarWidth,
     });
-  }, []);
+  }, [onQuickRange]);
 
   React.useLayoutEffect(() => {
     if (!open) return;
@@ -235,7 +381,7 @@ function MesOrderDatePicker({ id, value, onChange }: { id: string; value: string
   }, [open, updateCalendarPosition]);
 
   const calendarDates = getMonthDates(displayDate);
-  const selectedIsoDate = toIsoDate(selectedDate);
+  const selectedIsoDate = value ? toIsoDate(selectedDate) : '';
   const todayIsoDate = toIsoDate(new Date());
   const monthLabel = new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric' }).format(displayDate);
   const calendar = open && calendarPosition
@@ -285,6 +431,33 @@ function MesOrderDatePicker({ id, value, onChange }: { id: string; value: string
             );
           })}
         </div>
+        <div className="mes-order-calendar-shortcuts">
+          {([
+            { value: 'today', label: 'Today' },
+            ...(onQuickRange ? [
+              { value: 'week', label: 'This week' },
+              { value: 'month', label: 'This month' },
+              { value: 'year', label: 'This year' },
+            ] as const : []),
+          ] as Array<{ value: MesOrderQuickRangeValue; label: string }>).map((shortcut) => (
+            <button
+              type="button"
+              key={shortcut.value}
+              onClick={() => {
+                const range = getMesOrderQuickRange(shortcut.value);
+                setDisplayDate(new Date(`${range.from}T12:00:00`));
+                if (onQuickRange) {
+                  onQuickRange(range);
+                } else {
+                  onChange(range.from);
+                }
+                setOpen(false);
+              }}
+            >
+              {shortcut.label}
+            </button>
+          ))}
+        </div>
       </div>,
       document.body,
     )
@@ -301,8 +474,8 @@ function MesOrderDatePicker({ id, value, onChange }: { id: string; value: string
         }
       }}
     >
-      <button type="button" aria-expanded={open} aria-controls={`${id}-calendar`} onClick={() => setOpen((current) => !current)}>
-        <span>{formatDateInputLabel(value)}</span>
+      <button className={!value ? 'placeholder' : ''} type="button" aria-expanded={open} aria-controls={`${id}-calendar`} onClick={() => setOpen((current) => !current)}>
+        <span>{value ? formatDateInputLabel(value) : placeholder}</span>
         <CalendarDays size={16} />
       </button>
       {calendar}
@@ -708,14 +881,15 @@ export function JobQueueModal({ summary, onClose }: { summary: JobQueueSummary; 
   );
 }
 
-function MesWorkspaceShell({ title, eyebrow, description, children }: React.PropsWithChildren<{
+function MesWorkspaceShell({ title, eyebrow, description, onBack, className = '', children }: React.PropsWithChildren<{
   title: string;
   eyebrow: string;
   description: string;
   onBack?: () => void;
+  className?: string;
 }>) {
   return (
-    <section className="mes-workspace-panel">
+    <section className={['mes-workspace-panel', className].filter(Boolean).join(' ')}>
       <div className="mes-screen-header">
         {onBack ? (
           <button className="academy-back-button engineering-back-button mes-workspace-back" type="button" onClick={onBack}>
@@ -4598,115 +4772,545 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
   );
 }
 
-function uniqueValues(events: TraceabilityEvent[], key: keyof TraceabilityEvent) {
-  return Array.from(new Set(events.map((event) => event[key]).filter(Boolean) as string[]));
+function toTraceabilityNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const nextValue = Number(value);
+  return Number.isFinite(nextValue) ? nextValue : null;
+}
+
+function mapTraceabilityCapture(row: TraceabilityCaptureRow): TraceabilityCapture {
+  const order = row.mes_production_orders;
+  const payload = row.payload ?? {};
+  const plannedQuantity = order?.planned_quantity ?? 0;
+  const shift = typeof payload.shift === 'string' ? payload.shift : '';
+  const stationName = typeof payload.station_name === 'string' ? payload.station_name : '';
+  const payloadPieceSequence = typeof payload.piece_sequence === 'number'
+    ? payload.piece_sequence
+    : typeof payload.piece_sequence === 'string'
+      ? Number(payload.piece_sequence)
+      : null;
+  const pieceSequence = payloadPieceSequence && Number.isFinite(payloadPieceSequence) ? payloadPieceSequence : null;
+  const inferredStatusAtCapture: ProductionOrderStatus | '' = pieceSequence && plannedQuantity > 0
+    ? pieceSequence >= plannedQuantity ? 'completed' : 'running'
+    : order?.status ?? '';
+  const statusAtCapture = getTraceabilityPayloadStatus(payload) || inferredStatusAtCapture;
+  const reportedQuantity = pieceSequence ?? ((order?.completed_quantity ?? 0) + (order?.scrap_quantity ?? 0));
+  return {
+    id: row.id,
+    productionOrderId: row.production_order_id ?? '',
+    timestamp: row.created_at,
+    productionOrder: order?.order_number ?? 'Unassigned order',
+    partNumber: order?.part_number ?? '',
+    partName: order?.part_name ?? row.part_label ?? 'Captured part',
+    workCenter: row.work_center_code,
+    station: row.station_code,
+    stationName,
+    templateId: row.template_id,
+    partLabel: row.part_label ?? '',
+    toolId: row.tool_id ?? '',
+    serialNumber: row.serial_number ?? '',
+    dimensionsUnit: row.dimensions_unit,
+    beforeNotch: toTraceabilityNumber(row.before_notch),
+    beforeToothLength: toTraceabilityNumber(row.before_tooth_length),
+    damageCodes: row.damage_codes ?? [],
+    damageImageUrl: row.damage_image_url ?? '',
+    stockToRemove: toTraceabilityNumber(row.stock_to_remove),
+    afterToothLength: toTraceabilityNumber(row.after_tooth_length),
+    orderStatus: order?.status ?? '',
+    statusAtCapture,
+    pieceSequence,
+    plannedQuantity,
+    completionPercent: plannedQuantity > 0 ? Math.round((reportedQuantity / plannedQuantity) * 100) : 0,
+    shift,
+  };
+}
+
+const traceabilityShiftOptions = ['1st', '2nd', '3rd'];
+const traceabilityStatusOptions: ProductionOrderStatus[] = ['planned', 'released', 'running', 'paused', 'completed', 'cancelled'];
+const traceabilityFiltersStorageKey = 'yvimo-mes-traceability-filters';
+
+type TraceabilityFilters = {
+  orderSearch: string;
+  partSearch: string;
+  serialSearch: string;
+  toolSearch: string;
+  workCenter: string;
+  station: string;
+  dateFrom: string;
+  dateTo: string;
+  shifts: string[];
+};
+
+function getDefaultTraceabilityFilters(): TraceabilityFilters {
+  const today = toIsoDate(new Date());
+  return {
+    orderSearch: '',
+    partSearch: '',
+    serialSearch: '',
+    toolSearch: '',
+    workCenter: '',
+    station: '',
+    dateFrom: today,
+    dateTo: today,
+    shifts: [],
+  };
+}
+
+function loadTraceabilityFilters(): TraceabilityFilters {
+  const defaultFilters = getDefaultTraceabilityFilters();
+  if (typeof window === 'undefined') return defaultFilters;
+
+  try {
+    const storedFilters = window.localStorage.getItem(traceabilityFiltersStorageKey);
+    if (!storedFilters) return defaultFilters;
+    const parsedFilters = JSON.parse(storedFilters) as Partial<TraceabilityFilters>;
+    return {
+      ...defaultFilters,
+      ...parsedFilters,
+      shifts: Array.isArray(parsedFilters.shifts) ? parsedFilters.shifts.filter((shift) => traceabilityShiftOptions.includes(shift)) : [],
+      dateFrom: typeof parsedFilters.dateFrom === 'string' && parsedFilters.dateFrom ? parsedFilters.dateFrom : defaultFilters.dateFrom,
+      dateTo: typeof parsedFilters.dateTo === 'string' && parsedFilters.dateTo ? parsedFilters.dateTo : defaultFilters.dateTo,
+    };
+  } catch (error) {
+    console.warn('Unable to load traceability filters', error);
+    return defaultFilters;
+  }
+}
+
+function getClearedTraceabilityFilters(): TraceabilityFilters {
+  return {
+    orderSearch: '',
+    partSearch: '',
+    serialSearch: '',
+    toolSearch: '',
+    workCenter: '',
+    station: '',
+    dateFrom: '',
+    dateTo: '',
+    shifts: [],
+  };
+}
+
+function getTraceabilityPayloadStatus(payload: Record<string, unknown>): ProductionOrderStatus | '' {
+  return typeof payload.order_status === 'string' && traceabilityStatusOptions.includes(payload.order_status as ProductionOrderStatus)
+    ? payload.order_status as ProductionOrderStatus
+    : '';
+}
+
+function formatTraceabilityStatus(status: ProductionOrderStatus | '') {
+  if (status === 'running') return 'In Progress';
+  return status ? formatLabel(status) : 'Unknown';
 }
 
 export function TraceabilityWorkspace({ onNavigate }: WorkspaceProps) {
-  const [filters, setFilters] = React.useState({
-    productionOrder: '',
-    partNumber: '',
-    serialNumber: '',
-    lotNumber: '',
-    workCenter: '',
-    eventType: '',
-    dateFrom: '',
-    dateTo: '',
+  const [captures, setCaptures] = React.useState<TraceabilityCapture[]>([]);
+  const [operatorEvents, setOperatorEvents] = React.useState<TraceabilityOperatorEventRow[]>([]);
+  const [orders, setOrders] = React.useState<TraceabilityOrderOption[]>([]);
+  const [workCenters, setWorkCenters] = React.useState<TraceabilityWorkCenterOption[]>([]);
+  const [stations, setStations] = React.useState<TraceabilityStationOption[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [errorMessage, setErrorMessage] = React.useState('');
+  const [filters, setFilters] = React.useState<TraceabilityFilters>(() => loadTraceabilityFilters());
+
+  const loadTraceability = React.useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
+    setErrorMessage('');
+    const [
+      { data: capturesData, error: capturesError },
+      { data: ordersData, error: ordersError },
+      { data: workCentersData, error: workCentersError },
+      { data: stationsData, error: stationsError },
+      { data: eventsData, error: eventsError },
+    ] = await Promise.all([
+      supabase
+        .from('mes_operator_terminal_traceability')
+        .select(`
+          id,
+          production_order_id,
+          work_center_code,
+          station_code,
+          template_id,
+          part_label,
+          tool_id,
+          serial_number,
+          dimensions_unit,
+          before_notch,
+          before_tooth_length,
+          damage_codes,
+          damage_image_url,
+          stock_to_remove,
+          after_tooth_length,
+          payload,
+          created_at,
+          mes_production_orders (
+            order_number,
+            part_number,
+            part_name,
+            planned_quantity,
+            completed_quantity,
+            scrap_quantity,
+            status
+          )
+        `)
+        .order('created_at', { ascending: false })
+        .limit(200),
+      supabase
+        .from('mes_production_orders')
+        .select('id, order_number, part_number, part_name, assigned_work_center, assigned_station, status')
+        .order('order_number', { ascending: true }),
+      supabase
+        .from('mes_work_centers')
+        .select('id, code, name')
+        .order('name', { ascending: true }),
+      supabase
+        .from('mes_work_center_stations')
+        .select('id, work_center_id, code, name')
+        .order('name', { ascending: true }),
+      supabase
+        .from('mes_operator_terminal_events')
+        .select('id, production_order_id, work_center_code, station_code, event_type, reason, created_at')
+        .in('event_type', ['production-scrap', 'downtime-started', 'job-paused', 'adjustment'])
+        .order('created_at', { ascending: false })
+        .limit(300),
+    ]);
+
+    const loadError = capturesError ?? ordersError ?? workCentersError ?? stationsError ?? eventsError;
+    if (loadError) {
+      console.error('Unable to load MES traceability data', loadError);
+      setErrorMessage('Unable to load traceability data from Supabase.');
+      setCaptures([]);
+      setOperatorEvents([]);
+      setOrders([]);
+      setWorkCenters([]);
+      setStations([]);
+    } else {
+      const workCenterRows = (workCentersData ?? []) as TraceabilityWorkCenterOption[];
+      const workCenterCodeById = new Map(workCenterRows.map((workCenter) => [workCenter.id, workCenter.code]));
+      setCaptures(((capturesData ?? []) as TraceabilityCaptureRow[]).map(mapTraceabilityCapture));
+      setOrders(((ordersData ?? []) as TraceabilityOrderRow[]).map((order) => ({
+        id: order.id,
+        orderNumber: order.order_number,
+        partNumber: order.part_number,
+        partName: order.part_name,
+        assignedWorkCenter: order.assigned_work_center,
+        assignedStation: order.assigned_station ?? '',
+        status: order.status,
+      })));
+      setWorkCenters(workCenterRows);
+      setStations(((stationsData ?? []) as Array<{ id: string; work_center_id: string; code: string; name: string }>).map((station) => ({
+        id: station.id,
+        workCenterId: station.work_center_id,
+        workCenterCode: workCenterCodeById.get(station.work_center_id) ?? '',
+        code: station.code,
+        name: station.name,
+      })));
+      setOperatorEvents((eventsData ?? []) as TraceabilityOperatorEventRow[]);
+    }
+    if (!silent) setLoading(false);
+  }, []);
+
+  React.useEffect(() => {
+    void loadTraceability();
+    const syncInterval = window.setInterval(() => {
+      void loadTraceability(true);
+    }, 12000);
+
+    return () => window.clearInterval(syncInterval);
+  }, [loadTraceability]);
+
+  React.useEffect(() => {
+    try {
+      window.localStorage.setItem(traceabilityFiltersStorageKey, JSON.stringify(filters));
+    } catch (error) {
+      console.warn('Unable to save traceability filters', error);
+    }
+  }, [filters]);
+
+  const filteredCaptures = captures.filter((capture) => {
+    const captureDate = capture.timestamp.slice(0, 10);
+    const orderSearch = filters.orderSearch.trim().toLowerCase();
+    const partSearch = filters.partSearch.trim().toLowerCase();
+    const serialSearch = filters.serialSearch.trim().toLowerCase();
+    const toolSearch = filters.toolSearch.trim().toLowerCase();
+    return (!orderSearch || capture.productionOrder.toLowerCase().includes(orderSearch))
+      && (!partSearch || capture.partNumber.toLowerCase().includes(partSearch) || capture.partName.toLowerCase().includes(partSearch) || capture.partLabel.toLowerCase().includes(partSearch))
+      && (!serialSearch || capture.serialNumber.toLowerCase().includes(serialSearch))
+      && (!toolSearch || capture.toolId.toLowerCase().includes(toolSearch))
+      && (!filters.workCenter || capture.workCenter === filters.workCenter)
+      && (!filters.station || capture.station === filters.station)
+      && (!filters.dateFrom || captureDate >= filters.dateFrom)
+      && (!filters.dateTo || captureDate <= filters.dateTo)
+      && (filters.shifts.length === 0 || filters.shifts.includes(capture.shift));
   });
 
-  const filteredEvents = mockTraceabilityEvents.filter((event) => {
-    const eventDate = event.timestamp.slice(0, 10);
-    return (!filters.productionOrder || event.productionOrder === filters.productionOrder)
-      && (!filters.partNumber || event.partNumber === filters.partNumber)
-      && (!filters.serialNumber || event.serialNumber === filters.serialNumber)
-      && (!filters.lotNumber || event.lotNumber === filters.lotNumber)
-      && (!filters.workCenter || event.workCenter === filters.workCenter)
-      && (!filters.eventType || event.eventType === filters.eventType)
-      && (!filters.dateFrom || eventDate >= filters.dateFrom)
-      && (!filters.dateTo || eventDate <= filters.dateTo);
-  });
-
-  const setFilter = (key: keyof typeof filters, value: string) => {
+  const setFilter = (key: Exclude<keyof typeof filters, 'shifts'>, value: string) => {
     setFilters((currentFilters) => ({ ...currentFilters, [key]: value }));
   };
+
+  const toggleShiftFilter = (shift: string) => {
+    setFilters((currentFilters) => ({
+      ...currentFilters,
+      shifts: currentFilters.shifts.includes(shift)
+        ? currentFilters.shifts.filter((selectedShift) => selectedShift !== shift)
+        : [...currentFilters.shifts, shift],
+    }));
+  };
+
+  const setDateRangeFilter = (range: MesOrderDateRange) => {
+    setFilters((currentFilters) => ({
+      ...currentFilters,
+      dateFrom: range.from,
+      dateTo: range.to,
+    }));
+  };
+
+  const stationOptions = filters.workCenter ? stations.filter((station) => station.workCenterCode === filters.workCenter) : stations;
+  const workCenterDropdownOptions: MesOrderDropdownOption[] = [
+    { value: '', label: 'All Work Centers' },
+    ...workCenters.map((workCenter) => ({ value: workCenter.code, label: `${workCenter.code} / ${workCenter.name}` })),
+  ];
+  const stationDropdownOptions: MesOrderDropdownOption[] = [
+    { value: '', label: 'All Stations' },
+    ...stationOptions.map((station) => ({ value: station.code, label: `${station.code} / ${station.name}` })),
+  ];
+  const selectedContextOrders = orders.filter((order) => {
+    const orderSearch = filters.orderSearch.trim().toLowerCase();
+    const partSearch = filters.partSearch.trim().toLowerCase();
+    return (!filters.workCenter || order.assignedWorkCenter === filters.workCenter)
+      && (!filters.station || order.assignedStation === filters.station)
+      && (!orderSearch || order.orderNumber.toLowerCase().includes(orderSearch))
+      && (!partSearch || order.partNumber.toLowerCase().includes(partSearch) || order.partName.toLowerCase().includes(partSearch));
+  }).slice(0, 6);
+  const activeStatuses: ProductionOrderStatus[] = ['released', 'running', 'paused'];
+  const contextOrderIds = new Set(orders.filter((order) => {
+    const orderSearch = filters.orderSearch.trim().toLowerCase();
+    const partSearch = filters.partSearch.trim().toLowerCase();
+    return (!filters.workCenter || order.assignedWorkCenter === filters.workCenter)
+      && (!filters.station || order.assignedStation === filters.station)
+      && (!orderSearch || order.orderNumber.toLowerCase().includes(orderSearch))
+      && (!partSearch || order.partNumber.toLowerCase().includes(partSearch) || order.partName.toLowerCase().includes(partSearch));
+  }).map((order) => order.id));
+  const filteredOperatorEvents = operatorEvents.filter((event) => {
+    const orderSearchActive = Boolean(filters.orderSearch.trim() || filters.partSearch.trim());
+    return (!filters.workCenter || event.work_center_code === filters.workCenter)
+      && (!filters.station || event.station_code === filters.station)
+      && (!orderSearchActive || (event.production_order_id ? contextOrderIds.has(event.production_order_id) : false))
+      && (!filters.dateFrom || event.created_at.slice(0, 10) >= filters.dateFrom)
+      && (!filters.dateTo || event.created_at.slice(0, 10) <= filters.dateTo);
+  });
+  const activeTraceRecords = new Set(filteredCaptures
+    .filter((capture) => capture.productionOrderId && capture.orderStatus && activeStatuses.includes(capture.orderStatus))
+    .map((capture) => capture.productionOrderId)).size;
+  const completedPartRecords = filteredCaptures.length;
+  const completedProductionOrders = new Set(filteredCaptures
+    .filter((capture) => capture.productionOrderId && capture.orderStatus === 'completed')
+    .map((capture) => capture.productionOrderId)).size;
+  const missingDataRecords = filteredCaptures.filter((capture) => !capture.productionOrderId || !capture.serialNumber || !capture.partNumber || !capture.workCenter || !capture.station).length;
+  const damageRecords = filteredCaptures.filter((capture) => capture.damageCodes.length > 0).length;
+  const scrapExceptionRecords = damageRecords + filteredOperatorEvents.filter((event) => event.event_type === 'production-scrap').length;
+  const downtimeExceptionRecords = filteredOperatorEvents.filter((event) => event.event_type === 'downtime-started').length;
+  const pausedExceptionRecords = filteredOperatorEvents.filter((event) => event.event_type === 'job-paused').length;
+  const adjustmentExceptionRecords = filteredOperatorEvents.filter((event) => event.event_type === 'adjustment').length;
 
   return (
     <MesWorkspaceShell
       eyebrow="MES / Traceability"
       title="Traceability"
-      description="Search production history by order, part, serial, lot, work center, event type, and date range."
+      description="Search captured part history by production order, part, serial number, work center, station, and date range."
       onBack={() => onNavigate('/workspace/manufacturing-ops/mes')}
+      className="traceability-workspace-panel"
     >
-      <div className="mes-filter-panel">
+      <div className="traceability-primary-filters">
         <label>
-          Production order
-          <select value={filters.productionOrder} onChange={(event) => setFilter('productionOrder', event.target.value)}>
-            <option value="">All orders</option>
-            {uniqueValues(mockTraceabilityEvents, 'productionOrder').map((value) => <option key={value} value={value}>{value}</option>)}
-          </select>
+          <span>Work center</span>
+          <MesOrderDropdown
+            id="traceability-work-center-filter"
+            value={filters.workCenter}
+            options={workCenterDropdownOptions}
+            placeholder="All Work Centers"
+            placement="bottom"
+            onChange={(nextWorkCenter) => {
+              setFilters((currentFilters) => ({
+                ...currentFilters,
+                workCenter: nextWorkCenter,
+                station: currentFilters.station && stations.some((station) => station.code === currentFilters.station && station.workCenterCode === nextWorkCenter) ? currentFilters.station : '',
+              }));
+            }}
+          />
         </label>
         <label>
-          Part number
-          <select value={filters.partNumber} onChange={(event) => setFilter('partNumber', event.target.value)}>
-            <option value="">All parts</option>
-            {uniqueValues(mockTraceabilityEvents, 'partNumber').map((value) => <option key={value} value={value}>{value}</option>)}
-          </select>
+          <span>Station</span>
+          <MesOrderDropdown
+            id="traceability-station-filter"
+            value={filters.station}
+            options={stationDropdownOptions}
+            placeholder="All Stations"
+            placement="bottom"
+            onChange={(value) => setFilter('station', value)}
+          />
+        </label>
+        <label>
+          <span>From</span>
+          <MesOrderDatePicker id="traceability-date-from" value={filters.dateFrom} placeholder="dd/mm/aaaa" onChange={(value) => setFilter('dateFrom', value)} onQuickRange={setDateRangeFilter} />
+        </label>
+        <label>
+          <span>To</span>
+          <MesOrderDatePicker id="traceability-date-to" value={filters.dateTo} placeholder="dd/mm/aaaa" onChange={(value) => setFilter('dateTo', value)} onQuickRange={setDateRangeFilter} />
+        </label>
+        <fieldset className="traceability-shift-filter">
+          <legend>Shift</legend>
+          <div>
+            <button
+              type="button"
+              className={filters.shifts.length === 0 ? 'active' : ''}
+              onClick={() => setFilters((currentFilters) => ({ ...currentFilters, shifts: [] }))}
+            >
+              All
+            </button>
+            {traceabilityShiftOptions.map((shift) => (
+              <button
+                type="button"
+                key={shift}
+                className={filters.shifts.includes(shift) ? 'active' : ''}
+                onClick={() => toggleShiftFilter(shift)}
+              >
+                {shift}
+              </button>
+            ))}
+          </div>
+        </fieldset>
+      </div>
+
+      <div className="traceability-app-strip">
+        <article>
+          <span><Database size={16} /> Total Trace Records</span>
+          <strong>{filteredCaptures.length}</strong>
+          <em>{captures.length} loaded records</em>
+        </article>
+        <article>
+          <span><Timer size={16} /> Active / In Progress</span>
+          <strong>{activeTraceRecords}</strong>
+          <em>still in production</em>
+        </article>
+        <article>
+          <span><Check size={16} /> Completed</span>
+          <div className="traceability-kpi-split traceability-completed-split">
+            <strong>{completedPartRecords}<em>Parts</em></strong>
+            <strong>{completedProductionOrders}<em>Production Orders</em></strong>
+          </div>
+        </article>
+        <article>
+          <span><AlertTriangle size={16} /> Exceptions</span>
+          <div className="traceability-kpi-split traceability-exception-split">
+            <strong>{scrapExceptionRecords}<em>Scrap / Damage</em></strong>
+            <strong>{downtimeExceptionRecords}<em>Downtime</em></strong>
+            <strong>{pausedExceptionRecords}<em>Paused</em></strong>
+            <strong>{missingDataRecords + adjustmentExceptionRecords}<em>Missing / Adjustments</em></strong>
+          </div>
+        </article>
+      </div>
+
+      <div className="mes-filter-panel traceability-filter-panel">
+        <label>
+          Order number
+          <input type="search" placeholder="Search PO-10491" value={filters.orderSearch} onChange={(event) => setFilter('orderSearch', event.target.value)} />
+        </label>
+        <label>
+          Part / order name
+          <input type="search" placeholder="Part number or name" value={filters.partSearch} onChange={(event) => setFilter('partSearch', event.target.value)} />
         </label>
         <label>
           Serial number
-          <select value={filters.serialNumber} onChange={(event) => setFilter('serialNumber', event.target.value)}>
-            <option value="">All serials</option>
-            {uniqueValues(mockTraceabilityEvents, 'serialNumber').map((value) => <option key={value} value={value}>{value}</option>)}
-          </select>
+          <input type="search" placeholder="Type serial number" value={filters.serialSearch} onChange={(event) => setFilter('serialSearch', event.target.value)} />
         </label>
         <label>
-          Lot number
-          <select value={filters.lotNumber} onChange={(event) => setFilter('lotNumber', event.target.value)}>
-            <option value="">All lots</option>
-            {uniqueValues(mockTraceabilityEvents, 'lotNumber').map((value) => <option key={value} value={value}>{value}</option>)}
-          </select>
-        </label>
-        <label>
-          Work center
-          <select value={filters.workCenter} onChange={(event) => setFilter('workCenter', event.target.value)}>
-            <option value="">All centers</option>
-            {uniqueValues(mockTraceabilityEvents, 'workCenter').map((value) => <option key={value} value={value}>{value}</option>)}
-          </select>
-        </label>
-        <label>
-          Event type
-          <select value={filters.eventType} onChange={(event) => setFilter('eventType', event.target.value)}>
-            <option value="">All events</option>
-            {uniqueValues(mockTraceabilityEvents, 'eventType').map((value) => <option key={value} value={value}>{formatLabel(value)}</option>)}
-          </select>
-        </label>
-        <label>
-          From
-          <input type="date" value={filters.dateFrom} onChange={(event) => setFilter('dateFrom', event.target.value)} />
-        </label>
-        <label>
-          To
-          <input type="date" value={filters.dateTo} onChange={(event) => setFilter('dateTo', event.target.value)} />
+          Tool ID
+          <input type="search" placeholder="Tool, cutter, fixture" value={filters.toolSearch} onChange={(event) => setFilter('toolSearch', event.target.value)} />
         </label>
       </div>
-      <div className="mes-toolbar">
-        <span><Search size={15} /> {filteredEvents.length} matching events</span>
+
+      <div className="mes-toolbar traceability-toolbar">
+        <span><Search size={15} /> {loading ? 'Loading captures...' : `${filteredCaptures.length} matching captures / auto-sync on`}</span>
+        <div>
+          <button type="button" onClick={() => setFilters(getClearedTraceabilityFilters())}>Clear Filters</button>
+          <button type="button" onClick={() => onNavigate('/workspace/manufacturing-ops/mes/operator-terminal')}>Open Terminal</button>
+        </div>
       </div>
-      <div className="mes-event-timeline">
-        {filteredEvents.map((event) => (
-          <article className="mes-event-row" key={event.id}>
-            <span className="mes-event-marker"><RadioTower size={16} /></span>
+
+      {errorMessage ? <div className="mes-sync-message traceability-sync-message">{errorMessage}</div> : null}
+
+      {selectedContextOrders.length > 0 ? (
+        <section className="traceability-context-orders" aria-label="Production orders matching traceability context">
+          <div>
+            <span>Context orders</span>
+            <strong>{selectedContextOrders.length} matching production orders</strong>
+          </div>
+          <div className="traceability-context-order-list">
+            {selectedContextOrders.map((order) => (
+              <button
+                type="button"
+                key={order.id}
+                className="traceability-context-order-card"
+                onClick={() => {
+                  setFilters((currentFilters) => ({
+                    ...currentFilters,
+                    orderSearch: order.orderNumber,
+                    partSearch: order.partNumber || order.partName,
+                    workCenter: order.assignedWorkCenter,
+                    station: order.assignedStation,
+                  }));
+                }}
+              >
+                <div>
+                  <strong>{order.orderNumber}</strong>
+                  <span>{order.partNumber} / {order.partName}</span>
+                  <em>{order.assignedWorkCenter || 'No work center'} / {order.assignedStation || 'No station'}</em>
+                </div>
+                <MesStatusBadge value={order.status} tone="status" />
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      <div className="mes-event-timeline traceability-capture-list">
+        {!loading && filteredCaptures.length === 0 ? (
+          <div className="traceability-empty-state">
+            <Database size={28} />
+            <strong>No traceability captures found</strong>
+            <span>Use Operator Terminal to save sharpening traceability; auto-sync will update this page.</span>
+          </div>
+        ) : null}
+        {filteredCaptures.map((capture) => (
+          <article className="mes-event-row traceability-capture-row" key={capture.id}>
+            <span className="mes-event-marker"><Database size={16} /></span>
             <div>
-              <div className="mes-event-heading">
-                <strong>{formatTimestamp(event.timestamp)}</strong>
-                <MesStatusBadge value={event.eventType} tone="event" />
+              <div className="mes-event-heading traceability-capture-heading">
+                <div className="traceability-capture-title-grid">
+                  <span><b>Order Number:</b> {capture.productionOrder}</span>
+                  <span><b>Part Name:</b> {capture.partName}</span>
+                  <span><b>Part Number:</b> {capture.partNumber || 'N/A'}</span>
+                  <span className="traceability-capture-time"><Timer size={15} /><b>Captured:</b> {formatTimestamp(capture.timestamp)}</span>
+                </div>
               </div>
-              <p>{event.notes}</p>
-              <div className="mes-event-meta">
-                <span><Factory size={14} /> {event.productionOrder} / {event.workCenter}</span>
-                <span><Activity size={14} /> Qty {event.quantity}</span>
-                <span><Eye size={14} /> {event.operator}</span>
-                <span><Timer size={14} /> {event.serialNumber ?? 'No serial'} / {event.lotNumber ?? 'No lot'}</span>
+              <div className="traceability-measure-grid">
+                <span><b>Before notch</b>{capture.beforeNotch ?? 'N/A'} {capture.beforeNotch === null ? '' : capture.dimensionsUnit}</span>
+                <span><b>Before tooth</b>{capture.beforeToothLength ?? 'N/A'} {capture.beforeToothLength === null ? '' : capture.dimensionsUnit}</span>
+                <span><b>Stock remove</b>{capture.stockToRemove ?? 'N/A'} {capture.stockToRemove === null ? '' : capture.dimensionsUnit}</span>
+                <span><b>After tooth</b>{capture.afterToothLength ?? 'N/A'} {capture.afterToothLength === null ? '' : capture.dimensionsUnit}</span>
+              </div>
+              <div className="mes-event-meta traceability-capture-meta">
+                <span><Factory size={15} /><b>Work Center</b>{capture.workCenter || 'No work center'}</span>
+                <span><RadioTower size={15} /><b>Station</b>{capture.stationName || capture.station || 'No station'}</span>
+                <span><Eye size={15} /><b>Serial</b>{capture.serialNumber || 'No serial'}</span>
+                <span><Activity size={15} /><b>Progress</b>{capture.completionPercent}%{capture.pieceSequence ? ` (${capture.pieceSequence}/${capture.plannedQuantity || 'N/A'})` : ''}</span>
+              </div>
+              <div className="traceability-tags">
+                <span>{formatLabel(capture.templateId)}</span>
+                {capture.partLabel ? <span>{capture.partLabel}</span> : null}
+                {capture.toolId ? <span>Tool {capture.toolId}</span> : null}
+                <span className={`status status-${capture.statusAtCapture || 'unknown'}`}>Status {formatTraceabilityStatus(capture.statusAtCapture)}</span>
+                {capture.damageCodes.length ? capture.damageCodes.map((code) => <span className="danger" key={code}>{formatLabel(code)}</span>) : <span className="success">No damage noted</span>}
               </div>
             </div>
           </article>

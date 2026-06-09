@@ -2863,6 +2863,45 @@ button {
   line-height: 1.65;
 }
 
+.traceability-workspace-panel {
+  gap: 14px;
+  margin-top: 14px;
+  padding: 18px 22px 22px;
+}
+
+.traceability-workspace-panel .mes-screen-header {
+  grid-template-columns: 180px minmax(0, 1fr) 180px;
+  gap: 12px;
+  align-items: center;
+}
+
+.traceability-workspace-panel .mes-workspace-back {
+  min-width: 164px;
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+.traceability-workspace-panel .mes-workspace-heading {
+  gap: 4px;
+}
+
+.traceability-workspace-panel .mes-workspace-heading .eyebrow {
+  margin: 0;
+  font-size: 0.72rem;
+  line-height: 1.1;
+}
+
+.traceability-workspace-panel .mes-workspace-heading h2 {
+  font-size: clamp(28px, 2.15vw, 34px);
+  line-height: 1;
+}
+
+.traceability-workspace-panel .mes-workspace-heading p:last-child {
+  max-width: 720px;
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+
 .mes-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -3780,7 +3819,8 @@ button {
 }
 
 .mes-order-calendar-header button,
-.mes-order-calendar-grid button {
+.mes-order-calendar-grid button,
+.mes-order-calendar-shortcuts button {
   border: 0;
   background: transparent;
   color: #07111c;
@@ -3850,6 +3890,29 @@ button {
   color: #17110b;
   font-weight: 950;
   box-shadow: none;
+}
+
+.mes-order-calendar-shortcuts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.mes-order-calendar-shortcuts button {
+  min-height: 34px;
+  border: 1px solid rgba(255, 138, 31, 0.32);
+  border-radius: 8px;
+  background: #fff7ed;
+  color: #7a3300;
+  font-size: 0.78rem;
+  font-weight: 950;
+}
+
+.mes-order-calendar-shortcuts button:hover,
+.mes-order-calendar-shortcuts button:focus-visible {
+  outline: none;
+  background: #ff8a1f;
+  color: #17110b;
 }
 
 .mes-priority-switch {
@@ -9141,6 +9204,613 @@ button {
 .mes-event-timeline {
   display: grid;
   gap: 12px;
+}
+
+.traceability-app-strip {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.72fr) minmax(150px, 0.72fr) minmax(280px, 1.35fr) minmax(330px, 1.55fr);
+  gap: 12px;
+}
+
+.traceability-primary-filters {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.8fr) minmax(150px, 0.8fr) minmax(132px, 0.55fr) minmax(132px, 0.55fr) minmax(250px, 0.75fr);
+  align-items: end;
+  justify-content: start;
+  gap: 12px;
+  margin-top: -2px;
+}
+
+.traceability-primary-filters label,
+.traceability-shift-filter,
+.traceability-filter-panel label {
+  display: grid;
+  gap: 7px;
+  color: #4a5a6b;
+  font-size: 0.74rem;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.traceability-primary-filters label > span,
+.traceability-shift-filter legend {
+  color: #4a5a6b;
+}
+
+.traceability-shift-filter {
+  min-width: 0;
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.traceability-shift-filter legend {
+  padding: 0;
+}
+
+.traceability-shift-filter div {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+  min-height: 40px;
+  padding: 4px;
+  border: 1px solid rgba(255, 130, 27, 0.35);
+  border-radius: 8px;
+  background: #fff7ed;
+}
+
+.traceability-shift-filter button {
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #415268;
+  font: inherit;
+  font-size: 0.78rem;
+  letter-spacing: 0;
+  text-transform: none;
+  cursor: pointer;
+}
+
+.traceability-shift-filter button.active {
+  background: #ff821b;
+  color: #07111c;
+  box-shadow: 0 8px 16px rgba(255, 130, 27, 0.22);
+}
+
+.traceability-primary-filters .mes-order-dropdown,
+.traceability-primary-filters .mes-order-date-picker,
+.traceability-filter-panel .mes-order-dropdown {
+  min-width: 0;
+}
+
+.traceability-primary-filters .mes-order-dropdown > button,
+.traceability-primary-filters .mes-order-date-picker > button,
+.traceability-filter-panel .mes-order-dropdown > button {
+  min-height: 40px;
+}
+
+.traceability-primary-filters .mes-order-date-picker > button.placeholder {
+  color: #07111c;
+  font-weight: 850;
+}
+
+.traceability-app-strip article {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  border: 1px solid rgba(18, 29, 41, 0.1);
+  border-radius: 8px;
+  padding: 14px;
+  background: #ffffff;
+  box-shadow: 0 12px 28px rgba(7, 17, 28, 0.06);
+}
+
+.traceability-app-strip article:nth-child(1) {
+  border-color: rgba(14, 116, 144, 0.2);
+  background: #ecfeff;
+}
+
+.traceability-app-strip article:nth-child(2) {
+  border-color: rgba(37, 99, 235, 0.18);
+  background: #eff6ff;
+}
+
+.traceability-app-strip article:nth-child(3) {
+  border-color: rgba(22, 163, 74, 0.18);
+  background: #f0fdf4;
+}
+
+.traceability-app-strip article:nth-child(4) {
+  border-color: rgba(217, 119, 6, 0.22);
+  background: #fff7ed;
+}
+
+.traceability-app-strip span,
+.traceability-app-strip em {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  color: #566577;
+  font-size: 0.76rem;
+  font-style: normal;
+  font-weight: 850;
+}
+
+.traceability-app-strip span {
+  text-transform: uppercase;
+}
+
+.traceability-app-strip span svg {
+  color: #ff8a1f;
+  flex: 0 0 auto;
+}
+
+.traceability-app-strip strong {
+  min-width: 0;
+  color: #07111c;
+  font-size: clamp(1.35rem, 2vw, 1.85rem);
+  font-weight: 950;
+  line-height: 1.05;
+}
+
+.traceability-kpi-split {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.traceability-exception-split {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.traceability-kpi-split strong {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  border: 1px solid rgba(22, 163, 74, 0.18);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.62);
+}
+
+.traceability-kpi-split strong em {
+  color: #166534;
+  font-size: 0.68rem;
+  font-style: normal;
+  font-weight: 950;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.traceability-exception-split strong {
+  border-color: rgba(217, 119, 6, 0.2);
+}
+
+.traceability-exception-split strong em {
+  color: #92400e;
+}
+
+.traceability-filter-panel {
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
+}
+
+.traceability-filter-panel input {
+  background: #ffffff;
+  color: #07111c;
+  border-color: rgba(18, 29, 41, 0.16);
+}
+
+.traceability-filter-panel input::placeholder {
+  color: #758195;
+}
+
+.traceability-toolbar {
+  justify-content: space-between;
+}
+
+.traceability-toolbar > div {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.traceability-toolbar button {
+  border: 1px solid rgba(255, 138, 31, 0.34);
+  border-radius: 8px;
+  padding: 9px 12px;
+  background: #ffffff;
+  color: #07111c;
+  font-size: 0.78rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.traceability-toolbar button:hover,
+.traceability-toolbar button:focus-visible {
+  background: #ff8a1f;
+  color: #17110b;
+}
+
+.traceability-sync-message {
+  border: 1px solid rgba(185, 28, 28, 0.18);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #fff5f5;
+  color: #991b1b;
+  font-size: 0.84rem;
+  font-weight: 850;
+}
+
+.traceability-context-orders {
+  display: grid;
+  gap: 10px;
+  border: 1px solid rgba(18, 29, 41, 0.1);
+  border-radius: 8px;
+  padding: 12px;
+  background: #ffffff;
+  box-shadow: 0 12px 28px rgba(7, 17, 28, 0.05);
+}
+
+.traceability-context-orders > div:first-child {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.traceability-context-orders > div:first-child span {
+  color: #ff8a1f;
+  font-size: 0.72rem;
+  font-weight: 950;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.traceability-context-orders > div:first-child strong {
+  color: #07111c;
+  font-size: 0.92rem;
+  font-weight: 950;
+}
+
+.traceability-context-order-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 132px));
+  gap: 8px;
+}
+
+.traceability-context-order-card {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 8px;
+  min-width: 0;
+  width: 132px;
+  min-height: 132px;
+  border: 1px solid rgba(18, 29, 41, 0.08);
+  border-radius: 8px;
+  padding: 9px;
+  background: #f8fafc;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.traceability-context-order-card:hover,
+.traceability-context-order-card:focus-visible {
+  outline: none;
+  border-color: rgba(255, 138, 31, 0.5);
+  background: #fff7ed;
+  box-shadow: 0 10px 22px rgba(255, 138, 31, 0.12);
+}
+
+.traceability-context-order-card > div {
+  display: grid;
+  align-content: start;
+  gap: 5px;
+  min-width: 0;
+}
+
+.traceability-context-order-card strong,
+.traceability-context-order-card span,
+.traceability-context-order-card em {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.traceability-context-order-card strong {
+  color: #07111c;
+  font-size: 0.8rem;
+  font-weight: 950;
+  line-height: 1.1;
+}
+
+.traceability-context-order-card span,
+.traceability-context-order-card em {
+  color: #566577;
+  font-size: 0.68rem;
+  font-style: normal;
+  font-weight: 650;
+  line-height: 1.25;
+}
+
+.traceability-context-order-list .mes-status-badge {
+  align-self: end;
+  width: 100%;
+  justify-content: center;
+  min-height: 24px;
+  padding: 0 8px;
+  font-size: 0.7rem;
+  font-weight: 950;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.traceability-context-order-list .mes-status-badge.status-released {
+  border-color: rgba(37, 99, 235, 0.18);
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.traceability-context-order-list .mes-status-badge.status-running {
+  border-color: rgba(217, 119, 6, 0.24);
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.traceability-context-order-list .mes-status-badge.status-paused {
+  border-color: rgba(220, 38, 38, 0.2);
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.traceability-context-order-list .mes-status-badge.status-completed {
+  border-color: rgba(22, 163, 74, 0.18);
+  background: #dcfce7;
+  color: #166534;
+}
+
+.traceability-capture-list {
+  gap: 10px;
+}
+
+.traceability-capture-row {
+  align-items: start;
+}
+
+.traceability-capture-heading {
+  align-items: start;
+  gap: 8px;
+}
+
+.traceability-capture-title-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  width: 100%;
+}
+
+.traceability-capture-title-grid span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #07111c;
+  font-size: 0.88rem;
+  font-weight: 900;
+}
+
+.traceability-capture-title-grid b {
+  display: block;
+  margin-bottom: 2px;
+  color: #5d6d7e;
+  font-size: 0.68rem;
+  font-weight: 950;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.traceability-capture-title-grid .traceability-capture-time {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 2px 7px;
+  align-items: center;
+  border: 1px solid rgba(18, 29, 41, 0.08);
+  border-radius: 8px;
+  padding: 8px 9px;
+  background: #f8fafc;
+  color: #07111c;
+  font-size: 0.84rem;
+}
+
+.traceability-capture-title-grid .traceability-capture-time svg {
+  grid-row: 1 / span 2;
+  color: #ff8a1f;
+}
+
+.traceability-capture-title-grid .traceability-capture-time b {
+  margin: 0;
+}
+
+.traceability-measure-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 6px 0 6px;
+}
+
+.traceability-measure-grid span {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  border: 1px solid rgba(255, 138, 31, 0.24);
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: #fff7ed;
+  color: #07111c;
+  font-size: 0.86rem;
+  font-weight: 900;
+}
+
+.traceability-measure-grid b {
+  color: #a04f00;
+  font-size: 0.68rem;
+  font-weight: 950;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.traceability-capture-meta {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.traceability-capture-meta span {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 2px 7px;
+  align-items: center;
+  min-width: 0;
+  border: 1px solid rgba(18, 29, 41, 0.08);
+  border-radius: 8px;
+  padding: 8px 9px;
+  background: #f8fafc;
+  color: #07111c;
+  font-size: 0.84rem;
+  font-weight: 900;
+}
+
+.traceability-capture-meta span svg {
+  grid-row: 1 / span 2;
+  color: #ff8a1f;
+}
+
+.traceability-capture-meta span b {
+  color: #5d6d7e;
+  font-size: 0.66rem;
+  font-weight: 950;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.traceability-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.traceability-tags span {
+  border-radius: 999px;
+  padding: 7px 11px;
+  background: #eef4f8;
+  color: #223041;
+  font-size: 0.8rem;
+  font-weight: 950;
+  line-height: 1;
+}
+
+.traceability-tags span.success {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.traceability-tags span.danger {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.traceability-tags span.status {
+  border: 1px solid rgba(71, 85, 105, 0.12);
+  background: #e2e8f0;
+  color: #334155;
+}
+
+.traceability-tags span.status-running {
+  border-color: rgba(37, 99, 235, 0.18);
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.traceability-tags span.status-completed {
+  border-color: rgba(22, 163, 74, 0.18);
+  background: #dcfce7;
+  color: #166534;
+}
+
+.traceability-tags span.status-paused {
+  border-color: rgba(217, 119, 6, 0.22);
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.traceability-empty-state {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  border: 1px dashed rgba(18, 29, 41, 0.18);
+  border-radius: 8px;
+  padding: 34px 18px;
+  background: #ffffff;
+  color: #566577;
+  text-align: center;
+}
+
+.traceability-empty-state svg {
+  color: #ff8a1f;
+}
+
+.traceability-empty-state strong {
+  color: #07111c;
+  font-size: 1rem;
+  font-weight: 950;
+}
+
+@media (max-width: 980px) {
+  .traceability-primary-filters,
+  .traceability-app-strip,
+  .traceability-filter-panel,
+  .traceability-measure-grid,
+  .traceability-capture-meta,
+  .traceability-capture-title-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .traceability-exception-split {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .traceability-primary-filters,
+  .traceability-app-strip,
+  .traceability-filter-panel,
+  .traceability-measure-grid,
+  .traceability-capture-meta,
+  .traceability-capture-title-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .traceability-kpi-split,
+  .traceability-exception-split {
+    grid-template-columns: 1fr;
+  }
+
+  .traceability-context-orders > div:first-child {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .traceability-toolbar {
+    align-items: stretch;
+  }
+
+  .traceability-toolbar button {
+    width: 100%;
+  }
 }
 
 .mes-event-row {
