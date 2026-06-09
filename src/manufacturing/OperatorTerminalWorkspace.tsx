@@ -19,9 +19,12 @@ import {
 import { JobQueueModal, type JobQueueSummary } from './MesWorkspaces';
 import type { ProductionOrder } from './mesTypes';
 import {
+  fetchOperatorScrapEvents,
   fetchOperatorTerminalSnapshot,
   reportOperatorProduction,
   setOperatorTerminalState,
+  switchOperatorActiveOrder,
+  type OperatorScrapEvent,
   type OperatorTerminalSnapshot,
 } from './operatorTerminalApi';
 
@@ -30,10 +33,16 @@ type OperatorTerminalProps = {
 };
 
 type TerminalState = 'not-started' | 'running' | 'paused' | 'down' | 'completed';
-type TerminalModal = 'scrap' | 'pause' | 'downtime' | 'complete' | 'undo' | 'queue' | null;
+type TerminalModal = 'scrap' | 'pause' | 'downtime' | 'complete' | 'undo' | 'queue' | 'scrap-events' | 'switch-order' | null;
 type ReportEvent = {
   type: 'good' | 'scrap';
   timestamp: string;
+  reason?: string;
+  comment?: string;
+  partNumber?: string;
+  partName?: string;
+  orderNumber?: string;
+  reportedTotal?: number;
 };
 
 const scrapReasons = [
@@ -120,6 +129,18 @@ function formatToastTime() {
   return new Intl.DateTimeFormat('en-US', { hour: '2-digit', minute: '2-digit' }).format(new Date());
 }
 
+function formatEventTimestamp(timestamp: string) {
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return timestamp;
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
+}
+
 function ReasonModal({
   modal,
   goodQty,
@@ -127,7 +148,7 @@ function ReasonModal({
   onClose,
   onSubmit,
 }: {
-  modal: Exclude<TerminalModal, 'queue' | null>;
+  modal: Exclude<TerminalModal, 'queue' | 'scrap-events' | 'switch-order' | null>;
   goodQty: number;
   scrapQty: number;
   onClose: () => void;
@@ -216,6 +237,118 @@ function ReasonModal({
   );
 }
 
+function ScrapEventsModal({
+  events,
+  loading,
+  order,
+  onClose,
+}: {
+  events: OperatorScrapEvent[];
+  loading: boolean;
+  order: ProductionOrder | null;
+  onClose: () => void;
+}) {
+  return (
+    <div className="operator-terminal-modal-backdrop" role="presentation">
+      <section className="operator-terminal-modal operator-terminal-scrap-events-modal" role="dialog" aria-modal="true" aria-labelledby="operator-terminal-scrap-events-title">
+        <div className="operator-terminal-modal-heading">
+          <span><AlertTriangle size={22} /></span>
+          <div>
+            <p className="eyebrow">Operator Terminal</p>
+            <h3 id="operator-terminal-scrap-events-title">Scrap Events</h3>
+          </div>
+          <button type="button" aria-label="Close" onClick={onClose}><X size={18} /></button>
+        </div>
+        <div className="operator-terminal-scrap-events-summary">
+          <article><span>Order</span><strong>{order?.orderNumber ?? 'Unassigned'}</strong></article>
+          <article><span>Part</span><strong>{order?.partName ?? '-'}</strong></article>
+          <article><span>Scrap Events</span><strong>{events.length}</strong></article>
+        </div>
+        {loading ? (
+          <div className="operator-terminal-scrap-events-empty">Loading scrap events...</div>
+        ) : events.length ? (
+          <div className="operator-terminal-scrap-events-list">
+            {events.map((event) => (
+              <article key={event.id}>
+                <div>
+                  <time>{formatEventTimestamp(event.timestamp)}</time>
+                  <span>{event.reason}</span>
+                </div>
+                <div>
+                  <span>Comment</span>
+                  <strong>{event.comment || '-'}</strong>
+                </div>
+                <b>{event.quantity.toLocaleString()}</b>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="operator-terminal-scrap-events-empty">No scrap events reported for this Production Order yet.</div>
+        )}
+        <div className="operator-terminal-modal-actions">
+          <button type="button" onClick={onClose}>Close</button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function SwitchOrderModal({
+  orders,
+  currentOrderId,
+  loading,
+  onClose,
+  onSelect,
+}: {
+  orders: ProductionOrder[];
+  currentOrderId: string | null;
+  loading: boolean;
+  onClose: () => void;
+  onSelect: (order: ProductionOrder) => void;
+}) {
+  return (
+    <div className="operator-terminal-modal-backdrop" role="presentation">
+      <section className="operator-terminal-modal operator-terminal-switch-order-modal" role="dialog" aria-modal="true" aria-labelledby="operator-terminal-switch-order-title">
+        <div className="operator-terminal-modal-heading">
+          <span><ClipboardCheck size={22} /></span>
+          <div>
+            <p className="eyebrow">Operator Terminal</p>
+            <h3 id="operator-terminal-switch-order-title">Change Active Order</h3>
+          </div>
+          <button type="button" aria-label="Close" onClick={onClose}><X size={18} /></button>
+        </div>
+        <p className="operator-terminal-switch-copy">
+          Select the Production Order that should become the active running job for this station.
+        </p>
+        <div className="operator-terminal-switch-list">
+          {orders.map((order) => {
+            const reported = order.completedQuantity + order.scrapQuantity;
+            return (
+              <button
+                className={order.id === currentOrderId ? 'active' : ''}
+                type="button"
+                key={order.id}
+                disabled={loading || order.id === currentOrderId}
+                onClick={() => onSelect(order)}
+              >
+                <div>
+                  <strong>{order.orderNumber}</strong>
+                  <span>{order.partName} / {order.partNumber}</span>
+                </div>
+                <em>{order.status}</em>
+                <b>{reported.toLocaleString()} of {order.plannedQuantity.toLocaleString()}</b>
+              </button>
+            );
+          })}
+        </div>
+        <div className="operator-terminal-modal-actions">
+          <button type="button" onClick={onClose}>Cancel</button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 export function OperatorTerminalWorkspace({ onNavigate }: OperatorTerminalProps) {
   const [state, setState] = React.useState<TerminalState>('not-started');
   const [goodQty, setGoodQty] = React.useState(0);
@@ -223,6 +356,9 @@ export function OperatorTerminalWorkspace({ onNavigate }: OperatorTerminalProps)
   const [modal, setModal] = React.useState<TerminalModal>(null);
   const [toast, setToast] = React.useState('');
   const [events, setEvents] = React.useState<ReportEvent[]>([]);
+  const [scrapEvents, setScrapEvents] = React.useState<OperatorScrapEvent[]>([]);
+  const [scrapEventsLoading, setScrapEventsLoading] = React.useState(false);
+  const [switchOrderLoading, setSwitchOrderLoading] = React.useState(false);
   const [snapshot, setSnapshot] = React.useState<OperatorTerminalSnapshot | null>(null);
   const [terminalMessage, setTerminalMessage] = React.useState('');
   const [syncPending, setSyncPending] = React.useState(false);
@@ -267,8 +403,10 @@ export function OperatorTerminalWorkspace({ onNavigate }: OperatorTerminalProps)
   const stationOrders = snapshot
     ? snapshot.activeOrders.filter((order) => order.assignedStation === stationCode && order.assignedWorkCenter === workCenterCode)
     : [fallbackCurrentOrder];
-  const currentOrder = stationOrders.find((order) => order.status === 'running' || order.status === 'paused')
+  const currentOrder = stationOrders.find((order) => order.status === 'running')
+    ?? stationOrders.find((order) => order.status === 'paused')
     ?? stationOrders.find((order) => order.status === 'released')
+    ?? stationOrders.find((order) => order.status === 'completed')
     ?? null;
   const queuedOrders = snapshot
     ? stationOrders.filter((order) => order.id !== currentOrder?.id)
@@ -281,6 +419,9 @@ export function OperatorTerminalWorkspace({ onNavigate }: OperatorTerminalProps)
   const activePartSequence = totalQty > 0 ? Math.min(totalQty, completedQty + 1) : 0;
   const isQuantityComplete = hasAssignedOrder && completedQty >= totalQty;
   const canReport = hasAssignedOrder && state === 'running';
+  const isOrderPaused = hasAssignedOrder && state === 'paused';
+  const isOrderDown = hasAssignedOrder && state === 'down';
+  const isOrderNotStarted = hasAssignedOrder && state === 'not-started';
   const startLabel = state === 'paused' || state === 'down' ? 'Resume' : 'Start Job';
   const jobQueueSummary: JobQueueSummary = {
     machine: {
@@ -319,6 +460,87 @@ export function OperatorTerminalWorkspace({ onNavigate }: OperatorTerminalProps)
     setState(order.status === 'running' ? 'running' : order.status === 'paused' ? 'paused' : order.status === 'completed' ? 'completed' : 'not-started');
   };
 
+  const localScrapEvents = React.useMemo<OperatorScrapEvent[]>(() => events
+    .filter((event) => event.type === 'scrap')
+    .map((event, index) => ({
+      id: `local-scrap-${index}-${event.timestamp}`,
+      timestamp: event.timestamp,
+      quantity: 1,
+      reason: event.reason ?? 'Scrap reported',
+      comment: event.comment ?? '',
+      partNumber: event.partNumber ?? currentOrder?.partNumber ?? '',
+      partName: event.partName ?? currentOrder?.partName ?? '',
+      orderNumber: event.orderNumber ?? currentOrder?.orderNumber ?? '',
+      reportedTotal: event.reportedTotal ?? null,
+    })), [currentOrder, events]);
+
+  const openScrapEvents = async () => {
+    if (!currentOrder || scrapQty <= 0) return;
+    setModal('scrap-events');
+    if (!hasSupabaseOrder) {
+      setScrapEvents(localScrapEvents);
+      return;
+    }
+
+    setScrapEventsLoading(true);
+    try {
+      const nextEvents = await fetchOperatorScrapEvents({
+        orderId: currentOrder.id,
+        stationCode,
+        fallbackOrder: currentOrder,
+      });
+      setScrapEvents(nextEvents);
+    } catch (error) {
+      console.error('Unable to load scrap events', error);
+      setScrapEvents(localScrapEvents);
+      showToast('Could not load scrap events');
+    } finally {
+      setScrapEventsLoading(false);
+    }
+  };
+
+  const syncSnapshotOrder = (order: ProductionOrder) => {
+    setSnapshot((current) => {
+      if (!current) return current;
+      const activeOrders = current.activeOrders.some((candidate) => candidate.id === order.id)
+        ? current.activeOrders.map((candidate) => candidate.id === order.id ? order : candidate)
+        : [order, ...current.activeOrders];
+
+      return {
+        ...current,
+        currentOrder: order,
+        activeOrders,
+        queuedOrders: current.queuedOrders
+          .filter((candidate) => candidate.id !== order.id)
+          .map((candidate) => candidate.id === order.id ? order : candidate),
+      };
+    });
+  };
+
+  const syncSwitchedOrder = (order: ProductionOrder) => {
+    setSnapshot((current) => {
+      if (!current) return current;
+      const activeOrders = current.activeOrders.map((candidate) => {
+        if (candidate.id === order.id) return order;
+        if (
+          candidate.assignedWorkCenter === order.assignedWorkCenter
+          && candidate.assignedStation === order.assignedStation
+          && candidate.status === 'running'
+        ) {
+          return { ...candidate, status: 'paused' as const };
+        }
+        return candidate;
+      });
+
+      return {
+        ...current,
+        currentOrder: order,
+        activeOrders,
+        queuedOrders: activeOrders.filter((candidate) => candidate.id !== order.id),
+      };
+    });
+  };
+
   React.useEffect(() => {
     let active = true;
     const loadSnapshot = async () => {
@@ -346,15 +568,13 @@ export function OperatorTerminalWorkspace({ onNavigate }: OperatorTerminalProps)
 
   React.useEffect(() => {
     if (!snapshot) return;
-    const nextOrder = snapshot.activeOrders.find((order) => (
+    const stationActiveOrders = snapshot.activeOrders.filter((order) => (
       order.assignedStation === stationCode
       && order.assignedWorkCenter === workCenterCode
-      && (order.status === 'running' || order.status === 'paused')
-    )) ?? snapshot.activeOrders.find((order) => (
-      order.assignedStation === stationCode
-      && order.assignedWorkCenter === workCenterCode
-      && order.status === 'released'
     ));
+    const nextOrder = stationActiveOrders.find((order) => order.status === 'running')
+      ?? stationActiveOrders.find((order) => order.status === 'paused')
+      ?? stationActiveOrders.find((order) => order.status === 'released');
 
     if (nextOrder) {
       applyOrder(nextOrder);
@@ -367,7 +587,7 @@ export function OperatorTerminalWorkspace({ onNavigate }: OperatorTerminalProps)
     setState('not-started');
     setEvents([]);
     setTerminalMessage('');
-  }, [snapshot, stationCode, workCenterCode]);
+  }, [currentOrder?.id, stationCode, workCenterCode]);
 
   const reportGood = async () => {
     if (!currentOrder) return;
@@ -383,7 +603,7 @@ export function OperatorTerminalWorkspace({ onNavigate }: OperatorTerminalProps)
     try {
       const order = await reportOperatorProduction({ orderId: currentOrder.id, stationCode, goodDelta: 1 });
       applyOrder(order);
-      setSnapshot((current) => current ? { ...current, currentOrder: order } : current);
+      syncSnapshotOrder(order);
       setEvents((current) => [{ type: 'good', timestamp: formatToastTime() }, ...current].slice(0, 8));
       showToast('Good part reported');
     } catch (error) {
@@ -401,16 +621,35 @@ export function OperatorTerminalWorkspace({ onNavigate }: OperatorTerminalProps)
     }
     if (modal === 'scrap') {
       if (!hasSupabaseOrder) {
+        const nextScrapTotal = Math.min(totalQty - goodQty, scrapQty + 1);
         setScrapQty((quantity) => Math.min(totalQty - goodQty, quantity + 1));
-        setEvents((current) => [{ type: 'scrap', timestamp: formatToastTime() }, ...current].slice(0, 8));
+        setEvents((current) => [{
+          type: 'scrap',
+          timestamp: new Date().toISOString(),
+          reason,
+          comment,
+          partNumber: currentOrder.partNumber,
+          partName: currentOrder.partName,
+          orderNumber: currentOrder.orderNumber,
+          reportedTotal: goodQty + nextScrapTotal,
+        }, ...current].slice(0, 8));
         showToast('Scrap reported');
       } else {
         setSyncPending(true);
         try {
           const order = await reportOperatorProduction({ orderId: currentOrder.id, stationCode, scrapDelta: 1, reason, comment });
           applyOrder(order);
-          setSnapshot((current) => current ? { ...current, currentOrder: order } : current);
-          setEvents((current) => [{ type: 'scrap', timestamp: formatToastTime() }, ...current].slice(0, 8));
+          syncSnapshotOrder(order);
+          setEvents((current) => [{
+            type: 'scrap',
+            timestamp: new Date().toISOString(),
+            reason,
+            comment,
+            partNumber: order.partNumber,
+            partName: order.partName,
+            orderNumber: order.orderNumber,
+            reportedTotal: order.completedQuantity + order.scrapQuantity,
+          }, ...current].slice(0, 8));
           showToast('Scrap reported');
         } catch (error) {
           console.error('Unable to report scrap', error);
@@ -425,7 +664,7 @@ export function OperatorTerminalWorkspace({ onNavigate }: OperatorTerminalProps)
         setSyncPending(true);
         try {
           const order = await setOperatorTerminalState({ orderId: currentOrder.id, stationCode, state: 'paused', reason, comment });
-          setSnapshot((current) => current ? { ...current, currentOrder: order } : current);
+          syncSnapshotOrder(order);
         } catch (error) {
           console.error('Unable to pause job', error);
           showToast('Could not sync pause');
@@ -441,7 +680,7 @@ export function OperatorTerminalWorkspace({ onNavigate }: OperatorTerminalProps)
         setSyncPending(true);
         try {
           const order = await setOperatorTerminalState({ orderId: currentOrder.id, stationCode, state: 'down', reason, comment });
-          setSnapshot((current) => current ? { ...current, currentOrder: order } : current);
+          syncSnapshotOrder(order);
         } catch (error) {
           console.error('Unable to report downtime', error);
           showToast('Could not sync downtime');
@@ -458,7 +697,7 @@ export function OperatorTerminalWorkspace({ onNavigate }: OperatorTerminalProps)
         try {
           const order = await setOperatorTerminalState({ orderId: currentOrder.id, stationCode, state: 'completed', reason, comment });
           applyOrder(order);
-          setSnapshot((current) => current ? { ...current, currentOrder: order } : current);
+          syncSnapshotOrder(order);
         } catch (error) {
           console.error('Unable to complete operation', error);
           showToast('Could not sync completion');
@@ -486,7 +725,7 @@ export function OperatorTerminalWorkspace({ onNavigate }: OperatorTerminalProps)
       setSyncPending(true);
       try {
         const order = await setOperatorTerminalState({ orderId: currentOrder.id, stationCode, state: 'running' });
-        setSnapshot((current) => current ? { ...current, currentOrder: order } : current);
+        syncSnapshotOrder(order);
       } catch (error) {
         console.error('Unable to start or resume job', error);
         showToast('Could not sync job state');
@@ -496,6 +735,37 @@ export function OperatorTerminalWorkspace({ onNavigate }: OperatorTerminalProps)
     }
     setState('running');
     showToast(nextMessage);
+  };
+
+  const switchActiveOrder = async (order: ProductionOrder) => {
+    if (order.id === currentOrder?.id || switchOrderLoading) return;
+    if (!snapshot) {
+      applyOrder(order);
+      syncSwitchedOrder({ ...order, status: 'running' });
+      setEvents([]);
+      setModal(null);
+      showToast('Active order changed');
+      return;
+    }
+
+    setSwitchOrderLoading(true);
+    try {
+      const nextOrder = await switchOperatorActiveOrder({
+        orderId: order.id,
+        stationCode,
+        comment: `Operator Terminal active order changed from ${currentOrder?.orderNumber ?? 'none'} to ${order.orderNumber}`,
+      });
+      applyOrder(nextOrder);
+      syncSwitchedOrder(nextOrder);
+      setEvents([]);
+      setModal(null);
+      showToast('Active order changed');
+    } catch (error) {
+      console.error('Unable to switch active order', error);
+      showToast('Could not change active order');
+    } finally {
+      setSwitchOrderLoading(false);
+    }
   };
 
   return (
@@ -514,10 +784,16 @@ export function OperatorTerminalWorkspace({ onNavigate }: OperatorTerminalProps)
             </div>
             <small>{remainingQty} left</small>
           </article>
-          <article className="operator-terminal-scrap-count" aria-label="Scrap count">
+          <button
+            className="operator-terminal-scrap-count"
+            type="button"
+            aria-label="Open scrap events"
+            disabled={!hasAssignedOrder || scrapQty <= 0}
+            onClick={() => void openScrapEvents()}
+          >
             <span>Scrap</span>
             <strong>{scrapQty}</strong>
-          </article>
+          </button>
           <article className="operator-terminal-context-card operator-terminal-selector-card">
             <span>Work Center</span>
             <OperatorTerminalDropdown
@@ -573,16 +849,21 @@ export function OperatorTerminalWorkspace({ onNavigate }: OperatorTerminalProps)
             <div className="operator-terminal-now-content">
               {currentOrder ? (
                 <div className="operator-terminal-job-fields">
-                  <article><span>Order Number</span><strong>{currentOrder.orderNumber}</strong></article>
+                  <button
+                    className="operator-terminal-order-switch"
+                    type="button"
+                    onClick={() => setModal('switch-order')}
+                  >
+                    <span>Order Number</span>
+                    <strong>{currentOrder.orderNumber}</strong>
+                  </button>
                   <article><span>Part Name</span><strong>{currentOrder.partName}</strong></article>
                   <article><span>Part Number</span><strong>{currentOrder.partNumber}</strong></article>
                   <article><span>Due Date</span><strong>{currentOrder.dueDate}</strong></article>
                 </div>
               ) : (
                 <div className="operator-terminal-empty-job" role="status">
-                  <SquareTerminal size={34} />
                   <strong>No Production Order assigned to this station</strong>
-                  <span>Select another station or assign an order to enable the terminal.</span>
                 </div>
               )}
             </div>
@@ -597,7 +878,7 @@ export function OperatorTerminalWorkspace({ onNavigate }: OperatorTerminalProps)
                   <span>Final counts reached</span>
                 </button>
               ) : (
-                <>
+                <div className="operator-terminal-report-buttons">
                   <button className="operator-action good" type="button" disabled={!hasAssignedOrder || syncPending || !canReport || completedQty >= totalQty} onClick={reportGood}>
                     <Check size={34} />
                     <strong>+1 Good</strong>
@@ -608,7 +889,26 @@ export function OperatorTerminalWorkspace({ onNavigate }: OperatorTerminalProps)
                     <strong>+1 Scrap</strong>
                     <span>Requires reason</span>
                   </button>
-                </>
+                  {isOrderPaused || isOrderDown || isOrderNotStarted ? (
+                    <div className={`operator-terminal-hold-overlay ${isOrderDown ? 'downtime' : isOrderNotStarted ? 'not-started' : 'paused'}`} role="status">
+                      {isOrderDown ? <Wrench size={28} /> : isOrderNotStarted ? <Play size={28} /> : <Pause size={28} />}
+                      <strong>
+                        {isOrderDown
+                          ? 'Production Order is in downtime'
+                          : isOrderNotStarted
+                            ? 'Production Order has not started'
+                            : 'Production Order is paused'}
+                      </strong>
+                      <span>
+                        {isOrderDown
+                          ? 'Press Resume once the issue is cleared to continue reporting production.'
+                          : isOrderNotStarted
+                            ? 'Press Start Job to begin reporting production.'
+                          : 'Press Resume to continue reporting production.'}
+                      </span>
+                    </div>
+                  ) : null}
+                </div>
               )}
               <button className="operator-terminal-undo" type="button" disabled={!hasAssignedOrder || syncPending || !events.length} onClick={() => setModal('undo')}>
                 <RotateCcw size={17} />
@@ -619,7 +919,7 @@ export function OperatorTerminalWorkspace({ onNavigate }: OperatorTerminalProps)
               <button
                 className={`operator-control ${state === 'running' ? 'pause' : 'start'}`}
                 type="button"
-                disabled={!hasAssignedOrder || syncPending || state === 'completed'}
+                disabled={!hasAssignedOrder || syncPending || state === 'completed' || isQuantityComplete}
                 onClick={() => {
                   if (state === 'running') {
                     setModal('pause');
@@ -631,7 +931,7 @@ export function OperatorTerminalWorkspace({ onNavigate }: OperatorTerminalProps)
                 {state === 'running' ? <Pause size={22} /> : <Play size={22} />}
                 {state === 'running' ? 'Pause' : startLabel}
               </button>
-              <button className="operator-control downtime" type="button" disabled={!hasAssignedOrder || syncPending || state === 'completed'} onClick={() => setModal('downtime')}>
+              <button className="operator-control downtime" type="button" disabled={!hasAssignedOrder || syncPending || state === 'completed' || isQuantityComplete} onClick={() => setModal('downtime')}>
                 <AlertTriangle size={22} />
                 Report Downtime
               </button>
@@ -724,8 +1024,25 @@ export function OperatorTerminalWorkspace({ onNavigate }: OperatorTerminalProps)
       </div>
 
       {toast ? <div className="operator-terminal-toast" role="status">{toast}</div> : null}
-      {modal && modal !== 'queue' ? <ReasonModal modal={modal} goodQty={goodQty} scrapQty={scrapQty} onClose={() => setModal(null)} onSubmit={submitModal} /> : null}
+      {modal && modal !== 'queue' && modal !== 'scrap-events' && modal !== 'switch-order' ? <ReasonModal modal={modal} goodQty={goodQty} scrapQty={scrapQty} onClose={() => setModal(null)} onSubmit={submitModal} /> : null}
       {modal === 'queue' ? <JobQueueModal summary={jobQueueSummary} onClose={() => setModal(null)} /> : null}
+      {modal === 'scrap-events' ? (
+        <ScrapEventsModal
+          events={scrapEventsLoading ? [] : scrapEvents.length ? scrapEvents : localScrapEvents}
+          loading={scrapEventsLoading}
+          order={currentOrder}
+          onClose={() => setModal(null)}
+        />
+      ) : null}
+      {modal === 'switch-order' ? (
+        <SwitchOrderModal
+          orders={stationOrders}
+          currentOrderId={currentOrder?.id ?? null}
+          loading={switchOrderLoading}
+          onClose={() => setModal(null)}
+          onSelect={(order) => void switchActiveOrder(order)}
+        />
+      ) : null}
     </section>
   );
 }

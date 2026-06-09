@@ -68,64 +68,76 @@ grant select, insert, update, delete on public.mes_operator_terminal_events to a
 grant select, insert, update, delete on public.mes_operator_terminal_downtime to authenticated;
 grant select, insert, update, delete on public.mes_operator_terminal_traceability to authenticated;
 
+drop policy if exists "Users can read their own operator terminal events" on public.mes_operator_terminal_events;
 create policy "Users can read their own operator terminal events"
   on public.mes_operator_terminal_events
   for select
   using (auth.uid() = user_id);
 
+drop policy if exists "Users can create their own operator terminal events" on public.mes_operator_terminal_events;
 create policy "Users can create their own operator terminal events"
   on public.mes_operator_terminal_events
   for insert
   with check (auth.uid() = user_id);
 
+drop policy if exists "Users can update their own operator terminal events" on public.mes_operator_terminal_events;
 create policy "Users can update their own operator terminal events"
   on public.mes_operator_terminal_events
   for update
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
+drop policy if exists "Users can delete their own operator terminal events" on public.mes_operator_terminal_events;
 create policy "Users can delete their own operator terminal events"
   on public.mes_operator_terminal_events
   for delete
   using (auth.uid() = user_id);
 
+drop policy if exists "Users can read their own operator downtime" on public.mes_operator_terminal_downtime;
 create policy "Users can read their own operator downtime"
   on public.mes_operator_terminal_downtime
   for select
   using (auth.uid() = user_id);
 
+drop policy if exists "Users can create their own operator downtime" on public.mes_operator_terminal_downtime;
 create policy "Users can create their own operator downtime"
   on public.mes_operator_terminal_downtime
   for insert
   with check (auth.uid() = user_id);
 
+drop policy if exists "Users can update their own operator downtime" on public.mes_operator_terminal_downtime;
 create policy "Users can update their own operator downtime"
   on public.mes_operator_terminal_downtime
   for update
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
+drop policy if exists "Users can delete their own operator downtime" on public.mes_operator_terminal_downtime;
 create policy "Users can delete their own operator downtime"
   on public.mes_operator_terminal_downtime
   for delete
   using (auth.uid() = user_id);
 
+drop policy if exists "Users can read their own operator traceability" on public.mes_operator_terminal_traceability;
 create policy "Users can read their own operator traceability"
   on public.mes_operator_terminal_traceability
   for select
   using (auth.uid() = user_id);
 
+drop policy if exists "Users can create their own operator traceability" on public.mes_operator_terminal_traceability;
 create policy "Users can create their own operator traceability"
   on public.mes_operator_terminal_traceability
   for insert
   with check (auth.uid() = user_id);
 
+drop policy if exists "Users can update their own operator traceability" on public.mes_operator_terminal_traceability;
 create policy "Users can update their own operator traceability"
   on public.mes_operator_terminal_traceability
   for update
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
+drop policy if exists "Users can delete their own operator traceability" on public.mes_operator_terminal_traceability;
 create policy "Users can delete their own operator traceability"
   on public.mes_operator_terminal_traceability
   for delete
@@ -234,7 +246,8 @@ begin
       event_type,
       quantity,
       reason,
-      comment
+      comment,
+      payload
     )
     values (
       v_order.id,
@@ -243,7 +256,14 @@ begin
       'production-scrap',
       p_scrap_delta,
       p_reason,
-      p_comment
+      p_comment,
+      jsonb_build_object(
+        'order_number', v_order.order_number,
+        'part_number', v_order.part_number,
+        'part_name', v_order.part_name,
+        'reported_total', v_order.completed_quantity + v_order.scrap_quantity,
+        'scrap_quantity', v_order.scrap_quantity
+      )
     );
   end if;
 
@@ -359,6 +379,76 @@ begin
 end;
 $$;
 
+create or replace function public.mes_operator_switch_active_order(
+  p_order_id uuid,
+  p_station_code text,
+  p_comment text default null
+)
+returns public.mes_production_orders
+language plpgsql
+security invoker
+as $$
+declare
+  v_order public.mes_production_orders%rowtype;
+  v_station_code text;
+begin
+  select *
+    into v_order
+  from public.mes_production_orders
+  where id = p_order_id
+    and user_id = auth.uid()
+    and manufacturing_type = 'single-operation'
+    and status in ('released', 'running', 'paused')
+  for update;
+
+  if not found then
+    raise exception 'Production order not found.';
+  end if;
+
+  v_station_code = coalesce(nullif(p_station_code, ''), v_order.assigned_station);
+
+  update public.mes_production_orders
+  set status = 'paused'
+  where user_id = auth.uid()
+    and id <> v_order.id
+    and manufacturing_type = 'single-operation'
+    and assigned_work_center = v_order.assigned_work_center
+    and assigned_station = v_station_code
+    and status = 'running';
+
+  update public.mes_production_orders
+  set status = 'running'
+  where id = v_order.id
+  returning * into v_order;
+
+  insert into public.mes_operator_terminal_events (
+    production_order_id,
+    work_center_code,
+    station_code,
+    event_type,
+    comment,
+    payload
+  )
+  values (
+    v_order.id,
+    v_order.assigned_work_center,
+    v_station_code,
+    'job-resumed',
+    p_comment,
+    jsonb_build_object('action', 'active-order-switch')
+  );
+
+  update public.mes_work_center_stations
+  set current_job = v_order.order_number,
+      status = 'running',
+      last_event = 'Active order changed'
+  where user_id = auth.uid()
+    and code = v_station_code;
+
+  return v_order;
+end;
+$$;
+
 create or replace function public.mes_operator_save_traceability(
   p_order_id uuid,
   p_station_code text,
@@ -450,4 +540,5 @@ $$;
 
 grant execute on function public.mes_operator_report_production(uuid, text, integer, integer, text, text) to authenticated;
 grant execute on function public.mes_operator_set_state(uuid, text, text, text, text) to authenticated;
+grant execute on function public.mes_operator_switch_active_order(uuid, text, text) to authenticated;
 grant execute on function public.mes_operator_save_traceability(uuid, text, text, text, text, text, text, numeric, numeric, text[], text, numeric, numeric, jsonb) to authenticated;

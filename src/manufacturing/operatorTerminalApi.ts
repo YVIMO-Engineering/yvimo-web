@@ -37,6 +37,31 @@ type WorkCenterRow = {
   name: string;
 };
 
+type OperatorTerminalEventRow = {
+  id: string;
+  production_order_id: string | null;
+  work_center_code: string;
+  station_code: string;
+  event_type: string;
+  quantity: number;
+  reason: string | null;
+  comment: string | null;
+  payload: Record<string, unknown> | null;
+  created_at: string;
+};
+
+export type OperatorScrapEvent = {
+  id: string;
+  timestamp: string;
+  quantity: number;
+  reason: string;
+  comment: string;
+  partNumber: string;
+  partName: string;
+  orderNumber: string;
+  reportedTotal: number | null;
+};
+
 export type OperatorTerminalSnapshot = {
   currentOrder: ProductionOrder | null;
   activeOrders: ProductionOrder[];
@@ -106,7 +131,10 @@ export async function fetchOperatorTerminalSnapshot(client: OperatorClient = sup
   if (ordersError) throw ordersError;
 
   const orders = ((ordersData ?? []) as ProductionOrderRow[]).map(mapProductionOrderRow);
-  const currentOrder = orders.find((order) => order.status === 'running' || order.status === 'paused') ?? orders[0] ?? null;
+  const currentOrder = orders.find((order) => order.status === 'running')
+    ?? orders.find((order) => order.status === 'paused')
+    ?? orders[0]
+    ?? null;
   const stationCode = currentOrder?.assignedStation ?? '';
   const workCenterCode = currentOrder?.assignedWorkCenter ?? '';
 
@@ -183,6 +211,40 @@ export async function reportOperatorProduction(
   return mapProductionOrderRow(data as ProductionOrderRow);
 }
 
+export async function fetchOperatorScrapEvents(
+  input: {
+    orderId: string;
+    stationCode: string;
+    fallbackOrder?: Pick<ProductionOrder, 'orderNumber' | 'partNumber' | 'partName'>;
+  },
+  client: OperatorClient = supabase,
+): Promise<OperatorScrapEvent[]> {
+  const { data, error } = await client
+    .from('mes_operator_terminal_events')
+    .select('id, production_order_id, work_center_code, station_code, event_type, quantity, reason, comment, payload, created_at')
+    .eq('production_order_id', input.orderId)
+    .eq('station_code', input.stationCode)
+    .eq('event_type', 'production-scrap')
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+
+  return ((data ?? []) as OperatorTerminalEventRow[]).map((row) => {
+    const payload = row.payload ?? {};
+    return {
+      id: row.id,
+      timestamp: row.created_at,
+      quantity: row.quantity,
+      reason: row.reason ?? 'Scrap reported',
+      comment: row.comment ?? '',
+      partNumber: typeof payload.part_number === 'string' ? payload.part_number : input.fallbackOrder?.partNumber ?? '',
+      partName: typeof payload.part_name === 'string' ? payload.part_name : input.fallbackOrder?.partName ?? '',
+      orderNumber: typeof payload.order_number === 'string' ? payload.order_number : input.fallbackOrder?.orderNumber ?? '',
+      reportedTotal: typeof payload.reported_total === 'number' ? payload.reported_total : null,
+    };
+  });
+}
+
 export async function setOperatorTerminalState(
   input: {
     orderId: string;
@@ -203,6 +265,74 @@ export async function setOperatorTerminalState(
 
   if (error) throw error;
   return mapProductionOrderRow(data as ProductionOrderRow);
+}
+
+export async function switchOperatorActiveOrder(
+  input: {
+    orderId: string;
+    stationCode: string;
+    comment?: string;
+  },
+  client: OperatorClient = supabase,
+): Promise<ProductionOrder> {
+  const { data, error } = await client.rpc('mes_operator_switch_active_order', {
+    p_order_id: input.orderId,
+    p_station_code: input.stationCode,
+    p_comment: input.comment ?? null,
+  });
+
+  if (!error) return mapProductionOrderRow(data as ProductionOrderRow);
+
+  const { data: selectedData, error: selectedError } = await client
+    .from('mes_production_orders')
+    .select('*')
+    .eq('id', input.orderId)
+    .single();
+
+  if (selectedError) throw error;
+
+  const selectedOrder = selectedData as ProductionOrderRow;
+  const stationCode = input.stationCode || selectedOrder.assigned_station || '';
+
+  await client
+    .from('mes_production_orders')
+    .update({ status: 'paused' })
+    .neq('id', input.orderId)
+    .eq('manufacturing_type', 'single-operation')
+    .eq('assigned_work_center', selectedOrder.assigned_work_center)
+    .eq('assigned_station', stationCode)
+    .eq('status', 'running');
+
+  const { data: updatedData, error: updateError } = await client
+    .from('mes_production_orders')
+    .update({ status: 'running' })
+    .eq('id', input.orderId)
+    .select('*')
+    .single();
+
+  if (updateError) throw error;
+
+  await client
+    .from('mes_work_center_stations')
+    .update({
+      current_job: selectedOrder.order_number,
+      status: 'running',
+      last_event: 'Active order changed',
+    })
+    .eq('code', stationCode);
+
+  await client
+    .from('mes_operator_terminal_events')
+    .insert({
+      production_order_id: input.orderId,
+      work_center_code: selectedOrder.assigned_work_center,
+      station_code: stationCode,
+      event_type: 'job-resumed',
+      comment: input.comment ?? null,
+      payload: { action: 'active-order-switch', fallback: true },
+    });
+
+  return mapProductionOrderRow(updatedData as ProductionOrderRow);
 }
 
 export async function saveOperatorTraceability(
