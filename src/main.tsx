@@ -2181,7 +2181,7 @@ function LoggedDashboardPage({
   const [manufacturingOrganizationDialogOpen, setManufacturingOrganizationDialogOpen] = React.useState(false);
   const [manufacturingInviteRole, setManufacturingInviteRole] = React.useState<ManufacturingOrganizationInviteRole>('Operator');
   const [manufacturingOrganizationUploadingLogo, setManufacturingOrganizationUploadingLogo] = React.useState(false);
-  const [manufacturingOrganizationMode, setManufacturingOrganizationMode] = React.useState<'manage' | 'edit' | 'switch'>('manage');
+  const [manufacturingOrganizationMode, setManufacturingOrganizationMode] = React.useState<'manage' | 'edit' | 'members' | 'switch'>('manage');
   const [manufacturingOrganizationMembers, setManufacturingOrganizationMembers] = React.useState<ManufacturingOrganizationMember[]>([]);
   const [manufacturingSwitchDialogOpen, setManufacturingSwitchDialogOpen] = React.useState(false);
   const [manufacturingSwitchAction, setManufacturingSwitchAction] = React.useState<'leave' | 'transfer' | 'disband'>('leave');
@@ -2251,12 +2251,24 @@ function LoggedDashboardPage({
           userId: member.user_id,
           role: member.role,
         }));
-        setManufacturingOrganizationMembers(members);
-        const nextOwner = members.find((member) => member.userId !== user.id);
+        const nextMembers = members.some((member) => member.userId === user.id)
+          ? members
+          : [{
+            id: 'local-current-user',
+            userId: user.id,
+            role: manufacturingOrganization.role,
+          }, ...members];
+        setManufacturingOrganizationMembers(nextMembers);
+        const nextOwner = nextMembers.find((member) => member.userId !== user.id);
         setManufacturingNewOwnerUserId((currentOwnerId) => currentOwnerId || nextOwner?.userId || '');
       })
       .catch((error) => {
         console.warn('Unable to load manufacturing organization members', error);
+        setManufacturingOrganizationMembers([{
+          id: 'local-current-user',
+          userId: user.id,
+          role: manufacturingOrganization.role,
+        }]);
       });
 
     return () => {
@@ -2564,22 +2576,38 @@ function LoggedDashboardPage({
   };
 
   const updateManufacturingInviteRole = async (role: ManufacturingOrganizationInviteRole) => {
+    if (role === manufacturingInviteRole) return;
     setManufacturingInviteRole(role);
-    setManufacturingOrganization((currentOrganization) => currentOrganization ? ({ ...currentOrganization, inviteRole: role }) : currentOrganization);
     if (!manufacturingOrganization) return;
 
+    const nextInviteCode = createManufacturingInviteCode(manufacturingOrganization.name);
+    setManufacturingOrganization((currentOrganization) => currentOrganization ? ({
+      ...currentOrganization,
+      inviteCode: nextInviteCode,
+      inviteRole: role,
+    }) : currentOrganization);
+
     try {
-      const { error } = await supabase
+      await supabase
         .from('manufacturing_organization_invites')
-        .update({ default_role: role })
+        .update({ active: false })
         .eq('organization_id', manufacturingOrganization.id)
         .eq('active', true);
 
+      const { error } = await supabase
+        .from('manufacturing_organization_invites')
+        .insert({
+          organization_id: manufacturingOrganization.id,
+          code: nextInviteCode,
+          default_role: role,
+          created_by: user.id,
+        });
+
       if (error) throw error;
-      setManufacturingOrganizationMessage(`Invite role set to ${role}.`);
+      setManufacturingOrganizationMessage(`New invite code generated for ${role}.`);
     } catch (error) {
-      console.warn('Unable to update manufacturing invite role', error);
-      setManufacturingOrganizationMessage(`Invite role set locally to ${role}.`);
+      console.warn('Unable to regenerate Supabase invite code for role change', error);
+      setManufacturingOrganizationMessage(`New local invite code generated for ${role}.`);
     }
   };
 
@@ -3464,74 +3492,134 @@ function LoggedDashboardPage({
         <button className="manufacturing-organization-dialog-close" type="button" aria-label="Close organization menu" onClick={() => setManufacturingOrganizationDialogOpen(false)}>
           <X size={18} />
         </button>
-        <div className="manufacturing-organization-dialog-heading">
-          <label className="manufacturing-organization-logo-control">
+        <div className="manufacturing-organization-zone manufacturing-organization-details-zone">
+          <div className="manufacturing-organization-dialog-heading">
             <span className="manufacturing-organization-icon">
-              {manufacturingOrganization?.logoUrl ? <img src={manufacturingOrganization.logoUrl} alt="" aria-hidden="true" /> : <Building2 size={22} />}
+              {manufacturingOrganization?.logoUrl ? <img src={manufacturingOrganization.logoUrl} alt="" aria-hidden="true" /> : <Building2 size={30} />}
             </span>
-            <input type="file" accept="image/*" onChange={uploadManufacturingOrganizationLogo} disabled={manufacturingOrganizationUploadingLogo} />
-          </label>
-          <div>
-            <span>Manufacturing organization</span>
-            <h2 id="manufacturing-organization-dialog-title">{manufacturingOrganization?.name || 'No organization selected'}</h2>
-            <p>{manufacturingOrganizationUploadingLogo ? 'Uploading logo...' : manufacturingOrganization ? `${manufacturingOrganization.role} access · ${manufacturingOrganization.memberCount} member${manufacturingOrganization.memberCount === 1 ? '' : 's'} · click logo to change it` : 'Create an organization or join one with an invite code.'}</p>
+            <div>
+              <span>Manufacturing organization</span>
+              <h2 id="manufacturing-organization-dialog-title">{manufacturingOrganization?.name || 'No organization selected'}</h2>
+              <p>{manufacturingOrganization ? `${manufacturingOrganization.role} access · ${manufacturingOrganization.memberCount} member${manufacturingOrganization.memberCount === 1 ? '' : 's'}` : 'Create an organization or join one with an invite code.'}</p>
+            </div>
           </div>
+          {manufacturingOrganization && manufacturingOrganizationMode !== 'switch' ? (
+            <div className="manufacturing-organization-manage">
+              {manufacturingOrganizationMode === 'edit' ? (
+                <>
+                  <label>
+                    <span>Organization name</span>
+                    <input value={manufacturingOrganizationName} onChange={(event) => setManufacturingOrganizationName(event.target.value)} placeholder="Organization name" />
+                  </label>
+                  <label className="manufacturing-organization-logo-edit">
+                    <span>Organization image</span>
+                    <span className="manufacturing-organization-logo-edit-control">
+                      <span className="manufacturing-organization-icon">
+                        {manufacturingOrganization.logoUrl ? <img src={manufacturingOrganization.logoUrl} alt="" aria-hidden="true" /> : <Building2 size={24} />}
+                      </span>
+                      <strong>{manufacturingOrganizationUploadingLogo ? 'Uploading...' : 'Change image'}</strong>
+                    </span>
+                    <input type="file" accept="image/*" onChange={uploadManufacturingOrganizationLogo} disabled={manufacturingOrganizationUploadingLogo} />
+                  </label>
+                  <button type="button" onClick={() => void saveManufacturingOrganizationName()}>Save changes</button>
+                  <button type="button" onClick={() => setManufacturingOrganizationMode('manage')}>Cancel</button>
+                </>
+              ) : manufacturingOrganizationMode === 'members' ? (
+                <div className="manufacturing-organization-members">
+                  <div className="manufacturing-organization-members-heading">
+                    <span>Organization members</span>
+                    <button type="button" onClick={() => setManufacturingOrganizationMode('manage')}>Done</button>
+                  </div>
+                  <div className="manufacturing-organization-member-list">
+                    {(manufacturingOrganizationMembers.length > 0 ? manufacturingOrganizationMembers : [{
+                      id: 'local-current-user',
+                      userId: user.id,
+                      role: manufacturingOrganization.role,
+                    }]).map((member) => {
+                      const isCurrentUser = member.userId === user.id;
+                      const memberUser: AppUser = isCurrentUser ? user : {
+                        id: member.userId,
+                        email: '',
+                        name: `Member ${member.userId.slice(0, 8)}`,
+                        subscription: 'Explorer',
+                        yvimoPoints: 0,
+                        experiencePoints: 0,
+                        profileLevel: 1,
+                        profileLevelProgress: 0,
+                      };
+
+                      return (
+                        <div className="manufacturing-organization-member-row" key={member.id}>
+                          <div
+                            className="manufacturing-organization-member-ring"
+                            style={{ '--member-progress': `${memberUser.profileLevelProgress}%` } as React.CSSProperties}
+                            aria-label={`${memberUser.profileLevelProgress}% level progress`}
+                          >
+                            <UserAvatar user={memberUser} className="manufacturing-organization-member-avatar" />
+                          </div>
+                          <div>
+                            <strong>{memberUser.name}{isCurrentUser ? ' (You)' : ''}</strong>
+                            <span>{member.role} access</span>
+                          </div>
+                          <em>Level {memberUser.profileLevel}</em>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <button type="button" onClick={() => setManufacturingOrganizationMode('edit')}><Pencil size={15} /> Edit Organization</button>
+                  <button type="button" onClick={() => setManufacturingOrganizationMode('members')}><Users size={15} /> View Members</button>
+                  <button type="button" onClick={openManufacturingSwitchConfirmation}>Switch Organization</button>
+                </>
+              )}
+            </div>
+          ) : (
+            <div className="manufacturing-organization-controls">
+              <label>
+                <span>Create organization</span>
+                <input value={manufacturingOrganizationName} onChange={(event) => setManufacturingOrganizationName(event.target.value)} placeholder="Organization name" />
+              </label>
+              <button type="button" onClick={() => void createManufacturingOrganization()}><Plus size={15} /> Create</button>
+              <label>
+                <span>Join organization</span>
+                <input value={manufacturingJoinCode} onChange={(event) => setManufacturingJoinCode(event.target.value.toUpperCase())} placeholder="CODE-123ABC" />
+              </label>
+              <button type="button" onClick={() => void joinManufacturingOrganization()}><UserPlus size={15} /> Join</button>
+            </div>
+          )}
         </div>
-        <div className="manufacturing-organization-code" aria-label="Organization invite code">
-          <span>Invite code</span>
-          <strong>{manufacturingOrganization?.inviteCode || 'Create or join first'}</strong>
-        </div>
-        <fieldset className="manufacturing-organization-roles" aria-label="Invite permission">
-          <legend>Invite permission</legend>
-          {(['Admin', 'Operator', 'Viewer'] as ManufacturingOrganizationInviteRole[]).map((role) => (
-            <button
-              type="button"
-              className={role === manufacturingInviteRole ? 'active' : ''}
-              key={role}
-              onClick={() => void updateManufacturingInviteRole(role)}
-            >
-              {role}
-            </button>
-          ))}
-        </fieldset>
-        {manufacturingOrganization && manufacturingOrganizationMode !== 'switch' ? (
-          <div className="manufacturing-organization-manage">
-            {manufacturingOrganizationMode === 'edit' ? (
-              <>
-                <label>
-                  <span>Organization name</span>
-                  <input value={manufacturingOrganizationName} onChange={(event) => setManufacturingOrganizationName(event.target.value)} placeholder="Organization name" />
-                </label>
-                <button type="button" onClick={() => void saveManufacturingOrganizationName()}>Save changes</button>
-                <button type="button" onClick={() => setManufacturingOrganizationMode('manage')}>Cancel</button>
-              </>
-            ) : (
-              <>
-                <button type="button" onClick={() => setManufacturingOrganizationMode('edit')}><Pencil size={15} /> Edit Organization</button>
-                <button type="button" onClick={() => setManufacturingOrganizationMessage('Members view will show users and roles after the member directory is connected.')}><Users size={15} /> View Members</button>
-                <button type="button" onClick={openManufacturingSwitchConfirmation}>Switch Organization</button>
-              </>
-            )}
+        {manufacturingOrganization ? (
+          <div className="manufacturing-organization-zone manufacturing-organization-invite-zone">
+            <div className="manufacturing-organization-code" aria-label="Organization invite code">
+              <span>Invite code</span>
+              <strong>{manufacturingOrganization.inviteCode}</strong>
+            </div>
+            <fieldset className="manufacturing-organization-roles" aria-label="Invite permission">
+              <legend>Invite permission</legend>
+              {(['Admin', 'Operator', 'Viewer'] as ManufacturingOrganizationInviteRole[]).map((role) => (
+                <button
+                  type="button"
+                  className={role === manufacturingInviteRole ? 'active' : ''}
+                  key={role}
+                  onClick={() => void updateManufacturingInviteRole(role)}
+                >
+                  {role}
+                </button>
+              ))}
+            </fieldset>
+            <div className="manufacturing-organization-actions">
+              <button type="button" onClick={copyManufacturingInviteCode}><Users size={15} /> Copy invite</button>
+              <button type="button" onClick={regenerateManufacturingInviteCode}>New code</button>
+              <span>{manufacturingOrganizationMessage || 'Shared MES data will use this organization context.'}</span>
+            </div>
           </div>
-        ) : (
-          <div className="manufacturing-organization-controls">
-            <label>
-              <span>Create organization</span>
-              <input value={manufacturingOrganizationName} onChange={(event) => setManufacturingOrganizationName(event.target.value)} placeholder="Organization name" />
-            </label>
-            <button type="button" onClick={() => void createManufacturingOrganization()}><Plus size={15} /> Create</button>
-            <label>
-              <span>Join organization</span>
-              <input value={manufacturingJoinCode} onChange={(event) => setManufacturingJoinCode(event.target.value.toUpperCase())} placeholder="CODE-123ABC" />
-            </label>
-            <button type="button" onClick={() => void joinManufacturingOrganization()}><UserPlus size={15} /> Join</button>
+        ) : manufacturingOrganizationMessage ? (
+          <div className="manufacturing-organization-actions manufacturing-organization-message-zone">
+            <span>{manufacturingOrganizationMessage}</span>
           </div>
-        )}
-        <div className="manufacturing-organization-actions">
-          <button type="button" onClick={copyManufacturingInviteCode}><Users size={15} /> Copy invite</button>
-          <button type="button" onClick={regenerateManufacturingInviteCode}>New code</button>
-          <span>{manufacturingOrganizationMessage || 'Shared MES data will use this organization context.'}</span>
-        </div>
+        ) : null}
       </section>
       {manufacturingSwitchDialogOpen ? (
         <section

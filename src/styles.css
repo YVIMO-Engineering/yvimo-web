@@ -2135,7 +2135,7 @@ button {
   overflow: hidden;
   place-items: center;
   border: 1px solid rgba(255, 138, 31, 0.3);
-  border-radius: 999px;
+  border-radius: 10px;
   background: #fff6ee;
   color: var(--orange);
 }
@@ -2216,13 +2216,47 @@ button {
   box-shadow: 0 0 0 3px rgba(255, 138, 31, 0.12);
 }
 
+.manufacturing-organization-logo-edit {
+  flex: 1 1 240px;
+  cursor: pointer;
+}
+
+.manufacturing-organization-logo-edit input {
+  display: none;
+}
+
+.manufacturing-organization-logo-edit-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 46px;
+  border: 1px solid rgba(18, 29, 41, 0.12);
+  border-radius: 8px;
+  padding: 6px 12px 6px 6px;
+  background: #f8fafc;
+  color: var(--ink);
+  font-size: 0.82rem;
+  font-weight: 950;
+}
+
+.manufacturing-organization-logo-edit-control .manufacturing-organization-icon {
+  width: 38px;
+  height: 38px;
+}
+
+.manufacturing-organization-logo-edit:hover .manufacturing-organization-logo-edit-control,
+.manufacturing-organization-logo-edit:focus-within .manufacturing-organization-logo-edit-control {
+  border-color: rgba(255, 138, 31, 0.5);
+  box-shadow: 0 0 0 3px rgba(255, 138, 31, 0.12);
+}
+
 .manufacturing-organization-roles {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   min-width: 0;
   border: 0;
-  margin: 0 42px 0 0;
+  margin: 0;
   padding: 0;
 }
 
@@ -2241,12 +2275,12 @@ button {
   align-items: center;
   justify-content: center;
   min-width: 0;
-  border: 1px solid rgba(18, 29, 41, 0.1);
+  border: 1px solid rgba(38, 56, 77, 0.18);
   border-radius: 8px;
   min-height: 42px;
   padding: 0 12px;
-  background: #f8fafc;
-  color: #5f6b7a;
+  background: #ffffff;
+  color: #26384d;
   font: inherit;
   font-size: 0.76rem;
   font-weight: 950;
@@ -2254,21 +2288,21 @@ button {
 }
 
 .manufacturing-organization-roles button.active {
-  border-color: rgba(255, 138, 31, 0.34);
-  background: #fff6ee;
-  color: #9a4a0c;
+  border-color: rgba(255, 138, 31, 0.72);
+  background: #ff8a1f;
+  color: #17110b;
 }
 
 .manufacturing-organization-roles button:hover,
 .manufacturing-organization-roles button:focus-visible {
   outline: none;
-  border-color: rgba(255, 138, 31, 0.5);
+  border-color: rgba(255, 138, 31, 0.56);
+  background: #fff7ef;
   color: #7a3300;
 }
 
 .manufacturing-organization-controls {
   display: grid;
-  grid-column: 1 / -1;
   grid-template-columns: minmax(120px, 1fr) auto minmax(120px, 1fr) auto;
   align-items: end;
   gap: 12px;
@@ -2279,7 +2313,6 @@ button {
 
 .manufacturing-organization-manage {
   display: flex;
-  grid-column: 1 / -1;
   flex-wrap: wrap;
   align-items: end;
   gap: 10px;
@@ -2290,6 +2323,115 @@ button {
 
 .manufacturing-organization-manage label {
   flex: 1 1 320px;
+}
+
+.manufacturing-organization-manage .manufacturing-organization-logo-edit {
+  flex: 1 1 240px;
+}
+
+.manufacturing-organization-members {
+  display: grid;
+  flex: 1 1 100%;
+  gap: 12px;
+  min-width: 0;
+}
+
+.manufacturing-organization-members-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.manufacturing-organization-members-heading span {
+  color: #5f6b7a;
+  font-size: 0.68rem;
+  font-weight: 950;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.manufacturing-organization-member-list {
+  display: grid;
+  gap: 8px;
+}
+
+.manufacturing-organization-member-row {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  border: 1px solid rgba(18, 29, 41, 0.1);
+  border-radius: 8px;
+  padding: 8px 10px 8px 8px;
+  background: #ffffff;
+}
+
+.manufacturing-organization-member-ring {
+  --member-progress: 0%;
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at center, #ffffff 0 61%, transparent 62%),
+    conic-gradient(var(--orange) var(--member-progress), #e7ebf0 0);
+  box-shadow: 0 0 10px rgba(255, 138, 31, 0.14);
+}
+
+.manufacturing-organization-member-avatar {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 3px solid #ffffff;
+  border-radius: 999px;
+  background: #eef1f5;
+  color: var(--dark-high);
+  font-size: 12px;
+  font-weight: 950;
+  object-fit: cover;
+}
+
+.manufacturing-organization-member-row div:not(.manufacturing-organization-member-ring) {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.manufacturing-organization-member-row strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 0.88rem;
+  font-weight: 950;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.manufacturing-organization-member-row span {
+  overflow: hidden;
+  color: #5f6b7a;
+  font-size: 0.76rem;
+  font-weight: 760;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.manufacturing-organization-member-row em {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  border: 1px solid rgba(255, 138, 31, 0.34);
+  border-radius: 999px;
+  padding: 0 9px;
+  background: #fff7ef;
+  color: #7a3300;
+  font-size: 0.72rem;
+  font-style: normal;
+  font-weight: 950;
+  white-space: nowrap;
 }
 
 .manufacturing-organization-controls input,
@@ -2314,10 +2456,10 @@ button {
   justify-content: center;
   gap: 6px;
   min-height: 40px;
-  border: 1px solid rgba(255, 138, 31, 0.3);
+  border: 1px solid rgba(255, 138, 31, 0.44);
   border-radius: 8px;
   padding: 0 10px;
-  background: #fff6ee;
+  background: #ffffff;
   color: #7a3300;
   font-size: 0.78rem;
   font-weight: 950;
@@ -2331,12 +2473,31 @@ button {
 .manufacturing-organization-actions button:hover,
 .manufacturing-organization-actions button:focus-visible {
   outline: none;
-  background: var(--orange);
+  border-color: rgba(255, 138, 31, 0.72);
+  background: #ff8a1f;
   color: #17110b;
 }
 
+.manufacturing-organization-manage button:first-of-type,
+.manufacturing-organization-controls button:first-of-type,
+.manufacturing-organization-actions button:first-of-type {
+  border-color: rgba(255, 138, 31, 0.72);
+  background: #ff8a1f;
+  color: #17110b;
+}
+
+.manufacturing-organization-manage button:first-of-type:hover,
+.manufacturing-organization-manage button:first-of-type:focus-visible,
+.manufacturing-organization-controls button:first-of-type:hover,
+.manufacturing-organization-controls button:first-of-type:focus-visible,
+.manufacturing-organization-actions button:first-of-type:hover,
+.manufacturing-organization-actions button:first-of-type:focus-visible {
+  border-color: #26384d;
+  background: #26384d;
+  color: #ffffff;
+}
+
 .manufacturing-organization-actions {
-  grid-column: 1 / -1;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -2384,8 +2545,8 @@ button {
   display: grid;
   gap: 3px;
   min-width: 0;
-  justify-items: start;
-  text-align: left;
+  justify-items: center;
+  text-align: center;
 }
 
 .manufacturing-organization-trigger em,
@@ -2398,7 +2559,13 @@ button {
   text-transform: uppercase;
 }
 
+.manufacturing-organization-trigger em {
+  justify-self: start;
+  text-align: left;
+}
+
 .manufacturing-organization-trigger strong {
+  width: 100%;
   overflow: hidden;
   color: var(--ink);
   font-size: 0.92rem;
@@ -2408,6 +2575,7 @@ button {
 }
 
 .manufacturing-organization-trigger small {
+  width: 100%;
   overflow: hidden;
   color: #5f6b7a;
   font-size: 0.75rem;
@@ -2431,7 +2599,8 @@ button {
   position: relative;
   z-index: 131;
   display: grid;
-  grid-template-columns: minmax(300px, 1fr) minmax(220px, 0.58fr) minmax(310px, 0.9fr);
+  grid-template-columns: minmax(0, 1.05fr) minmax(340px, 0.95fr);
+  align-items: start;
   gap: 16px;
   width: min(100%, 1040px);
   border: 1px solid rgba(255, 138, 31, 0.32);
@@ -2442,6 +2611,24 @@ button {
   box-shadow: 0 28px 80px rgba(0, 0, 0, 0.28);
 }
 
+.manufacturing-organization-zone {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  border: 1px solid rgba(18, 29, 41, 0.1);
+  border-radius: 8px;
+  padding: 14px;
+  background: #ffffff;
+}
+
+.manufacturing-organization-details-zone {
+  padding-right: 48px;
+}
+
+.manufacturing-organization-invite-zone {
+  background: #f8fafc;
+}
+
 .manufacturing-organization-dialog-close {
   position: absolute;
   top: 10px;
@@ -2450,27 +2637,33 @@ button {
   width: 32px;
   height: 32px;
   place-items: center;
-  border: 1px solid rgba(18, 29, 41, 0.1);
+  border: 1px solid #26384d;
   border-radius: 8px;
-  background: #ffffff;
-  color: #415268;
+  background: #26384d;
+  color: #ffffff;
   cursor: pointer;
 }
 
 .manufacturing-organization-dialog-close:hover,
 .manufacturing-organization-dialog-close:focus-visible {
   outline: none;
-  border-color: rgba(255, 138, 31, 0.4);
-  color: #7a3300;
+  border-color: var(--orange);
+  background: var(--orange);
+  color: #17110b;
 }
 
 .manufacturing-organization-dialog-heading {
   display: grid;
-  grid-template-columns: 46px minmax(0, 1fr);
+  grid-template-columns: 62px minmax(0, 1fr);
   align-items: center;
   gap: 14px;
   min-width: 0;
-  padding-right: 34px;
+}
+
+.manufacturing-organization-dialog-heading .manufacturing-organization-icon {
+  width: 60px;
+  height: 60px;
+  border-width: 2px;
 }
 
 .manufacturing-organization-dialog-heading div {
@@ -2499,8 +2692,11 @@ button {
   white-space: nowrap;
 }
 
-.manufacturing-organization-dialog .manufacturing-organization-controls,
-.manufacturing-organization-dialog .manufacturing-organization-actions {
+.manufacturing-organization-dialog .manufacturing-organization-controls {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.manufacturing-organization-message-zone {
   grid-column: 1 / -1;
 }
 
@@ -10544,6 +10740,10 @@ button {
 
   .manufacturing-organization-dialog {
     padding: 12px;
+  }
+
+  .manufacturing-organization-details-zone {
+    padding-right: 14px;
   }
 
   .manufacturing-organization-card {
