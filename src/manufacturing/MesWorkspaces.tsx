@@ -130,8 +130,20 @@ type TraceabilityOperatorEventRow = {
   work_center_code: string;
   station_code: string;
   event_type: string;
+  quantity: number;
   reason: string | null;
+  comment: string | null;
+  payload: Record<string, unknown> | null;
   created_at: string;
+  mes_production_orders?: {
+    order_number: string;
+    part_number: string;
+    part_name: string;
+    planned_quantity: number;
+    completed_quantity: number;
+    scrap_quantity: number;
+    status: ProductionOrderStatus;
+  } | null;
 };
 
 type TraceabilityOrderOption = {
@@ -247,6 +259,13 @@ const formatTimestamp = (value: string) =>
     hour: '2-digit',
     minute: '2-digit',
   }).format(new Date(value));
+
+function toLocalIsoDate(value: string | Date) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return typeof value === 'string' ? value.slice(0, 10) : '';
+  const localDate = new Date(date.getTime() - (date.getTimezoneOffset() * 60_000));
+  return localDate.toISOString().slice(0, 10);
+}
 
 export function MesStatusBadge({ value, tone = 'status' }: StatusBadgeProps) {
   return <span className={`mes-status-badge ${tone}-${value}`}>{formatLabel(value)}</span>;
@@ -4833,6 +4852,12 @@ function mapTraceabilityCapture(row: TraceabilityCaptureRow): TraceabilityCaptur
 }
 
 const traceabilityShiftOptions = ['1st', '2nd', '3rd'];
+const traceabilityPageSizeOptions = [
+  { value: '10', label: '10' },
+  { value: '20', label: '20' },
+  { value: '50', label: '50' },
+  { value: '100', label: '100' },
+];
 const traceabilityStatusOptions: ProductionOrderStatus[] = ['planned', 'released', 'running', 'paused', 'completed', 'cancelled'];
 const traceabilityFiltersStorageKey = 'yvimo-mes-traceability-filters';
 
@@ -4849,7 +4874,7 @@ type TraceabilityFilters = {
 };
 
 function getDefaultTraceabilityFilters(): TraceabilityFilters {
-  const today = toIsoDate(new Date());
+  const today = toLocalIsoDate(new Date());
   return {
     orderSearch: '',
     partSearch: '',
@@ -4909,8 +4934,47 @@ function formatTraceabilityStatus(status: ProductionOrderStatus | '') {
   return status ? formatLabel(status) : 'Unknown';
 }
 
+type TraceabilityEventTone = 'info' | 'success' | 'danger' | 'warning';
+
+function getTraceabilityEventTone(eventType: string): TraceabilityEventTone {
+  if (eventType === 'job-paused') return 'info';
+  if (eventType === 'job-started' || eventType === 'job-resumed' || eventType === 'operation-completed') return 'success';
+  if (eventType === 'downtime-started' || eventType === 'production-scrap') return 'danger';
+  return 'warning';
+}
+
+function getTraceabilityEventLabel(eventType: string) {
+  const eventLabels: Record<string, string> = {
+    'job-started': 'Job Started',
+    'job-resumed': 'Job Resumed',
+    'job-paused': 'Job Paused',
+    'downtime-started': 'Downtime Started',
+    'production-scrap': '+1 Scrap',
+    'operation-completed': 'Order Completed',
+    adjustment: 'Adjustment',
+  };
+  return eventLabels[eventType] ?? formatTitleLabel(eventType);
+}
+
+function getTraceabilityEventSummary(event: TraceabilityOperatorEventRow) {
+  if (event.event_type === 'production-scrap') {
+    return `${event.quantity || 1} scrap part${(event.quantity || 1) === 1 ? '' : 's'} reported`;
+  }
+  if (event.event_type === 'downtime-started') return 'Downtime was reported from the Operator Terminal';
+  if (event.event_type === 'job-paused') return 'Production was paused by the operator';
+  if (event.event_type === 'job-started') return 'Production was started from the Operator Terminal';
+  if (event.event_type === 'job-resumed') return 'Production was resumed by the operator';
+  if (event.event_type === 'operation-completed') return 'The production order was marked complete';
+  return 'Operator event captured';
+}
+
+type TraceabilityTimelineItem =
+  | { kind: 'measurement'; id: string; timestamp: string; capture: TraceabilityCapture }
+  | { kind: 'event'; id: string; timestamp: string; event: TraceabilityOperatorEventRow; tone: TraceabilityEventTone };
+
 export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceProps) {
   const [captures, setCaptures] = React.useState<TraceabilityCapture[]>([]);
+  const [newCaptureIds, setNewCaptureIds] = React.useState<Set<string>>(() => new Set());
   const [operatorEvents, setOperatorEvents] = React.useState<TraceabilityOperatorEventRow[]>([]);
   const [orders, setOrders] = React.useState<TraceabilityOrderOption[]>([]);
   const [workCenters, setWorkCenters] = React.useState<TraceabilityWorkCenterOption[]>([]);
@@ -4918,6 +4982,35 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
   const [loading, setLoading] = React.useState(true);
   const [errorMessage, setErrorMessage] = React.useState('');
   const [filters, setFilters] = React.useState<TraceabilityFilters>(() => loadTraceabilityFilters());
+  const [traceabilityPageSize, setTraceabilityPageSize] = React.useState(10);
+  const [traceabilityPage, setTraceabilityPage] = React.useState(1);
+  const newCaptureTimersRef = React.useRef<Record<string, number>>({});
+  const knownCaptureIdsRef = React.useRef<Set<string>>(new Set());
+  const knownEventIdsRef = React.useRef<Set<string>>(new Set());
+  const traceabilityLoadedRef = React.useRef(false);
+
+  const markCaptureAsNew = React.useCallback((captureId: string) => {
+    if (!captureId) return;
+    setTraceabilityPage(1);
+    setNewCaptureIds((currentIds) => {
+      const nextIds = new Set(currentIds);
+      nextIds.add(captureId);
+      return nextIds;
+    });
+
+    if (newCaptureTimersRef.current[captureId]) {
+      window.clearTimeout(newCaptureTimersRef.current[captureId]);
+    }
+
+    newCaptureTimersRef.current[captureId] = window.setTimeout(() => {
+      setNewCaptureIds((currentIds) => {
+        const nextIds = new Set(currentIds);
+        nextIds.delete(captureId);
+        return nextIds;
+      });
+      delete newCaptureTimersRef.current[captureId];
+    }, 6500);
+  }, []);
 
   const loadTraceability = React.useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -4979,9 +5072,29 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
         .order('name', { ascending: true }),
       supabase
         .from('mes_operator_terminal_events')
-        .select('id, production_order_id, work_center_code, station_code, event_type, reason, created_at')
+        .select(`
+          id,
+          production_order_id,
+          work_center_code,
+          station_code,
+          event_type,
+          quantity,
+          reason,
+          comment,
+          payload,
+          created_at,
+          mes_production_orders (
+            order_number,
+            part_number,
+            part_name,
+            planned_quantity,
+            completed_quantity,
+            scrap_quantity,
+            status
+          )
+        `)
         .eq('organization_id', organizationId)
-        .in('event_type', ['production-scrap', 'downtime-started', 'job-paused', 'adjustment'])
+        .in('event_type', ['production-scrap', 'downtime-started', 'job-paused', 'job-started', 'job-resumed', 'operation-completed', 'adjustment'])
         .order('created_at', { ascending: false })
         .limit(300),
     ]);
@@ -4998,7 +5111,15 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
     } else {
       const workCenterRows = (workCentersData ?? []) as TraceabilityWorkCenterOption[];
       const workCenterCodeById = new Map(workCenterRows.map((workCenter) => [workCenter.id, workCenter.code]));
-      setCaptures(((capturesData ?? []) as TraceabilityCaptureRow[]).map(mapTraceabilityCapture));
+      const nextCaptures = ((capturesData ?? []) as TraceabilityCaptureRow[]).map(mapTraceabilityCapture);
+      if (silent && traceabilityLoadedRef.current) {
+        nextCaptures
+          .filter((capture) => !knownCaptureIdsRef.current.has(capture.id))
+          .forEach((capture) => markCaptureAsNew(capture.id));
+      }
+      knownCaptureIdsRef.current = new Set(nextCaptures.map((capture) => capture.id));
+      traceabilityLoadedRef.current = true;
+      setCaptures(nextCaptures);
       setOrders(((ordersData ?? []) as TraceabilityOrderRow[]).map((order) => ({
         id: order.id,
         orderNumber: order.order_number,
@@ -5016,10 +5137,17 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
         code: station.code,
         name: station.name,
       })));
-      setOperatorEvents((eventsData ?? []) as TraceabilityOperatorEventRow[]);
+      const nextOperatorEvents = (eventsData ?? []) as TraceabilityOperatorEventRow[];
+      if (silent && traceabilityLoadedRef.current) {
+        nextOperatorEvents
+          .filter((event) => !knownEventIdsRef.current.has(event.id))
+          .forEach((event) => markCaptureAsNew(`event-${event.id}`));
+      }
+      knownEventIdsRef.current = new Set(nextOperatorEvents.map((event) => event.id));
+      setOperatorEvents(nextOperatorEvents);
     }
     if (!silent) setLoading(false);
-  }, [organizationId]);
+  }, [markCaptureAsNew, organizationId]);
 
   React.useEffect(() => {
     void loadTraceability();
@@ -5031,6 +5159,50 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
   }, [loadTraceability]);
 
   React.useEffect(() => {
+    const traceabilityChannel = supabase
+      .channel(`mes-traceability-live:${organizationId}`)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'mes_operator_terminal_traceability',
+        filter: `organization_id=eq.${organizationId}`,
+      }, (payload) => {
+        const newCapture = payload.new as Partial<{ id: string }>;
+        const captureId = typeof newCapture.id === 'string' ? newCapture.id : '';
+        markCaptureAsNew(captureId);
+        void loadTraceability(true);
+      })
+      .subscribe();
+    const eventChannel = supabase
+      .channel(`mes-traceability-events-live:${organizationId}`)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'mes_operator_terminal_events',
+        filter: `organization_id=eq.${organizationId}`,
+      }, (payload) => {
+        const newEvent = payload.new as Partial<{ id: string; event_type: string }>;
+        if (newEvent.event_type && !['production-scrap', 'downtime-started', 'job-paused', 'job-started', 'job-resumed', 'operation-completed', 'adjustment'].includes(newEvent.event_type)) return;
+        const eventId = typeof newEvent.id === 'string' ? newEvent.id : '';
+        if (eventId) markCaptureAsNew(`event-${eventId}`);
+        void loadTraceability(true);
+      })
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(traceabilityChannel);
+      void supabase.removeChannel(eventChannel);
+    };
+  }, [loadTraceability, markCaptureAsNew, organizationId]);
+
+  React.useEffect(() => {
+    return () => {
+      Object.values(newCaptureTimersRef.current).forEach((timerId) => window.clearTimeout(timerId));
+      newCaptureTimersRef.current = {};
+    };
+  }, []);
+
+  React.useEffect(() => {
     try {
       window.localStorage.setItem(traceabilityFiltersStorageKey, JSON.stringify(filters));
     } catch (error) {
@@ -5038,8 +5210,12 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
     }
   }, [filters]);
 
+  React.useEffect(() => {
+    setTraceabilityPage(1);
+  }, [filters, traceabilityPageSize]);
+
   const filteredCaptures = captures.filter((capture) => {
-    const captureDate = capture.timestamp.slice(0, 10);
+    const captureDate = toLocalIsoDate(capture.timestamp);
     const orderSearch = filters.orderSearch.trim().toLowerCase();
     const partSearch = filters.partSearch.trim().toLowerCase();
     const serialSearch = filters.serialSearch.trim().toLowerCase();
@@ -5103,13 +5279,57 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
       && (!partSearch || order.partNumber.toLowerCase().includes(partSearch) || order.partName.toLowerCase().includes(partSearch));
   }).map((order) => order.id));
   const filteredOperatorEvents = operatorEvents.filter((event) => {
-    const orderSearchActive = Boolean(filters.orderSearch.trim() || filters.partSearch.trim());
+    const orderSearch = filters.orderSearch.trim().toLowerCase();
+    const partSearch = filters.partSearch.trim().toLowerCase();
+    const measurementOnlyFilterActive = Boolean(filters.serialSearch.trim() || filters.toolSearch.trim() || filters.shifts.length > 0);
+    const eventDate = toLocalIsoDate(event.created_at);
+    const eventOrder = event.mes_production_orders;
+    const matchesOrderSearch = !orderSearch
+      || (event.production_order_id ? contextOrderIds.has(event.production_order_id) : false)
+      || Boolean(eventOrder?.order_number.toLowerCase().includes(orderSearch));
+    const matchesPartSearch = !partSearch
+      || Boolean(eventOrder && (
+        eventOrder.part_number.toLowerCase().includes(partSearch)
+        || eventOrder.part_name.toLowerCase().includes(partSearch)
+      ));
     return (!filters.workCenter || event.work_center_code === filters.workCenter)
       && (!filters.station || event.station_code === filters.station)
-      && (!orderSearchActive || (event.production_order_id ? contextOrderIds.has(event.production_order_id) : false))
-      && (!filters.dateFrom || event.created_at.slice(0, 10) >= filters.dateFrom)
-      && (!filters.dateTo || event.created_at.slice(0, 10) <= filters.dateTo);
+      && !measurementOnlyFilterActive
+      && matchesOrderSearch
+      && matchesPartSearch
+      && (!filters.dateFrom || eventDate >= filters.dateFrom)
+      && (!filters.dateTo || eventDate <= filters.dateTo);
   });
+  const timelineItems = React.useMemo<TraceabilityTimelineItem[]>(() => ([
+    ...filteredCaptures.map((capture) => ({
+      kind: 'measurement' as const,
+      id: capture.id,
+      timestamp: capture.timestamp,
+      capture,
+    })),
+    ...filteredOperatorEvents.map((event) => ({
+      kind: 'event' as const,
+      id: `event-${event.id}`,
+      timestamp: event.created_at,
+      event,
+      tone: getTraceabilityEventTone(event.event_type),
+    })),
+  ].sort((firstItem, secondItem) => new Date(secondItem.timestamp).getTime() - new Date(firstItem.timestamp).getTime())), [filteredCaptures, filteredOperatorEvents]);
+  const traceabilityPageCount = Math.max(1, Math.ceil(timelineItems.length / traceabilityPageSize));
+  const currentTraceabilityPage = Math.min(traceabilityPage, traceabilityPageCount);
+  const traceabilityPageStartIndex = (currentTraceabilityPage - 1) * traceabilityPageSize;
+  const visibleTimelineItems = timelineItems.slice(traceabilityPageStartIndex, traceabilityPageStartIndex + traceabilityPageSize);
+  const traceabilityPageStartLabel = timelineItems.length === 0 ? 0 : traceabilityPageStartIndex + 1;
+  const traceabilityPageEndLabel = Math.min(timelineItems.length, traceabilityPageStartIndex + traceabilityPageSize);
+  const canGoToPreviousTraceabilityPage = currentTraceabilityPage > 1;
+  const canGoToNextTraceabilityPage = currentTraceabilityPage < traceabilityPageCount;
+
+  React.useEffect(() => {
+    if (traceabilityPage > traceabilityPageCount) {
+      setTraceabilityPage(traceabilityPageCount);
+    }
+  }, [traceabilityPage, traceabilityPageCount]);
+
   const activeTraceRecords = new Set(filteredCaptures
     .filter((capture) => capture.productionOrderId && capture.orderStatus && activeStatuses.includes(capture.orderStatus))
     .map((capture) => capture.productionOrderId)).size;
@@ -5123,6 +5343,29 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
   const downtimeExceptionRecords = filteredOperatorEvents.filter((event) => event.event_type === 'downtime-started').length;
   const pausedExceptionRecords = filteredOperatorEvents.filter((event) => event.event_type === 'job-paused').length;
   const adjustmentExceptionRecords = filteredOperatorEvents.filter((event) => event.event_type === 'adjustment').length;
+  const renderTraceabilityPaginationControls = () => (
+    <div className="traceability-pagination-controls" aria-label="Traceability pagination">
+      <button
+        type="button"
+        aria-label="Previous page"
+        disabled={!canGoToPreviousTraceabilityPage}
+        onClick={() => setTraceabilityPage((currentPage) => Math.max(1, currentPage - 1))}
+      >
+        <ChevronLeft size={16} />
+      </button>
+      <span>
+        Page <b>{currentTraceabilityPage}</b> of <b>{traceabilityPageCount}</b>
+      </span>
+      <button
+        type="button"
+        aria-label="Next page"
+        disabled={!canGoToNextTraceabilityPage}
+        onClick={() => setTraceabilityPage((currentPage) => Math.min(traceabilityPageCount, currentPage + 1))}
+      >
+        <ChevronRight size={16} />
+      </button>
+    </div>
+  );
 
   return (
     <MesWorkspaceShell
@@ -5242,8 +5485,21 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
       </div>
 
       <div className="mes-toolbar traceability-toolbar">
-        <span><Search size={15} /> {loading ? 'Loading captures...' : `${filteredCaptures.length} matching captures / auto-sync on`}</span>
-        <div>
+        <div className="traceability-toolbar-summary">
+          <span><Search size={15} /> {loading ? 'Loading records...' : `${timelineItems.length} matching records / auto-sync on`}</span>
+          <label className="traceability-page-size-control">
+            <span>Show</span>
+            <MesOrderDropdown
+              id="traceability-page-size"
+              value={String(traceabilityPageSize)}
+              options={traceabilityPageSizeOptions}
+              placement="bottom"
+              onChange={(value) => setTraceabilityPageSize(Number(value))}
+            />
+          </label>
+          {renderTraceabilityPaginationControls()}
+        </div>
+        <div className="traceability-toolbar-actions">
           <button type="button" onClick={() => setFilters(getClearedTraceabilityFilters())}>Clear Filters</button>
           <button type="button" onClick={() => onNavigate('/workspace/manufacturing-ops/mes/operator-terminal')}>Open Terminal</button>
         </div>
@@ -5286,48 +5542,106 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
       ) : null}
 
       <div className="mes-event-timeline traceability-capture-list">
-        {!loading && filteredCaptures.length === 0 ? (
+        {!loading && timelineItems.length === 0 ? (
           <div className="traceability-empty-state">
             <Database size={28} />
-            <strong>No traceability captures found</strong>
+            <strong>No traceability records found</strong>
             <span>Use Operator Terminal to save sharpening traceability; auto-sync will update this page.</span>
           </div>
         ) : null}
-        {filteredCaptures.map((capture) => (
-          <article className="mes-event-row traceability-capture-row" key={capture.id}>
-            <span className="mes-event-marker"><Database size={16} /></span>
-            <div>
-              <div className="mes-event-heading traceability-capture-heading">
-                <div className="traceability-capture-title-grid">
-                  <span><b>Order Number:</b> {capture.productionOrder}</span>
-                  <span><b>Part Name:</b> {capture.partName}</span>
-                  <span><b>Part Number:</b> {capture.partNumber || 'N/A'}</span>
-                  <span className="traceability-capture-time"><Timer size={15} /><b>Captured:</b> {formatTimestamp(capture.timestamp)}</span>
+        {visibleTimelineItems.map((item) => {
+          if (item.kind === 'event') {
+            const event = item.event;
+            const order = event.mes_production_orders;
+            const eventLabel = getTraceabilityEventLabel(event.event_type);
+            const payloadComment = event.payload && typeof event.payload.comment === 'string' ? event.payload.comment : '';
+            const comment = event.comment || payloadComment;
+            return (
+              <article
+                className={['mes-event-row traceability-event-row', `event-tone-${item.tone}`, newCaptureIds.has(item.id) ? 'new-capture' : ''].filter(Boolean).join(' ')}
+                key={item.id}
+              >
+                <span className="mes-event-marker"><Activity size={16} /></span>
+                <div>
+                  <div className="mes-event-heading traceability-event-heading">
+                    <div className="traceability-event-title">
+                      <span>Event record</span>
+                      <strong>{eventLabel}</strong>
+                      <p>{getTraceabilityEventSummary(event)}</p>
+                    </div>
+                    <span className="traceability-capture-time"><Timer size={15} /><b>Captured:</b> {formatTimestamp(event.created_at)}</span>
+                  </div>
+                  <div className="traceability-event-detail-grid">
+                    <span><b>Order Number</b>{order?.order_number ?? 'Unassigned order'}</span>
+                    <span><b>Part Name</b>{order?.part_name ?? 'N/A'}</span>
+                    <span><b>Part Number</b>{order?.part_number ?? 'N/A'}</span>
+                    <span><b>Quantity</b>{event.quantity || 'N/A'}</span>
+                  </div>
+                  <div className="mes-event-meta traceability-capture-meta">
+                    <span><Factory size={15} /><b>Work Center</b>{event.work_center_code || 'No work center'}</span>
+                    <span><RadioTower size={15} /><b>Station</b>{event.station_code || 'No station'}</span>
+                    <span><AlertTriangle size={15} /><b>Reason</b>{event.reason || 'No reason entered'}</span>
+                    <span><Activity size={15} /><b>Status</b>{order?.status ? formatTraceabilityStatus(order.status) : 'Unknown'}</span>
+                  </div>
+                  {comment ? (
+                    <p className="traceability-event-comment">{comment}</p>
+                  ) : null}
+                  <div className="traceability-tags traceability-event-tags">
+                    <span>{eventLabel}</span>
+                    {event.reason ? <span>{event.reason}</span> : null}
+                    {comment ? <span>Comment added</span> : null}
+                  </div>
+                </div>
+              </article>
+            );
+          }
+
+          const capture = item.capture;
+          return (
+            <article
+              className={['mes-event-row traceability-capture-row', newCaptureIds.has(item.id) ? 'new-capture' : ''].filter(Boolean).join(' ')}
+              key={item.id}
+            >
+              <span className="mes-event-marker"><Database size={16} /></span>
+              <div>
+                <div className="mes-event-heading traceability-capture-heading">
+                  <div className="traceability-capture-title-grid">
+                    <span><b>Record Type:</b> Measurement record</span>
+                    <span><b>Order Number:</b> {capture.productionOrder}</span>
+                    <span><b>Part Number:</b> {capture.partNumber || 'N/A'}</span>
+                    <span className="traceability-capture-time"><Timer size={15} /><b>Captured:</b> {formatTimestamp(capture.timestamp)}</span>
+                  </div>
+                </div>
+                <div className="traceability-measure-grid">
+                  <span><b>Before notch</b>{capture.beforeNotch ?? 'N/A'} {capture.beforeNotch === null ? '' : capture.dimensionsUnit}</span>
+                  <span><b>Before tooth</b>{capture.beforeToothLength ?? 'N/A'} {capture.beforeToothLength === null ? '' : capture.dimensionsUnit}</span>
+                  <span><b>Stock remove</b>{capture.stockToRemove ?? 'N/A'} {capture.stockToRemove === null ? '' : capture.dimensionsUnit}</span>
+                  <span><b>After tooth</b>{capture.afterToothLength ?? 'N/A'} {capture.afterToothLength === null ? '' : capture.dimensionsUnit}</span>
+                </div>
+                <div className="mes-event-meta traceability-capture-meta">
+                  <span><Factory size={15} /><b>Work Center</b>{capture.workCenter || 'No work center'}</span>
+                  <span><RadioTower size={15} /><b>Station</b>{capture.stationName || capture.station || 'No station'}</span>
+                  <span><Eye size={15} /><b>Serial</b>{capture.serialNumber || 'No serial'}</span>
+                  <span><Activity size={15} /><b>Progress</b>{capture.completionPercent}%{capture.pieceSequence ? ` (${capture.pieceSequence}/${capture.plannedQuantity || 'N/A'})` : ''}</span>
+                </div>
+                <div className="traceability-tags">
+                  <span>{formatLabel(capture.templateId)}</span>
+                  {capture.partLabel ? <span>{capture.partLabel}</span> : null}
+                  {capture.toolId ? <span>Tool {capture.toolId}</span> : null}
+                  <span className={`status status-${capture.statusAtCapture || 'unknown'}`}>Status {formatTraceabilityStatus(capture.statusAtCapture)}</span>
+                  {capture.damageCodes.length ? capture.damageCodes.map((code) => <span className="danger" key={code}>{formatLabel(code)}</span>) : <span className="success">No damage noted</span>}
                 </div>
               </div>
-              <div className="traceability-measure-grid">
-                <span><b>Before notch</b>{capture.beforeNotch ?? 'N/A'} {capture.beforeNotch === null ? '' : capture.dimensionsUnit}</span>
-                <span><b>Before tooth</b>{capture.beforeToothLength ?? 'N/A'} {capture.beforeToothLength === null ? '' : capture.dimensionsUnit}</span>
-                <span><b>Stock remove</b>{capture.stockToRemove ?? 'N/A'} {capture.stockToRemove === null ? '' : capture.dimensionsUnit}</span>
-                <span><b>After tooth</b>{capture.afterToothLength ?? 'N/A'} {capture.afterToothLength === null ? '' : capture.dimensionsUnit}</span>
-              </div>
-              <div className="mes-event-meta traceability-capture-meta">
-                <span><Factory size={15} /><b>Work Center</b>{capture.workCenter || 'No work center'}</span>
-                <span><RadioTower size={15} /><b>Station</b>{capture.stationName || capture.station || 'No station'}</span>
-                <span><Eye size={15} /><b>Serial</b>{capture.serialNumber || 'No serial'}</span>
-                <span><Activity size={15} /><b>Progress</b>{capture.completionPercent}%{capture.pieceSequence ? ` (${capture.pieceSequence}/${capture.plannedQuantity || 'N/A'})` : ''}</span>
-              </div>
-              <div className="traceability-tags">
-                <span>{formatLabel(capture.templateId)}</span>
-                {capture.partLabel ? <span>{capture.partLabel}</span> : null}
-                {capture.toolId ? <span>Tool {capture.toolId}</span> : null}
-                <span className={`status status-${capture.statusAtCapture || 'unknown'}`}>Status {formatTraceabilityStatus(capture.statusAtCapture)}</span>
-                {capture.damageCodes.length ? capture.damageCodes.map((code) => <span className="danger" key={code}>{formatLabel(code)}</span>) : <span className="success">No damage noted</span>}
-              </div>
-            </div>
-          </article>
-        ))}
+            </article>
+          );
+        })}
       </div>
+      {timelineItems.length > 0 ? (
+        <div className="traceability-pagination-footer">
+          <span>Showing {traceabilityPageStartLabel}-{traceabilityPageEndLabel} of {timelineItems.length} records</span>
+          {renderTraceabilityPaginationControls()}
+        </div>
+      ) : null}
     </MesWorkspaceShell>
   );
 }

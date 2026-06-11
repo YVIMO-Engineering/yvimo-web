@@ -49,6 +49,30 @@ add column if not exists organization_id uuid references public.manufacturing_or
 alter table public.mes_operator_terminal_traceability
 add column if not exists organization_id uuid references public.manufacturing_organizations(id) on delete cascade;
 
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'mes_operator_terminal_traceability'
+  ) then
+    alter publication supabase_realtime add table public.mes_operator_terminal_traceability;
+  end if;
+
+  if not exists (
+    select 1
+    from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'mes_operator_terminal_events'
+  ) then
+    alter publication supabase_realtime add table public.mes_operator_terminal_events;
+  end if;
+end;
+$$;
+
 update public.mes_production_orders target
 set organization_id = member.organization_id
 from public.manufacturing_organization_members member
@@ -145,22 +169,26 @@ drop policy if exists "Users can create their own MES production orders" on publ
 drop policy if exists "Users can update their own MES production orders" on public.mes_production_orders;
 drop policy if exists "Users can delete their own MES production orders" on public.mes_production_orders;
 
+drop policy if exists "Members can read organization MES production orders" on public.mes_production_orders;
 create policy "Members can read organization MES production orders"
   on public.mes_production_orders
   for select
   using (public.is_manufacturing_organization_member(organization_id));
 
+drop policy if exists "Members can create organization MES production orders" on public.mes_production_orders;
 create policy "Members can create organization MES production orders"
   on public.mes_production_orders
   for insert
   with check (public.is_manufacturing_organization_member(organization_id));
 
+drop policy if exists "Members can update organization MES production orders" on public.mes_production_orders;
 create policy "Members can update organization MES production orders"
   on public.mes_production_orders
   for update
   using (public.is_manufacturing_organization_member(organization_id))
   with check (public.is_manufacturing_organization_member(organization_id));
 
+drop policy if exists "Admins can delete organization MES production orders" on public.mes_production_orders;
 create policy "Admins can delete organization MES production orders"
   on public.mes_production_orders
   for delete
@@ -171,22 +199,26 @@ drop policy if exists "Users can create their own MES work centers" on public.me
 drop policy if exists "Users can update their own MES work centers" on public.mes_work_centers;
 drop policy if exists "Users can delete their own MES work centers" on public.mes_work_centers;
 
+drop policy if exists "Members can read organization MES work centers" on public.mes_work_centers;
 create policy "Members can read organization MES work centers"
   on public.mes_work_centers
   for select
   using (public.is_manufacturing_organization_member(organization_id));
 
+drop policy if exists "Members can create organization MES work centers" on public.mes_work_centers;
 create policy "Members can create organization MES work centers"
   on public.mes_work_centers
   for insert
   with check (public.is_manufacturing_organization_member(organization_id));
 
+drop policy if exists "Members can update organization MES work centers" on public.mes_work_centers;
 create policy "Members can update organization MES work centers"
   on public.mes_work_centers
   for update
   using (public.is_manufacturing_organization_member(organization_id))
   with check (public.is_manufacturing_organization_member(organization_id));
 
+drop policy if exists "Admins can delete organization MES work centers" on public.mes_work_centers;
 create policy "Admins can delete organization MES work centers"
   on public.mes_work_centers
   for delete
@@ -197,11 +229,13 @@ drop policy if exists "Users can create their own MES work center stations" on p
 drop policy if exists "Users can update their own MES work center stations" on public.mes_work_center_stations;
 drop policy if exists "Users can delete their own MES work center stations" on public.mes_work_center_stations;
 
+drop policy if exists "Members can read organization MES work center stations" on public.mes_work_center_stations;
 create policy "Members can read organization MES work center stations"
   on public.mes_work_center_stations
   for select
   using (public.is_manufacturing_organization_member(organization_id));
 
+drop policy if exists "Members can create organization MES work center stations" on public.mes_work_center_stations;
 create policy "Members can create organization MES work center stations"
   on public.mes_work_center_stations
   for insert
@@ -215,12 +249,14 @@ create policy "Members can create organization MES work center stations"
     )
   );
 
+drop policy if exists "Members can update organization MES work center stations" on public.mes_work_center_stations;
 create policy "Members can update organization MES work center stations"
   on public.mes_work_center_stations
   for update
   using (public.is_manufacturing_organization_member(organization_id))
   with check (public.is_manufacturing_organization_member(organization_id));
 
+drop policy if exists "Admins can delete organization MES work center stations" on public.mes_work_center_stations;
 create policy "Admins can delete organization MES work center stations"
   on public.mes_work_center_stations
   for delete
@@ -231,22 +267,26 @@ drop policy if exists "Users can create their own operator terminal events" on p
 drop policy if exists "Users can update their own operator terminal events" on public.mes_operator_terminal_events;
 drop policy if exists "Users can delete their own operator terminal events" on public.mes_operator_terminal_events;
 
+drop policy if exists "Members can read organization operator terminal events" on public.mes_operator_terminal_events;
 create policy "Members can read organization operator terminal events"
   on public.mes_operator_terminal_events
   for select
   using (public.is_manufacturing_organization_member(organization_id));
 
+drop policy if exists "Members can create organization operator terminal events" on public.mes_operator_terminal_events;
 create policy "Members can create organization operator terminal events"
   on public.mes_operator_terminal_events
   for insert
   with check (public.is_manufacturing_organization_member(organization_id));
 
+drop policy if exists "Members can update organization operator terminal events" on public.mes_operator_terminal_events;
 create policy "Members can update organization operator terminal events"
   on public.mes_operator_terminal_events
   for update
   using (public.is_manufacturing_organization_member(organization_id))
   with check (public.is_manufacturing_organization_member(organization_id));
 
+drop policy if exists "Admins can delete organization operator terminal events" on public.mes_operator_terminal_events;
 create policy "Admins can delete organization operator terminal events"
   on public.mes_operator_terminal_events
   for delete
@@ -257,22 +297,26 @@ drop policy if exists "Users can create their own operator downtime" on public.m
 drop policy if exists "Users can update their own operator downtime" on public.mes_operator_terminal_downtime;
 drop policy if exists "Users can delete their own operator downtime" on public.mes_operator_terminal_downtime;
 
+drop policy if exists "Members can read organization operator downtime" on public.mes_operator_terminal_downtime;
 create policy "Members can read organization operator downtime"
   on public.mes_operator_terminal_downtime
   for select
   using (public.is_manufacturing_organization_member(organization_id));
 
+drop policy if exists "Members can create organization operator downtime" on public.mes_operator_terminal_downtime;
 create policy "Members can create organization operator downtime"
   on public.mes_operator_terminal_downtime
   for insert
   with check (public.is_manufacturing_organization_member(organization_id));
 
+drop policy if exists "Members can update organization operator downtime" on public.mes_operator_terminal_downtime;
 create policy "Members can update organization operator downtime"
   on public.mes_operator_terminal_downtime
   for update
   using (public.is_manufacturing_organization_member(organization_id))
   with check (public.is_manufacturing_organization_member(organization_id));
 
+drop policy if exists "Admins can delete organization operator downtime" on public.mes_operator_terminal_downtime;
 create policy "Admins can delete organization operator downtime"
   on public.mes_operator_terminal_downtime
   for delete
@@ -283,22 +327,26 @@ drop policy if exists "Users can create their own operator traceability" on publ
 drop policy if exists "Users can update their own operator traceability" on public.mes_operator_terminal_traceability;
 drop policy if exists "Users can delete their own operator traceability" on public.mes_operator_terminal_traceability;
 
+drop policy if exists "Members can read organization operator traceability" on public.mes_operator_terminal_traceability;
 create policy "Members can read organization operator traceability"
   on public.mes_operator_terminal_traceability
   for select
   using (public.is_manufacturing_organization_member(organization_id));
 
+drop policy if exists "Members can create organization operator traceability" on public.mes_operator_terminal_traceability;
 create policy "Members can create organization operator traceability"
   on public.mes_operator_terminal_traceability
   for insert
   with check (public.is_manufacturing_organization_member(organization_id));
 
+drop policy if exists "Members can update organization operator traceability" on public.mes_operator_terminal_traceability;
 create policy "Members can update organization operator traceability"
   on public.mes_operator_terminal_traceability
   for update
   using (public.is_manufacturing_organization_member(organization_id))
   with check (public.is_manufacturing_organization_member(organization_id));
 
+drop policy if exists "Admins can delete organization operator traceability" on public.mes_operator_terminal_traceability;
 create policy "Admins can delete organization operator traceability"
   on public.mes_operator_terminal_traceability
   for delete
@@ -433,6 +481,7 @@ declare
   v_event_type text;
   v_station_status text;
   v_station_code text;
+  v_previous_status text;
 begin
   if not public.is_manufacturing_organization_member(p_organization_id) then
     raise exception 'Organization access denied.';
@@ -454,6 +503,7 @@ begin
   end if;
 
   v_station_code = coalesce(nullif(p_station_code, ''), v_order.assigned_station);
+  v_previous_status = v_order.status;
 
   update public.mes_production_orders
   set status = case when p_state = 'down' then 'paused' else p_state end
@@ -461,7 +511,8 @@ begin
   returning * into v_order;
 
   v_event_type = case
-    when p_state = 'running' and v_order.status = 'running' then 'job-started'
+    when p_state = 'running' and v_previous_status in ('paused', 'running') then 'job-resumed'
+    when p_state = 'running' then 'job-started'
     when p_state = 'paused' then 'job-paused'
     when p_state = 'down' then 'downtime-started'
     when p_state = 'completed' then 'operation-completed'
