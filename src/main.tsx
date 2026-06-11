@@ -519,9 +519,11 @@ const translations: Record<Exclude<LanguageCode, 'en'>, Record<string, string>> 
     'Open sign in': 'Abrir inicio de sesión',
     'Sign up': 'Registrarse',
     'Create account': 'Crear cuenta',
+    'New to YVIMO?': '¿Nuevo en YVIMO?',
     'Create your YVIMO account': 'Crea tu cuenta YVIMO',
     'Already have an account?': '¿Ya tienes una cuenta?',
     'Continue with Apple Passkey': 'Continuar con Apple Passkey',
+    'Continue with Microsoft': 'Continuar con Microsoft',
     'Full name': 'Nombre completo',
     Company: 'Empresa',
     Dashboard: 'Dashboard',
@@ -773,9 +775,11 @@ const translations: Record<Exclude<LanguageCode, 'en'>, Record<string, string>> 
     'Open sign in': '打开登录',
     'Sign up': '注册',
     'Create account': '创建账户',
+    'New to YVIMO?': 'YVIMO 新用户？',
     'Create your YVIMO account': '创建你的 YVIMO 账户',
     'Already have an account?': '已经有账户？',
     'Continue with Apple Passkey': '使用 Apple Passkey 继续',
+    'Continue with Microsoft': '使用 Microsoft 继续',
     'Full name': '全名',
     Company: '公司',
     Dashboard: '仪表板',
@@ -1861,11 +1865,13 @@ function LoginPage({
   onNavigateSignUp,
   onSignIn,
   onAppleSignIn,
+  onMicrosoftSignIn,
   t,
 }: {
   onNavigateSignUp: () => void;
   onSignIn: (email: string, password: string) => Promise<string | null>;
   onAppleSignIn: () => Promise<string | null>;
+  onMicrosoftSignIn: () => Promise<string | null>;
   t: Translator;
 }) {
   const [formMessage, setFormMessage] = React.useState<string | null>(null);
@@ -2001,10 +2007,38 @@ function LoginPage({
               {t('Continue with Apple Passkey')}
             </button>
 
-            <div className="login-auth-switch">
-              <span>{t('Create account')}</span>
+            <button
+              className="microsoft-button"
+              type="button"
+              disabled={authBusy}
+              onClick={async () => {
+                setAuthBusy(true);
+                console.log('[auth] microsoft signIn start');
+
+                try {
+                  setFormMessage(await onMicrosoftSignIn());
+                } catch (error) {
+                  console.error('[auth] microsoft signIn unexpected error', error);
+                  setFormMessage(error instanceof Error ? error.message : 'Invalid email or password.');
+                } finally {
+                  console.log('[auth] microsoft signIn loading reset');
+                  setAuthBusy(false);
+                }
+              }}
+            >
+              <span className="microsoft-mark" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+                <span />
+              </span>
+              {t('Continue with Microsoft')}
+            </button>
+
+            <div className="login-auth-switch login-signup-cta">
+              <span>{t('New to YVIMO?')}</span>
               <button type="button" onClick={onNavigateSignUp}>
-                {t('Sign up')}
+                {t('Create account')}
               </button>
             </div>
             {formMessage ? <p className={getAuthMessageTone(formMessage)}>{t(formMessage)}</p> : null}
@@ -2140,7 +2174,7 @@ function SignUpPage({
               {t('Create account')} <ArrowRight size={18} />
             </button>
 
-            <div className="login-auth-switch">
+            <div className="login-auth-switch login-signup-cta">
               <span>{t('Already have an account?')}</span>
               <button type="button" onClick={onNavigateLogin}>
                 {t('Sign in')}
@@ -5122,16 +5156,21 @@ function App() {
   };
 
   const handleAppleSignIn = async () => {
-    console.log('[auth] apple signIn action start');
+    console.log('[auth] apple signIn temporarily disabled');
+    return 'Apple login is temporarily disabled.';
+  };
+
+  const handleMicrosoftSignIn = async () => {
+    console.log('[auth] microsoft signIn action start');
     const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'apple',
+      provider: 'azure',
       options: {
         redirectTo: `${window.location.origin}/dashboard`,
       },
     });
 
     if (error) {
-      console.error('[auth] apple signIn action error', error);
+      console.error('[auth] microsoft signIn action error', error);
       return formatAuthError(error.message);
     }
 
@@ -5461,6 +5500,7 @@ function App() {
           onNavigateSignUp={navigateSignUp}
           onSignIn={handleSignIn}
           onAppleSignIn={handleAppleSignIn}
+          onMicrosoftSignIn={handleMicrosoftSignIn}
           t={t}
         />
       ) : isSignUpPage ? (
@@ -5488,6 +5528,7 @@ function App() {
             onNavigateSignUp={navigateSignUp}
             onSignIn={handleSignIn}
             onAppleSignIn={handleAppleSignIn}
+            onMicrosoftSignIn={handleMicrosoftSignIn}
             t={t}
           />
         )
