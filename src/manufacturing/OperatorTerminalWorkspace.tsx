@@ -31,6 +31,7 @@ import {
 
 type OperatorTerminalProps = {
   onNavigate: (path: string) => void;
+  organizationId: string;
 };
 
 type TerminalState = 'not-started' | 'running' | 'paused' | 'down' | 'completed';
@@ -400,7 +401,7 @@ function SwitchOrderModal({
   );
 }
 
-export function OperatorTerminalWorkspace({ onNavigate }: OperatorTerminalProps) {
+export function OperatorTerminalWorkspace({ onNavigate, organizationId }: OperatorTerminalProps) {
   const [state, setState] = React.useState<TerminalState>('not-started');
   const [goodQty, setGoodQty] = React.useState(0);
   const [scrapQty, setScrapQty] = React.useState(0);
@@ -525,6 +526,7 @@ export function OperatorTerminalWorkspace({ onNavigate }: OperatorTerminalProps)
     const reportedSequence = Math.max(1, order.completedQuantity + order.scrapQuantity);
     await saveOperatorTraceability({
       orderId: order.id,
+      organizationId,
       stationCode,
       templateId,
       partLabel: `Piece ${reportedSequence}`,
@@ -582,6 +584,7 @@ export function OperatorTerminalWorkspace({ onNavigate }: OperatorTerminalProps)
     try {
       const nextEvents = await fetchOperatorScrapEvents({
         orderId: currentOrder.id,
+        organizationId,
         stationCode,
         fallbackOrder: currentOrder,
       });
@@ -641,7 +644,7 @@ export function OperatorTerminalWorkspace({ onNavigate }: OperatorTerminalProps)
     let active = true;
     const loadSnapshot = async () => {
       try {
-        const nextSnapshot = await fetchOperatorTerminalSnapshot();
+        const nextSnapshot = await fetchOperatorTerminalSnapshot(organizationId);
         if (!active) return;
         setSnapshot(nextSnapshot);
         setTerminalMessage(nextSnapshot.activeOrders.length ? '' : 'No single-operation production orders are assigned yet.');
@@ -660,7 +663,7 @@ export function OperatorTerminalWorkspace({ onNavigate }: OperatorTerminalProps)
     return () => {
       active = false;
     };
-  }, []);
+  }, [organizationId]);
 
   React.useEffect(() => {
     if (!snapshot) return;
@@ -697,7 +700,7 @@ export function OperatorTerminalWorkspace({ onNavigate }: OperatorTerminalProps)
 
     setSyncPending(true);
     try {
-      const order = await reportOperatorProduction({ orderId: currentOrder.id, stationCode, goodDelta: 1 });
+      const order = await reportOperatorProduction({ orderId: currentOrder.id, organizationId, stationCode, goodDelta: 1 });
       applyOrder(order);
       syncSnapshotOrder(order);
       setEvents((current) => [{ type: 'good', timestamp: formatToastTime() }, ...current].slice(0, 8));
@@ -739,7 +742,7 @@ export function OperatorTerminalWorkspace({ onNavigate }: OperatorTerminalProps)
       } else {
         setSyncPending(true);
         try {
-          const order = await reportOperatorProduction({ orderId: currentOrder.id, stationCode, scrapDelta: 1, reason, comment });
+          const order = await reportOperatorProduction({ orderId: currentOrder.id, organizationId, stationCode, scrapDelta: 1, reason, comment });
           applyOrder(order);
           syncSnapshotOrder(order);
           setEvents((current) => [{
@@ -771,7 +774,7 @@ export function OperatorTerminalWorkspace({ onNavigate }: OperatorTerminalProps)
       if (hasSupabaseOrder) {
         setSyncPending(true);
         try {
-          const order = await setOperatorTerminalState({ orderId: currentOrder.id, stationCode, state: 'paused', reason, comment });
+          const order = await setOperatorTerminalState({ orderId: currentOrder.id, organizationId, stationCode, state: 'paused', reason, comment });
           syncSnapshotOrder(order);
         } catch (error) {
           console.error('Unable to pause job', error);
@@ -787,7 +790,7 @@ export function OperatorTerminalWorkspace({ onNavigate }: OperatorTerminalProps)
       if (hasSupabaseOrder) {
         setSyncPending(true);
         try {
-          const order = await setOperatorTerminalState({ orderId: currentOrder.id, stationCode, state: 'down', reason, comment });
+          const order = await setOperatorTerminalState({ orderId: currentOrder.id, organizationId, stationCode, state: 'down', reason, comment });
           syncSnapshotOrder(order);
         } catch (error) {
           console.error('Unable to report downtime', error);
@@ -803,7 +806,7 @@ export function OperatorTerminalWorkspace({ onNavigate }: OperatorTerminalProps)
       if (hasSupabaseOrder) {
         setSyncPending(true);
         try {
-          const order = await setOperatorTerminalState({ orderId: currentOrder.id, stationCode, state: 'completed', reason, comment });
+          const order = await setOperatorTerminalState({ orderId: currentOrder.id, organizationId, stationCode, state: 'completed', reason, comment });
           applyOrder(order);
           syncSnapshotOrder(order);
         } catch (error) {
@@ -832,7 +835,7 @@ export function OperatorTerminalWorkspace({ onNavigate }: OperatorTerminalProps)
     if (hasSupabaseOrder) {
       setSyncPending(true);
       try {
-        const order = await setOperatorTerminalState({ orderId: currentOrder.id, stationCode, state: 'running' });
+        const order = await setOperatorTerminalState({ orderId: currentOrder.id, organizationId, stationCode, state: 'running' });
         syncSnapshotOrder(order);
       } catch (error) {
         console.error('Unable to start or resume job', error);
@@ -860,6 +863,7 @@ export function OperatorTerminalWorkspace({ onNavigate }: OperatorTerminalProps)
     try {
       const nextOrder = await switchOperatorActiveOrder({
         orderId: order.id,
+        organizationId,
         stationCode,
         comment: `Operator Terminal active order changed from ${currentOrder?.orderNumber ?? 'none'} to ${order.orderNumber}`,
       });

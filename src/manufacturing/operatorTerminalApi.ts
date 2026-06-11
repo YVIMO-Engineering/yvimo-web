@@ -119,10 +119,11 @@ function mapProductionOrderRow(row: ProductionOrderRow): ProductionOrder {
   };
 }
 
-export async function fetchOperatorTerminalSnapshot(client: OperatorClient = supabase): Promise<OperatorTerminalSnapshot> {
+export async function fetchOperatorTerminalSnapshot(organizationId: string, client: OperatorClient = supabase): Promise<OperatorTerminalSnapshot> {
   const { data: ordersData, error: ordersError } = await client
     .from('mes_production_orders')
     .select('*')
+    .eq('organization_id', organizationId)
     .eq('manufacturing_type', 'single-operation')
     .in('status', ['released', 'running', 'paused'])
     .order('status', { ascending: false })
@@ -139,8 +140,8 @@ export async function fetchOperatorTerminalSnapshot(client: OperatorClient = sup
   const workCenterCode = currentOrder?.assignedWorkCenter ?? '';
 
   const [{ data: workCentersData, error: workCentersError }, { data: stationsData, error: stationsError }] = await Promise.all([
-    client.from('mes_work_centers').select('id, code, name').order('name', { ascending: true }),
-    client.from('mes_work_center_stations').select('id, work_center_id, code, name, type, image_url, status, operator, process_step').order('name', { ascending: true }),
+    client.from('mes_work_centers').select('id, code, name').eq('organization_id', organizationId).order('name', { ascending: true }),
+    client.from('mes_work_center_stations').select('id, work_center_id, code, name, type, image_url, status, operator, process_step').eq('organization_id', organizationId).order('name', { ascending: true }),
   ]);
 
   if (workCentersError) throw workCentersError;
@@ -190,6 +191,7 @@ export async function fetchOperatorTerminalSnapshot(client: OperatorClient = sup
 export async function reportOperatorProduction(
   input: {
     orderId: string;
+    organizationId: string;
     stationCode: string;
     goodDelta?: number;
     scrapDelta?: number;
@@ -200,6 +202,7 @@ export async function reportOperatorProduction(
 ): Promise<ProductionOrder> {
   const { data, error } = await client.rpc('mes_operator_report_production', {
     p_order_id: input.orderId,
+    p_organization_id: input.organizationId,
     p_station_code: input.stationCode,
     p_good_delta: input.goodDelta ?? 0,
     p_scrap_delta: input.scrapDelta ?? 0,
@@ -214,6 +217,7 @@ export async function reportOperatorProduction(
 export async function fetchOperatorScrapEvents(
   input: {
     orderId: string;
+    organizationId: string;
     stationCode: string;
     fallbackOrder?: Pick<ProductionOrder, 'orderNumber' | 'partNumber' | 'partName'>;
   },
@@ -223,6 +227,7 @@ export async function fetchOperatorScrapEvents(
     .from('mes_operator_terminal_events')
     .select('id, production_order_id, work_center_code, station_code, event_type, quantity, reason, comment, payload, created_at')
     .eq('production_order_id', input.orderId)
+    .eq('organization_id', input.organizationId)
     .eq('station_code', input.stationCode)
     .eq('event_type', 'production-scrap')
     .order('created_at', { ascending: false });
@@ -248,6 +253,7 @@ export async function fetchOperatorScrapEvents(
 export async function setOperatorTerminalState(
   input: {
     orderId: string;
+    organizationId: string;
     stationCode: string;
     state: 'running' | 'paused' | 'down' | 'completed';
     reason?: string;
@@ -257,6 +263,7 @@ export async function setOperatorTerminalState(
 ): Promise<ProductionOrder> {
   const { data, error } = await client.rpc('mes_operator_set_state', {
     p_order_id: input.orderId,
+    p_organization_id: input.organizationId,
     p_station_code: input.stationCode,
     p_state: input.state,
     p_reason: input.reason ?? null,
@@ -270,6 +277,7 @@ export async function setOperatorTerminalState(
 export async function switchOperatorActiveOrder(
   input: {
     orderId: string;
+    organizationId: string;
     stationCode: string;
     comment?: string;
   },
@@ -277,6 +285,7 @@ export async function switchOperatorActiveOrder(
 ): Promise<ProductionOrder> {
   const { data, error } = await client.rpc('mes_operator_switch_active_order', {
     p_order_id: input.orderId,
+    p_organization_id: input.organizationId,
     p_station_code: input.stationCode,
     p_comment: input.comment ?? null,
   });
@@ -287,6 +296,7 @@ export async function switchOperatorActiveOrder(
     .from('mes_production_orders')
     .select('*')
     .eq('id', input.orderId)
+    .eq('organization_id', input.organizationId)
     .single();
 
   if (selectedError) throw error;
@@ -298,6 +308,7 @@ export async function switchOperatorActiveOrder(
     .from('mes_production_orders')
     .update({ status: 'paused' })
     .neq('id', input.orderId)
+    .eq('organization_id', input.organizationId)
     .eq('manufacturing_type', 'single-operation')
     .eq('assigned_work_center', selectedOrder.assigned_work_center)
     .eq('assigned_station', stationCode)
@@ -307,6 +318,7 @@ export async function switchOperatorActiveOrder(
     .from('mes_production_orders')
     .update({ status: 'running' })
     .eq('id', input.orderId)
+    .eq('organization_id', input.organizationId)
     .select('*')
     .single();
 
@@ -319,12 +331,14 @@ export async function switchOperatorActiveOrder(
       status: 'running',
       last_event: 'Active order changed',
     })
+    .eq('organization_id', input.organizationId)
     .eq('code', stationCode);
 
   await client
     .from('mes_operator_terminal_events')
     .insert({
       production_order_id: input.orderId,
+      organization_id: input.organizationId,
       work_center_code: selectedOrder.assigned_work_center,
       station_code: stationCode,
       event_type: 'job-resumed',
@@ -338,6 +352,7 @@ export async function switchOperatorActiveOrder(
 export async function saveOperatorTraceability(
   input: {
     orderId: string;
+    organizationId: string;
     stationCode: string;
     templateId: string;
     partLabel?: string;
@@ -356,6 +371,7 @@ export async function saveOperatorTraceability(
 ) {
   const { data, error } = await client.rpc('mes_operator_save_traceability', {
     p_order_id: input.orderId,
+    p_organization_id: input.organizationId,
     p_station_code: input.stationCode,
     p_template_id: input.templateId,
     p_part_label: input.partLabel ?? null,

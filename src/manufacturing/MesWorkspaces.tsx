@@ -6,6 +6,7 @@ import type { ProductionOrder, ProductionOrderManufacturingType, ProductionOrder
 
 type WorkspaceProps = {
   onNavigate: (path: string) => void;
+  organizationId: string;
 };
 
 type StatusBadgeProps = {
@@ -619,8 +620,9 @@ function mapProductionOrderRow(row: ProductionOrderRow): ProductionOrder {
   };
 }
 
-function toProductionOrderPayload(order: ProductionOrder | Omit<ProductionOrder, 'id'>) {
+function toProductionOrderPayload(order: ProductionOrder | Omit<ProductionOrder, 'id'>, organizationId: string) {
   return {
+    organization_id: organizationId,
     order_number: order.orderNumber,
     part_number: order.partNumber,
     part_name: order.partName,
@@ -950,7 +952,7 @@ function getProductionOrderActions(status: ProductionOrderStatus): ProductionOrd
   return [traceabilityAction];
 }
 
-export function ProductionOrdersWorkspace({ onNavigate }: WorkspaceProps) {
+export function ProductionOrdersWorkspace({ onNavigate, organizationId }: WorkspaceProps) {
   const [orders, setOrders] = React.useState<ProductionOrder[]>([]);
   const [selectedOrderNumber, setSelectedOrderNumber] = React.useState('');
   const [searchTerm, setSearchTerm] = React.useState('');
@@ -1029,14 +1031,17 @@ export function ProductionOrdersWorkspace({ onNavigate }: WorkspaceProps) {
         supabase
           .from('mes_production_orders')
           .select('*')
+          .eq('organization_id', organizationId)
           .order('due_date', { ascending: true }),
         supabase
           .from('mes_work_centers')
           .select('id, code, name')
+          .eq('organization_id', organizationId)
           .order('name', { ascending: true }),
         supabase
           .from('mes_work_center_stations')
           .select('work_center_id, code, name')
+          .eq('organization_id', organizationId)
           .order('name', { ascending: true }),
       ]);
 
@@ -1079,12 +1084,12 @@ export function ProductionOrdersWorkspace({ onNavigate }: WorkspaceProps) {
     return () => {
       active = false;
     };
-  }, []);
+  }, [organizationId]);
 
   const persistOrder = async (order: ProductionOrder) => {
     const { error } = await supabase
       .from('mes_production_orders')
-      .update(toProductionOrderPayload(order))
+      .update(toProductionOrderPayload(order, organizationId))
       .eq('id', order.id);
     if (error) {
       console.error('Unable to sync MES production order', error);
@@ -1175,7 +1180,7 @@ export function ProductionOrdersWorkspace({ onNavigate }: WorkspaceProps) {
           setSavingOrder(true);
           const { error } = await supabase
             .from('mes_production_orders')
-            .update(toProductionOrderPayload(orderFromForm))
+            .update(toProductionOrderPayload(orderFromForm, organizationId))
             .eq('id', selectedOrder.id);
           if (error) {
             console.error('Unable to update MES production order', error);
@@ -1201,7 +1206,7 @@ export function ProductionOrdersWorkspace({ onNavigate }: WorkspaceProps) {
         setSavingOrder(true);
         const { data, error } = await supabase
           .from('mes_production_orders')
-          .insert(toProductionOrderPayload(orderFromForm))
+          .insert(toProductionOrderPayload(orderFromForm, organizationId))
           .select('*')
           .single();
         if (error) {
@@ -2817,9 +2822,10 @@ function mapWorkCenterRow(row: MesWorkCenterRow, stations: WorkCenterStation[] =
   };
 }
 
-function toWorkCenterPayload(workCenter: MesWorkCenter) {
+function toWorkCenterPayload(workCenter: MesWorkCenter, organizationId: string) {
   return {
     id: workCenter.id,
+    organization_id: organizationId,
     code: workCenter.code,
     name: workCenter.name,
     type: workCenter.type,
@@ -2858,9 +2864,10 @@ function toWorkCenterPayload(workCenter: MesWorkCenter) {
   };
 }
 
-function toStationPayload(station: WorkCenterStation) {
+function toStationPayload(station: WorkCenterStation, organizationId: string) {
   return {
     id: station.id,
+    organization_id: organizationId,
     work_center_id: station.workCenterId,
     code: station.code,
     name: station.name,
@@ -3090,7 +3097,7 @@ function getWorkCenterOperationalSummary(workCenter: MesWorkCenter | null, stati
   };
 }
 
-export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
+export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspaceProps) {
   const [workCenters, setWorkCenters] = React.useState<MesWorkCenter[]>([]);
   const [productionOrders, setProductionOrders] = React.useState<ProductionOrder[]>([]);
   const [selectedWorkCenterId, setSelectedWorkCenterId] = React.useState('');
@@ -3141,9 +3148,9 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
     setWorkCentersError('');
 
     const [{ data: workCenterRows, error: workCenterError }, { data: stationRows, error: stationError }, { data: productionOrderRows, error: productionOrderError }] = await Promise.all([
-      supabase.from('mes_work_centers').select('*').order('created_at', { ascending: false }),
-      supabase.from('mes_work_center_stations').select('*').order('created_at', { ascending: true }),
-      supabase.from('mes_production_orders').select('*').order('due_date', { ascending: true }),
+      supabase.from('mes_work_centers').select('*').eq('organization_id', organizationId).order('created_at', { ascending: false }),
+      supabase.from('mes_work_center_stations').select('*').eq('organization_id', organizationId).order('created_at', { ascending: true }),
+      supabase.from('mes_production_orders').select('*').eq('organization_id', organizationId).order('due_date', { ascending: true }),
     ]);
 
     if (workCenterError || stationError || productionOrderError) {
@@ -3172,7 +3179,7 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
     setSelectedWorkCenterId((currentId) => (nextWorkCenters.some((workCenter) => workCenter.id === currentId) ? currentId : nextWorkCenters[0]?.id ?? ''));
     setSelectedStationId((currentId) => (nextWorkCenters.some((workCenter) => workCenter.stations.some((station) => station.id === currentId)) ? currentId : ''));
     setWorkCentersLoading(false);
-  }, []);
+  }, [organizationId]);
 
   React.useEffect(() => {
     void loadWorkCenters();
@@ -3453,7 +3460,7 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
 
     const { data: stationRow, error: stationError } = await supabase
       .from('mes_work_center_stations')
-      .insert(toStationPayload(nextStation))
+      .insert(toStationPayload(nextStation, organizationId))
       .select('*')
       .single();
 
@@ -3844,7 +3851,7 @@ export function WorkCentersWorkspace({ onNavigate }: WorkspaceProps) {
 
     const { data: savedWorkCenterRow, error } = await supabase
       .from('mes_work_centers')
-      .upsert(toWorkCenterPayload(nextWorkCenter))
+      .upsert(toWorkCenterPayload(nextWorkCenter, organizationId))
       .select('*')
       .single();
 
@@ -4902,7 +4909,7 @@ function formatTraceabilityStatus(status: ProductionOrderStatus | '') {
   return status ? formatLabel(status) : 'Unknown';
 }
 
-export function TraceabilityWorkspace({ onNavigate }: WorkspaceProps) {
+export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceProps) {
   const [captures, setCaptures] = React.useState<TraceabilityCapture[]>([]);
   const [operatorEvents, setOperatorEvents] = React.useState<TraceabilityOperatorEventRow[]>([]);
   const [orders, setOrders] = React.useState<TraceabilityOrderOption[]>([]);
@@ -4952,23 +4959,28 @@ export function TraceabilityWorkspace({ onNavigate }: WorkspaceProps) {
             status
           )
         `)
+        .eq('organization_id', organizationId)
         .order('created_at', { ascending: false })
         .limit(200),
       supabase
         .from('mes_production_orders')
         .select('id, order_number, part_number, part_name, assigned_work_center, assigned_station, status')
+        .eq('organization_id', organizationId)
         .order('order_number', { ascending: true }),
       supabase
         .from('mes_work_centers')
         .select('id, code, name')
+        .eq('organization_id', organizationId)
         .order('name', { ascending: true }),
       supabase
         .from('mes_work_center_stations')
         .select('id, work_center_id, code, name')
+        .eq('organization_id', organizationId)
         .order('name', { ascending: true }),
       supabase
         .from('mes_operator_terminal_events')
         .select('id, production_order_id, work_center_code, station_code, event_type, reason, created_at')
+        .eq('organization_id', organizationId)
         .in('event_type', ['production-scrap', 'downtime-started', 'job-paused', 'adjustment'])
         .order('created_at', { ascending: false })
         .limit(300),
@@ -5007,7 +5019,7 @@ export function TraceabilityWorkspace({ onNavigate }: WorkspaceProps) {
       setOperatorEvents((eventsData ?? []) as TraceabilityOperatorEventRow[]);
     }
     if (!silent) setLoading(false);
-  }, []);
+  }, [organizationId]);
 
   React.useEffect(() => {
     void loadTraceability();

@@ -111,6 +111,7 @@ type UserProfile = {
   experience_points: number | null;
   profile_level: number | null;
   profile_level_progress: number | null;
+  avatar_url?: string | null;
   created_at?: string;
   updated_at?: string | null;
 };
@@ -128,7 +129,7 @@ type AppUser = {
   avatarUrl?: string;
 };
 
-type ManufacturingOrganizationRole = 'Owner' | 'Admin' | 'Operator' | 'Viewer';
+type ManufacturingOrganizationRole = 'Owner' | 'Admin' | 'Operator' | 'Viewer' | 'Supplier';
 
 type ManufacturingOrganization = {
   id: string;
@@ -140,7 +141,7 @@ type ManufacturingOrganization = {
   memberCount: number;
 };
 
-type ManufacturingOrganizationInviteRole = Extract<ManufacturingOrganizationRole, 'Admin' | 'Operator' | 'Viewer'>;
+type ManufacturingOrganizationInviteRole = Extract<ManufacturingOrganizationRole, 'Admin' | 'Operator' | 'Viewer' | 'Supplier'>;
 
 type ManufacturingOrganizationMemberRow = {
   organization_id: string;
@@ -163,6 +164,7 @@ type ManufacturingOrganizationMember = {
   id: string;
   userId: string;
   role: ManufacturingOrganizationRole;
+  profile: AppUser;
 };
 
 type ManufacturingOrganizationMemberTableRow = {
@@ -170,6 +172,8 @@ type ManufacturingOrganizationMemberTableRow = {
   user_id: string;
   role: ManufacturingOrganizationRole;
 };
+
+type ManufacturingOrganizationMemberProfileRow = Pick<UserProfile, 'id' | 'full_name' | 'subscription_tier' | 'yvimo_points' | 'experience_points' | 'profile_level' | 'profile_level_progress' | 'avatar_url'>;
 
 type ProfileLoadState = 'idle' | 'loading' | 'loaded' | 'error';
 
@@ -289,6 +293,20 @@ function getProfileInitials(name: string) {
   return initials || 'Y';
 }
 
+function organizationMemberProfileToAppUser(userId: string, profile: ManufacturingOrganizationMemberProfileRow | null): AppUser {
+  return {
+    id: userId,
+    email: '',
+    name: profile?.full_name?.trim() || `Member ${userId.slice(0, 8)}`,
+    subscription: profile?.subscription_tier ?? 'Explorer',
+    yvimoPoints: normalizeNonNegativeNumber(profile?.yvimo_points),
+    experiencePoints: normalizeNonNegativeNumber(profile?.experience_points),
+    profileLevel: normalizeProfileLevel(profile?.profile_level),
+    profileLevelProgress: normalizeProfileProgress(profile?.profile_level_progress),
+    avatarUrl: profile?.avatar_url ?? undefined,
+  };
+}
+
 function getSubscriptionSlug(subscription: SubscriptionTier) {
   return subscription.toLowerCase().replace(/\s+/g, '-');
 }
@@ -327,7 +345,7 @@ function profileToAppUser(user: User, profile: UserProfile | null): AppUser {
     experiencePoints: normalizeNonNegativeNumber(profile?.experience_points),
     profileLevel: normalizeProfileLevel(profile?.profile_level),
     profileLevelProgress: normalizeProfileProgress(profile?.profile_level_progress),
-    avatarUrl: typeof user.user_metadata?.avatar_url === 'string' ? user.user_metadata.avatar_url : undefined,
+    avatarUrl: profile?.avatar_url || (typeof user.user_metadata?.avatar_url === 'string' ? user.user_metadata.avatar_url : undefined),
   };
 }
 
@@ -2234,47 +2252,87 @@ function LoggedDashboardPage({
         id: 'local-current-user',
         userId: user.id,
         role: manufacturingOrganization.role,
+        profile: user,
       }] : []);
       return;
     }
 
     let cancelled = false;
-    supabase
-      .from('manufacturing_organization_members')
-      .select('id, user_id, role')
-      .eq('organization_id', manufacturingOrganization.id)
-      .then(({ data, error }) => {
-        if (cancelled) return;
-        if (error) throw error;
-        const members = ((data ?? []) as ManufacturingOrganizationMemberTableRow[]).map((member) => ({
-          id: member.id,
-          userId: member.user_id,
-          role: member.role,
-        }));
-        const nextMembers = members.some((member) => member.userId === user.id)
-          ? members
-          : [{
-            id: 'local-current-user',
-            userId: user.id,
-            role: manufacturingOrganization.role,
-          }, ...members];
-        setManufacturingOrganizationMembers(nextMembers);
-        const nextOwner = nextMembers.find((member) => member.userId !== user.id);
-        setManufacturingNewOwnerUserId((currentOwnerId) => currentOwnerId || nextOwner?.userId || '');
-      })
+    const loadMembers = async () => {
+      const { data, error } = await supabase
+        .from('manufacturing_organization_members')
+        .select('id, user_id, role')
+        .eq('organization_id', manufacturingOrganization.id)
+        .order('created_at', { ascending: true });
+
+      if (cancelled) return;
+      if (error) throw error;
+      const memberRows = (data ?? []) as ManufacturingOrganizationMemberTableRow[];
+      const memberIds = Array.from(new Set(memberRows.map((member) => member.user_id)));
+      const { data: profileRows, error: profileError } = memberIds.length > 0
+        ? await supabase
+          .from('profiles')
+          .select('id, full_name, subscription_tier, yvimo_points, experience_points, profile_level, profile_level_progress, avatar_url')
+          .in('id', memberIds)
+        : { data: [], error: null };
+
+      if (cancelled) return;
+      if (profileError) throw profileError;
+      const profilesById = new Map(((profileRows ?? []) as ManufacturingOrganizationMemberProfileRow[]).map((profile) => [profile.id, profile]));
+      const members = memberRows.map((member) => ({
+        id: member.id,
+        userId: member.user_id,
+        role: member.role,
+        profile: member.user_id === user.id ? user : organizationMemberProfileToAppUser(member.user_id, profilesById.get(member.user_id) ?? null),
+      }));
+      const nextMembers = members.some((member) => member.userId === user.id)
+        ? members
+        : [{
+          id: 'local-current-user',
+          userId: user.id,
+          role: manufacturingOrganization.role,
+          profile: user,
+        }, ...members];
+      setManufacturingOrganizationMembers(nextMembers);
+      setManufacturingOrganization((currentOrganization) => currentOrganization?.id === manufacturingOrganization.id
+        ? { ...currentOrganization, memberCount: Math.max(1, nextMembers.length) }
+        : currentOrganization);
+      const nextOwner = nextMembers.find((member) => member.userId !== user.id);
+      setManufacturingNewOwnerUserId((currentOwnerId) => currentOwnerId || nextOwner?.userId || '');
+    };
+
+    void loadMembers()
       .catch((error) => {
         console.warn('Unable to load manufacturing organization members', error);
         setManufacturingOrganizationMembers([{
           id: 'local-current-user',
           userId: user.id,
           role: manufacturingOrganization.role,
+          profile: user,
         }]);
       });
 
+    const refreshTimer = window.setInterval(() => {
+      if (manufacturingOrganizationDialogOpen) void loadMembers().catch((error) => console.warn('Unable to refresh manufacturing organization members', error));
+    }, 20000);
+    const membersChannel = supabase
+      .channel(`manufacturing-organization-members:${manufacturingOrganization.id}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'manufacturing_organization_members',
+        filter: `organization_id=eq.${manufacturingOrganization.id}`,
+      }, () => {
+        void loadMembers().catch((error) => console.warn('Unable to refresh manufacturing organization members', error));
+      })
+      .subscribe();
+
     return () => {
       cancelled = true;
+      window.clearInterval(refreshTimer);
+      void supabase.removeChannel(membersChannel);
     };
-  }, [manufacturingOrganization?.id, manufacturingOrganization?.role, user.id]);
+  }, [manufacturingOrganization?.id, manufacturingOrganization?.role, manufacturingOrganizationDialogOpen, user]);
 
   const createManufacturingOrganization = async () => {
     const nextName = manufacturingOrganizationName.trim();
@@ -3142,18 +3200,52 @@ function LoggedDashboardPage({
       : mesModules;
   const activeMesModule = mesModules.find((module) => activePath === module.path);
   const isOperatorTerminalPage = activePath === '/workspace/manufacturing-ops/mes/operator-terminal';
+  const activeManufacturingOrganizationId = manufacturingOrganization
+    && !manufacturingOrganization.id.startsWith('local-')
+    && !manufacturingOrganization.id.startsWith('joined-')
+    ? manufacturingOrganization.id
+    : '';
+  const manufacturingOrganizationRequiredPanel = (
+    <section className="mes-workspace-panel">
+      <div className="mes-screen-header">
+        <button className="mes-workspace-back" type="button" onClick={() => onNavigate('/workspace/manufacturing-ops')}>
+          <ArrowLeft size={17} /> Back to Manufacturing Ops
+        </button>
+        <div className="mes-workspace-heading">
+          <span className="eyebrow">Organization required</span>
+          <h2>Choose a Manufacturing Organization</h2>
+          <p>Production Orders, Work Centers, Operator Terminal, and Traceability are shared by organization. Create one or join with an invite code before entering this workspace.</p>
+        </div>
+      </div>
+      <div className="manufacturing-organization-card">
+        <button className="manufacturing-organization-trigger" type="button" onClick={() => setManufacturingOrganizationDialogOpen(true)}>
+          <span className="manufacturing-organization-icon">
+            {manufacturingOrganization?.logoUrl ? <img src={manufacturingOrganization.logoUrl} alt="" aria-hidden="true" /> : <Building2 size={19} />}
+          </span>
+          <span>
+            <em>Organization</em>
+            <strong>{manufacturingOrganization?.name || 'No organization'}</strong>
+            <small>{manufacturingOrganization ? 'Finish syncing this organization in Supabase' : 'Create or join a team workspace'}</small>
+          </span>
+        </button>
+      </div>
+    </section>
+  );
   const renderActiveMesWorkspace = () => {
+    if (!activeManufacturingOrganizationId) {
+      return manufacturingOrganizationRequiredPanel;
+    }
     if (activePath === '/workspace/manufacturing-ops/mes/orders') {
-      return <ProductionOrdersWorkspace onNavigate={onNavigate} />;
+      return <ProductionOrdersWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} />;
     }
     if (activePath === '/workspace/manufacturing-ops/mes/work-centers') {
-      return <WorkCentersWorkspace onNavigate={onNavigate} />;
+      return <WorkCentersWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} />;
     }
     if (isOperatorTerminalPage) {
-      return <OperatorTerminalWorkspace onNavigate={onNavigate} />;
+      return <OperatorTerminalWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} />;
     }
     if (activePath === '/workspace/manufacturing-ops/mes/traceability') {
-      return <TraceabilityWorkspace onNavigate={onNavigate} />;
+      return <TraceabilityWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} />;
     }
     return null;
   };
@@ -3535,18 +3627,10 @@ function LoggedDashboardPage({
                       id: 'local-current-user',
                       userId: user.id,
                       role: manufacturingOrganization.role,
+                      profile: user,
                     }]).map((member) => {
                       const isCurrentUser = member.userId === user.id;
-                      const memberUser: AppUser = isCurrentUser ? user : {
-                        id: member.userId,
-                        email: '',
-                        name: `Member ${member.userId.slice(0, 8)}`,
-                        subscription: 'Explorer',
-                        yvimoPoints: 0,
-                        experiencePoints: 0,
-                        profileLevel: 1,
-                        profileLevelProgress: 0,
-                      };
+                      const memberUser: AppUser = isCurrentUser ? user : member.profile;
 
                       return (
                         <div className="manufacturing-organization-member-row" key={member.id}>
@@ -3598,7 +3682,7 @@ function LoggedDashboardPage({
             </div>
             <fieldset className="manufacturing-organization-roles" aria-label="Invite permission">
               <legend>Invite permission</legend>
-              {(['Admin', 'Operator', 'Viewer'] as ManufacturingOrganizationInviteRole[]).map((role) => (
+              {(['Admin', 'Operator', 'Viewer', 'Supplier'] as ManufacturingOrganizationInviteRole[]).map((role) => (
                 <button
                   type="button"
                   className={role === manufacturingInviteRole ? 'active' : ''}
@@ -4643,7 +4727,7 @@ function App() {
       const { data, error } = await withTimeout(
         profileClient
           .from('profiles')
-          .select('id, full_name, company_name, role, subscription_tier, yvimo_points, experience_points, profile_level, profile_level_progress, created_at, updated_at')
+          .select('id, full_name, company_name, role, subscription_tier, yvimo_points, experience_points, profile_level, profile_level_progress, avatar_url, created_at, updated_at')
           .eq('id', user.id)
           .maybeSingle<UserProfile>(),
         7000,
@@ -4672,7 +4756,7 @@ function App() {
         profileClient
           .from('profiles')
           .insert(fallbackProfile)
-          .select('id, full_name, company_name, role, subscription_tier, yvimo_points, experience_points, profile_level, profile_level_progress, created_at, updated_at')
+          .select('id, full_name, company_name, role, subscription_tier, yvimo_points, experience_points, profile_level, profile_level_progress, avatar_url, created_at, updated_at')
           .single<UserProfile>(),
         7000,
         'Profile insert',
@@ -5086,6 +5170,15 @@ function App() {
     if (updateError) {
       console.error('[auth] avatar metadata update error', updateError);
       return { ok: false, message: 'Profile picture was uploaded, but your profile could not be updated.' };
+    }
+
+    const { error: profileUpdateError } = await supabase
+      .from('profiles')
+      .update({ avatar_url: avatarUrl })
+      .eq('id', authSession.user.id);
+
+    if (profileUpdateError) {
+      console.warn('[auth] profile avatar update warning', profileUpdateError);
     }
 
     setAuthUser((currentUser) => currentUser ? { ...currentUser, avatarUrl } : currentUser);
