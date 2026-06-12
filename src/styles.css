@@ -8663,6 +8663,194 @@ button {
   background: #e6edf5;
 }
 
+.google-work-center-map {
+  position: relative;
+  min-height: 430px;
+  overflow: hidden;
+  border: 1px solid rgba(18, 29, 41, 0.12);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(7, 17, 28, 0.08), rgba(255, 138, 31, 0.08)),
+    #e6edf5;
+}
+
+.google-work-center-map-canvas {
+  position: absolute;
+  inset: 0;
+}
+
+.google-work-center-map-fallback,
+.google-work-center-map-empty {
+  display: grid;
+  min-height: 430px;
+  place-items: center;
+  border: 1px solid rgba(18, 29, 41, 0.12);
+  border-radius: 8px;
+  padding: 22px;
+  background:
+    linear-gradient(135deg, rgba(7, 17, 28, 0.92), rgba(32, 36, 42, 0.86)),
+    #07111c;
+  color: #ffd1a5;
+  font-size: 0.92rem;
+  font-weight: 900;
+  text-align: center;
+}
+
+.google-work-center-map-empty {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 2;
+  min-height: 0;
+  border-color: rgba(255, 138, 31, 0.32);
+  padding: 10px 12px;
+  background: rgba(7, 17, 28, 0.88);
+  color: #ffffff;
+  font-size: 0.75rem;
+  box-shadow: 0 12px 28px rgba(7, 17, 28, 0.28);
+}
+
+.google-work-center-marker {
+  position: relative;
+  display: grid;
+  grid-template-columns: 24px minmax(84px, 132px);
+  align-items: center;
+  gap: 2px 8px;
+  min-width: 154px;
+  border: 2px solid #ff8a1f;
+  border-radius: 8px;
+  padding: 7px 10px 8px 8px;
+  background: #ffffff;
+  color: #07111c;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  box-shadow:
+    0 16px 34px rgba(7, 17, 28, 0.28),
+    0 0 0 3px rgba(255, 255, 255, 0.86);
+  transform: translateY(-10px);
+  transition: opacity 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.google-work-center-marker::after {
+  content: "";
+  position: absolute;
+  bottom: -9px;
+  left: 18px;
+  width: 14px;
+  height: 14px;
+  border-right: 2px solid #ff8a1f;
+  border-bottom: 2px solid #ff8a1f;
+  background: inherit;
+  transform: rotate(45deg);
+}
+
+.google-work-center-marker:hover,
+.google-work-center-marker:focus-visible,
+.google-work-center-marker.selected {
+  outline: none;
+  box-shadow:
+    0 0 0 5px rgba(255, 138, 31, 0.26),
+    0 18px 40px rgba(7, 17, 28, 0.34),
+    0 0 0 3px rgba(255, 255, 255, 0.9);
+  transform: translateY(-13px);
+}
+
+.google-work-center-marker.status-running {
+  border-color: #00a676;
+}
+
+.google-work-center-marker.status-running::after {
+  border-color: #00a676;
+}
+
+.google-work-center-marker.status-idle {
+  border-color: #ff8a1f;
+}
+
+.google-work-center-marker.status-down,
+.google-work-center-marker.alert {
+  border-color: #ef4444;
+}
+
+.google-work-center-marker.status-down::after,
+.google-work-center-marker.alert::after {
+  border-color: #ef4444;
+}
+
+.google-work-center-marker.status-maintenance {
+  border-color: #f59e0b;
+}
+
+.google-work-center-marker.status-maintenance::after {
+  border-color: #f59e0b;
+}
+
+.google-work-center-marker-badge {
+  grid-row: 1 / span 2;
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: 999px;
+  background: #ff8a1f;
+  color: #17110b;
+  font-size: 0.68rem;
+  font-weight: 950;
+}
+
+.google-work-center-marker.status-running .google-work-center-marker-badge {
+  background: #00a676;
+  color: #ffffff;
+}
+
+.google-work-center-marker.status-down .google-work-center-marker-badge,
+.google-work-center-marker.alert .google-work-center-marker-badge {
+  background: #ef4444;
+  color: #ffffff;
+}
+
+.google-work-center-marker.status-maintenance .google-work-center-marker-badge {
+  background: #f59e0b;
+  color: #17110b;
+}
+
+.google-work-center-marker strong,
+.google-work-center-marker em {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.google-work-center-marker strong {
+  font-size: 0.78rem;
+  font-weight: 950;
+}
+
+.google-work-center-marker em {
+  color: #607080;
+  font-size: 0.64rem;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.google-work-center-map.opacity-mode .google-work-center-marker {
+  opacity: 0.26;
+  box-shadow: none;
+}
+
+.google-work-center-map.opacity-mode .google-work-center-marker.selected,
+.google-work-center-map.opacity-mode .google-work-center-marker:hover,
+.google-work-center-map.opacity-mode .google-work-center-marker:focus-visible {
+  opacity: 0.9;
+  box-shadow:
+    0 0 0 5px rgba(255, 138, 31, 0.2),
+    0 12px 30px rgba(7, 17, 28, 0.24);
+}
+
 .work-center-map-canvas iframe {
   position: absolute;
   top: -6px;

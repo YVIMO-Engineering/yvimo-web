@@ -1,6 +1,8 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
 import { Activity, AlertTriangle, ArrowLeft, CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleHelp, Database, Eye, Factory, Frown, ImagePlus, Meh, Plus, RadioTower, Search, Smile, Timer } from 'lucide-react';
+import { GoogleWorkCentersMap } from '../components/maps/GoogleWorkCentersMap';
+import { resolveGooglePlacesAddressMatch, searchGooglePlacesAddressMatches, type GooglePlacesAddressMatch } from '../lib/maps/googlePlacesAddressLookup';
 import { supabase } from '../lib/supabaseClient';
 import type { ProductionOrder, ProductionOrderManufacturingType, ProductionOrderPriority, ProductionOrderStatus, WorkCenterStatus } from './mesTypes';
 
@@ -1796,12 +1798,7 @@ type AddressLookupState = {
   status: 'idle' | 'loading' | 'success' | 'error';
   message: string;
 };
-type AddressLookupMatch = {
-  address: string;
-  latitude: string;
-  longitude: string;
-  approximate?: boolean;
-};
+type AddressLookupMatch = GooglePlacesAddressMatch;
 type AddressSuggestionMenuPosition = {
   top: number;
   left: number;
@@ -1882,331 +1879,13 @@ const registerNewCapabilityValue = '__register_new_capability__';
 const capabilityColorOptions = ['#ff8a1f', '#1d4ed8', '#00a676', '#dc2626', '#8b5cf6', '#f59e0b', '#14b8a6', '#ec4899'];
 const stationImageBucket = 'station-images';
 const maintenanceStatuses = ['Healthy', 'Due soon', 'Maintenance required', 'In maintenance'];
-const knownMexicanCityCoordinates: Record<string, { latitude: string; longitude: string }> = {
-  'saltillo|coahuila': { latitude: '25.43819', longitude: '-100.97367' },
-};
-
-function getAddressSearchVariants(query: string) {
-  const trimmedQuery = query.trim();
-  const normalizedQuery = trimmedQuery
-    .replace(/\bCoah\.?\b/gi, 'Coahuila')
-    .replace(/\bMéx\.?\b/gi, 'Mexico')
-    .replace(/\bMex\.?\b/gi, 'Mexico')
-    .replace(/\s+/g, ' ');
-  const variants: Array<{ query: string; approximate: boolean }> = [{ query: normalizedQuery, approximate: false }];
-  const hasMexico = /\b(mexico|méxico)\b/i.test(normalizedQuery);
-  const mexicoLikely = /\b(saltillo|torre[oó]n|coahuila|monterrey|nuevo le[oó]n|guadalajara|jalisco|quer[eé]taro|cdmx|ciudad de m[eé]xico|puebla|le[oó]n|guanajuato|chihuahua|tijuana|baja california)\b/i.test(normalizedQuery);
-  const streetPrefixVariant = normalizedQuery.replace(/^([A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+)\s+(\d+)/, 'Calle $1 $2');
-  const postalCode = normalizedQuery.match(/\b\d{5}\b/)?.[0] ?? '';
-  const withoutPostalCode = normalizedQuery.replace(/\b\d{5}\b/g, '').replace(/\s*,\s*,/g, ',').replace(/\s+/g, ' ').trim();
-  const withoutStreetNumber = normalizedQuery.replace(/^([^,]*?)\s+\d+\s*,\s*/i, '').trim();
-  const addressParts = normalizedQuery.split(',').map((part) => part.trim()).filter(Boolean);
-  const localityParts = addressParts.slice(1);
-  const localityQuery = localityParts.join(', ');
-  const cityPart = (addressParts.find((part) => /\bsaltillo\b/i.test(part)) ?? (/\bsaltillo\b/i.test(normalizedQuery) ? 'Saltillo' : ''))
-    .replace(/\b\d{5}\b/g, '')
-    .trim();
-  const statePart = /\bcoahuila\b/i.test(normalizedQuery) ? 'Coahuila' : '';
-  const postalCityStateQuery = [postalCode, cityPart, statePart, hasMexico ? '' : 'Mexico'].filter(Boolean).join(', ');
-  const cityStateQuery = [
-    cityPart,
-    statePart,
-    hasMexico ? '' : 'Mexico',
-  ].filter(Boolean).join(', ');
-
-  const addVariant = (variant: string, approximate = false) => {
-    const cleanVariant = variant.replace(/\s*,\s*,/g, ',').replace(/\s+/g, ' ').replace(/^,\s*|\s*,$/g, '').trim();
-    if (cleanVariant) variants.push({ query: cleanVariant, approximate });
-  };
-
-  if (streetPrefixVariant !== normalizedQuery) addVariant(streetPrefixVariant);
-  if (!hasMexico) addVariant(`${normalizedQuery}, Mexico`);
-  if (!hasMexico && streetPrefixVariant !== normalizedQuery) addVariant(`${streetPrefixVariant}, Mexico`);
-  if (!/\bcoahuila\b/i.test(normalizedQuery) && /\bsaltillo\b/i.test(normalizedQuery)) addVariant(`${normalizedQuery}, Coahuila, Mexico`);
-  if (postalCityStateQuery) addVariant(postalCityStateQuery, true);
-  if (withoutPostalCode !== normalizedQuery) addVariant(hasMexico ? withoutPostalCode : `${withoutPostalCode}, Mexico`, true);
-  if (withoutStreetNumber && withoutStreetNumber !== normalizedQuery) addVariant(hasMexico ? withoutStreetNumber : `${withoutStreetNumber}, Mexico`, true);
-  if (localityQuery) addVariant(hasMexico ? localityQuery : `${localityQuery}, Mexico`, true);
-  if (cityStateQuery) addVariant(cityStateQuery, true);
-
-  return {
-    countryCode: hasMexico || mexicoLikely ? 'mx' : '',
-    cityPart,
-    hasMexico,
-    postalCode,
-    statePart,
-    variants: Array.from(new Map(variants.map((variant) => [variant.query, variant])).values()),
-  };
-}
-
-function getPostalCodeFromAddress(address: string) {
-  return address.match(/\b\d{5}\b/)?.[0] ?? '';
-}
-
-function getKnownCityCoordinate(city: string, state: string) {
-  return knownMexicanCityCoordinates[`${city.toLowerCase()}|${state.toLowerCase()}`] ?? null;
-}
-
-function prioritizePostalCodeMatches(
-  matches: AddressLookupMatch[],
-  context: ReturnType<typeof getAddressSearchVariants>,
-  limit: number,
-) {
-  if (!context.postalCode) return matches.slice(0, limit);
-
-  const exactPostalMatches = matches.filter((match) => getPostalCodeFromAddress(match.address) === context.postalCode);
-  if (exactPostalMatches.length > 0) return exactPostalMatches.slice(0, limit);
-
-  const matchesWithoutPostalCode = matches.filter((match) => !getPostalCodeFromAddress(match.address));
-  const coordinateSource = matchesWithoutPostalCode[0] ?? getKnownCityCoordinate(context.cityPart, context.statePart);
-  if (!coordinateSource || !context.cityPart || !context.statePart) return [];
-
-  return [
-    {
-      address: `CP ${context.postalCode}, ${context.cityPart}, ${context.statePart}, Mexico`,
-      latitude: coordinateSource.latitude,
-      longitude: coordinateSource.longitude,
-      approximate: true,
-    },
-  ].slice(0, limit);
-}
-
-async function fetchAddressMatches(query: string, limit = 5, signal?: AbortSignal, countryCode = '', approximate = false): Promise<AddressLookupMatch[]> {
-  const params = new URLSearchParams({ addressdetails: '1', dedupe: '1', format: 'json', limit: String(limit), q: query });
-  if (countryCode) params.set('countrycodes', countryCode);
-  const response = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, { signal });
-  if (!response.ok) throw new Error('Address lookup failed.');
-  const results = await response.json() as Array<{ display_name?: string; lat: string; lon: string }>;
-
-  return results
-    .filter((result) => result.display_name && result.lat && result.lon)
-    .map((result) => ({
-      address: result.display_name ?? query,
-      latitude: result.lat,
-      longitude: result.lon,
-      approximate,
-    }));
-}
-
-async function fetchPhotonAddressMatches(query: string, limit = 5, signal?: AbortSignal, approximate = true): Promise<AddressLookupMatch[]> {
-  const params = new URLSearchParams({ lang: 'en', limit: String(limit), q: query });
-  const response = await fetch(`https://photon.komoot.io/api/?${params.toString()}`, { signal });
-  if (!response.ok) throw new Error('Photon address lookup failed.');
-  const result = await response.json() as {
-    features?: Array<{
-      geometry?: { coordinates?: [number, number] };
-      properties?: {
-        city?: string;
-        country?: string;
-        district?: string;
-        housenumber?: string;
-        name?: string;
-        postcode?: string;
-        state?: string;
-        street?: string;
-      };
-    }>;
-  };
-
-  return (result.features ?? [])
-    .filter((feature) => feature.geometry?.coordinates)
-    .map((feature) => {
-      const properties = feature.properties ?? {};
-      const [longitude, latitude] = feature.geometry?.coordinates ?? [0, 0];
-      const address = [
-        [properties.street, properties.housenumber].filter(Boolean).join(' ') || properties.name,
-        properties.district,
-        properties.postcode,
-        properties.city,
-        properties.state,
-        properties.country,
-      ].filter(Boolean).join(', ');
-
-      return {
-        address: address || query,
-        latitude: String(latitude),
-        longitude: String(longitude),
-        approximate,
-      };
-    });
-}
 
 async function searchAddressMatches(query: string, limit = 5, signal?: AbortSignal): Promise<AddressLookupMatch[]> {
-  const searchContext = getAddressSearchVariants(query);
-  const { countryCode, variants } = searchContext;
-  const matchesByKey = new Map<string, AddressLookupMatch>();
-
-  for (const variant of variants) {
-    if (signal?.aborted) break;
-    const matches = await fetchAddressMatches(variant.query, limit, signal, countryCode, variant.approximate);
-    matches.forEach((match) => {
-      const key = `${Number(match.latitude).toFixed(5)}:${Number(match.longitude).toFixed(5)}:${match.address}`;
-      if (!matchesByKey.has(key)) matchesByKey.set(key, match);
-    });
-    if (matchesByKey.size >= limit) break;
-  }
-
-  if (matchesByKey.size === 0) {
-    for (const variant of variants) {
-      if (signal?.aborted) break;
-      const matches = await fetchPhotonAddressMatches(variant.query, limit, signal, true);
-      matches.forEach((match) => {
-        const key = `${Number(match.latitude).toFixed(5)}:${Number(match.longitude).toFixed(5)}:${match.address}`;
-        if (!matchesByKey.has(key)) matchesByKey.set(key, match);
-      });
-      if (matchesByKey.size >= limit) break;
-    }
-  }
-
-  return prioritizePostalCodeMatches(Array.from(matchesByKey.values()), searchContext, limit);
+  return searchGooglePlacesAddressMatches(query, limit, signal);
 }
 
-function getWorkCenterMapBounds(workCenters: MesWorkCenter[]) {
-  if (workCenters.length === 0) {
-    return { south: 42.30, north: 42.39, west: -83.09, east: -82.99 };
-  }
-
-  const latitudes = workCenters.map((workCenter) => workCenter.latitude);
-  const longitudes = workCenters.map((workCenter) => workCenter.longitude);
-  const minLatitude = Math.min(...latitudes);
-  const maxLatitude = Math.max(...latitudes);
-  const minLongitude = Math.min(...longitudes);
-  const maxLongitude = Math.max(...longitudes);
-  const latitudePadding = Math.max(0.01, (maxLatitude - minLatitude) * 0.32);
-  const longitudePadding = Math.max(0.01, (maxLongitude - minLongitude) * 0.32);
-
-  return {
-    south: minLatitude - latitudePadding,
-    north: maxLatitude + latitudePadding,
-    west: minLongitude - longitudePadding,
-    east: maxLongitude + longitudePadding,
-  };
-}
-
-function getWorkCenterPinPosition(workCenter: MesWorkCenter, bounds: ReturnType<typeof getWorkCenterMapBounds>) {
-  const x = ((workCenter.longitude - bounds.west) / (bounds.east - bounds.west)) * 100;
-  const y = ((bounds.north - workCenter.latitude) / (bounds.north - bounds.south)) * 100;
-
-  return {
-    x: Math.min(96, Math.max(4, x)),
-    y: Math.min(96, Math.max(4, y)),
-  };
-}
-
-function getWorkCenterMapPinGroups(workCenters: MesWorkCenter[], bounds: ReturnType<typeof getWorkCenterMapBounds>) {
-  const overlapThreshold = 9;
-  const groups: Array<{ id: string; x: number; y: number; workCenters: MesWorkCenter[] }> = [];
-
-  workCenters.forEach((workCenter) => {
-    const position = getWorkCenterPinPosition(workCenter, bounds);
-    const matchingGroup = groups.find((group) => {
-      const distance = Math.hypot(group.x - position.x, group.y - position.y);
-      return distance < overlapThreshold;
-    });
-
-    if (matchingGroup) {
-      matchingGroup.workCenters.push(workCenter);
-      matchingGroup.x = matchingGroup.workCenters.reduce((total, item) => total + getWorkCenterPinPosition(item, bounds).x, 0) / matchingGroup.workCenters.length;
-      matchingGroup.y = matchingGroup.workCenters.reduce((total, item) => total + getWorkCenterPinPosition(item, bounds).y, 0) / matchingGroup.workCenters.length;
-      return;
-    }
-
-    groups.push({ id: workCenter.id, x: position.x, y: position.y, workCenters: [workCenter] });
-  });
-
-  return groups;
-}
-
-function getWorkCenterMapPinLayouts(workCenters: MesWorkCenter[], bounds: ReturnType<typeof getWorkCenterMapBounds>) {
-  const groups = getWorkCenterMapPinGroups(workCenters, bounds);
-  const labelGap = 1.6;
-  const labelsOverlap = (
-    candidate: { x: number; y: number; width: number; height: number },
-    layout: { labelX: number; labelY: number; labelWidth: number; labelHeight: number },
-  ) => !(
-    candidate.x + candidate.width + labelGap < layout.labelX
-    || layout.labelX + layout.labelWidth + labelGap < candidate.x
-    || candidate.y + candidate.height + labelGap < layout.labelY
-    || layout.labelY + layout.labelHeight + labelGap < candidate.y
-  );
-  const labelCoversPin = (
-    candidate: { x: number; y: number; width: number; height: number },
-    pin: { x: number; y: number },
-  ) => (
-    pin.x >= candidate.x - labelGap
-    && pin.x <= candidate.x + candidate.width + labelGap
-    && pin.y >= candidate.y - labelGap
-    && pin.y <= candidate.y + candidate.height + labelGap
-  );
-  const placedLayouts: Array<{
-    id: string;
-    x: number;
-    y: number;
-    labelX: number;
-    labelY: number;
-    labelWidth: number;
-    labelHeight: number;
-    workCenters: MesWorkCenter[];
-  }> = [];
-
-  groups
-    .sort((firstGroup, secondGroup) => firstGroup.y - secondGroup.y || firstGroup.x - secondGroup.x)
-    .forEach((group) => {
-      const labelWidth = group.workCenters.length > 1 ? 44 : 34;
-      const labelHeight = Math.max(8, group.workCenters.length * 7.2);
-      const clampCandidate = (candidate: { x: number; y: number }) => ({
-        x: Math.min(96 - labelWidth, Math.max(4, candidate.x)),
-        y: Math.min(96 - labelHeight, Math.max(4, candidate.y)),
-      });
-      const fitsCandidate = (candidate: { x: number; y: number }) => placedLayouts.every((layout) => !labelsOverlap({
-        x: candidate.x,
-        y: candidate.y,
-        width: labelWidth,
-        height: labelHeight,
-      }, layout)) && !labelCoversPin({
-        x: candidate.x,
-        y: candidate.y,
-        width: labelWidth,
-        height: labelHeight,
-      }, group);
-      const candidates = [
-        { x: group.x - (labelWidth / 2), y: group.y - labelHeight - 8 },
-        { x: group.x + 5, y: group.y - labelHeight - 4 },
-        { x: group.x - labelWidth - 5, y: group.y - labelHeight - 4 },
-        { x: group.x + 5, y: group.y + 5 },
-        { x: group.x - labelWidth - 5, y: group.y + 5 },
-        { x: group.x - (labelWidth / 2), y: group.y + 7 },
-        { x: group.x - (labelWidth / 2), y: group.y - labelHeight - 18 },
-        { x: group.x + 9, y: group.y - (labelHeight / 2) },
-        { x: group.x - labelWidth - 9, y: group.y - (labelHeight / 2) },
-      ];
-
-      const positionedCandidate = candidates
-        .map(clampCandidate)
-        .find(fitsCandidate) ?? Array.from({ length: 16 }, (_, rowIndex) => rowIndex)
-          .flatMap((rowIndex) => Array.from({ length: 7 }, (_, columnIndex) => ({
-            x: 4 + (columnIndex * 14),
-            y: 4 + (rowIndex * 6),
-          })))
-          .find((candidate) => (
-            candidate.x + labelWidth <= 96
-            && candidate.y + labelHeight <= 96
-            && fitsCandidate(candidate)
-          )) ?? {
-          x: Math.min(96 - labelWidth, Math.max(4, group.x - (labelWidth / 2))),
-          y: Math.min(96 - labelHeight, Math.max(4, group.y - labelHeight - 8)),
-        };
-
-      placedLayouts.push({
-        ...group,
-        labelX: positionedCandidate.x,
-        labelY: positionedCandidate.y,
-        labelWidth,
-        labelHeight,
-      });
-    });
-
-  return placedLayouts;
+async function resolveAddressMatch(match: AddressLookupMatch, signal?: AbortSignal): Promise<AddressLookupMatch | null> {
+  return resolveGooglePlacesAddressMatch(match, signal);
 }
 
 // Future integration: Work Center capabilities should drive Production Flow allowed resources,
@@ -3305,13 +2984,6 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
   const stationDownStatus = getStationDownStatus(stationTotal, stationDown);
   const stationMaintenanceStatus = getStationMaintenanceStatus(stationTotal, stationMaintenance);
   const operationalSummary = getWorkCenterOperationalSummary(selectedWorkCenter, selectedStations);
-  const mapBounds = getWorkCenterMapBounds(workCenters);
-  const mapSource = `https://www.openstreetmap.org/export/embed.html?bbox=${mapBounds.west}%2C${mapBounds.south}%2C${mapBounds.east}%2C${mapBounds.north}&layer=mapnik`;
-  const mapPinLayouts = getWorkCenterMapPinLayouts(workCenters, mapBounds);
-  const workCenterNumberById = React.useMemo(
-    () => new Map(workCenters.map((workCenter, index) => [workCenter.id, index + 1])),
-    [workCenters],
-  );
 
   const setFilter = (key: keyof typeof filters, value: string) => {
     setFilters((currentFilters) => ({ ...currentFilters, [key]: value }));
@@ -3755,37 +3427,49 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
     setAddressLookup({ status: 'loading', message: 'Searching address...' });
     try {
       const match = (await searchAddressMatches(address, 1))[0];
-      if (!match) {
+      const resolvedMatch = match ? await resolveAddressMatch(match) : null;
+      if (!resolvedMatch) {
         setAddressLookup({ status: 'error', message: 'No match found. Try street, neighborhood, city, full state, and country. Example: Tercera 156, La Aurora, Saltillo, Coahuila, Mexico.' });
         return null;
       }
 
       setFormState((current) => ({
         ...current,
-        address: match.address,
-        latitude: match.latitude,
-        longitude: match.longitude,
+        address: resolvedMatch.address,
+        latitude: resolvedMatch.latitude,
+        longitude: resolvedMatch.longitude,
       }));
       setAddressSuggestions([]);
       setShowAddressSuggestions(false);
-      setAddressLookup({ status: 'success', message: `${match.approximate ? 'Approximate location found' : 'Location found'}: ${Number(match.latitude).toFixed(5)}, ${Number(match.longitude).toFixed(5)}` });
-      return match;
+      setAddressLookup({ status: 'success', message: `Location found: ${Number(resolvedMatch.latitude).toFixed(5)}, ${Number(resolvedMatch.longitude).toFixed(5)}` });
+      return resolvedMatch;
     } catch {
       setAddressLookup({ status: 'error', message: 'Could not reach the address lookup service. Try again in a moment.' });
       return null;
     }
   };
 
-  const selectAddressSuggestion = (match: AddressLookupMatch) => {
-    setFormState((current) => ({
-      ...current,
-      address: match.address,
-      latitude: match.latitude,
-      longitude: match.longitude,
-    }));
-    setAddressSuggestions([]);
-    setShowAddressSuggestions(false);
-    setAddressLookup({ status: 'success', message: `${match.approximate ? 'Approximate location found' : 'Location found'}: ${Number(match.latitude).toFixed(5)}, ${Number(match.longitude).toFixed(5)}` });
+  const selectAddressSuggestion = async (match: AddressLookupMatch) => {
+    setAddressLookup({ status: 'loading', message: 'Loading selected address...' });
+    try {
+      const resolvedMatch = await resolveAddressMatch(match);
+      if (!resolvedMatch) {
+        setAddressLookup({ status: 'error', message: 'Could not load the selected address details.' });
+        return;
+      }
+
+      setFormState((current) => ({
+        ...current,
+        address: resolvedMatch.address,
+        latitude: resolvedMatch.latitude,
+        longitude: resolvedMatch.longitude,
+      }));
+      setAddressSuggestions([]);
+      setShowAddressSuggestions(false);
+      setAddressLookup({ status: 'success', message: `Location found: ${Number(resolvedMatch.latitude).toFixed(5)}, ${Number(resolvedMatch.longitude).toFixed(5)}` });
+    } catch {
+      setAddressLookup({ status: 'error', message: 'Could not load the selected address details.' });
+    }
   };
 
   const saveWorkCenterForm = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -3981,8 +3665,8 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
       >
         {addressSuggestionsLoading ? <span className="address-suggestion-loading">Searching locations...</span> : null}
         {addressSuggestions.map((suggestion) => (
-          <button type="button" role="option" key={`${suggestion.latitude}-${suggestion.longitude}-${suggestion.address}`} onClick={() => selectAddressSuggestion(suggestion)}>
-            <strong>{suggestion.address.split(',')[0]}{suggestion.approximate ? <em>Approx.</em> : null}</strong>
+          <button type="button" role="option" key={suggestion.placeId ?? suggestion.address} onClick={() => { void selectAddressSuggestion(suggestion); }}>
+            <strong>{suggestion.address.split(',')[0]}</strong>
             <span>{suggestion.address.split(',').slice(1).join(',').trim()}</span>
           </button>
         ))}
@@ -4085,82 +3769,16 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
                 >
                   <Eye size={16} />
                 </button>
-                <strong>{workCenters.length}</strong>
+                <strong>{filteredWorkCenters.length}</strong>
               </div>
             </div>
-            <div className={['work-center-map-canvas', workCenterMapOpacityMode ? 'opacity-mode' : ''].filter(Boolean).join(' ')}>
-              <iframe
-                title="Work Center locations map"
-                src={mapSource}
-                loading="lazy"
-                tabIndex={-1}
-                referrerPolicy="no-referrer-when-downgrade"
-              />
-              <svg className="work-center-map-connectors" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-                {mapPinLayouts.map((layout) => {
-                  const labelCenterX = layout.labelX + (layout.labelWidth / 2);
-                  const labelCenterY = layout.labelY + (layout.labelHeight / 2);
-                  const connectorInset = 0;
-                  const pinIsHorizontal = layout.x < layout.labelX || layout.x > layout.labelX + layout.labelWidth;
-                  const connectorStartX = pinIsHorizontal
-                    ? (layout.x < labelCenterX ? layout.labelX + connectorInset : layout.labelX + layout.labelWidth - connectorInset)
-                    : Math.min(layout.labelX + layout.labelWidth - 2, Math.max(layout.labelX + 2, layout.x));
-                  const connectorStartY = pinIsHorizontal
-                    ? Math.min(layout.labelY + layout.labelHeight - 2, Math.max(layout.labelY + 2, layout.y))
-                    : (layout.y < labelCenterY ? layout.labelY + connectorInset : layout.labelY + layout.labelHeight - connectorInset);
-                  return (
-                    <React.Fragment key={layout.id}>
-                      <line
-                        className="work-center-map-pin-tail-outline"
-                        x1={connectorStartX}
-                        y1={connectorStartY}
-                        x2={layout.x}
-                        y2={layout.y}
-                      />
-                      <line
-                        className="work-center-map-pin-tail"
-                        x1={connectorStartX}
-                        y1={connectorStartY}
-                        x2={layout.x}
-                        y2={layout.y}
-                      />
-                      <circle className="work-center-map-pin-tip" cx={layout.x} cy={layout.y} r="1.05" />
-                    </React.Fragment>
-                  );
-                })}
-              </svg>
-              {mapPinLayouts.map((layout) => {
-                const selected = layout.workCenters.some((workCenter) => workCenter.id === selectedWorkCenter?.id);
-                const alert = layout.workCenters.some((workCenter) => workCenter.activeDowntime);
-                return (
-                  <div
-                    className={['work-center-map-pin-table', layout.workCenters.length === 1 ? 'single' : '', selected ? 'selected' : '', alert ? 'alert' : ''].filter(Boolean).join(' ')}
-                    key={layout.id}
-                    style={{
-                      left: `${layout.labelX}%`,
-                      top: `${layout.labelY}%`,
-                      width: `${layout.labelWidth}%`,
-                      height: `${layout.labelHeight}%`,
-                    }}
-                  >
-                    <div className="work-center-map-pin-table-card">
-                      {layout.workCenters.map((workCenter, index) => (
-                        <button
-                          className={workCenter.id === selectedWorkCenter?.id ? 'selected' : ''}
-                          type="button"
-                          key={workCenter.id}
-                          onClick={() => selectWorkCenter(workCenter.id)}
-                        >
-                          <span>{workCenterNumberById.get(workCenter.id) ?? index + 1}</span>
-                          <strong>{workCenter.name}</strong>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            <p className="work-center-map-note">Map view auto-fits all configured Work Center pins from their saved addresses and coordinates.</p>
+            <GoogleWorkCentersMap
+              workCenters={filteredWorkCenters}
+              selectedWorkCenterId={selectedWorkCenter?.id ?? ''}
+              opacityMode={workCenterMapOpacityMode}
+              onSelectWorkCenter={selectWorkCenter}
+            />
+            <p className="work-center-map-note">Google Maps auto-fits visible Work Center pins from their saved coordinates.</p>
           </section>
 
           {selectedWorkCenter ? (
@@ -4343,7 +3961,7 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
                 <span>WIP</span>
                 <span>Risk</span>
               </div>
-              {filteredWorkCenters.map((workCenter) => {
+              {filteredWorkCenters.map((workCenter, index) => {
                 const stations = getStationsForWorkCenter(workCenter);
                 const stationCapabilities = Array.from(new Set(stations.flatMap((station) => station.capabilities)));
                 const risk = getWorkCenterRisk(workCenter);
@@ -4357,7 +3975,7 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
                     onClick={() => selectWorkCenter(workCenter.id)}
                   >
                     <span className="work-center-table-identity">
-                      <span className="work-center-index-badge">{workCenterNumberById.get(workCenter.id)}</span>
+                      <span className="work-center-index-badge">{index + 1}</span>
                       <span><strong>{workCenter.name}</strong><em>{workCenter.code}</em></span>
                     </span>
                     <span className="work-center-capability-pills">
