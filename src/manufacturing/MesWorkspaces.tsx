@@ -1,6 +1,6 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { Activity, AlertTriangle, ArrowLeft, CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleHelp, Database, Eye, Factory, Frown, ImagePlus, Meh, Plus, RadioTower, Search, Smile, Timer } from 'lucide-react';
+import { Activity, AlertTriangle, ArrowLeft, CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleHelp, Database, Eye, Factory, Frown, ImagePlus, Maximize2, Meh, Minimize2, Plus, RadioTower, Search, Smile, Timer } from 'lucide-react';
 import { GoogleWorkCentersMap } from '../components/maps/GoogleWorkCentersMap';
 import { resolveGooglePlacesAddressMatch, searchGooglePlacesAddressMatches, type GooglePlacesAddressMatch } from '../lib/maps/googlePlacesAddressLookup';
 import { supabase } from '../lib/supabaseClient';
@@ -10,6 +10,8 @@ type WorkspaceProps = {
   onNavigate: (path: string) => void;
   organizationId: string;
 };
+
+const productionOrderDeepLinkKey = 'yvimo:mes:selectedProductionOrderNumber';
 
 type StatusBadgeProps = {
   value: string;
@@ -34,6 +36,7 @@ type ProductionOrderFormState = {
   priority: ProductionOrderPriority;
   dueDate: string;
   assignedWorkCenter: string;
+  plannedShifts: string[];
   manufacturingType: ProductionOrderManufacturingType;
   productionFlow: string;
   assignedStation: string;
@@ -51,6 +54,7 @@ type ProductionOrderRow = {
   priority: ProductionOrderPriority;
   due_date: string;
   assigned_work_center: string;
+  planned_shifts?: string[] | null;
   manufacturing_type?: ProductionOrderManufacturingType | null;
   production_flow?: string | null;
   assigned_station?: string | null;
@@ -208,6 +212,9 @@ export type JobQueueSummary = {
   totalQuantity: number;
 };
 
+type MachineLoad = 'none' | 'low' | 'normal' | 'medium' | 'high' | 'overloaded';
+type StationDueRisk = 'low' | 'medium' | 'high' | 'critical';
+
 type MesOrderDropdownOption = {
   value: string;
   label: string;
@@ -275,6 +282,12 @@ export function MesStatusBadge({ value, tone = 'status' }: StatusBadgeProps) {
 
 const productionOrderStatuses: ProductionOrderStatus[] = ['planned', 'released', 'running', 'paused', 'completed', 'cancelled'];
 const productionOrderPriorities: ProductionOrderPriority[] = ['low', 'normal', 'high', 'expedite'];
+const plannedShiftOptions = [
+  { value: 'shift_1', label: 'Shift 1' },
+  { value: 'shift_2', label: 'Shift 2' },
+  { value: 'shift_3', label: 'Shift 3' },
+];
+const totalAvailableStationShifts = plannedShiftOptions.length;
 const productionOrderManufacturingTypes: Array<{ value: ProductionOrderManufacturingType; label: string; description: string }> = [
   { value: 'multi-step', label: 'Multi-step', description: 'Route this order through a production flow.' },
   { value: 'single-operation', label: 'Single Operation', description: 'Run this order on one station.' },
@@ -635,6 +648,7 @@ function mapProductionOrderRow(row: ProductionOrderRow): ProductionOrder {
     priority: row.priority,
     dueDate: row.due_date,
     assignedWorkCenter: row.assigned_work_center,
+    plannedShifts: row.planned_shifts ?? [],
     manufacturingType: row.manufacturing_type ?? 'multi-step',
     productionFlow: row.production_flow ?? productionFlowOptions[0]?.id ?? '',
     assignedStation: row.assigned_station ?? '',
@@ -654,6 +668,7 @@ function toProductionOrderPayload(order: ProductionOrder | Omit<ProductionOrder,
     priority: order.priority,
     due_date: order.dueDate,
     assigned_work_center: order.assignedWorkCenter,
+    planned_shifts: order.plannedShifts,
     manufacturing_type: order.manufacturingType,
     production_flow: order.manufacturingType === 'multi-step' ? order.productionFlow : '',
     assigned_station: order.manufacturingType === 'single-operation' ? order.assignedStation : '',
@@ -672,6 +687,7 @@ function toFormState(order?: ProductionOrder): ProductionOrderFormState {
     priority: order?.priority ?? 'normal',
     dueDate: order?.dueDate ?? new Date().toISOString().slice(0, 10),
     assignedWorkCenter: order?.assignedWorkCenter ?? '',
+    plannedShifts: order?.plannedShifts ?? [],
     manufacturingType: order?.manufacturingType ?? 'multi-step',
     productionFlow: order?.productionFlow ?? productionFlowOptions[0]?.id ?? '',
     assignedStation: order?.assignedStation ?? '',
@@ -691,6 +707,7 @@ function formStateToProductionOrder(formState: ProductionOrderFormState, id?: st
     priority: formState.priority,
     dueDate: formState.dueDate,
     assignedWorkCenter: formState.assignedWorkCenter.trim(),
+    plannedShifts: formState.plannedShifts,
     manufacturingType: formState.manufacturingType,
     productionFlow: formState.manufacturingType === 'multi-step' ? formState.productionFlow : '',
     assignedStation: formState.manufacturingType === 'single-operation' ? formState.assignedStation : '',
@@ -989,6 +1006,9 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
   const [savingOrder, setSavingOrder] = React.useState(false);
   const [confirmation, setConfirmation] = React.useState<ConfirmationState | null>(null);
   const [jobQueueSummary, setJobQueueSummary] = React.useState<JobQueueSummary | null>(null);
+  const orderRowRefs = React.useRef<Record<string, HTMLTableRowElement | null>>({});
+  const pendingScrollOrderNumberRef = React.useRef('');
+  const skipNextPageResetRef = React.useRef(false);
 
   const selectedOrder = orders.find((order) => order.orderNumber === selectedOrderNumber) ?? null;
   const selectedWorkCenterStationOptions = stationOptionsByWorkCenter[formState.assignedWorkCenter] ?? [];
@@ -1042,6 +1062,41 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
         : 'low';
 
   React.useEffect(() => {
+    const pendingOrderNumber = window.sessionStorage.getItem(productionOrderDeepLinkKey);
+    if (!pendingOrderNumber || orders.length === 0) return;
+
+    const targetOrderIndex = orders.findIndex((order) => order.orderNumber === pendingOrderNumber);
+    window.sessionStorage.removeItem(productionOrderDeepLinkKey);
+    if (targetOrderIndex === -1) return;
+
+    if (searchTerm || orderView !== 'all') skipNextPageResetRef.current = true;
+    setSearchTerm('');
+    setOrderView('all');
+    setSortByPriority(false);
+    setPage(Math.floor(targetOrderIndex / pageSize) + 1);
+    setSelectedOrderNumber(pendingOrderNumber);
+    pendingScrollOrderNumberRef.current = pendingOrderNumber;
+  }, [orders, orderView, searchTerm]);
+
+  React.useEffect(() => {
+    if (!selectedOrderNumber || pendingScrollOrderNumberRef.current !== selectedOrderNumber) return undefined;
+
+    const scrollTimer = window.setTimeout(() => {
+      const selectedRow = orderRowRefs.current[selectedOrderNumber];
+      if (!selectedRow) return;
+      selectedRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      selectedRow.focus({ preventScroll: true });
+      pendingScrollOrderNumberRef.current = '';
+    }, 80);
+
+    return () => window.clearTimeout(scrollTimer);
+  }, [selectedOrderNumber, currentPage, paginatedOrders]);
+
+  React.useEffect(() => {
+    if (skipNextPageResetRef.current) {
+      skipNextPageResetRef.current = false;
+      return;
+    }
     setPage(1);
   }, [searchTerm, orderView]);
 
@@ -1350,6 +1405,9 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
                     <tr
                       className={selected ? 'selected' : ''}
                       key={order.id}
+                      ref={(node) => {
+                        orderRowRefs.current[order.orderNumber] = node;
+                      }}
                       tabIndex={0}
                       onClick={() => setSelectedOrderNumber(order.orderNumber)}
                       onKeyDown={(event) => {
@@ -1578,6 +1636,32 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
                 />
                 {workCenterOptionsMessage ? <small className="mes-form-field-note">{workCenterOptionsMessage}</small> : null}
               </label>
+              <fieldset className="production-order-planned-shifts mes-order-form-wide">
+                <legend>Planned Shifts</legend>
+                <div className="planned-shift-toggle-grid" aria-label="Planned shifts">
+                  {plannedShiftOptions.map((shift) => {
+                    const selected = formState.plannedShifts.includes(shift.value);
+                    return (
+                      <button
+                        className={selected ? 'active' : ''}
+                        type="button"
+                        key={shift.value}
+                        aria-pressed={selected}
+                        onClick={() => setFormState((current) => ({
+                          ...current,
+                          plannedShifts: selected
+                            ? current.plannedShifts.filter((plannedShift) => plannedShift !== shift.value)
+                            : [...current.plannedShifts, shift.value],
+                        }))}
+                      >
+                        <Check size={15} />
+                        {shift.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <small className="mes-form-field-note">Used to calculate scheduled utilization and machine load.</small>
+              </fieldset>
               <fieldset className="production-order-manufacturing-type mes-order-form-wide">
                 <legend>Manufacturing Type</legend>
                 <div role="radiogroup" aria-label="Production order manufacturing type">
@@ -1739,7 +1823,7 @@ type WorkCenterStation = {
   queueCount: number;
   wipCount: number;
   utilization: number;
-  dueRisk: 'low' | 'medium' | 'high';
+  dueRisk: StationDueRisk;
   maintenanceStatus: string;
   capabilities: string[];
   lastEvent: string;
@@ -1789,6 +1873,13 @@ type RiskBreakdown = {
   dueSoon: number;
   blocked: number;
   constrained: number;
+};
+type WorkCenterPlanningSummary = {
+  activeJobCount: number;
+  dueRisk: Exclude<StationDueRisk, 'critical'>;
+  riskBreakdown: RiskBreakdown;
+  riskyJobCount: number;
+  wipCount: number;
 };
 type KpiThreshold = {
   label: string;
@@ -1865,7 +1956,7 @@ type MesWorkCenterStationRow = {
   queue_count: number;
   wip_count: number;
   utilization: number;
-  due_risk: 'low' | 'medium' | 'high';
+  due_risk: StationDueRisk;
   maintenance_status: string;
   capabilities: string[];
   last_event: string;
@@ -1879,6 +1970,168 @@ const registerNewCapabilityValue = '__register_new_capability__';
 const capabilityColorOptions = ['#ff8a1f', '#1d4ed8', '#00a676', '#dc2626', '#8b5cf6', '#f59e0b', '#14b8a6', '#ec4899'];
 const stationImageBucket = 'station-images';
 const maintenanceStatuses = ['Healthy', 'Due soon', 'Maintenance required', 'In maintenance'];
+
+function getProductionOrderRemainingQuantity(order: ProductionOrder) {
+  return Math.max(0, order.plannedQuantity - order.completedQuantity - order.scrapQuantity);
+}
+
+function getActiveStationOrders(orders: ProductionOrder[], workCenter: MesWorkCenter | null, station: WorkCenterStation | null) {
+  if (!workCenter || !station) return [];
+
+  return orders.filter((order) => (
+    order.manufacturingType === 'single-operation'
+    && order.assignedWorkCenter === workCenter.code
+    && order.assignedStation === station.code
+    && ['planned', 'released', 'running', 'paused'].includes(order.status)
+    && getProductionOrderRemainingQuantity(order) > 0
+  ));
+}
+
+function getStationShiftBreakdown(orders: ProductionOrder[]) {
+  return plannedShiftOptions.map((shift) => ({
+    ...shift,
+    orders: orders.filter((order) => order.plannedShifts.includes(shift.value)),
+  }));
+}
+
+function getMachineLoad(orders: ProductionOrder[], shiftBreakdown = getStationShiftBreakdown(orders)): MachineLoad {
+  if (orders.length === 0) return 'none';
+  if (orders.length === 1) return 'low';
+
+  const maxOrdersInShift = Math.max(...shiftBreakdown.map((shift) => shift.orders.length));
+  const occupiedShiftCount = shiftBreakdown.filter((shift) => shift.orders.length > 0).length;
+  const unscheduledOrderCount = orders.filter((order) => order.plannedShifts.length === 0).length;
+
+  if ((occupiedShiftCount === totalAvailableStationShifts && maxOrdersInShift >= 3) || unscheduledOrderCount > 0) return 'overloaded';
+  if (maxOrdersInShift >= 3) return 'high';
+  if (maxOrdersInShift === 2) return 'medium';
+  return 'normal';
+}
+
+function getStationScheduledUtilization(shiftBreakdown: ReturnType<typeof getStationShiftBreakdown>) {
+  const occupiedShiftCount = shiftBreakdown.filter((shift) => shift.orders.length > 0).length;
+  return Math.round((occupiedShiftCount / totalAvailableStationShifts) * 100);
+}
+
+function getDaysUntilDue(dueDate: string, todayIsoDate = getTodayIsoDate()) {
+  const due = new Date(`${dueDate}T00:00:00`).getTime();
+  const today = new Date(`${todayIsoDate}T00:00:00`).getTime();
+  return Math.round((due - today) / 86400000);
+}
+
+function getStationDueRisk(orders: ProductionOrder[], machineLoad: MachineLoad, todayIsoDate = getTodayIsoDate()): StationDueRisk {
+  if (orders.some((order) => getDaysUntilDue(order.dueDate, todayIsoDate) < 0 && order.status !== 'completed')) return 'critical';
+
+  const loadHigh = machineLoad === 'high' || machineLoad === 'overloaded';
+  const loadMedium = machineLoad === 'medium';
+
+  if (orders.some((order) => {
+    const daysUntilDue = getDaysUntilDue(order.dueDate, todayIsoDate);
+    return (
+      (daysUntilDue >= 0 && daysUntilDue <= 1 && order.status !== 'completed' && loadHigh)
+      || (order.priority === 'expedite' && order.plannedShifts.length === 0)
+      || (order.priority === 'expedite' && loadHigh)
+    );
+  })) return 'high';
+
+  if (orders.some((order) => {
+    const daysUntilDue = getDaysUntilDue(order.dueDate, todayIsoDate);
+    return (
+      (daysUntilDue === 0 && order.status !== 'completed')
+      || (daysUntilDue >= 0 && daysUntilDue <= 2 && loadMedium)
+      || (order.plannedShifts.length === 0 && Boolean(order.assignedStation))
+    );
+  })) return 'medium';
+
+  return 'low';
+}
+
+function getStationPlanningMetrics(orders: ProductionOrder[], todayIsoDate = getTodayIsoDate()) {
+  const shiftBreakdown = getStationShiftBreakdown(orders);
+  const machineLoad = getMachineLoad(orders, shiftBreakdown);
+  const scheduledUtilization = getStationScheduledUtilization(shiftBreakdown);
+  const dueRisk = getStationDueRisk(orders, machineLoad, todayIsoDate);
+  const hasPlannedShifts = shiftBreakdown.some((shift) => shift.orders.length > 0);
+
+  return {
+    dueRisk,
+    hasPlannedShifts,
+    machineLoad,
+    scheduledUtilization,
+    shiftBreakdown,
+    wipCount: orders.filter((order) => order.status === 'running').length,
+  };
+}
+
+function getActiveWorkCenterOrders(orders: ProductionOrder[], workCenter: MesWorkCenter | null) {
+  if (!workCenter) return [];
+
+  return orders.filter((order) => (
+    order.manufacturingType === 'single-operation'
+    && order.assignedWorkCenter === workCenter.code
+    && ['planned', 'released', 'running', 'paused'].includes(order.status)
+    && getProductionOrderRemainingQuantity(order) > 0
+  ));
+}
+
+function getPlanningRiskBreakdown(orders: ProductionOrder[], machineLoad: MachineLoad, todayIsoDate = getTodayIsoDate()): RiskBreakdown {
+  return orders.reduce<RiskBreakdown>((breakdown, order) => {
+    const daysUntilDue = getDaysUntilDue(order.dueDate, todayIsoDate);
+    if (daysUntilDue < 0) breakdown.overdue += 1;
+    if (daysUntilDue >= 0 && daysUntilDue <= 1) breakdown.dueSoon += 1;
+    if (order.priority === 'expedite') breakdown.blocked += 1;
+    if (order.plannedShifts.length === 0 || machineLoad === 'overloaded') breakdown.constrained += 1;
+    return breakdown;
+  }, { overdue: 0, dueSoon: 0, blocked: 0, constrained: 0 });
+}
+
+function getStationRiskScore(risk: StationDueRisk) {
+  if (risk === 'critical' || risk === 'high') return 3;
+  if (risk === 'medium') return 1;
+  return 0;
+}
+
+function getWorkCenterPlanningSummary(workCenter: MesWorkCenter, orders: ProductionOrder[], todayIsoDate = getTodayIsoDate()): WorkCenterPlanningSummary {
+  const stations = getWorkCenterStations(workCenter);
+  const stationSummaries = stations.map((station) => {
+    const stationOrders = getActiveStationOrders(orders, workCenter, station);
+    const metrics = getStationPlanningMetrics(stationOrders, todayIsoDate);
+    return { metrics, stationOrders };
+  });
+  const activeOrderIds = new Set(getActiveWorkCenterOrders(orders, workCenter).map((order) => order.id));
+  const riskyOrderIds = new Set<string>();
+  const aggregateBreakdown = stationSummaries.reduce<RiskBreakdown>((breakdown, stationSummary) => {
+    if (stationSummary.metrics.dueRisk !== 'low') {
+      stationSummary.stationOrders.forEach((order) => riskyOrderIds.add(order.id));
+    }
+    const stationBreakdown = getPlanningRiskBreakdown(stationSummary.stationOrders, stationSummary.metrics.machineLoad, todayIsoDate);
+    return {
+      overdue: breakdown.overdue + stationBreakdown.overdue,
+      dueSoon: breakdown.dueSoon + stationBreakdown.dueSoon,
+      blocked: breakdown.blocked + stationBreakdown.blocked,
+      constrained: breakdown.constrained + stationBreakdown.constrained,
+    };
+  }, { overdue: 0, dueSoon: 0, blocked: 0, constrained: 0 });
+
+  const riskScore = stations.length
+    ? stationSummaries.reduce((total, stationSummary) => total + getStationRiskScore(stationSummary.metrics.dueRisk), 0) / stations.length
+    : 0;
+  const severeStationCount = stationSummaries.filter((stationSummary) => ['critical', 'high'].includes(stationSummary.metrics.dueRisk)).length;
+  const riskRatio = stations.length ? severeStationCount / stations.length : 0;
+  const dueRisk: WorkCenterPlanningSummary['dueRisk'] = riskScore > 1.5 || riskRatio > 0.5
+    ? 'high'
+    : riskScore > 0
+      ? 'medium'
+      : 'low';
+
+  return {
+    activeJobCount: activeOrderIds.size,
+    dueRisk,
+    riskBreakdown: aggregateBreakdown,
+    riskyJobCount: riskyOrderIds.size,
+    wipCount: stationSummaries.reduce((total, stationSummary) => total + stationSummary.metrics.wipCount, 0),
+  };
+}
 
 async function searchAddressMatches(query: string, limit = 5, signal?: AbortSignal): Promise<AddressLookupMatch[]> {
   return searchGooglePlacesAddressMatches(query, limit, signal);
@@ -2594,6 +2847,37 @@ function formatRiskLabel(risk: WorkCenterStation['dueRisk']) {
   return risk.charAt(0).toUpperCase() + risk.slice(1);
 }
 
+function formatMachineLoadLabel(load: MachineLoad) {
+  if (load === 'none') return 'No Load';
+  return load.charAt(0).toUpperCase() + load.slice(1);
+}
+
+function renderShiftOrderChips(orders: ProductionOrder[], onSelectOrder?: (order: ProductionOrder) => void, maxVisible?: number) {
+  if (orders.length === 0) return <em>Available</em>;
+
+  const visibleOrders = typeof maxVisible === 'number' ? orders.slice(0, maxVisible) : orders;
+  const hiddenCount = orders.length - visibleOrders.length;
+
+  return (
+    <em className="station-shift-orders">
+      {visibleOrders.map((order) => (
+        <button
+          type="button"
+          key={order.id}
+          onClick={(event) => {
+            event.stopPropagation();
+            onSelectOrder?.(order);
+          }}
+          aria-label={`Open production order ${order.orderNumber}`}
+        >
+          {order.orderNumber}
+        </button>
+      ))}
+      {hiddenCount > 0 ? <b className="more">+MORE</b> : null}
+    </em>
+  );
+}
+
 function getCapabilityTone(capability: string) {
   const capabilityToneByName: Record<string, string> = {
     Receiving: 'receiving',
@@ -2612,6 +2896,7 @@ function getCapabilityTone(capability: string) {
 }
 
 function WorkCenterRiskIcon({ risk }: { risk: WorkCenterStation['dueRisk'] }) {
+  if (risk === 'critical') return <AlertTriangle size={22} strokeWidth={2.35} aria-hidden="true" />;
   if (risk === 'high') return <Frown size={22} strokeWidth={2.35} aria-hidden="true" />;
   if (risk === 'medium') return <Meh size={22} strokeWidth={2.35} aria-hidden="true" />;
   return <Smile size={22} strokeWidth={2.35} aria-hidden="true" />;
@@ -2741,7 +3026,7 @@ function formatPercent(ratio: number) {
   return `${Math.round(ratio * 100)}%`;
 }
 
-function getWorkCenterOperationalSummary(workCenter: MesWorkCenter | null, stations: WorkCenterStation[]) {
+function getWorkCenterOperationalSummary(workCenter: MesWorkCenter | null, stations: WorkCenterStation[], planningSummary?: WorkCenterPlanningSummary) {
   if (!workCenter) return { tone: 'info', items: ['Select a Work Center to review station execution, availability, and operational constraints.'] };
 
   const runningStations = stations.filter((station) => station.status === 'running').length;
@@ -2750,7 +3035,9 @@ function getWorkCenterOperationalSummary(workCenter: MesWorkCenter | null, stati
   const maintenanceStations = stations.filter((station) => station.status === 'maintenance').length;
   const unavailableStations = downStations + maintenanceStations;
   const availabilityRatio = stations.length ? (runningStations + idleStations) / stations.length : 1;
-  const risk = getWorkCenterRisk(workCenter);
+  const risk = planningSummary?.dueRisk ?? getWorkCenterRisk(workCenter);
+  const activeWip = planningSummary?.wipCount ?? workCenter.wipCount;
+  const activeJobs = planningSummary?.activeJobCount ?? workCenter.queueCount;
 
   if (risk === 'high' || availabilityRatio < 0.7 || unavailableStations > 0) {
     return {
@@ -2758,18 +3045,18 @@ function getWorkCenterOperationalSummary(workCenter: MesWorkCenter | null, stati
       items: [
         `${workCenter.name} requires attention.`,
         `${unavailableStations} station${unavailableStations === 1 ? '' : 's'} unavailable.`,
-        `${workCenter.wipCount} WIP active and ${workCenter.queueCount} job${workCenter.queueCount === 1 ? '' : 's'} waiting in queue.`,
+        `${activeWip} WIP active and ${activeJobs} job${activeJobs === 1 ? '' : 's'} waiting in queue.`,
       ],
     };
   }
 
-  if (workCenter.wipCount > stations.length || workCenter.queueCount > 2 || risk === 'medium') {
+  if (activeWip > stations.length || activeJobs > 2 || risk === 'medium') {
     return {
       tone: 'warning',
       items: [
         `${workCenter.name} is operating with constraints.`,
         `${runningStations} of ${stations.length} station${stations.length === 1 ? '' : 's'} running; ${idleStations} idle.`,
-        `${workCenter.queueCount} job${workCenter.queueCount === 1 ? '' : 's'} queued for execution.`,
+        `${activeJobs} job${activeJobs === 1 ? '' : 's'} queued for execution.`,
       ],
     };
   }
@@ -2816,6 +3103,7 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
   const [editingWorkCenterId, setEditingWorkCenterId] = React.useState<string | null>(null);
   const [workCenterConfirmation, setWorkCenterConfirmation] = React.useState<ConfirmationState | null>(null);
   const [workCenterMapOpacityMode, setWorkCenterMapOpacityMode] = React.useState(false);
+  const [workCenterMapExpanded, setWorkCenterMapExpanded] = React.useState(false);
   const [showAddForm, setShowAddForm] = React.useState(false);
   const [showStationForm, setShowStationForm] = React.useState(false);
   const [showDetailModal, setShowDetailModal] = React.useState(false);
@@ -2883,6 +3171,14 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
     void loadWorkCenters();
   }, [loadWorkCenters]);
 
+  React.useEffect(() => {
+    document.body.classList.toggle('work-center-map-expanded', workCenterMapExpanded);
+
+    return () => {
+      document.body.classList.remove('work-center-map-expanded');
+    };
+  }, [workCenterMapExpanded]);
+
   const getStationsForWorkCenter = React.useCallback((workCenter: MesWorkCenter) => getWorkCenterStations(workCenter), []);
   const getStationCapabilitiesForWorkCenter = React.useCallback((workCenter: MesWorkCenter) => (
     Array.from(new Set(getStationsForWorkCenter(workCenter).flatMap((station) => station.capabilities)))
@@ -2901,6 +3197,17 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
   const selectedStationCurrentJob = selectedStationQueueSummary?.currentJob?.orderNumber ?? selectedStation?.currentJob ?? null;
   const selectedStationQueueCount = selectedStationQueueSummary?.queuedJobs.length ?? selectedStation?.queueCount ?? 0;
   const todayIsoDate = getTodayIsoDate();
+  const selectedStationPlanningMetrics = getStationPlanningMetrics(
+    getActiveStationOrders(productionOrders, selectedWorkCenter, selectedStation),
+    todayIsoDate,
+  );
+  const workCenterPlanningSummaries = React.useMemo(() => new Map(workCenters.map((workCenter) => [
+    workCenter.id,
+    getWorkCenterPlanningSummary(workCenter, productionOrders, todayIsoDate),
+  ])), [productionOrders, todayIsoDate, workCenters]);
+  const getPlanningSummaryForWorkCenter = React.useCallback((workCenter: MesWorkCenter) => (
+    workCenterPlanningSummaries.get(workCenter.id) ?? getWorkCenterPlanningSummary(workCenter, productionOrders, todayIsoDate)
+  ), [productionOrders, todayIsoDate, workCenterPlanningSummaries]);
   const filteredStations = selectedStations.filter((station) => {
     const stationHaystack = [
       station.name,
@@ -2930,8 +3237,9 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
     const stations = getStationsForWorkCenter(workCenter);
     const availableStationCount = stations.filter((station) => ['idle', 'running'].includes(station.status)).length;
     const availabilityStatus = getAvailabilityStatus(stations.length ? availableStationCount / stations.length : 1);
-    const wipStatus = getLoadStatus(stations.length ? workCenter.wipCount / (stations.length * 2) : 0);
-    const riskStatus = getWorkCenterRisk(workCenter, todayIsoDate);
+    const planningSummary = getPlanningSummaryForWorkCenter(workCenter);
+    const wipStatus = getLoadStatus(stations.length ? planningSummary.wipCount / (stations.length * 2) : 0);
+    const riskStatus = planningSummary.dueRisk;
     const risk = formatRiskLabel(riskStatus);
     const searchHaystack = [
       workCenter.name,
@@ -2956,22 +3264,23 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
   const stationAvailabilityRatio = totalStations ? availableStations / totalStations : 1;
   const stationAvailabilityPercent = Math.round(stationAvailabilityRatio * 100);
   const stationAvailabilityStatus = getAvailabilityStatus(stationAvailabilityRatio);
-  const activeJobOrders = workCenters.filter((workCenter) => workCenter.currentJob).length;
-  const activeWip = workCenters.reduce((total, workCenter) => total + workCenter.wipCount, 0);
+  const planningSummaries = workCenters.map((workCenter) => getPlanningSummaryForWorkCenter(workCenter));
+  const activeJobOrders = planningSummaries.reduce((total, summary) => total + summary.activeJobCount, 0);
+  const activeWip = planningSummaries.reduce((total, summary) => total + summary.wipCount, 0);
   const wipCapacity = totalStations * 2;
   const wipLoadRatio = wipCapacity ? activeWip / wipCapacity : 0;
   const wipLoadStatus = getLoadStatus(wipLoadRatio);
-  const riskyJobOrders = workCenters.filter((workCenter) => isRiskyWorkCenterJob(workCenter, todayIsoDate)).length;
-  const dueRiskRatio = activeJobOrders ? riskyJobOrders / activeJobOrders : 0;
+  const riskyJobOrders = planningSummaries.reduce((total, summary) => total + summary.riskyJobCount, 0);
+  const atRiskWorkCenters = planningSummaries.filter((summary) => summary.dueRisk !== 'low').length;
+  const dueRiskRatio = totalWorkCenters ? atRiskWorkCenters / totalWorkCenters : 0;
   const dueRiskStatus = getRiskStatus(dueRiskRatio);
-  const dueRiskBreakdown = workCenters.reduce<RiskBreakdown>((breakdown, workCenter) => {
-    if (!workCenter.currentJob) return breakdown;
-    const workCenterBreakdown = getWorkCenterRiskBreakdown(workCenter, todayIsoDate);
+  const dueRiskBreakdown = planningSummaries.reduce<RiskBreakdown>((breakdown, summary) => {
+    const workCenterBreakdown = summary.riskBreakdown;
     return {
       overdue: breakdown.overdue + workCenterBreakdown.overdue,
       dueSoon: breakdown.dueSoon + workCenterBreakdown.dueSoon,
       blocked: breakdown.blocked + workCenterBreakdown.blocked,
-      constrained: breakdown.constrained + workCenterBreakdown.constrained + (workCenter.activeDowntime && workCenterBreakdown.constrained === 0 ? 1 : 0),
+      constrained: breakdown.constrained + workCenterBreakdown.constrained,
     };
   }, { overdue: 0, dueSoon: 0, blocked: 0, constrained: 0 });
   const stationTotal = selectedStations.length;
@@ -2983,7 +3292,8 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
   const stationIdleStatus = getStationIdleStatus(stationTotal, stationIdle);
   const stationDownStatus = getStationDownStatus(stationTotal, stationDown);
   const stationMaintenanceStatus = getStationMaintenanceStatus(stationTotal, stationMaintenance);
-  const operationalSummary = getWorkCenterOperationalSummary(selectedWorkCenter, selectedStations);
+  const selectedWorkCenterPlanningSummary = selectedWorkCenter ? getPlanningSummaryForWorkCenter(selectedWorkCenter) : undefined;
+  const operationalSummary = getWorkCenterOperationalSummary(selectedWorkCenter, selectedStations, selectedWorkCenterPlanningSummary);
 
   const setFilter = (key: keyof typeof filters, value: string) => {
     setFilters((currentFilters) => ({ ...currentFilters, [key]: value }));
@@ -3003,6 +3313,11 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
     const summary = getStationJobQueueSummary(selectedWorkCenter, selectedStation);
     if (summary) setJobQueueSummary(summary);
   };
+
+  const openProductionOrderFromShiftChip = React.useCallback((order: ProductionOrder) => {
+    window.sessionStorage.setItem(productionOrderDeepLinkKey, order.orderNumber);
+    onNavigate('/workspace/manufacturing-ops/mes/orders');
+  }, [onNavigate]);
 
   const toggleWorkCenterKpiFilter = (filter: WorkCenterKpiFilter) => {
     setActiveWorkCenterKpiFilter((current) => (current === filter ? null : filter));
@@ -3404,6 +3719,8 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
         .catch((error) => {
           if ((error as Error).name !== 'AbortError') {
             setAddressSuggestions([]);
+            setShowAddressSuggestions(false);
+            setAddressLookup({ status: 'error', message: 'Unable to load Google address suggestions.' });
           }
         })
         .finally(() => {
@@ -3729,7 +4046,7 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
     : null;
 
   return (
-    <section className="mes-workspace-panel work-centers-workspace">
+    <section className={['mes-workspace-panel work-centers-workspace', workCenterMapExpanded ? 'map-expanded' : ''].filter(Boolean).join(' ')}>
       {addressSuggestionMenu}
       {capabilityColorPicker}
       <div className="work-centers-header">
@@ -3761,6 +4078,15 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
               <span>Locations</span>
               <div className="work-center-map-header-actions">
                 <button
+                  className={workCenterMapExpanded ? 'active' : ''}
+                  type="button"
+                  aria-label={workCenterMapExpanded ? 'Return map to normal view' : 'Expand Work Center map'}
+                  title={workCenterMapExpanded ? 'Normal map view' : 'Expand map'}
+                  onClick={() => setWorkCenterMapExpanded((current) => !current)}
+                >
+                  {workCenterMapExpanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+                </button>
+                <button
                   className={workCenterMapOpacityMode ? 'active' : ''}
                   type="button"
                   aria-label={workCenterMapOpacityMode ? 'Show solid location pins' : 'Show transparent location pins'}
@@ -3773,8 +4099,12 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
               </div>
             </div>
             <GoogleWorkCentersMap
-              workCenters={filteredWorkCenters}
+              workCenters={filteredWorkCenters.map((workCenter) => ({
+                ...workCenter,
+                stationCount: getStationsForWorkCenter(workCenter).length,
+              }))}
               selectedWorkCenterId={selectedWorkCenter?.id ?? ''}
+              expanded={workCenterMapExpanded}
               opacityMode={workCenterMapOpacityMode}
               onSelectWorkCenter={selectWorkCenter}
             />
@@ -3830,12 +4160,21 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
               <dl className="work-center-detail-list">
                 <div><dt>Current job</dt><dd>{selectedStationCurrentJob ?? 'Unassigned'}</dd></div>
                 <div><dt>Queue</dt><dd>{selectedStationQueueCount} jobs</dd></div>
-                <div><dt>WIP</dt><dd>{selectedStation.wipCount}</dd></div>
-                <div><dt>Utilization</dt><dd>{selectedStation.utilization}%</dd></div>
-                <div><dt>Due risk</dt><dd><span className={`selected-state-text state-${selectedStation.dueRisk}`}>{formatRiskLabel(selectedStation.dueRisk)}</span></dd></div>
+                <div><dt>WIP</dt><dd>{selectedStationPlanningMetrics.wipCount}</dd></div>
+                <div><dt>Scheduled Utilization</dt><dd>{selectedStationPlanningMetrics.hasPlannedShifts ? `${selectedStationPlanningMetrics.scheduledUtilization}%` : 'No shifts planned'}</dd></div>
+                <div><dt>Machine Load</dt><dd><span className={`machine-load-pill load-${selectedStationPlanningMetrics.machineLoad}`}>{formatMachineLoadLabel(selectedStationPlanningMetrics.machineLoad)}</span></dd></div>
+                <div><dt>Due risk</dt><dd><span className={`selected-state-text state-${selectedStationPlanningMetrics.dueRisk}`}>{formatRiskLabel(selectedStationPlanningMetrics.dueRisk)}</span></dd></div>
                 <div><dt>Maintenance</dt><dd><span className={`selected-state-text state-${getMaintenanceTone(selectedStation.maintenanceStatus)}`}>{selectedStation.maintenanceStatus}</span></dd></div>
                 <div><dt>Last event</dt><dd>{selectedStation.lastEvent}</dd></div>
               </dl>
+              <div className="station-shift-breakdown selected">
+                {selectedStationPlanningMetrics.shiftBreakdown.map((shift) => (
+                  <span key={shift.value}>
+                    <strong>{shift.label}</strong>
+                    {renderShiftOrderChips(shift.orders, openProductionOrderFromShiftChip, 2)}
+                  </span>
+                ))}
+              </div>
               <div className="work-center-selected-copy">
                 <div className="work-center-detail-tags">
                   {selectedStation.capabilities.map((capability) => renderCapabilityPill(capability))}
@@ -3921,14 +4260,14 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
                   {renderKpiHelp(
                     'dueRisk',
                     'Due Risk',
-                    'Measures how many active jobs are at risk of missing their due date or are blocked.',
-                    'Risky Jobs / Active Jobs',
+                    'Measures how many Work Centers have medium or high due-date risk from their station schedules and active Production Orders.',
+                    'At-Risk Work Centers / Total Work Centers',
                     [{ label: 'Low: 20% or lower', tone: 'good' }, { label: 'Medium: above 20% up to 50%', tone: 'warning' }, { label: 'High: above 50%', tone: 'critical' }],
-                    `${riskyJobOrders} / ${activeJobOrders} is ${formatKpiStatusLabel(dueRiskStatus)}: ${activeJobOrders ? `${formatPercent(dueRiskRatio)} of active jobs are at risk` : 'no active jobs in the denominator'}.`,
+                    `${atRiskWorkCenters} / ${totalWorkCenters} is ${formatKpiStatusLabel(dueRiskStatus)}: ${totalWorkCenters ? `${formatPercent(dueRiskRatio)} of Work Centers are at risk` : 'no Work Centers in the denominator'}. ${riskyJobOrders} active job${riskyJobOrders === 1 ? '' : 's'} are affected by the current station risk profile.`,
                     dueRiskBreakdown,
                   )}
                 </div>
-                <strong>{riskyJobOrders} / {activeJobOrders}</strong>
+                <strong>{atRiskWorkCenters} / {totalWorkCenters}</strong>
                 <em>{formatKpiStatusLabel(dueRiskStatus)}</em>
               </article>
             </div>
@@ -3964,7 +4303,8 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
               {filteredWorkCenters.map((workCenter, index) => {
                 const stations = getStationsForWorkCenter(workCenter);
                 const stationCapabilities = Array.from(new Set(stations.flatMap((station) => station.capabilities)));
-                const risk = getWorkCenterRisk(workCenter);
+                const planningSummary = getPlanningSummaryForWorkCenter(workCenter);
+                const risk = planningSummary.dueRisk;
                 const selected = workCenter.id === selectedWorkCenter?.id;
                 return (
                   <button
@@ -3982,8 +4322,8 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
                       {stationCapabilities.map((capability) => renderCapabilityPill(capability))}
                     </span>
                     <span>{stations.length}</span>
-                    <span>{stations.filter((station) => station.currentJob).length}</span>
-                    <span>{workCenter.wipCount}</span>
+                    <span>{planningSummary.activeJobCount}</span>
+                    <span>{planningSummary.wipCount}</span>
                     <span className={`work-center-risk-label risk-${risk}`}>
                       <span className="risk-face"><WorkCenterRiskIcon risk={risk} /></span>
                       {formatRiskLabel(risk)}
@@ -4133,6 +4473,10 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
                 const stationQueueSummary = getStationJobQueueSummary(selectedWorkCenter, station);
                 const stationCurrentJob = stationQueueSummary?.currentJob?.orderNumber ?? station.currentJob ?? 'Unassigned';
                 const stationQueueCount = stationQueueSummary?.queuedJobs.length ?? station.queueCount;
+                const stationPlanningMetrics = getStationPlanningMetrics(
+                  getActiveStationOrders(productionOrders, selectedWorkCenter, station),
+                  todayIsoDate,
+                );
                 return (
                   <article
                     className={['station-card', stationSelected ? 'selected' : ''].filter(Boolean).join(' ')}
@@ -4164,12 +4508,21 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
                       <div><dt>Current Job</dt><dd>{stationCurrentJob}</dd></div>
                       <div><dt>Operator</dt><dd><span className="station-operator-pill">{station.operator}</span></dd></div>
                       <div><dt>Queue</dt><dd>{stationQueueCount}</dd></div>
-                      <div><dt>WIP</dt><dd>{station.wipCount}</dd></div>
+                      <div><dt>WIP</dt><dd>{stationPlanningMetrics.wipCount}</dd></div>
                     </dl>
-                    <div className={`work-center-utilization utilization-${getStationUtilizationStatus(station.utilization)}`} aria-hidden="true"><span style={{ width: `${station.utilization}%` }} /></div>
+                    <div className={`work-center-utilization utilization-${getStationUtilizationStatus(stationPlanningMetrics.scheduledUtilization)}`} aria-hidden="true"><span style={{ width: `${stationPlanningMetrics.scheduledUtilization}%` }} /></div>
                     <div className="station-card-footer">
-                      <span>{station.utilization}% utilization</span>
-                      <strong className={`risk-${station.dueRisk}`}>{station.dueRisk} risk</strong>
+                      <span>{stationPlanningMetrics.hasPlannedShifts ? `${stationPlanningMetrics.scheduledUtilization}% scheduled utilization` : 'No shifts planned'}</span>
+                      <span className={`machine-load-pill load-${stationPlanningMetrics.machineLoad}`}>{formatMachineLoadLabel(stationPlanningMetrics.machineLoad)}</span>
+                      <strong className={`risk-${stationPlanningMetrics.dueRisk}`}>{formatRiskLabel(stationPlanningMetrics.dueRisk)} risk</strong>
+                    </div>
+                    <div className="station-shift-breakdown">
+                      {stationPlanningMetrics.shiftBreakdown.map((shift) => (
+                        <span key={shift.value}>
+                          <strong>{shift.label}</strong>
+                          {renderShiftOrderChips(shift.orders, openProductionOrderFromShiftChip)}
+                        </span>
+                      ))}
                     </div>
                     <div className="work-center-tags">
                       {station.capabilities.map((capability) => renderCapabilityPill(capability))}
@@ -4584,6 +4937,33 @@ function getTraceabilityEventSummary(event: TraceabilityOperatorEventRow) {
   if (event.event_type === 'job-resumed') return 'Production was resumed by the operator';
   if (event.event_type === 'operation-completed') return 'The production order was marked complete';
   return 'Operator event captured';
+}
+
+function getTraceabilityEventShift(event: TraceabilityOperatorEventRow) {
+  return event.payload && typeof event.payload.shift === 'string' && event.payload.shift.trim()
+    ? event.payload.shift
+    : 'N/A';
+}
+
+function renderTraceabilityCaptureTime(timestamp: string, shift: string) {
+  return (
+    <div className="traceability-capture-time-group">
+      <span className="traceability-capture-time">
+        <Timer size={15} />
+        <span>
+          <b>Captured:</b>
+          {formatTimestamp(timestamp)}
+        </span>
+      </span>
+      <span className="traceability-capture-shift">
+        <CalendarDays size={15} />
+        <span>
+          <b>Shift:</b>
+          {shift || 'N/A'}
+        </span>
+      </span>
+    </div>
+  );
 }
 
 type TraceabilityTimelineItem =
@@ -5187,7 +5567,7 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
                       <strong>{eventLabel}</strong>
                       <p>{getTraceabilityEventSummary(event)}</p>
                     </div>
-                    <span className="traceability-capture-time"><Timer size={15} /><b>Captured:</b> {formatTimestamp(event.created_at)}</span>
+                    {renderTraceabilityCaptureTime(event.created_at, getTraceabilityEventShift(event))}
                   </div>
                   <div className="traceability-event-detail-grid">
                     <span><b>Order Number</b>{order?.order_number ?? 'Unassigned order'}</span>
@@ -5227,7 +5607,7 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
                     <span><b>Record Type:</b> Measurement record</span>
                     <span><b>Order Number:</b> {capture.productionOrder}</span>
                     <span><b>Part Number:</b> {capture.partNumber || 'N/A'}</span>
-                    <span className="traceability-capture-time"><Timer size={15} /><b>Captured:</b> {formatTimestamp(capture.timestamp)}</span>
+                    {renderTraceabilityCaptureTime(capture.timestamp, capture.shift)}
                   </div>
                 </div>
                 <div className="traceability-measure-grid">

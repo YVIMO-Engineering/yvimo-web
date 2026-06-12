@@ -40,6 +40,7 @@ export type ProductionOrder = {
   priority: ProductionOrderPriority;
   dueDate: string;
   assignedWorkCenter: string;
+  plannedShifts: string[];
   manufacturingType: ProductionOrderManufacturingType;
   productionFlow: string;
   assignedStation: string;

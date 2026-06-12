@@ -29,6 +29,9 @@ export async function searchGooglePlacesAddressMatches(query: string, limit = 5,
 
   const places = await loadGooglePlacesLibrary();
   if (signal?.aborted) throw makeAbortError();
+  if (!places.AutocompleteSuggestion || !places.AutocompleteSessionToken) {
+    throw new Error('Google Places autocomplete is unavailable.');
+  }
 
   autocompleteSessionToken ??= new places.AutocompleteSessionToken();
 

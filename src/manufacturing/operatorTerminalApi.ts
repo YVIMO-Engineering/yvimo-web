@@ -14,6 +14,7 @@ type ProductionOrderRow = {
   priority: ProductionOrderPriority;
   due_date: string;
   assigned_work_center: string;
+  planned_shifts?: string[] | null;
   manufacturing_type?: ProductionOrderManufacturingType | null;
   production_flow?: string | null;
   assigned_station?: string | null;
@@ -113,6 +114,7 @@ function mapProductionOrderRow(row: ProductionOrderRow): ProductionOrder {
     priority: row.priority,
     dueDate: row.due_date,
     assignedWorkCenter: row.assigned_work_center,
+    plannedShifts: row.planned_shifts ?? [],
     manufacturingType: row.manufacturing_type ?? 'multi-step',
     productionFlow: row.production_flow ?? '',
     assignedStation: row.assigned_station ?? '',

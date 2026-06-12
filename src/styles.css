@@ -1413,6 +1413,37 @@ button {
   margin-top: auto;
 }
 
+body.work-center-map-expanded .logged-shell {
+  grid-template-columns: 76px minmax(0, 1fr);
+}
+
+body.work-center-map-expanded .logged-sidebar {
+  width: 76px;
+  gap: 16px;
+  padding: 22px 12px;
+}
+
+body.work-center-map-expanded .logged-sidebar-title {
+  justify-content: center;
+  padding-inline: 0;
+}
+
+body.work-center-map-expanded .logged-sidebar-title > div,
+body.work-center-map-expanded .logged-sidebar nav button span,
+body.work-center-map-expanded .logged-signout span {
+  display: none;
+}
+
+body.work-center-map-expanded .logged-sidebar nav button,
+body.work-center-map-expanded .logged-signout {
+  justify-content: center;
+  padding: 10px;
+}
+
+body.work-center-map-expanded .logged-workspace {
+  padding: 22px clamp(16px, 2vw, 30px);
+}
+
 .logged-workspace {
   grid-column: 2;
   min-width: 0;
@@ -4485,6 +4516,53 @@ button {
   grid-column: 2;
 }
 
+.production-order-planned-shifts {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  border: 1px solid rgba(18, 29, 41, 0.12);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.planned-shift-toggle-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.planned-shift-toggle-grid button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 38px;
+  border: 1px solid rgba(18, 29, 41, 0.14);
+  border-radius: 8px;
+  background: #ffffff;
+  color: #455769;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.planned-shift-toggle-grid button svg {
+  opacity: 0.2;
+}
+
+.planned-shift-toggle-grid button.active {
+  border-color: rgba(255, 138, 31, 0.52);
+  background: #fff7ed;
+  color: #7c3a00;
+}
+
+.planned-shift-toggle-grid button.active svg {
+  opacity: 1;
+  color: #ff7a00;
+}
+
 .production-order-manufacturing-type {
   display: grid;
   gap: 12px;
@@ -5684,6 +5762,10 @@ button {
   color: #17202a;
 }
 
+.work-centers-workspace.map-expanded {
+  min-height: calc(100vh - var(--header-height) - 44px);
+}
+
 .work-centers-header {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
@@ -6080,6 +6162,10 @@ button {
 
 .selected-state-text.state-high {
   color: #dc2626;
+}
+
+.selected-state-text.state-critical {
+  color: #7f1d1d;
 }
 
 .work-center-selected-card .work-center-detail-tags {
@@ -8577,6 +8663,19 @@ button {
   align-items: start;
 }
 
+.work-centers-workspace.map-expanded .work-centers-operations-layout {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.work-centers-workspace.map-expanded .work-centers-location-rail {
+  gap: 0;
+}
+
+.work-centers-workspace.map-expanded .work-centers-operations-main,
+.work-centers-workspace.map-expanded .work-center-selected-card {
+  display: none;
+}
+
 .work-centers-location-rail,
 .work-centers-operations-main,
 .work-centers-management-panel,
@@ -8600,6 +8699,11 @@ button {
   display: grid;
   gap: 10px;
   padding: 12px;
+}
+
+.work-centers-workspace.map-expanded .work-center-location-map {
+  min-height: calc(100vh - var(--header-height) - 128px);
+  padding: 14px;
 }
 
 .work-center-map-header,
@@ -8674,6 +8778,11 @@ button {
     #e6edf5;
 }
 
+.work-centers-workspace.map-expanded .google-work-center-map,
+.google-work-center-map.expanded {
+  min-height: calc(100vh - var(--header-height) - 214px);
+}
+
 .google-work-center-map-canvas {
   position: absolute;
   inset: 0;
@@ -8712,78 +8821,198 @@ button {
 
 .google-work-center-marker {
   position: relative;
-  display: grid;
-  grid-template-columns: 24px minmax(84px, 132px);
-  align-items: center;
-  gap: 2px 8px;
-  min-width: 154px;
-  border: 2px solid #ff8a1f;
-  border-radius: 8px;
-  padding: 7px 10px 8px 8px;
-  background: #ffffff;
+  isolation: isolate;
+  display: block;
+  width: 1px;
+  height: 1px;
+  border: 0;
+  padding: 0;
+  background: transparent;
   color: #07111c;
   cursor: pointer;
   font: inherit;
   text-align: left;
+  overflow: visible;
+  transform: translate(-50%, -50%);
+  transition: opacity 160ms ease;
+}
+
+.google-work-center-marker-anchor {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 5;
+  display: block;
+  width: 14px;
+  height: 14px;
+  border: 3px solid #ffffff;
+  border-radius: 999px;
+  background: #ff8a1f;
+  box-shadow:
+    0 0 0 2px #ff8a1f,
+    0 7px 16px rgba(7, 17, 28, 0.32);
+  transform: translate(-50%, -50%);
+}
+
+.google-work-center-marker-connector {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 0;
+  display: block;
+  width: var(--line-length);
+  height: 3px;
+  border-radius: 999px;
+  background:
+    linear-gradient(90deg, #ff8a1f, rgba(255, 138, 31, 0.36));
+  box-shadow:
+    0 0 0 2px rgba(255, 255, 255, 0.82),
+    0 5px 12px rgba(7, 17, 28, 0.18);
+  transform: rotate(var(--line-angle));
+  transform-origin: 0 50%;
+}
+
+.google-work-center-marker-connector-end {
+  position: absolute;
+  left: var(--line-end-x);
+  top: var(--line-end-y);
+  z-index: 4;
+  display: block;
+  width: 8px;
+  height: 8px;
+  border: 2px solid #ffffff;
+  border-radius: 999px;
+  background: #ff8a1f;
+  box-shadow: 0 3px 10px rgba(7, 17, 28, 0.24);
+  transform: translate(-50%, -50%);
+}
+
+.google-work-center-marker-card {
+  position: absolute;
+  left: var(--label-x);
+  top: var(--label-y);
+  z-index: 3;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: center;
+  gap: 2px 8px;
+  width: var(--label-width, 178px);
+  min-height: var(--label-card-height, 54px);
+  border: 2px solid #ff8a1f;
+  border-radius: 8px;
+  padding: 7px 10px 8px 8px;
+  background: #ffffff;
   box-shadow:
     0 16px 34px rgba(7, 17, 28, 0.28),
     0 0 0 3px rgba(255, 255, 255, 0.86);
-  transform: translateY(-10px);
-  transition: opacity 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+  transition: box-shadow 160ms ease, transform 160ms ease;
 }
 
-.google-work-center-marker::after {
-  content: "";
+.google-work-center-marker-stations {
   position: absolute;
-  bottom: -9px;
-  left: 18px;
-  width: 14px;
-  height: 14px;
-  border-right: 2px solid #ff8a1f;
-  border-bottom: 2px solid #ff8a1f;
-  background: inherit;
-  transform: rotate(45deg);
+  left: var(--label-x);
+  top: calc(var(--label-y) + var(--label-card-height, 54px) + 6px);
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: min(142px, var(--label-width, 178px));
+  min-height: 28px;
+  border: 1px solid rgba(255, 138, 31, 0.38);
+  border-radius: 8px;
+  padding: 5px 10px;
+  background: #fff7ed;
+  color: #7c3a00;
+  font-size: 0.68rem;
+  font-weight: 950;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  box-shadow:
+    0 10px 24px rgba(7, 17, 28, 0.18),
+    0 0 0 3px rgba(255, 255, 255, 0.82);
+}
+
+.google-work-center-map.expanded .google-work-center-marker strong {
+  font-size: 0.82rem;
+}
+
+.google-work-center-map.expanded .google-work-center-marker em {
+  font-size: 0.68rem;
 }
 
 .google-work-center-marker:hover,
 .google-work-center-marker:focus-visible,
 .google-work-center-marker.selected {
   outline: none;
+}
+
+.google-work-center-marker:hover .google-work-center-marker-card,
+.google-work-center-marker:focus-visible .google-work-center-marker-card,
+.google-work-center-marker.selected .google-work-center-marker-card {
   box-shadow:
     0 0 0 5px rgba(255, 138, 31, 0.26),
     0 18px 40px rgba(7, 17, 28, 0.34),
     0 0 0 3px rgba(255, 255, 255, 0.9);
-  transform: translateY(-13px);
+  transform: translateY(-2px);
 }
 
-.google-work-center-marker.status-running {
+.google-work-center-marker.status-running .google-work-center-marker-card {
   border-color: #00a676;
 }
 
-.google-work-center-marker.status-running::after {
-  border-color: #00a676;
+.google-work-center-marker.status-running .google-work-center-marker-anchor,
+.google-work-center-marker.status-running .google-work-center-marker-connector-end {
+  background: #00a676;
+  box-shadow:
+    0 0 0 2px #00a676,
+    0 7px 16px rgba(7, 17, 28, 0.32);
 }
 
-.google-work-center-marker.status-idle {
+.google-work-center-marker.status-running .google-work-center-marker-connector {
+  background:
+    linear-gradient(90deg, #00a676, rgba(0, 166, 118, 0.36));
+}
+
+.google-work-center-marker.status-idle .google-work-center-marker-card {
   border-color: #ff8a1f;
 }
 
-.google-work-center-marker.status-down,
-.google-work-center-marker.alert {
+.google-work-center-marker.status-down .google-work-center-marker-card,
+.google-work-center-marker.alert .google-work-center-marker-card {
   border-color: #ef4444;
 }
 
-.google-work-center-marker.status-down::after,
-.google-work-center-marker.alert::after {
-  border-color: #ef4444;
+.google-work-center-marker.status-down .google-work-center-marker-anchor,
+.google-work-center-marker.alert .google-work-center-marker-anchor,
+.google-work-center-marker.status-down .google-work-center-marker-connector-end,
+.google-work-center-marker.alert .google-work-center-marker-connector-end {
+  background: #ef4444;
+  box-shadow:
+    0 0 0 2px #ef4444,
+    0 7px 16px rgba(7, 17, 28, 0.32);
 }
 
-.google-work-center-marker.status-maintenance {
+.google-work-center-marker.status-down .google-work-center-marker-connector,
+.google-work-center-marker.alert .google-work-center-marker-connector {
+  background:
+    linear-gradient(90deg, #ef4444, rgba(239, 68, 68, 0.36));
+}
+
+.google-work-center-marker.status-maintenance .google-work-center-marker-card {
   border-color: #f59e0b;
 }
 
-.google-work-center-marker.status-maintenance::after {
-  border-color: #f59e0b;
+.google-work-center-marker.status-maintenance .google-work-center-marker-anchor,
+.google-work-center-marker.status-maintenance .google-work-center-marker-connector-end {
+  background: #f59e0b;
+  box-shadow:
+    0 0 0 2px #f59e0b,
+    0 7px 16px rgba(7, 17, 28, 0.32);
+}
+
+.google-work-center-marker.status-maintenance .google-work-center-marker-connector {
+  background:
+    linear-gradient(90deg, #f59e0b, rgba(245, 158, 11, 0.36));
 }
 
 .google-work-center-marker-badge {
@@ -10241,6 +10470,7 @@ button {
 .station-card-footer {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   justify-content: space-between;
   gap: 10px;
   color: #516173;
@@ -10268,6 +10498,142 @@ button {
 .risk-high {
   background: #fee2e2;
   color: #991b1b;
+}
+
+.risk-critical {
+  background: #7f1d1d;
+  color: #ffffff;
+}
+
+.machine-load-pill {
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: 0.68rem;
+  font-weight: 950;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.load-none {
+  background: #eef2f7;
+  color: #455769;
+}
+
+.load-low,
+.load-normal {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.load-medium {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.load-high {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.load-overloaded {
+  background: #7f1d1d;
+  color: #ffffff;
+}
+
+.station-shift-breakdown {
+  display: grid;
+  gap: 9px;
+  border-top: 1px solid rgba(18, 29, 41, 0.08);
+  padding-top: 12px;
+}
+
+.station-shift-breakdown span {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 10px;
+  color: #516173;
+  font-size: 0.82rem;
+  line-height: 1.25;
+}
+
+.station-shift-breakdown strong {
+  color: #07111c;
+  font-size: 0.78rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.station-shift-breakdown em {
+  min-width: 0;
+  color: #607080;
+  font-style: normal;
+  font-weight: 760;
+}
+
+.station-shift-orders {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+}
+
+.station-shift-orders button,
+.station-shift-orders .more {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  border: 1px solid rgba(255, 138, 31, 0.3);
+  border-radius: 6px;
+  padding: 5px 9px;
+  background: #ffffff;
+  color: #7c3a00;
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 950;
+  line-height: 1;
+  box-shadow: 0 4px 12px rgba(7, 17, 28, 0.08);
+}
+
+.station-shift-orders button {
+  cursor: pointer;
+}
+
+.station-shift-orders button:hover,
+.station-shift-orders button:focus-visible {
+  border-color: #ff8a1f;
+  color: #07111c;
+  transform: translateY(-1px);
+}
+
+.station-shift-orders .more {
+  border-color: rgba(18, 29, 41, 0.14);
+  background: #eef2f7;
+  color: #455769;
+}
+
+.station-shift-breakdown.selected {
+  border: 1px solid rgba(255, 138, 31, 0.22);
+  border-radius: 8px;
+  padding: 12px;
+  background: #fff7ed;
+}
+
+.station-shift-breakdown.selected span {
+  grid-template-columns: 58px minmax(0, 1fr);
+  gap: 8px;
+  min-width: 0;
+}
+
+.station-shift-breakdown.selected .station-shift-orders {
+  flex-wrap: nowrap;
+  min-width: 0;
+  overflow: hidden;
+  gap: 10px;
+}
+
+.station-shift-breakdown.selected .station-shift-orders button,
+.station-shift-breakdown.selected .station-shift-orders .more {
+  flex: 0 0 auto;
 }
 
 .mes-filter-panel {
@@ -10883,11 +11249,24 @@ button {
   line-height: 1.35;
 }
 
-.traceability-event-heading .traceability-capture-time {
+.traceability-capture-time-group {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(92px, 0.55fr);
+  gap: 8px;
+  min-width: 0;
+}
+
+.traceability-event-heading .traceability-capture-time-group {
+  min-width: min(346px, 34vw);
+}
+
+.traceability-capture-time,
+.traceability-capture-shift {
   display: grid;
   grid-template-columns: 18px minmax(0, 1fr);
   gap: 2px 7px;
   align-items: center;
+  min-width: 0;
   border: 1px solid color-mix(in srgb, var(--traceability-event-color) 16%, transparent);
   border-radius: 8px;
   padding: 8px 9px;
@@ -10897,18 +11276,31 @@ button {
   font-weight: 900;
 }
 
-.traceability-event-heading .traceability-capture-time svg {
+.traceability-capture-time > span,
+.traceability-capture-shift > span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.traceability-capture-time svg,
+.traceability-capture-shift svg {
   grid-row: 1 / span 2;
   color: var(--traceability-event-color);
 }
 
-.traceability-event-heading .traceability-capture-time b {
+.traceability-capture-time b,
+.traceability-capture-shift b {
   margin: 0;
   color: #5d6d7e;
   font-size: 0.66rem;
   font-weight: 950;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+}
+
+.traceability-capture-shift {
+  background: #ffffff;
 }
 
 .traceability-event-detail-grid {
@@ -10996,25 +11388,18 @@ button {
   text-transform: uppercase;
 }
 
-.traceability-capture-title-grid .traceability-capture-time {
-  display: grid;
-  grid-template-columns: 18px minmax(0, 1fr);
-  gap: 2px 7px;
-  align-items: center;
+.traceability-capture-title-grid .traceability-capture-time,
+.traceability-capture-title-grid .traceability-capture-shift {
   border: 1px solid rgba(18, 29, 41, 0.08);
-  border-radius: 8px;
-  padding: 8px 9px;
-  background: #f8fafc;
-  color: #07111c;
-  font-size: 0.84rem;
 }
 
-.traceability-capture-title-grid .traceability-capture-time svg {
-  grid-row: 1 / span 2;
+.traceability-capture-title-grid .traceability-capture-time svg,
+.traceability-capture-title-grid .traceability-capture-shift svg {
   color: #ff8a1f;
 }
 
-.traceability-capture-title-grid .traceability-capture-time b {
+.traceability-capture-title-grid .traceability-capture-time b,
+.traceability-capture-title-grid .traceability-capture-shift b {
   margin: 0;
 }
 
