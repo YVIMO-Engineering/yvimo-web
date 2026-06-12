@@ -1076,13 +1076,15 @@ button {
 
 .login-submit:disabled,
 .passkey-button:disabled,
-.microsoft-button:disabled {
+.microsoft-button:disabled,
+.google-button:disabled {
   cursor: wait;
   opacity: 0.68;
 }
 
 .passkey-button,
-.microsoft-button {
+.microsoft-button,
+.google-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1104,21 +1106,27 @@ button {
 }
 
 .signup-page .passkey-button,
-.signup-page .microsoft-button {
+.signup-page .microsoft-button,
+.signup-page .google-button {
   border-color: var(--line);
   box-shadow: 0 12px 28px rgba(32, 36, 42, 0.1);
 }
 
 .passkey-button:hover,
-.microsoft-button:hover {
+.microsoft-button:hover,
+.google-button:hover {
   background: #f4f4f5;
   color: #17202a;
 }
 
-.passkey-button svg {
+.passkey-button svg,
+.google-mark {
   flex: 0 0 auto;
   width: 25px;
   height: 25px;
+}
+
+.passkey-button svg {
   fill: currentColor;
 }
 

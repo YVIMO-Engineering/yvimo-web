@@ -524,6 +524,7 @@ const translations: Record<Exclude<LanguageCode, 'en'>, Record<string, string>> 
     'Already have an account?': '¿Ya tienes una cuenta?',
     'Continue with Apple Passkey': 'Continuar con Apple Passkey',
     'Continue with Microsoft': 'Continuar con Microsoft',
+    'Continue with Google': 'Continuar con Google',
     'Full name': 'Nombre completo',
     Company: 'Empresa',
     Dashboard: 'Dashboard',
@@ -780,6 +781,7 @@ const translations: Record<Exclude<LanguageCode, 'en'>, Record<string, string>> 
     'Already have an account?': '已经有账户？',
     'Continue with Apple Passkey': '使用 Apple Passkey 继续',
     'Continue with Microsoft': '使用 Microsoft 继续',
+    'Continue with Google': '使用 Google 继续',
     'Full name': '全名',
     Company: '公司',
     Dashboard: '仪表板',
@@ -1866,12 +1868,14 @@ function LoginPage({
   onSignIn,
   onAppleSignIn,
   onMicrosoftSignIn,
+  onGoogleSignIn,
   t,
 }: {
   onNavigateSignUp: () => void;
   onSignIn: (email: string, password: string) => Promise<string | null>;
   onAppleSignIn: () => Promise<string | null>;
   onMicrosoftSignIn: () => Promise<string | null>;
+  onGoogleSignIn: () => Promise<string | null>;
   t: Translator;
 }) {
   const [formMessage, setFormMessage] = React.useState<string | null>(null);
@@ -1983,31 +1987,6 @@ function LoginPage({
             </button>
 
             <button
-              className="passkey-button"
-              type="button"
-              disabled={authBusy}
-              onClick={async () => {
-                setAuthBusy(true);
-                console.log('[auth] apple signIn start');
-
-                try {
-                  setFormMessage(await onAppleSignIn());
-                } catch (error) {
-                  console.error('[auth] apple signIn unexpected error', error);
-                  setFormMessage(error instanceof Error ? error.message : 'Invalid email or password.');
-                } finally {
-                  console.log('[auth] apple signIn loading reset');
-                  setAuthBusy(false);
-                }
-              }}
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                <path d="M16.37 1.43c.05 1.06-.31 2.07-1.09 3.02-.84 1.02-1.83 1.6-2.95 1.52-.08-1.03.33-2.08 1.11-2.99.86-.99 1.95-1.55 2.93-1.55ZM20.3 17.44c-.46 1.04-.68 1.51-1.27 2.43-.82 1.25-1.98 2.82-3.42 2.83-1.28.01-1.61-.83-3.35-.82-1.74.01-2.1.84-3.38.83-1.43-.01-2.52-1.43-3.34-2.68-2.3-3.51-2.54-7.64-1.12-9.83 1.01-1.55 2.6-2.46 4.1-2.46 1.53 0 2.49.84 3.75.84 1.22 0 1.97-.84 3.73-.84 1.33 0 2.74.72 3.74 1.96-3.28 1.8-2.75 6.48.56 7.74Z" />
-              </svg>
-              {t('Continue with Apple Passkey')}
-            </button>
-
-            <button
               className="microsoft-button"
               type="button"
               disabled={authBusy}
@@ -2033,6 +2012,59 @@ function LoginPage({
                 <span />
               </span>
               {t('Continue with Microsoft')}
+            </button>
+
+            <button
+              className="passkey-button"
+              type="button"
+              disabled={authBusy}
+              onClick={async () => {
+                setAuthBusy(true);
+                console.log('[auth] apple signIn start');
+
+                try {
+                  setFormMessage(await onAppleSignIn());
+                } catch (error) {
+                  console.error('[auth] apple signIn unexpected error', error);
+                  setFormMessage(error instanceof Error ? error.message : 'Invalid email or password.');
+                } finally {
+                  console.log('[auth] apple signIn loading reset');
+                  setAuthBusy(false);
+                }
+              }}
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M16.37 1.43c.05 1.06-.31 2.07-1.09 3.02-.84 1.02-1.83 1.6-2.95 1.52-.08-1.03.33-2.08 1.11-2.99.86-.99 1.95-1.55 2.93-1.55ZM20.3 17.44c-.46 1.04-.68 1.51-1.27 2.43-.82 1.25-1.98 2.82-3.42 2.83-1.28.01-1.61-.83-3.35-.82-1.74.01-2.1.84-3.38.83-1.43-.01-2.52-1.43-3.34-2.68-2.3-3.51-2.54-7.64-1.12-9.83 1.01-1.55 2.6-2.46 4.1-2.46 1.53 0 2.49.84 3.75.84 1.22 0 1.97-.84 3.73-.84 1.33 0 2.74.72 3.74 1.96-3.28 1.8-2.75 6.48.56 7.74Z" />
+              </svg>
+              {t('Continue with Apple Passkey')}
+            </button>
+
+            <button
+              className="google-button"
+              type="button"
+              disabled={authBusy}
+              onClick={async () => {
+                setAuthBusy(true);
+                console.log('[auth] google signIn start');
+
+                try {
+                  setFormMessage(await onGoogleSignIn());
+                } catch (error) {
+                  console.error('[auth] google signIn unexpected error', error);
+                  setFormMessage(error instanceof Error ? error.message : 'Invalid email or password.');
+                } finally {
+                  console.log('[auth] google signIn loading reset');
+                  setAuthBusy(false);
+                }
+              }}
+            >
+              <svg className="google-mark" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path fill="#4285f4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09Z" />
+                <path fill="#34a853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.16v2.84C3.97 20.53 7.68 23 12 23Z" />
+                <path fill="#fbbc05" d="M5.84 14.1c-.22-.66-.35-1.36-.35-2.1s.13-1.44.35-2.1V7.06H2.16C1.41 8.55 1 10.22 1 12s.41 3.45 1.16 4.94l3.68-2.84Z" />
+                <path fill="#ea4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.68 1 3.97 3.47 2.16 7.06L5.84 9.9c.87-2.6 3.3-4.52 6.16-4.52Z" />
+              </svg>
+              {t('Continue with Google')}
             </button>
 
             <div className="login-auth-switch login-signup-cta">
@@ -5245,6 +5277,23 @@ function App() {
     return null;
   };
 
+  const handleGoogleSignIn = async () => {
+    console.log('[auth] google signIn action start');
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `${window.location.origin}/dashboard`,
+      },
+    });
+
+    if (error) {
+      console.error('[auth] google signIn action error', error);
+      return formatAuthError(error.message);
+    }
+
+    return null;
+  };
+
   const handleUpdateAvatar = async (file: File): Promise<AvatarUploadResult> => {
     if (!authSession?.user) {
       return { ok: false, message: 'Sign in again to update your profile picture.' };
@@ -5569,6 +5618,7 @@ function App() {
           onSignIn={handleSignIn}
           onAppleSignIn={handleAppleSignIn}
           onMicrosoftSignIn={handleMicrosoftSignIn}
+          onGoogleSignIn={handleGoogleSignIn}
           t={t}
         />
       ) : isSignUpPage ? (
@@ -5597,6 +5647,7 @@ function App() {
             onSignIn={handleSignIn}
             onAppleSignIn={handleAppleSignIn}
             onMicrosoftSignIn={handleMicrosoftSignIn}
+            onGoogleSignIn={handleGoogleSignIn}
             t={t}
           />
         )
