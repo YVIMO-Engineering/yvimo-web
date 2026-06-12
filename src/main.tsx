@@ -2231,6 +2231,7 @@ function LoggedDashboardPage({
   const [manufacturingJoinCode, setManufacturingJoinCode] = React.useState('');
   const [manufacturingOrganizationMessage, setManufacturingOrganizationMessage] = React.useState('');
   const [manufacturingOrganizationDialogOpen, setManufacturingOrganizationDialogOpen] = React.useState(false);
+  const [manufacturingUnavailableApp, setManufacturingUnavailableApp] = React.useState('');
   const [manufacturingInviteRole, setManufacturingInviteRole] = React.useState<ManufacturingOrganizationInviteRole>('Operator');
   const [manufacturingOrganizationUploadingLogo, setManufacturingOrganizationUploadingLogo] = React.useState(false);
   const [manufacturingOrganizationMode, setManufacturingOrganizationMode] = React.useState<'manage' | 'edit' | 'members' | 'switch'>('manage');
@@ -2248,6 +2249,16 @@ function LoggedDashboardPage({
     setManufacturingOrganizationMessage('');
     setManufacturingOrganizationMode(nextOrganization ? 'manage' : 'switch');
   }, [user.id]);
+
+  React.useEffect(() => {
+    if (!manufacturingUnavailableApp) return;
+
+    const unavailableAppTimer = window.setTimeout(() => {
+      setManufacturingUnavailableApp('');
+    }, 5000);
+
+    return () => window.clearTimeout(unavailableAppTimer);
+  }, [manufacturingUnavailableApp]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -3068,54 +3079,68 @@ function LoggedDashboardPage({
     description: string;
     icon: React.ComponentType<{ size?: number }>;
     path: string;
+    implemented: boolean;
+    tone?: 'green' | 'blue' | 'orange';
   }> = [
     {
       label: 'Production Orders',
       description: 'Create, release, assign, and track manufacturing orders from planned quantity to completion.',
       icon: FileUp,
       path: '/workspace/manufacturing-ops/mes/orders',
+      implemented: true,
+      tone: 'green',
     },
     {
       label: 'Work Centers',
       description: 'Manage machines, lines, cells, and stations where production is executed.',
       icon: Factory,
       path: '/workspace/manufacturing-ops/mes/work-centers',
+      implemented: true,
+      tone: 'blue',
     },
     {
       label: 'Operator Terminal',
       description: 'Simple shop-floor interface for starting jobs, reporting production, scrap, downtime, and completing operations.',
       icon: TerminalSquare,
       path: '/workspace/manufacturing-ops/mes/operator-terminal',
+      implemented: true,
+      tone: 'green',
     },
     {
       label: 'Production Events',
       description: 'Timeline of execution events such as order started, quantity added, downtime started, quality check completed, and order completed.',
       icon: GitBranch,
       path: '/workspace/manufacturing-ops/mes/events',
+      implemented: false,
     },
     {
       label: 'Downtime Events',
       description: 'Track machine stops, reason codes, duration, category, and notes.',
       icon: RadioTower,
       path: '/workspace/manufacturing-ops/mes/downtime',
+      implemented: false,
     },
     {
       label: 'Quality Checks',
       description: 'Record pass/fail checks, measurements, inspection results, and quality notes linked to production orders.',
       icon: ShieldCheck,
       path: '/workspace/manufacturing-ops/mes/quality',
+      implemented: false,
     },
     {
       label: 'Traceability',
       description: 'View the complete production history for an order, lot, serial number, work center, or operation.',
       icon: Database,
       path: '/workspace/manufacturing-ops/mes/traceability',
+      implemented: true,
+      tone: 'orange',
     },
     {
       label: 'MES Dashboard',
       description: 'Show active orders, running work centers, completed quantity, scrap, downtime, and production KPIs.',
       icon: Gauge,
       path: '/workspace/manufacturing-ops/mes/dashboard',
+      implemented: false,
     },
   ];
   const apsModules: Array<{
@@ -3232,6 +3257,16 @@ function LoggedDashboardPage({
     : isOperationsIntelligencePage
       ? intelligenceModules
       : mesModules;
+  const isManufacturingAppImplemented = (module: { implemented?: boolean }) => module.implemented === true;
+  const getManufacturingAppToneClass = (module: { tone?: 'green' | 'blue' | 'orange' }) => module.tone ? `tone-${module.tone}` : '';
+  const handleManufacturingAppLaunch = (module: { label: string; path: string; implemented?: boolean }) => {
+    if (!isManufacturingAppImplemented(module)) {
+      setManufacturingUnavailableApp(module.label);
+      return;
+    }
+    setManufacturingUnavailableApp('');
+    onNavigate(module.path);
+  };
   const activeMesModule = mesModules.find((module) => activePath === module.path);
   const isOperatorTerminalPage = activePath === '/workspace/manufacturing-ops/mes/operator-terminal';
   const activeManufacturingOrganizationId = manufacturingOrganization
@@ -4218,29 +4253,45 @@ function LoggedDashboardPage({
                         );
                       })}
                     </div>
-                    <section className="manufacturing-app-launcher" aria-label={`${activeManufacturingModule.label} modules`}>
-                      <div className="manufacturing-app-launcher-header">
-                        <strong>{t('Applications')}</strong>
-                        <span>{t('Select a module to open its workspace.')}</span>
-                      </div>
-                      {activeSpecialtyModules.map((module, index) => {
-                        const Icon = module.icon;
-                        const activeModule = activePath === module.path;
-                        return (
-                          <button
-                            className={['manufacturing-app-icon', `position-${getManufacturingAppPosition(activeManufacturingModule.label, index)}`, activeModule ? 'active' : ''].filter(Boolean).join(' ')}
-                            type="button"
-                            key={module.label}
-                            onClick={() => onNavigate(module.path)}
-                          >
-                            <span className="manufacturing-app-glyph">
-                              <Icon size={26} />
-                            </span>
-                            <strong>{t(module.label)}</strong>
-                          </button>
-                        );
-                      })}
-                    </section>
+                    <div className="manufacturing-app-launcher-stack">
+                      {manufacturingUnavailableApp ? (
+                        <div className="manufacturing-app-alert" role="alert">
+                          <strong>{t(manufacturingUnavailableApp)}</strong>
+                          <span>{t('This feature/app is not implemented yet. You will be able to access it soon when it is ready.')}</span>
+                        </div>
+                      ) : null}
+                      <section className="manufacturing-app-launcher" aria-label={`${activeManufacturingModule.label} modules`}>
+                        <div className="manufacturing-app-launcher-header">
+                          <strong>{t('Applications')}</strong>
+                          <span>{t('Select a module to open its workspace.')}</span>
+                        </div>
+                        {activeSpecialtyModules.map((module, index) => {
+                          const Icon = module.icon;
+                          const activeModule = activePath === module.path;
+                          const implementedModule = isManufacturingAppImplemented(module);
+                          return (
+                            <button
+                              className={[
+                                'manufacturing-app-icon',
+                                `position-${getManufacturingAppPosition(activeManufacturingModule.label, index)}`,
+                                implementedModule ? 'implemented' : 'unimplemented',
+                                getManufacturingAppToneClass(module),
+                                activeModule ? 'active' : '',
+                              ].filter(Boolean).join(' ')}
+                              type="button"
+                              key={module.label}
+                              aria-disabled={!implementedModule}
+                              onClick={() => handleManufacturingAppLaunch(module)}
+                            >
+                              <span className="manufacturing-app-glyph">
+                                <Icon size={26} />
+                              </span>
+                              <strong>{t(module.label)}</strong>
+                            </button>
+                          );
+                        })}
+                      </section>
+                    </div>
                   </div>
                 </section>
               </>
@@ -4308,28 +4359,45 @@ function LoggedDashboardPage({
                         );
                       })}
                     </div>
-                    <section className="manufacturing-app-launcher compact" aria-label="MES modules">
-                      <div className="manufacturing-app-launcher-header">
-                        <strong>{t('Applications')}</strong>
-                        <span>{t('Select a module to open its workspace.')}</span>
-                      </div>
-                      {mesModules.map((module, index) => {
-                        const Icon = module.icon;
-                        return (
-                          <button
-                            className={['manufacturing-app-icon', `position-${getManufacturingAppPosition('MES', index)}`].join(' ')}
-                            type="button"
-                            key={module.label}
-                            onClick={() => onNavigate(module.path)}
-                          >
-                            <span className="manufacturing-app-glyph">
-                              <Icon size={24} />
-                            </span>
-                            <strong>{t(module.label)}</strong>
-                          </button>
-                        );
-                      })}
-                    </section>
+                    <div className="manufacturing-app-launcher-stack">
+                      {manufacturingUnavailableApp ? (
+                        <div className="manufacturing-app-alert" role="alert">
+                          <strong>{t(manufacturingUnavailableApp)}</strong>
+                          <span>{t('This feature/app is not implemented yet. You will be able to access it soon when it is ready.')}</span>
+                        </div>
+                      ) : null}
+                      <section className="manufacturing-app-launcher compact" aria-label="MES modules">
+                        <div className="manufacturing-app-launcher-header">
+                          <strong>{t('Applications')}</strong>
+                          <span>{t('Select a module to open its workspace.')}</span>
+                        </div>
+                        {mesModules.map((module, index) => {
+                          const Icon = module.icon;
+                          const activeModule = activePath === module.path;
+                          const implementedModule = isManufacturingAppImplemented(module);
+                          return (
+                            <button
+                              className={[
+                                'manufacturing-app-icon',
+                                `position-${getManufacturingAppPosition('MES', index)}`,
+                                implementedModule ? 'implemented' : 'unimplemented',
+                                getManufacturingAppToneClass(module),
+                                activeModule ? 'active' : '',
+                              ].filter(Boolean).join(' ')}
+                              type="button"
+                              key={module.label}
+                              aria-disabled={!implementedModule}
+                              onClick={() => handleManufacturingAppLaunch(module)}
+                            >
+                              <span className="manufacturing-app-glyph">
+                                <Icon size={24} />
+                              </span>
+                              <strong>{t(module.label)}</strong>
+                            </button>
+                          );
+                        })}
+                      </section>
+                    </div>
                   </div>
                 </section>
               </>
