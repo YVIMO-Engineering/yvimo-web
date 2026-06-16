@@ -702,7 +702,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId }: Operat
 
     setSyncPending(true);
     try {
-      const order = await reportOperatorProduction({ orderId: currentOrder.id, organizationId, stationCode, goodDelta: 1 });
+      const order = await reportOperatorProduction({ orderId: currentOrder.id, organizationId, stationCode, shift: selectedShift, goodDelta: 1 });
       applyOrder(order);
       syncSnapshotOrder(order);
       setEvents((current) => [{ type: 'good', timestamp: formatToastTime() }, ...current].slice(0, 8));
@@ -744,7 +744,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId }: Operat
       } else {
         setSyncPending(true);
         try {
-          const order = await reportOperatorProduction({ orderId: currentOrder.id, organizationId, stationCode, scrapDelta: 1, reason, comment });
+          const order = await reportOperatorProduction({ orderId: currentOrder.id, organizationId, stationCode, shift: selectedShift, scrapDelta: 1, reason, comment });
           applyOrder(order);
           syncSnapshotOrder(order);
           setEvents((current) => [{
@@ -776,7 +776,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId }: Operat
       if (hasSupabaseOrder) {
         setSyncPending(true);
         try {
-          const order = await setOperatorTerminalState({ orderId: currentOrder.id, organizationId, stationCode, state: 'paused', reason, comment });
+          const order = await setOperatorTerminalState({ orderId: currentOrder.id, organizationId, stationCode, shift: selectedShift, state: 'paused', reason, comment });
           syncSnapshotOrder(order);
         } catch (error) {
           console.error('Unable to pause job', error);
@@ -792,7 +792,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId }: Operat
       if (hasSupabaseOrder) {
         setSyncPending(true);
         try {
-          const order = await setOperatorTerminalState({ orderId: currentOrder.id, organizationId, stationCode, state: 'down', reason, comment });
+          const order = await setOperatorTerminalState({ orderId: currentOrder.id, organizationId, stationCode, shift: selectedShift, state: 'down', reason, comment });
           syncSnapshotOrder(order);
         } catch (error) {
           console.error('Unable to report downtime', error);
@@ -808,7 +808,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId }: Operat
       if (hasSupabaseOrder) {
         setSyncPending(true);
         try {
-          const order = await setOperatorTerminalState({ orderId: currentOrder.id, organizationId, stationCode, state: 'completed', reason, comment });
+          const order = await setOperatorTerminalState({ orderId: currentOrder.id, organizationId, stationCode, shift: selectedShift, state: 'completed', reason, comment });
           applyOrder(order);
           syncSnapshotOrder(order);
         } catch (error) {
@@ -837,7 +837,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId }: Operat
     if (hasSupabaseOrder) {
       setSyncPending(true);
       try {
-        const order = await setOperatorTerminalState({ orderId: currentOrder.id, organizationId, stationCode, state: 'running' });
+        const order = await setOperatorTerminalState({ orderId: currentOrder.id, organizationId, stationCode, shift: selectedShift, state: 'running' });
         syncSnapshotOrder(order);
       } catch (error) {
         console.error('Unable to start or resume job', error);
@@ -867,6 +867,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId }: Operat
         orderId: order.id,
         organizationId,
         stationCode,
+        shift: selectedShift,
         comment: `Operator Terminal active order changed from ${currentOrder?.orderNumber ?? 'none'} to ${order.orderNumber}`,
       });
       applyOrder(nextOrder);

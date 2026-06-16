@@ -195,6 +195,7 @@ export async function reportOperatorProduction(
     orderId: string;
     organizationId: string;
     stationCode: string;
+    shift?: string;
     goodDelta?: number;
     scrapDelta?: number;
     reason?: string;
@@ -210,6 +211,7 @@ export async function reportOperatorProduction(
     p_scrap_delta: input.scrapDelta ?? 0,
     p_reason: input.reason ?? null,
     p_comment: input.comment ?? null,
+    p_shift: input.shift ?? null,
   });
 
   if (error) throw error;
@@ -257,6 +259,7 @@ export async function setOperatorTerminalState(
     orderId: string;
     organizationId: string;
     stationCode: string;
+    shift?: string;
     state: 'running' | 'paused' | 'down' | 'completed';
     reason?: string;
     comment?: string;
@@ -270,6 +273,7 @@ export async function setOperatorTerminalState(
     p_state: input.state,
     p_reason: input.reason ?? null,
     p_comment: input.comment ?? null,
+    p_shift: input.shift ?? null,
   });
 
   if (error) throw error;
@@ -281,6 +285,7 @@ export async function switchOperatorActiveOrder(
     orderId: string;
     organizationId: string;
     stationCode: string;
+    shift?: string;
     comment?: string;
   },
   client: OperatorClient = supabase,
@@ -290,6 +295,7 @@ export async function switchOperatorActiveOrder(
     p_organization_id: input.organizationId,
     p_station_code: input.stationCode,
     p_comment: input.comment ?? null,
+    p_shift: input.shift ?? null,
   });
 
   if (!error) return mapProductionOrderRow(data as ProductionOrderRow);
@@ -345,7 +351,7 @@ export async function switchOperatorActiveOrder(
       station_code: stationCode,
       event_type: 'job-resumed',
       comment: input.comment ?? null,
-      payload: { action: 'active-order-switch', fallback: true },
+      payload: { action: 'active-order-switch', fallback: true, shift: input.shift ?? null },
     });
 
   return mapProductionOrderRow(updatedData as ProductionOrderRow);
