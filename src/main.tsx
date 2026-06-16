@@ -14,6 +14,7 @@ import {
   ChevronRight,
   Check,
   CircuitBoard,
+  ClipboardCheck,
   Cloud,
   Code2,
   Cpu,
@@ -29,6 +30,7 @@ import {
   Mail,
   Menu,
   Network,
+  PackageCheck,
   Pencil,
   Plus,
   RadioTower,
@@ -37,6 +39,7 @@ import {
   ShieldCheck,
   Star,
   TerminalSquare,
+  Truck,
   UserPlus,
   Users,
   Workflow,
@@ -48,6 +51,7 @@ import { createSessionSupabaseClient, supabase } from './lib/supabaseClient';
 import { AcademyActivityPage, AcademyCatalogPage, AcademyCertificatesPage, AcademyCoursePage, AcademyHomePage, AcademyLessonPage, AcademyProgressPage, AcademyTrackPage } from './pages/AcademyPages';
 import { ProductionOrdersWorkspace, TraceabilityWorkspace, WorkCentersWorkspace } from './manufacturing/MesWorkspaces';
 import { OperatorTerminalWorkspace } from './manufacturing/OperatorTerminalWorkspace';
+import { SupplierOperationsWorkspace, type SupplierContextTab } from './manufacturing/SupplierOperationsWorkspace';
 import './styles.css';
 
 type BusinessLine = {
@@ -142,6 +146,7 @@ type ManufacturingOrganization = {
 };
 
 type ManufacturingOrganizationInviteRole = Extract<ManufacturingOrganizationRole, 'Admin' | 'Operator' | 'Viewer' | 'Supplier'>;
+type WorkspaceAccessMode = 'workspace' | 'supplier';
 
 type ManufacturingOrganizationMemberRow = {
   organization_id: string;
@@ -191,6 +196,18 @@ function createManufacturingInviteCode(name: string) {
 
 function getManufacturingOrganizationNameSuggestion(user: AppUser) {
   return user.company?.trim() || `${user.name.split(' ')[0] || 'YVIMO'} Manufacturing`;
+}
+
+function loadWorkspaceAccessMode(): WorkspaceAccessMode {
+  if (typeof window === 'undefined') return 'workspace';
+
+  try {
+    const storedMode = window.localStorage.getItem('yvimo-workspace-access-mode');
+    return storedMode === 'supplier' ? 'supplier' : 'workspace';
+  } catch (error) {
+    console.warn('Unable to load workspace access mode', error);
+    return 'workspace';
+  }
 }
 
 function isLegacyDefaultManufacturingOrganization(user: AppUser, organization: Partial<ManufacturingOrganization>) {
@@ -2272,6 +2289,27 @@ function LoggedDashboardPage({
   const [manufacturingSwitchAction, setManufacturingSwitchAction] = React.useState<'leave' | 'transfer' | 'disband'>('leave');
   const [manufacturingNewOwnerUserId, setManufacturingNewOwnerUserId] = React.useState('');
   const [manufacturingSwitchBusy, setManufacturingSwitchBusy] = React.useState(false);
+  const [supplierContextTab, setSupplierContextTab] = React.useState<SupplierContextTab>('dashboard');
+  const [workspaceAccessMode, setWorkspaceAccessMode] = React.useState<WorkspaceAccessMode>(() => loadWorkspaceAccessMode());
+  const [supplierSelectedCustomer, setSupplierSelectedCustomer] = React.useState('Gleason Corp');
+  const [supplierCustomerPickerOpen, setSupplierCustomerPickerOpen] = React.useState(false);
+  const [supplierJoinDialogOpen, setSupplierJoinDialogOpen] = React.useState(false);
+  const [supplierInvitationCode, setSupplierInvitationCode] = React.useState('');
+  const [supplierJoinMessage, setSupplierJoinMessage] = React.useState('');
+
+  React.useEffect(() => {
+    try {
+      window.localStorage.setItem('yvimo-workspace-access-mode', workspaceAccessMode);
+    } catch (error) {
+      console.warn('Unable to save workspace access mode', error);
+    }
+  }, [workspaceAccessMode]);
+
+  React.useEffect(() => {
+    if (!supplierJoinMessage) return;
+    const messageTimer = window.setTimeout(() => setSupplierJoinMessage(''), 3200);
+    return () => window.clearTimeout(messageTimer);
+  }, [supplierJoinMessage]);
 
   React.useEffect(() => {
     const nextOrganization = loadManufacturingOrganization(user);
@@ -3168,6 +3206,14 @@ function LoggedDashboardPage({
       tone: 'orange',
     },
     {
+      label: 'Suppliers',
+      description: 'Track external processing check-outs, returns, vouchers, supplier documents, and outside-process traceability.',
+      icon: Truck,
+      path: '/workspace/manufacturing-ops/mes/suppliers',
+      implemented: true,
+      tone: 'blue',
+    },
+    {
       label: 'MES Dashboard',
       description: 'Show active orders, running work centers, completed quantity, scrap, downtime, and production KPIs.',
       icon: Gauge,
@@ -3252,6 +3298,33 @@ function LoggedDashboardPage({
   const isManufacturingOpsPage =
     activePath === '/workspace/manufacturing-ops'
     || activePath.startsWith('/workspace/manufacturing-ops/');
+  const isWorkspaceOverviewPage = activePath === '/dashboard';
+  const isSupplierAccessOverview = isWorkspaceOverviewPage && workspaceAccessMode === 'supplier';
+  const supplierPortalCustomers = [
+    { name: 'Gleason Corp', logo: 'Gleason', color: '#f4f8ff' },
+    { name: 'Dana', logo: 'DANA', color: '#eef7ff' },
+    { name: 'Ford', logo: 'Ford', color: '#edf3ff' },
+  ];
+  const selectedSupplierCustomer =
+    supplierPortalCustomers.find((customer) => customer.name === supplierSelectedCustomer) ?? supplierPortalCustomers[0];
+  const supplierPortalNavItems = [
+    { label: 'Overview', icon: Blocks },
+    { label: 'Transfers', icon: Truck },
+    { label: 'Documents', icon: FileUp },
+    { label: 'Vouchers', icon: Database },
+    { label: 'Settings', icon: Gauge },
+  ];
+  const setAccessMode = (mode: WorkspaceAccessMode) => {
+    setWorkspaceAccessMode(mode);
+    setTabletSidebarExpanded(false);
+    setSupplierCustomerPickerOpen(false);
+  };
+  const joinCustomerWorkspace = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setSupplierJoinDialogOpen(false);
+    setSupplierInvitationCode('');
+    setSupplierJoinMessage('Invitation code received. Customer join flow will be connected soon.');
+  };
   const isMesPage =
     activePath === '/workspace/manufacturing-ops/mes'
     || activePath.startsWith('/workspace/manufacturing-ops/mes/');
@@ -3278,7 +3351,7 @@ function LoggedDashboardPage({
   };
   const getManufacturingAppPosition = (moduleLabel: string, index: number) => {
     const positionsByModule: Record<string, number[]> = {
-      MES: [1, 2, 4, 5, 6, 7, 9, 10],
+      MES: [1, 2, 4, 5, 6, 7, 8, 9, 10],
       APS: [1, 4, 5, 6, 8],
       'Operations Intelligence': [1, 2, 4, 5, 8],
     };
@@ -3301,6 +3374,18 @@ function LoggedDashboardPage({
   };
   const activeMesModule = mesModules.find((module) => activePath === module.path);
   const isOperatorTerminalPage = activePath === '/workspace/manufacturing-ops/mes/operator-terminal';
+  const isSupplierOperationsPage = activePath === '/workspace/manufacturing-ops/mes/suppliers';
+  const supplierContextTabs: Array<{
+    value: SupplierContextTab;
+    label: string;
+    icon: React.ComponentType<{ size?: number }>;
+  }> = [
+    { value: 'dashboard', label: 'Dashboard', icon: ClipboardCheck },
+    { value: 'transfers', label: 'Transfers', icon: PackageCheck },
+    { value: 'suppliers', label: 'Suppliers', icon: Building2 },
+    { value: 'vouchers-docs', label: 'Vouchers and Docs', icon: FileUp },
+    { value: 'check-in-out', label: 'Check in/out', icon: Truck },
+  ];
   const activeManufacturingOrganizationId = manufacturingOrganization
     && !manufacturingOrganization.id.startsWith('local-')
     && !manufacturingOrganization.id.startsWith('joined-')
@@ -3347,6 +3432,16 @@ function LoggedDashboardPage({
     }
     if (activePath === '/workspace/manufacturing-ops/mes/traceability') {
       return <TraceabilityWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} />;
+    }
+    if (isSupplierOperationsPage) {
+      return (
+        <SupplierOperationsWorkspace
+          onNavigate={onNavigate}
+          organizationId={activeManufacturingOrganizationId}
+          activeTab={supplierContextTab}
+          onActiveTabChange={setSupplierContextTab}
+        />
+      );
     }
     return null;
   };
@@ -3891,58 +3986,180 @@ function LoggedDashboardPage({
   ) : null;
 
   return (
-    <main className={['logged-shell', isOperatorTerminalPage ? 'operator-terminal-shell' : ''].filter(Boolean).join(' ')}>
-      <aside className={['logged-sidebar', tabletSidebarExpanded ? 'tablet-expanded' : ''].filter(Boolean).join(' ')}>
-        <div className="logged-sidebar-title">
-          <div>
-            <span>YVIMO</span>
-            <strong>{t('Dashboard')}</strong>
-          </div>
-          <button
-            className="logged-sidebar-toggle"
-            type="button"
-            aria-label={tabletSidebarExpanded ? 'Collapse dashboard menu' : 'Expand dashboard menu'}
-            onClick={() => setTabletSidebarExpanded((expanded) => !expanded)}
-          >
-            <Menu size={18} />
-          </button>
-        </div>
-        <nav aria-label="Dashboard navigation">
-          {navItems.map((item, index) => {
-            const Icon = item.icon;
-            const active = activePath === item.path
-              || (item.path === '/academy' && activePath.startsWith('/academy'))
-              || (item.path === '/portal/gateway-online' && (
-                activePath.startsWith('/portal/gateway-online')
-                || activePath.startsWith('/dashboard/gateway')
-              ))
-              || (item.path === '/workspace/manufacturing-ops' && activePath.startsWith('/workspace/manufacturing-ops'))
-              || (item.path === '/portal/engineering-tools' && (
-                activePath.startsWith('/portal/engineering-tools')
-                || activePath.startsWith('/dashboard/engineering-tools')
-              ));
-            return (
+    <main className={[
+      'logged-shell',
+      isOperatorTerminalPage ? 'operator-terminal-shell' : '',
+      isSupplierOperationsPage ? 'supplier-context-shell' : '',
+      isSupplierAccessOverview ? 'supplier-access-shell' : '',
+      isSupplierAccessOverview && supplierCustomerPickerOpen ? 'supplier-customer-picker-open' : '',
+    ].filter(Boolean).join(' ')}>
+      <aside className={['logged-sidebar', isSupplierAccessOverview ? 'supplier-portal-sidebar' : '', tabletSidebarExpanded ? 'tablet-expanded' : ''].filter(Boolean).join(' ')}>
+        {isSupplierAccessOverview ? (
+          <>
+            <div className="logged-sidebar-title supplier-portal-sidebar-title">
+              <div>
+                <span>YVIMO</span>
+                <strong>Supplier Portal</strong>
+              </div>
               <button
-                className={[active || (index === 0 && activePath === '/dashboard') ? 'active' : '', item.featured ? 'featured' : ''].filter(Boolean).join(' ')}
+                className="logged-sidebar-toggle"
                 type="button"
-                key={item.label}
-                title={t(item.label)}
-                onClick={() => {
-                  setTabletSidebarExpanded(false);
-                  onNavigate(item.path);
-                }}
+                aria-label={tabletSidebarExpanded ? 'Collapse supplier menu' : 'Expand supplier menu'}
+                onClick={() => setTabletSidebarExpanded((expanded) => !expanded)}
               >
-                <Icon size={18} />
-                <span>{t(item.label)}</span>
+                <Menu size={18} />
               </button>
-            );
-          })}
-        </nav>
+            </div>
+
+            <div className="supplier-company-identity-card">
+              <span className="supplier-company-logo" aria-hidden="true">RN</span>
+              <div>
+                <span>Supplier Company</span>
+                <strong>Recubrimientos del Norte</strong>
+              </div>
+            </div>
+
+            <div className="supplier-customer-card">
+              <span>Selected Customer</span>
+              <button
+                className="supplier-selected-customer-card"
+                type="button"
+                aria-expanded={supplierCustomerPickerOpen}
+                onClick={() => setSupplierCustomerPickerOpen((open) => !open)}
+              >
+                <span className="supplier-customer-logo" style={{ background: selectedSupplierCustomer.color }}>
+                  {selectedSupplierCustomer.logo}
+                </span>
+                <span>
+                  <strong>{selectedSupplierCustomer.name}</strong>
+                </span>
+              </button>
+              <button className="supplier-join-customer-button" type="button" onClick={() => setSupplierJoinDialogOpen(true)}>
+                <Plus size={16} /> Join customer
+              </button>
+            </div>
+
+            <nav aria-label="Supplier portal navigation">
+              {supplierPortalNavItems.map((item, index) => {
+                const Icon = item.icon;
+                return (
+                  <button
+                    className={index === 0 ? 'active' : ''}
+                    type="button"
+                    key={item.label}
+                    title={item.label}
+                  >
+                    <Icon size={18} />
+                    <span>{item.label}</span>
+                  </button>
+                );
+              })}
+            </nav>
+          </>
+        ) : (
+          <>
+            <div className="logged-sidebar-title">
+              <div>
+                <span>YVIMO</span>
+                <strong>{t('Dashboard')}</strong>
+              </div>
+              <button
+                className="logged-sidebar-toggle"
+                type="button"
+                aria-label={tabletSidebarExpanded ? 'Collapse dashboard menu' : 'Expand dashboard menu'}
+                onClick={() => setTabletSidebarExpanded((expanded) => !expanded)}
+              >
+                <Menu size={18} />
+              </button>
+            </div>
+            <nav aria-label="Dashboard navigation">
+              {navItems.map((item, index) => {
+                const Icon = item.icon;
+                const active = activePath === item.path
+                  || (item.path === '/academy' && activePath.startsWith('/academy'))
+                  || (item.path === '/portal/gateway-online' && (
+                    activePath.startsWith('/portal/gateway-online')
+                    || activePath.startsWith('/dashboard/gateway')
+                  ))
+                  || (item.path === '/workspace/manufacturing-ops' && activePath.startsWith('/workspace/manufacturing-ops'))
+                  || (item.path === '/portal/engineering-tools' && (
+                    activePath.startsWith('/portal/engineering-tools')
+                    || activePath.startsWith('/dashboard/engineering-tools')
+                  ));
+                return (
+                  <button
+                    className={[active || (index === 0 && activePath === '/dashboard') ? 'active' : '', item.featured ? 'featured' : ''].filter(Boolean).join(' ')}
+                    type="button"
+                    key={item.label}
+                    title={t(item.label)}
+                    onClick={() => {
+                      setTabletSidebarExpanded(false);
+                      onNavigate(item.path);
+                    }}
+                  >
+                    <Icon size={18} />
+                    <span>{t(item.label)}</span>
+                  </button>
+                );
+              })}
+            </nav>
+          </>
+        )}
         <button className="logged-signout" type="button" title={t('Sign out')} onClick={onSignOut}>
           <LogIn size={18} />
           <span>{t('Sign out')}</span>
         </button>
       </aside>
+
+      {isSupplierAccessOverview && supplierCustomerPickerOpen ? (
+        <aside className="supplier-customer-picker-strip" aria-label="Supplier customer options">
+          <div>
+            <span>Customers</span>
+            <strong>Select customer</strong>
+          </div>
+          <div className="supplier-customer-option-list">
+            {supplierPortalCustomers.map((customer) => (
+              <button
+                className={customer.name === supplierSelectedCustomer ? 'active' : ''}
+                type="button"
+                key={customer.name}
+                onClick={() => {
+                  setSupplierSelectedCustomer(customer.name);
+                  setSupplierCustomerPickerOpen(false);
+                }}
+              >
+                <span className="supplier-customer-logo" style={{ background: customer.color }}>{customer.logo}</span>
+                <strong>{customer.name}</strong>
+              </button>
+            ))}
+          </div>
+        </aside>
+      ) : null}
+
+      {isSupplierOperationsPage ? (
+        <aside className="supplier-shell-context-menu" aria-label="Supplier Operations sections">
+          <div>
+            <span>MES</span>
+            <strong>Suppliers</strong>
+          </div>
+          <nav>
+            {supplierContextTabs.map((tab) => {
+              const Icon = tab.icon;
+              return (
+                <button
+                  type="button"
+                  key={tab.value}
+                  className={supplierContextTab === tab.value ? 'active' : ''}
+                  onClick={() => setSupplierContextTab(tab.value)}
+                >
+                  <Icon size={18} />
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
+          </nav>
+        </aside>
+      ) : null}
 
       <section
         className={[
@@ -4500,9 +4717,81 @@ function LoggedDashboardPage({
               })}
             </section>
           </div>
+        ) : isSupplierAccessOverview ? (
+          <div className="supplier-portal-overview">
+            <div className="access-mode-switch" role="tablist" aria-label="Access mode">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={workspaceAccessMode === 'workspace'}
+                className={workspaceAccessMode === 'workspace' ? 'active' : ''}
+                onClick={() => setAccessMode('workspace')}
+              >
+                Workspace Access
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={workspaceAccessMode === 'supplier'}
+                className={workspaceAccessMode === 'supplier' ? 'active' : ''}
+                onClick={() => setAccessMode('supplier')}
+              >
+                Supplier Access
+              </button>
+            </div>
+
+            <section className="supplier-portal-hero">
+              <p className="eyebrow">Supplier Access</p>
+              <h1>Supplier Portal</h1>
+              <p>External supplier access for customer manufacturing operations.</p>
+              <span>This portal will allow suppliers to confirm received parts, update external process status, upload certificates, and return completed work.</span>
+            </section>
+
+            {supplierJoinMessage ? <div className="supplier-portal-toast" role="status">{supplierJoinMessage}</div> : null}
+
+            <section className="supplier-portal-kpis" aria-label="Supplier portal metrics">
+              {[
+                ['Assigned Transfers', '0'],
+                ['Documents Required', '0'],
+                ['Vouchers', '0'],
+                ['Customer Requests', '0'],
+              ].map(([label, value]) => (
+                <article key={label}>
+                  <span>{label}</span>
+                  <strong>{value}</strong>
+                </article>
+              ))}
+            </section>
+
+            <section className="supplier-portal-empty-state">
+              <Truck size={28} />
+              <strong>No supplier transfers yet.</strong>
+              <p>Select a customer from the sidebar or join a customer using an invitation code.</p>
+            </section>
+          </div>
         ) : (
         <div className="workspace-layout">
           <div className="workspace-main">
+            <div className="access-mode-switch" role="tablist" aria-label="Access mode">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={workspaceAccessMode === 'workspace'}
+                className={workspaceAccessMode === 'workspace' ? 'active' : ''}
+                onClick={() => setAccessMode('workspace')}
+              >
+                Workspace Access
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={workspaceAccessMode === 'supplier'}
+                className={workspaceAccessMode === 'supplier' ? 'active' : ''}
+                onClick={() => setAccessMode('supplier')}
+              >
+                Supplier Access
+              </button>
+            </div>
             <div className="workspace-heading">
               <p className="eyebrow">{t('YVIMO PORTAL')}</p>
               <h1>{t('Workspace overview')}</h1>
@@ -4684,6 +4973,45 @@ function LoggedDashboardPage({
           ) : null}
         </div>
         )}
+        {supplierJoinDialogOpen ? (
+          <div className="supplier-join-dialog-backdrop" role="presentation" onMouseDown={() => setSupplierJoinDialogOpen(false)}>
+            <section
+              className="supplier-join-dialog"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="supplier-join-dialog-title"
+              onMouseDown={(event) => event.stopPropagation()}
+            >
+              <button
+                className="supplier-join-dialog-close"
+                type="button"
+                onClick={() => setSupplierJoinDialogOpen(false)}
+                aria-label="Close"
+              >
+                <X size={18} />
+              </button>
+              <div className="supplier-join-dialog-heading">
+                <span>Supplier Access</span>
+                <h2 id="supplier-join-dialog-title">Join customer workspace</h2>
+                <p>Enter the supplier invitation code provided by your customer.</p>
+              </div>
+              <form onSubmit={joinCustomerWorkspace}>
+                <label>
+                  <span>Invitation code</span>
+                  <input
+                    value={supplierInvitationCode}
+                    onChange={(event) => setSupplierInvitationCode(event.target.value)}
+                    placeholder="GLSN-SUP-2026"
+                  />
+                </label>
+                <div className="supplier-join-dialog-actions">
+                  <button type="button" onClick={() => setSupplierJoinDialogOpen(false)}>Cancel</button>
+                  <button type="submit">Join customer</button>
+                </div>
+              </form>
+            </section>
+          </div>
+        ) : null}
       </section>
     </main>
   );

@@ -59,3 +59,95 @@ export type TraceabilityEvent = {
   partNumber: string;
   notes: string;
 };
+
+export type SupplierApprovedStatus = 'approved' | 'pending-approval' | 'inactive';
+
+export type SupplierTransferStatus =
+  | 'draft'
+  | 'ready-for-checkout'
+  | 'sent-to-supplier'
+  | 'received-back'
+  | 'documents-pending'
+  | 'closed'
+  | 'discrepancy';
+
+export type SupplierDocumentType =
+  | 'certificate'
+  | 'inspection-report'
+  | 'process-report'
+  | 'packing-slip'
+  | 'other';
+
+export type SupplierDocumentApprovalStatus = 'pending-review' | 'approved' | 'rejected';
+
+export type Supplier = {
+  id: string;
+  name: string;
+  contactName: string;
+  email: string;
+  phone: string;
+  address: string;
+  approvedStatus: SupplierApprovedStatus;
+  processCapabilities: string[];
+  notes: string;
+};
+
+export type SupplierDocument = {
+  id: string;
+  transferId: string;
+  supplier: string;
+  documentType: SupplierDocumentType;
+  fileName: string;
+  fileUrl: string;
+  uploadedBy: string;
+  uploadedAt: string;
+  approvalStatus: SupplierDocumentApprovalStatus;
+  hash?: string;
+};
+
+export type SupplierVoucher = {
+  id: string;
+  transferId: string;
+  direction: 'outbound' | 'inbound';
+  supplier: string;
+  productionOrder: string;
+  partNumber: string;
+  lotSerial: string;
+  quantitySent: number;
+  quantityReceived?: number;
+  quantityAccepted?: number;
+  quantityRejected?: number;
+  externalProcess: string;
+  checkoutDate?: string;
+  checkedOutBy?: string;
+  receivedDate?: string;
+  receivedBy?: string;
+  expectedReturnDate: string;
+  documentsReceived?: SupplierDocumentType[];
+  notes: string;
+};
+
+export type SupplierTransfer = {
+  id: string;
+  productionOrder: string;
+  supplierId: string;
+  supplierName: string;
+  externalProcess: string;
+  partNumber: string;
+  lotSerial: string;
+  quantitySent: number;
+  quantityReceived: number;
+  quantityAccepted: number;
+  quantityRejected: number;
+  status: SupplierTransferStatus;
+  expectedReturnDate: string;
+  requiredDocuments: SupplierDocumentType[];
+  receivedDocuments: SupplierDocumentType[];
+  documents: SupplierDocument[];
+  vouchers: SupplierVoucher[];
+  notes: string;
+  checkoutNotes: string;
+  receivedNotes: string;
+  createdAt: string;
+  updatedAt: string;
+};
