@@ -1,8 +1,10 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import {
   ArrowLeft,
   Building2,
   Check,
+  ChevronDown,
   ClipboardCheck,
   Eye,
   FileText,
@@ -12,6 +14,7 @@ import {
   Upload,
   X,
 } from 'lucide-react';
+import { resolveGooglePlacesAddressMatch, searchGooglePlacesAddressMatches, type GooglePlacesAddressMatch } from '../lib/maps/googlePlacesAddressLookup';
 import { mockProductionOrders, mockSupplierTransfers, mockSuppliers } from './mesMockData';
 import type {
   Supplier,
@@ -29,7 +32,7 @@ type SupplierOperationsWorkspaceProps = {
   onActiveTabChange: (tab: SupplierContextTab) => void;
 };
 
-type SupplierModalMode = 'create' | 'checkout' | 'checkin' | 'document' | 'document-preview' | 'voucher' | null;
+type SupplierModalMode = 'create' | 'supplier' | 'checkout' | 'checkin' | 'document' | 'document-preview' | 'voucher' | null;
 export type SupplierContextTab = 'dashboard' | 'transfers' | 'suppliers' | 'vouchers-docs' | 'check-in-out';
 
 type SupplierTransferFormState = {
@@ -64,6 +67,34 @@ type DocumentFormState = {
   approvalStatus: SupplierDocument['approvalStatus'];
 };
 
+type SupplierFormState = {
+  name: string;
+  contactName: string;
+  email: string;
+  phone: string;
+  address: string;
+  approvedStatus: Supplier['approvedStatus'];
+  processCapabilities: string[];
+  capability: string;
+  newCapabilityName: string;
+  newCapabilityColor: string;
+  notes: string;
+};
+
+type AddressLookupState = {
+  status: 'idle' | 'loading' | 'success' | 'error';
+  message: string;
+};
+
+type AddressLookupMatch = GooglePlacesAddressMatch;
+
+type MenuPosition = {
+  top: number;
+  left: number;
+  width: number;
+  maxHeight?: number;
+};
+
 const supplierDocumentOptions: Array<{ value: SupplierDocumentType; label: string }> = [
   { value: 'certificate', label: 'Certificate' },
   { value: 'inspection-report', label: 'Inspection Report' },
@@ -71,6 +102,25 @@ const supplierDocumentOptions: Array<{ value: SupplierDocumentType; label: strin
   { value: 'packing-slip', label: 'Packing Slip' },
   { value: 'other', label: 'Other' },
 ];
+
+const supplierCapabilityColors: Record<string, string> = {
+  'Heat treatment': '#f97316',
+  'Hardness testing': '#0ea5e9',
+  Certification: '#16a34a',
+  'Powder coating': '#8b5cf6',
+  'E-coat': '#0891b2',
+  'Packing slips': '#ca8a04',
+  'Lab testing': '#db2777',
+  'Material reports': '#2563eb',
+  'Dimensional inspection': '#7c3aed',
+  'Zinc plating': '#64748b',
+  'Black oxide': '#334155',
+  Passivation: '#059669',
+};
+
+const supplierCapabilityFallbackColors = ['#f97316', '#0ea5e9', '#16a34a', '#8b5cf6', '#db2777', '#0891b2', '#ca8a04', '#64748b'];
+const registerNewSupplierCapabilityValue = '__register_new_supplier_capability__';
+const supplierCapabilityColorOptions = ['#ff8a1f', '#1d4ed8', '#00a676', '#dc2626', '#8b5cf6', '#f59e0b', '#14b8a6', '#ec4899'];
 
 const defaultTransferForm: SupplierTransferFormState = {
   productionOrder: mockProductionOrders[0]?.orderNumber ?? '',
@@ -84,7 +134,96 @@ const defaultTransferForm: SupplierTransferFormState = {
   notes: '',
 };
 
+const defaultSupplierForm: SupplierFormState = {
+  name: '',
+  contactName: '',
+  email: '',
+  phone: '',
+  address: '',
+  approvedStatus: 'pending-approval',
+  processCapabilities: [],
+  capability: '',
+  newCapabilityName: '',
+  newCapabilityColor: supplierCapabilityColorOptions[0],
+  notes: '',
+};
+
 const formatSupplierLabel = (value: string) => value.replace(/-/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+
+const getSupplierInitials = (name: string) => name.split(/\s+/).slice(0, 2).map((word) => word[0]).join('').toUpperCase();
+
+const getDefaultSupplierCapabilityColor = (capability: string) => {
+  if (supplierCapabilityColors[capability]) return supplierCapabilityColors[capability];
+  const colorIndex = Array.from(capability).reduce((total, character) => total + character.charCodeAt(0), 0) % supplierCapabilityFallbackColors.length;
+  return supplierCapabilityFallbackColors[colorIndex];
+};
+
+function normalizeSupplierHexColor(color: string) {
+  return /^#[0-9a-f]{6}$/i.test(color) ? color : supplierCapabilityColorOptions[0];
+}
+
+function supplierHexToRgb(color: string) {
+  const normalizedColor = normalizeSupplierHexColor(color).replace('#', '');
+  return {
+    red: parseInt(normalizedColor.slice(0, 2), 16),
+    green: parseInt(normalizedColor.slice(2, 4), 16),
+    blue: parseInt(normalizedColor.slice(4, 6), 16),
+  };
+}
+
+function supplierRgbToHex(red: number, green: number, blue: number) {
+  const clampChannel = (value: number) => Math.max(0, Math.min(255, Math.round(value)));
+  return `#${[clampChannel(red), clampChannel(green), clampChannel(blue)].map((value) => value.toString(16).padStart(2, '0')).join('')}`;
+}
+
+function supplierRgbToHsv(red: number, green: number, blue: number) {
+  const r = red / 255;
+  const g = green / 255;
+  const b = blue / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const delta = max - min;
+  let hue = 0;
+  if (delta) {
+    if (max === r) hue = 60 * (((g - b) / delta) % 6);
+    if (max === g) hue = 60 * ((b - r) / delta + 2);
+    if (max === b) hue = 60 * ((r - g) / delta + 4);
+  }
+  return {
+    hue: Math.round((hue + 360) % 360),
+    saturation: max ? Math.round((delta / max) * 100) : 0,
+    value: Math.round(max * 100),
+  };
+}
+
+function supplierHsvToHex(hue: number, saturation: number, value: number) {
+  const h = ((hue % 360) + 360) % 360;
+  const s = Math.max(0, Math.min(100, saturation)) / 100;
+  const v = Math.max(0, Math.min(100, value)) / 100;
+  const chroma = v * s;
+  const x = chroma * (1 - Math.abs(((h / 60) % 2) - 1));
+  const match = v - chroma;
+  const [r1, g1, b1] = h < 60 ? [chroma, x, 0]
+    : h < 120 ? [x, chroma, 0]
+      : h < 180 ? [0, chroma, x]
+        : h < 240 ? [0, x, chroma]
+          : h < 300 ? [x, 0, chroma]
+            : [chroma, 0, x];
+  return supplierRgbToHex((r1 + match) * 255, (g1 + match) * 255, (b1 + match) * 255);
+}
+
+function supplierHexToHsv(color: string) {
+  const rgb = supplierHexToRgb(color);
+  return supplierRgbToHsv(rgb.red, rgb.green, rgb.blue);
+}
+
+async function searchSupplierAddressMatches(query: string, limit = 5, signal?: AbortSignal): Promise<AddressLookupMatch[]> {
+  return searchGooglePlacesAddressMatches(query, limit, signal);
+}
+
+async function resolveSupplierAddressMatch(match: AddressLookupMatch, signal?: AbortSignal): Promise<AddressLookupMatch | null> {
+  return resolveGooglePlacesAddressMatch(match, signal);
+}
 
 const formatSupplierDate = (value: string) =>
   new Intl.DateTimeFormat('en-US', { month: 'short', day: '2-digit', year: 'numeric' }).format(new Date(`${value}T12:00:00`));
@@ -183,25 +322,53 @@ function SupplierVoucherView({ voucher }: { voucher: SupplierVoucher }) {
 }
 
 export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTabChange }: SupplierOperationsWorkspaceProps) {
-  const [suppliers] = React.useState<Supplier[]>(mockSuppliers);
+  const [suppliers, setSuppliers] = React.useState<Supplier[]>(mockSuppliers);
   const [transfers, setTransfers] = React.useState<SupplierTransfer[]>(mockSupplierTransfers);
   const [selectedTransferId, setSelectedTransferId] = React.useState(mockSupplierTransfers[0]?.id ?? '');
   const [modalMode, setModalMode] = React.useState<SupplierModalMode>(null);
   const [activeVoucher, setActiveVoucher] = React.useState<SupplierVoucher | null>(null);
   const [transferForm, setTransferForm] = React.useState<SupplierTransferFormState>(defaultTransferForm);
+  const [supplierForm, setSupplierForm] = React.useState<SupplierFormState>(defaultSupplierForm);
+  const [customSupplierCapabilityColors, setCustomSupplierCapabilityColors] = React.useState<Record<string, string>>({});
+  const [addressLookup, setAddressLookup] = React.useState<AddressLookupState>({ status: 'idle', message: '' });
+  const [addressSuggestions, setAddressSuggestions] = React.useState<AddressLookupMatch[]>([]);
+  const [showAddressSuggestions, setShowAddressSuggestions] = React.useState(false);
+  const [addressSuggestionsLoading, setAddressSuggestionsLoading] = React.useState(false);
+  const [addressSuggestionPosition, setAddressSuggestionPosition] = React.useState<MenuPosition | null>(null);
+  const [showCapabilityDropdown, setShowCapabilityDropdown] = React.useState(false);
+  const [capabilityDropdownPosition, setCapabilityDropdownPosition] = React.useState<MenuPosition | null>(null);
+  const [showCapabilityColorPicker, setShowCapabilityColorPicker] = React.useState(false);
+  const [capabilityColorPickerPosition, setCapabilityColorPickerPosition] = React.useState<Omit<MenuPosition, 'maxHeight'> | null>(null);
   const [checkoutForm, setCheckoutForm] = React.useState<CheckoutFormState>({ quantitySent: '', notes: '', confirmed: false });
   const [checkinForm, setCheckinForm] = React.useState<CheckinFormState>({ quantityReceived: '', quantityAccepted: '', quantityRejected: '0', receivedDocuments: [], notes: '' });
   const [documentForm, setDocumentForm] = React.useState<DocumentFormState>({ documentType: 'certificate', fileName: '', approvalStatus: 'pending-review' });
   const [previewDocument, setPreviewDocument] = React.useState<SupplierDocument | null>(null);
+  const addressLookupControlRef = React.useRef<HTMLDivElement | null>(null);
+  const addressSuggestionMenuRef = React.useRef<HTMLDivElement | null>(null);
+  const capabilityDropdownControlRef = React.useRef<HTMLDivElement | null>(null);
+  const capabilityDropdownMenuRef = React.useRef<HTMLDivElement | null>(null);
+  const capabilityColorTriggerRef = React.useRef<HTMLSpanElement | null>(null);
+  const capabilityColorPickerRef = React.useRef<HTMLDivElement | null>(null);
 
   const selectedTransfer = transfers.find((transfer) => transfer.id === selectedTransferId) ?? transfers[0] ?? null;
   const todayIsoDate = getTodayIsoDate();
-  const transferCount = transfers.length;
   const sentTransfers = transfers.filter((transfer) => transfer.status === 'sent-to-supplier').length;
   const pendingReturn = transfers.filter((transfer) => ['sent-to-supplier', 'ready-for-checkout'].includes(transfer.status)).length;
   const missingDocuments = transfers.filter((transfer) => getMissingDocuments(transfer).length > 0 && ['received-back', 'documents-pending', 'discrepancy'].includes(transfer.status)).length;
   const overdueTransfers = transfers.filter((transfer) => transfer.expectedReturnDate < todayIsoDate && !['closed'].includes(transfer.status)).length;
   const activeSupplierTransfers = transfers.filter((transfer) => transfer.status !== 'closed');
+  const sentToSupplierTransfers = transfers.filter((transfer) => transfer.status === 'sent-to-supplier');
+  const pendingReturnTransfers = transfers.filter((transfer) => ['sent-to-supplier', 'ready-for-checkout'].includes(transfer.status));
+  const missingDocumentTransfers = transfers.filter((transfer) => getMissingDocuments(transfer).length > 0 && ['received-back', 'documents-pending', 'discrepancy'].includes(transfer.status));
+  const allSupplierCapabilityTags = React.useMemo(() => Array.from(new Set([
+    ...Object.keys(supplierCapabilityColors),
+    ...suppliers.flatMap((supplier) => supplier.processCapabilities),
+    ...Object.keys(customSupplierCapabilityColors),
+  ])), [customSupplierCapabilityColors, suppliers]);
+  const supplierCapabilityPickerOptions = React.useMemo(() => allSupplierCapabilityTags.filter((capability) => !supplierForm.processCapabilities.includes(capability)), [allSupplierCapabilityTags, supplierForm.processCapabilities]);
+  const newCapabilityHsv = React.useMemo(() => supplierHexToHsv(supplierForm.newCapabilityColor), [supplierForm.newCapabilityColor]);
+  const presetSupplierCapabilityColorOptions = supplierCapabilityColorOptions.slice(0, 6);
+  const usesCustomSupplierCapabilityColor = !presetSupplierCapabilityColorOptions.includes(supplierForm.newCapabilityColor);
 
   const updateTransfer = (transferId: string, updater: (transfer: SupplierTransfer) => SupplierTransfer) => {
     setTransfers((currentTransfers) => currentTransfers.map((transfer) => transfer.id === transferId ? updater(transfer) : transfer));
@@ -210,6 +377,257 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
   const openCreateTransfer = () => {
     setTransferForm(defaultTransferForm);
     setModalMode('create');
+  };
+
+  const openCreateSupplier = () => {
+    setSupplierForm(defaultSupplierForm);
+    setAddressLookup({ status: 'idle', message: '' });
+    setAddressSuggestions([]);
+    setShowAddressSuggestions(false);
+    setShowCapabilityDropdown(false);
+    setShowCapabilityColorPicker(false);
+    setModalMode('supplier');
+  };
+
+  const getSupplierCapabilityColor = React.useCallback((capability: string) => (
+    customSupplierCapabilityColors[capability] ?? getDefaultSupplierCapabilityColor(capability)
+  ), [customSupplierCapabilityColors]);
+
+  const updateNewSupplierCapabilityColor = (color: string) => {
+    setSupplierForm((current) => ({ ...current, newCapabilityColor: normalizeSupplierHexColor(color) }));
+  };
+
+  const updateNewSupplierCapabilityHue = (value: string) => {
+    updateNewSupplierCapabilityColor(supplierHsvToHex(Number(value) || 0, newCapabilityHsv.saturation, newCapabilityHsv.value));
+  };
+
+  const updateNewSupplierCapabilityColorField = (event: React.PointerEvent<HTMLDivElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const x = Math.max(0, Math.min(rect.width, event.clientX - rect.left));
+    const y = Math.max(0, Math.min(rect.height, event.clientY - rect.top));
+    updateNewSupplierCapabilityColor(supplierHsvToHex(newCapabilityHsv.hue, (x / rect.width) * 100, 100 - ((y / rect.height) * 100)));
+  };
+
+  const startNewSupplierCapabilityColorFieldDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+    event.currentTarget.setPointerCapture(event.pointerId);
+    updateNewSupplierCapabilityColorField(event);
+  };
+
+  const moveNewSupplierCapabilityColorField = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const colorStep = event.shiftKey ? 10 : 2;
+    const nextHsv = { ...newCapabilityHsv };
+    if (event.key === 'ArrowLeft') nextHsv.saturation -= colorStep;
+    else if (event.key === 'ArrowRight') nextHsv.saturation += colorStep;
+    else if (event.key === 'ArrowUp') nextHsv.value += colorStep;
+    else if (event.key === 'ArrowDown') nextHsv.value -= colorStep;
+    else return;
+    event.preventDefault();
+    updateNewSupplierCapabilityColor(supplierHsvToHex(nextHsv.hue, nextHsv.saturation, nextHsv.value));
+  };
+
+  const addSupplierCapability = (capability: string) => {
+    if (!capability || capability === registerNewSupplierCapabilityValue) return;
+    setSupplierForm((current) => ({
+      ...current,
+      capability: '',
+      processCapabilities: current.processCapabilities.includes(capability) ? current.processCapabilities : [...current.processCapabilities, capability],
+    }));
+    setShowCapabilityDropdown(false);
+  };
+
+  const removeSupplierCapability = (capability: string) => {
+    setSupplierForm((current) => ({
+      ...current,
+      processCapabilities: current.processCapabilities.filter((item) => item !== capability),
+    }));
+  };
+
+  const updateAddressSuggestionPosition = React.useCallback(() => {
+    const control = addressLookupControlRef.current;
+    if (!control) return;
+    const rect = control.getBoundingClientRect();
+    const viewportPadding = 16;
+    const availableBelow = window.innerHeight - rect.bottom - viewportPadding;
+    const availableAbove = rect.top - viewportPadding;
+    const maxHeight = Math.max(132, Math.min(246, availableBelow >= 150 ? availableBelow - 8 : availableAbove - 8));
+    const openUp = availableBelow < 150 && availableAbove > availableBelow;
+    const width = Math.min(rect.width, window.innerWidth - (viewportPadding * 2));
+    const left = Math.max(viewportPadding, Math.min(rect.left, window.innerWidth - width - viewportPadding));
+    setAddressSuggestionPosition({
+      top: openUp ? Math.max(viewportPadding, rect.top - maxHeight - 7) : rect.bottom + 7,
+      left,
+      width,
+      maxHeight,
+    });
+  }, []);
+
+  const updateCapabilityDropdownPosition = React.useCallback(() => {
+    const control = capabilityDropdownControlRef.current;
+    if (!control) return;
+    const rect = control.getBoundingClientRect();
+    const viewportPadding = 16;
+    const availableBelow = window.innerHeight - rect.bottom - viewportPadding;
+    const availableAbove = rect.top - viewportPadding;
+    const maxHeight = Math.max(152, Math.min(260, availableBelow >= 170 ? availableBelow - 8 : availableAbove - 8));
+    const openUp = availableBelow < 170 && availableAbove > availableBelow;
+    const width = Math.min(rect.width, window.innerWidth - (viewportPadding * 2));
+    const left = Math.max(viewportPadding, Math.min(rect.left, window.innerWidth - width - viewportPadding));
+    setCapabilityDropdownPosition({
+      top: openUp ? Math.max(viewportPadding, rect.top - maxHeight - 7) : rect.bottom + 7,
+      left,
+      width,
+      maxHeight,
+    });
+  }, []);
+
+  const updateCapabilityColorPickerPosition = React.useCallback(() => {
+    const trigger = capabilityColorTriggerRef.current;
+    if (!trigger) return;
+    const rect = trigger.getBoundingClientRect();
+    const viewportPadding = 16;
+    const width = Math.min(246, window.innerWidth - (viewportPadding * 2));
+    const left = Math.max(viewportPadding, Math.min(rect.right - width, window.innerWidth - width - viewportPadding));
+    const availableBelow = window.innerHeight - rect.bottom - viewportPadding;
+    const pickerHeight = 286;
+    const openUp = availableBelow < pickerHeight && rect.top > availableBelow;
+    setCapabilityColorPickerPosition({
+      top: openUp ? Math.max(viewportPadding, rect.top - pickerHeight - 8) : rect.bottom + 8,
+      left,
+      width,
+    });
+  }, []);
+
+  React.useLayoutEffect(() => {
+    if (!(showAddressSuggestions || addressSuggestionsLoading)) return;
+    if (addressSuggestions.length === 0 && !addressSuggestionsLoading) return;
+    updateAddressSuggestionPosition();
+  }, [addressSuggestions.length, addressSuggestionsLoading, showAddressSuggestions, updateAddressSuggestionPosition]);
+
+  React.useLayoutEffect(() => {
+    if (!showCapabilityDropdown) return;
+    updateCapabilityDropdownPosition();
+  }, [showCapabilityDropdown, updateCapabilityDropdownPosition]);
+
+  React.useLayoutEffect(() => {
+    if (!showCapabilityColorPicker) return;
+    updateCapabilityColorPickerPosition();
+  }, [showCapabilityColorPicker, updateCapabilityColorPickerPosition]);
+
+  React.useEffect(() => {
+    if (modalMode !== 'supplier' || supplierForm.address.trim().length < 3) {
+      setAddressSuggestions([]);
+      setShowAddressSuggestions(false);
+      setAddressSuggestionsLoading(false);
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => {
+      setAddressSuggestionsLoading(true);
+      searchSupplierAddressMatches(supplierForm.address.trim(), 5, controller.signal)
+        .then((matches) => {
+          if (controller.signal.aborted) return;
+          setAddressSuggestions(matches);
+          setShowAddressSuggestions(matches.length > 0);
+        })
+        .catch((error) => {
+          if ((error as Error).name !== 'AbortError') {
+            setAddressSuggestions([]);
+            setShowAddressSuggestions(false);
+            setAddressLookup({ status: 'error', message: 'Unable to load Google address suggestions.' });
+          }
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setAddressSuggestionsLoading(false);
+        });
+    }, 350);
+
+    return () => {
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [modalMode, supplierForm.address]);
+
+  React.useEffect(() => {
+    const addressMenuOpen = (showAddressSuggestions || addressSuggestionsLoading) && (addressSuggestions.length > 0 || addressSuggestionsLoading);
+    const capabilityMenuOpen = showCapabilityDropdown;
+    const colorPickerOpen = showCapabilityColorPicker;
+    if (!addressMenuOpen && !capabilityMenuOpen && !colorPickerOpen) return undefined;
+
+    const closeIfOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (addressMenuOpen && (addressLookupControlRef.current?.contains(target) || addressSuggestionMenuRef.current?.contains(target))) return;
+      if (capabilityMenuOpen && (capabilityDropdownControlRef.current?.contains(target) || capabilityDropdownMenuRef.current?.contains(target))) return;
+      if (colorPickerOpen && (capabilityColorTriggerRef.current?.contains(target) || capabilityColorPickerRef.current?.contains(target))) return;
+      setShowAddressSuggestions(false);
+      setShowCapabilityDropdown(false);
+      setShowCapabilityColorPicker(false);
+    };
+    const reposition = () => {
+      if (addressMenuOpen) updateAddressSuggestionPosition();
+      if (capabilityMenuOpen) updateCapabilityDropdownPosition();
+      if (colorPickerOpen) updateCapabilityColorPickerPosition();
+    };
+
+    document.addEventListener('mousedown', closeIfOutside);
+    window.addEventListener('resize', reposition);
+    window.addEventListener('scroll', reposition, true);
+    return () => {
+      document.removeEventListener('mousedown', closeIfOutside);
+      window.removeEventListener('resize', reposition);
+      window.removeEventListener('scroll', reposition, true);
+    };
+  }, [
+    addressSuggestions.length,
+    addressSuggestionsLoading,
+    showAddressSuggestions,
+    showCapabilityDropdown,
+    showCapabilityColorPicker,
+    updateAddressSuggestionPosition,
+    updateCapabilityDropdownPosition,
+    updateCapabilityColorPickerPosition,
+  ]);
+
+  const lookupSupplierAddress = async (): Promise<AddressLookupMatch | null> => {
+    const address = supplierForm.address.trim();
+    if (!address) {
+      setAddressLookup({ status: 'error', message: 'Enter an address before searching.' });
+      return null;
+    }
+    setAddressLookup({ status: 'loading', message: 'Searching address...' });
+    try {
+      const match = (await searchSupplierAddressMatches(address, 1))[0];
+      const resolvedMatch = match ? await resolveSupplierAddressMatch(match) : null;
+      if (!resolvedMatch) {
+        setAddressLookup({ status: 'error', message: 'No match found. Try street, city, state, and country.' });
+        return null;
+      }
+      setSupplierForm((current) => ({ ...current, address: resolvedMatch.address }));
+      setAddressSuggestions([]);
+      setShowAddressSuggestions(false);
+      setAddressLookup({ status: 'success', message: `Location found: ${Number(resolvedMatch.latitude).toFixed(5)}, ${Number(resolvedMatch.longitude).toFixed(5)}` });
+      return resolvedMatch;
+    } catch {
+      setAddressLookup({ status: 'error', message: 'Could not reach the address lookup service. Try again in a moment.' });
+      return null;
+    }
+  };
+
+  const selectAddressSuggestion = async (match: AddressLookupMatch) => {
+    setAddressLookup({ status: 'loading', message: 'Loading selected address...' });
+    try {
+      const resolvedMatch = await resolveSupplierAddressMatch(match);
+      if (!resolvedMatch) {
+        setAddressLookup({ status: 'error', message: 'Could not load the selected address details.' });
+        return;
+      }
+      setSupplierForm((current) => ({ ...current, address: resolvedMatch.address }));
+      setAddressSuggestions([]);
+      setShowAddressSuggestions(false);
+      setAddressLookup({ status: 'success', message: `Location found: ${Number(resolvedMatch.latitude).toFixed(5)}, ${Number(resolvedMatch.longitude).toFixed(5)}` });
+    } catch {
+      setAddressLookup({ status: 'error', message: 'Could not load the selected address details.' });
+    }
   };
 
   const openCheckout = (transfer: SupplierTransfer) => {
@@ -279,6 +697,37 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
     setTransfers((currentTransfers) => [transfer, ...currentTransfers]);
     setSelectedTransferId(transfer.id);
     onActiveTabChange('transfers');
+    setModalMode(null);
+  };
+
+  const createSupplier = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const normalizedName = supplierForm.name.trim();
+    const newCapability = supplierForm.capability === registerNewSupplierCapabilityValue ? supplierForm.newCapabilityName.trim() : '';
+    const capabilities = Array.from(new Set([
+      ...supplierForm.processCapabilities,
+      ...(newCapability ? [newCapability] : []),
+    ].map((capability) => capability.trim()).filter(Boolean)));
+    if (supplierForm.capability === registerNewSupplierCapabilityValue && !newCapability) return;
+    const supplier: Supplier = {
+      id: `sup-${normalizedName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'supplier'}-${String(suppliers.length + 1).padStart(2, '0')}`,
+      name: normalizedName,
+      contactName: supplierForm.contactName.trim(),
+      email: supplierForm.email.trim(),
+      phone: supplierForm.phone.trim(),
+      address: supplierForm.address.trim(),
+      approvedStatus: supplierForm.approvedStatus,
+      processCapabilities: capabilities.length ? capabilities : ['General supplier'],
+      notes: supplierForm.notes.trim(),
+    };
+    if (newCapability) {
+      setCustomSupplierCapabilityColors((currentColors) => ({
+        ...currentColors,
+        [newCapability]: supplierForm.newCapabilityColor,
+      }));
+    }
+    setSuppliers((currentSuppliers) => [supplier, ...currentSuppliers]);
+    onActiveTabChange('suppliers');
     setModalMode(null);
   };
 
@@ -389,13 +838,51 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
     setModalMode(null);
   };
 
+  const renderKpiTransferTray = (items: SupplierTransfer[]) => (
+    <div className="supplier-kpi-transfer-tray">
+      {items.length > 0 ? items.map((transfer) => (
+        <button
+          key={transfer.id}
+          type="button"
+          onClick={() => {
+            setSelectedTransferId(transfer.id);
+            onActiveTabChange('transfers');
+          }}
+        >
+          <span>{transfer.id}</span>
+          <strong>{transfer.supplierName}</strong>
+          <em>{formatSupplierDate(transfer.expectedReturnDate)}</em>
+        </button>
+      )) : (
+        <p>No transfers</p>
+      )}
+    </div>
+  );
+
   const supplierKpiGrid = (
     <div className="supplier-kpi-grid">
-      <article><span><ClipboardCheck size={16} /> Active Transfers</span><strong>{transferCount}</strong><em>open supplier records</em></article>
-      <article><span><Truck size={16} /> Sent to Supplier</span><strong>{sentTransfers}</strong><em>physically checked out</em></article>
-      <article><span><PackageCheck size={16} /> Pending Return</span><strong>{pendingReturn}</strong><em>ready or in transit</em></article>
-      <article><span><FileText size={16} /> Missing Documents</span><strong>{missingDocuments}</strong><em>requires supplier docs</em></article>
-      <article><span><Check size={16} /> Overdue Transfers</span><strong>{overdueTransfers}</strong><em>past expected return</em></article>
+      <div className="supplier-kpi-group supplier-kpi-group-primary">
+        <article><span><ClipboardCheck size={16} /> Active Transfers</span><strong>{activeSupplierTransfers.length}</strong><em>open supplier records</em></article>
+        <article className={`supplier-overdue-kpi ${overdueTransfers > 0 ? 'risk' : 'clear'}`}>
+          <span><Check size={16} /> Overdue Transfers</span>
+          <strong>{overdueTransfers}</strong>
+          <em>past expected return</em>
+        </article>
+      </div>
+      <div className="supplier-kpi-group supplier-kpi-group-secondary">
+        <div className="supplier-kpi-stack">
+          <article><span><Truck size={16} /> Sent to Supplier</span><strong>{sentTransfers}</strong><em>physically checked out</em></article>
+          {renderKpiTransferTray(sentToSupplierTransfers)}
+        </div>
+        <div className="supplier-kpi-stack">
+          <article><span><PackageCheck size={16} /> Pending Return</span><strong>{pendingReturn}</strong><em>ready or in transit</em></article>
+          {renderKpiTransferTray(pendingReturnTransfers)}
+        </div>
+        <div className="supplier-kpi-stack">
+          <article><span><FileText size={16} /> Missing Documents</span><strong>{missingDocuments}</strong><em>requires supplier docs</em></article>
+          {renderKpiTransferTray(missingDocumentTransfers)}
+        </div>
+      </div>
     </div>
   );
 
@@ -552,14 +1039,31 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
       <div className="supplier-card-grid">
         {suppliers.map((supplier) => (
           <article key={supplier.id}>
-            <div>
-              <strong>{supplier.name}</strong>
-              <SupplierStatusBadge status={supplier.approvedStatus} />
+            <div className="supplier-card-main">
+              <div className="supplier-card-copy">
+                <div className="supplier-card-topline">
+                  <strong>{supplier.name}</strong>
+                  <SupplierStatusBadge status={supplier.approvedStatus} />
+                </div>
+                <span>{supplier.contactName}</span>
+                <span>{supplier.email}</span>
+                <span>{supplier.phone}</span>
+                <div className="supplier-capability-pills">
+                  {supplier.processCapabilities.map((capability) => (
+                    <em
+                      key={capability}
+                      style={{ '--supplier-pill-color': getSupplierCapabilityColor(capability) } as React.CSSProperties}
+                    >
+                      {capability}
+                    </em>
+                  ))}
+                </div>
+                <p>{supplier.notes}</p>
+              </div>
+              <div className="supplier-logo-frame" aria-label={`${supplier.name} logo`}>
+                <span>{getSupplierInitials(supplier.name)}</span>
+              </div>
             </div>
-            <span>{supplier.contactName} / {supplier.email}</span>
-            <span>{supplier.phone}</span>
-            <em>{supplier.processCapabilities.join(', ')}</em>
-            <p>{supplier.notes}</p>
           </article>
         ))}
       </div>
@@ -688,6 +1192,120 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
     </section>
   );
 
+  const addressSuggestionMenu = (showAddressSuggestions || addressSuggestionsLoading) && (addressSuggestions.length > 0 || addressSuggestionsLoading) && addressSuggestionPosition
+    ? createPortal(
+      <div
+        className="address-suggestion-menu supplier-modal-floating-menu"
+        role="listbox"
+        aria-label="Address suggestions"
+        ref={addressSuggestionMenuRef}
+        style={{
+          top: addressSuggestionPosition.top,
+          left: addressSuggestionPosition.left,
+          width: addressSuggestionPosition.width,
+          maxHeight: addressSuggestionPosition.maxHeight,
+        }}
+      >
+        {addressSuggestionsLoading ? <span className="address-suggestion-loading">Searching locations...</span> : null}
+        {addressSuggestions.map((suggestion) => (
+          <button type="button" role="option" key={suggestion.placeId ?? suggestion.address} onClick={() => { void selectAddressSuggestion(suggestion); }}>
+            <strong>{suggestion.address.split(',')[0]}</strong>
+            <span>{suggestion.address.split(',').slice(1).join(',').trim()}</span>
+          </button>
+        ))}
+      </div>,
+      document.body,
+    )
+    : null;
+
+  const capabilityDropdownMenu = showCapabilityDropdown && capabilityDropdownPosition
+    ? createPortal(
+      <div
+        className="address-suggestion-menu supplier-modal-floating-menu supplier-capability-dropdown-menu"
+        role="listbox"
+        aria-label="Supplier capabilities"
+        ref={capabilityDropdownMenuRef}
+        style={{
+          top: capabilityDropdownPosition.top,
+          left: capabilityDropdownPosition.left,
+          width: capabilityDropdownPosition.width,
+          maxHeight: capabilityDropdownPosition.maxHeight,
+        }}
+      >
+        {supplierCapabilityPickerOptions.map((capability) => (
+          <button type="button" role="option" key={capability} onClick={() => addSupplierCapability(capability)}>
+            <strong>{capability}</strong>
+          </button>
+        ))}
+        <button
+          type="button"
+          role="option"
+          className="supplier-register-capability-option"
+          onClick={() => {
+            setSupplierForm((current) => ({ ...current, capability: registerNewSupplierCapabilityValue }));
+            setShowCapabilityDropdown(false);
+          }}
+        >
+          <strong>+ Register new capability</strong>
+        </button>
+      </div>,
+      document.body,
+    )
+    : null;
+
+  const capabilityColorPicker = showCapabilityColorPicker && capabilityColorPickerPosition
+    ? createPortal(
+      <div
+        className="capability-color-popover supplier-modal-color-popover"
+        ref={capabilityColorPickerRef}
+        role="dialog"
+        aria-label="Custom capability color"
+        style={{
+          top: capabilityColorPickerPosition.top,
+          left: capabilityColorPickerPosition.left,
+          width: capabilityColorPickerPosition.width,
+        }}
+      >
+        <div className="capability-color-preview" aria-live="polite">
+          <span style={{ backgroundColor: supplierForm.newCapabilityColor }} />
+          <strong>{supplierForm.newCapabilityColor.toUpperCase()}</strong>
+        </div>
+        <div className="capability-visual-picker">
+          <div
+            className="capability-color-field"
+            role="slider"
+            tabIndex={0}
+            aria-label="Capability color saturation and brightness"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={Math.round(newCapabilityHsv.value)}
+            aria-valuetext={`${Math.round(newCapabilityHsv.saturation)} percent saturation, ${Math.round(newCapabilityHsv.value)} percent brightness`}
+            style={{ backgroundColor: supplierHsvToHex(newCapabilityHsv.hue, 100, 100) }}
+            onPointerDown={startNewSupplierCapabilityColorFieldDrag}
+            onPointerMove={(event) => { if (event.buttons || event.pointerType !== 'mouse') updateNewSupplierCapabilityColorField(event); }}
+            onKeyDown={moveNewSupplierCapabilityColorField}
+          >
+            <span
+              style={{
+                left: `${newCapabilityHsv.saturation}%`,
+                top: `${100 - newCapabilityHsv.value}%`,
+              }}
+            />
+          </div>
+          <label className="capability-hue-slider">
+            <span aria-hidden="true">#</span>
+            <input type="range" min="0" max="359" value={newCapabilityHsv.hue} onChange={(event) => updateNewSupplierCapabilityHue(event.target.value)} aria-label="Capability color hue" />
+          </label>
+        </div>
+        <button className="capability-color-apply" type="button" onClick={() => setShowCapabilityColorPicker(false)}>
+          <Check size={15} />
+          Use color
+        </button>
+      </div>,
+      document.body,
+    )
+    : null;
+
   const renderModal = () => {
     if (!modalMode) return null;
 
@@ -752,6 +1370,134 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
               <div className="supplier-modal-actions">
                 <button type="button" onClick={() => setModalMode(null)}>Cancel</button>
                 <button type="submit"><Plus size={16} /> Create Transfer</button>
+              </div>
+            </form>
+          ) : null}
+
+          {modalMode === 'supplier' ? (
+            <form onSubmit={createSupplier}>
+              <div className="supplier-modal-header">
+                <span>Supplier</span>
+                <strong>Add New Supplier</strong>
+              </div>
+              <div className="supplier-form-grid">
+                <label>
+                  Company Name
+                  <input required value={supplierForm.name} onChange={(event) => setSupplierForm((current) => ({ ...current, name: event.target.value }))} />
+                </label>
+                <label>
+                  Status
+                  <select value={supplierForm.approvedStatus} onChange={(event) => setSupplierForm((current) => ({ ...current, approvedStatus: event.target.value as Supplier['approvedStatus'] }))}>
+                    <option value="approved">Approved</option>
+                    <option value="pending-approval">Pending Approval</option>
+                    <option value="inactive">Inactive</option>
+                  </select>
+                </label>
+                <label>
+                  Contact Name
+                  <input required value={supplierForm.contactName} onChange={(event) => setSupplierForm((current) => ({ ...current, contactName: event.target.value }))} />
+                </label>
+                <label>
+                  Email
+                  <input required type="email" value={supplierForm.email} onChange={(event) => setSupplierForm((current) => ({ ...current, email: event.target.value }))} />
+                </label>
+                <label>
+                  Phone
+                  <input required value={supplierForm.phone} onChange={(event) => setSupplierForm((current) => ({ ...current, phone: event.target.value }))} />
+                </label>
+                <label className="supplier-form-wide work-center-address-field">
+                  Address
+                  <div className="address-lookup-control" ref={addressLookupControlRef}>
+                    <input
+                      value={supplierForm.address}
+                      onChange={(event) => {
+                        setSupplierForm((current) => ({ ...current, address: event.target.value }));
+                        setAddressLookup({ status: 'idle', message: '' });
+                        setShowAddressSuggestions(true);
+                      }}
+                      onFocus={() => setShowAddressSuggestions(addressSuggestions.length > 0)}
+                      placeholder="Street, city, state, country"
+                    />
+                    <button type="button" onClick={() => { void lookupSupplierAddress(); }} disabled={addressLookup.status === 'loading'}>
+                      {addressLookup.status === 'loading' ? 'Searching...' : 'Find address'}
+                    </button>
+                  </div>
+                  {addressLookup.message ? <small className={`address-lookup-message ${addressLookup.status}`}>{addressLookup.message}</small> : null}
+                </label>
+              </div>
+              <div className="supplier-form-wide supplier-capability-field">
+                <span>Services / Capabilities</span>
+                <div className="supplier-selected-capabilities">
+                  {supplierForm.processCapabilities.map((capability) => (
+                    <button
+                      type="button"
+                      key={capability}
+                      style={{ '--supplier-pill-color': getSupplierCapabilityColor(capability) } as React.CSSProperties}
+                      onClick={() => removeSupplierCapability(capability)}
+                    >
+                      {capability}
+                      <X size={13} />
+                    </button>
+                  ))}
+                  {supplierForm.processCapabilities.length ? null : <em>No capabilities selected</em>}
+                </div>
+                <div className="supplier-capability-select" ref={capabilityDropdownControlRef}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowCapabilityDropdown((current) => !current);
+                      setShowCapabilityColorPicker(false);
+                    }}
+                  >
+                    <span>{supplierForm.capability === registerNewSupplierCapabilityValue ? 'Registering new capability' : 'Select capability'}</span>
+                    <ChevronDown size={16} />
+                  </button>
+                </div>
+              </div>
+              {supplierForm.capability === registerNewSupplierCapabilityValue ? (
+                <div className="station-new-capability supplier-form-wide">
+                  <label>Capability Name<input value={supplierForm.newCapabilityName} onChange={(event) => setSupplierForm((current) => ({ ...current, newCapabilityName: event.target.value }))} required /></label>
+                  <div className="station-new-capability-color" role="group" aria-labelledby="supplier-new-capability-color-label">
+                    <span id="supplier-new-capability-color-label">Capability Color</span>
+                    <div className="capability-color-picker">
+                      {presetSupplierCapabilityColorOptions.map((color) => (
+                        <button
+                          className={supplierForm.newCapabilityColor === color ? 'selected' : ''}
+                          type="button"
+                          key={color}
+                          aria-label={`Select capability color ${color}`}
+                          style={{ backgroundColor: color }}
+                          onClick={() => {
+                            updateNewSupplierCapabilityColor(color);
+                            setShowCapabilityColorPicker(false);
+                          }}
+                        />
+                      ))}
+                      <span className="capability-custom-color-wrap" ref={capabilityColorTriggerRef}>
+                        <button
+                          className={showCapabilityColorPicker || usesCustomSupplierCapabilityColor ? 'selected custom' : 'custom'}
+                          type="button"
+                          aria-label="Pick custom capability color"
+                          style={usesCustomSupplierCapabilityColor ? {
+                            backgroundColor: supplierForm.newCapabilityColor,
+                            color: newCapabilityHsv.value > 72 ? '#07111c' : '#ffffff',
+                          } : undefined}
+                          onClick={() => setShowCapabilityColorPicker((current) => !current)}
+                        >
+                          {usesCustomSupplierCapabilityColor ? <Check size={16} /> : <Plus size={16} />}
+                        </button>
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+              <label>
+                Notes
+                <textarea value={supplierForm.notes} onChange={(event) => setSupplierForm((current) => ({ ...current, notes: event.target.value }))} />
+              </label>
+              <div className="supplier-modal-actions">
+                <button type="button" onClick={() => setModalMode(null)}>Cancel</button>
+                <button type="submit"><Plus size={16} /> Create Supplier</button>
               </div>
             </form>
           ) : null}
@@ -890,6 +1636,9 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
 
   return (
     <section className="mes-workspace-panel supplier-operations-workspace">
+      {addressSuggestionMenu}
+      {capabilityDropdownMenu}
+      {capabilityColorPicker}
       <div className="mes-screen-header">
         <button className="academy-back-button engineering-back-button mes-workspace-back" type="button" onClick={() => onNavigate('/workspace/manufacturing-ops/mes')}>
           <ArrowLeft size={16} />
@@ -901,6 +1650,11 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
           <p>Track external processing, supplier check-outs, returns, vouchers, and supplier documents.</p>
         </div>
         <div className="supplier-header-actions">
+          {activeTab === 'suppliers' ? (
+            <button type="button" className="supplier-header-secondary-action" onClick={openCreateSupplier}>
+              <Plus size={16} /> Add New Supplier
+            </button>
+          ) : null}
           <button type="button" onClick={openCreateTransfer}>
             <Plus size={16} /> Add New Transfer
           </button>
@@ -910,15 +1664,7 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
       <div className="supplier-app-shell">
         <div className="supplier-app-content">
           {activeTab === 'dashboard' ? (
-            <>
-              {supplierKpiGrid}
-              <div className="supplier-workspace-layout supplier-dashboard-layout">
-                <div className="supplier-main-panel">
-                  {supplierTransfersTable}
-                </div>
-                {selectedTransferDetail}
-              </div>
-            </>
+            supplierKpiGrid
           ) : null}
 
           {activeTab === 'transfers' ? (
