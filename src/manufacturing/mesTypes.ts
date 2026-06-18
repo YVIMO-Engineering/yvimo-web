@@ -69,6 +69,7 @@ export type SupplierTransferStatus =
   | 'received-back'
   | 'documents-pending'
   | 'closed'
+  | 'completed'
   | 'discrepancy';
 
 export type SupplierDocumentType =

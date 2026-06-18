@@ -32,8 +32,19 @@ type SupplierOperationsWorkspaceProps = {
   onActiveTabChange: (tab: SupplierContextTab) => void;
 };
 
-type SupplierModalMode = 'create' | 'supplier' | 'checkout' | 'checkin' | 'document' | 'document-preview' | 'voucher' | null;
+type SupplierModalMode = 'create' | 'supplier' | 'checkout' | 'checkin' | 'document' | 'document-preview' | 'supplier-pdf-preview' | 'voucher' | null;
 export type SupplierContextTab = 'dashboard' | 'transfers' | 'suppliers' | 'vouchers-docs' | 'check-in-out';
+
+type SupplierPdfDocument = {
+  label: string;
+  fileName: string;
+  fileUrl: string;
+};
+
+type SupplierRecord = Supplier & {
+  fiscalDocument?: SupplierPdfDocument;
+  bankingDocument?: SupplierPdfDocument;
+};
 
 type SupplierTransferFormState = {
   productionOrder: string;
@@ -78,7 +89,19 @@ type SupplierFormState = {
   capability: string;
   newCapabilityName: string;
   newCapabilityColor: string;
+  fiscalDocumentFile: File | null;
+  bankingDocumentFile: File | null;
   notes: string;
+};
+
+type SupplierDocsFilters = {
+  transferSearch: string;
+  supplierSearch: string;
+  capability: string;
+  workCenter: string;
+  dateFrom: string;
+  dateTo: string;
+  shift: string;
 };
 
 type AddressLookupState = {
@@ -145,7 +168,19 @@ const defaultSupplierForm: SupplierFormState = {
   capability: '',
   newCapabilityName: '',
   newCapabilityColor: supplierCapabilityColorOptions[0],
+  fiscalDocumentFile: null,
+  bankingDocumentFile: null,
   notes: '',
+};
+
+const defaultSupplierDocsFilters: SupplierDocsFilters = {
+  transferSearch: '',
+  supplierSearch: '',
+  capability: '',
+  workCenter: '',
+  dateFrom: '',
+  dateTo: '',
+  shift: '',
 };
 
 const formatSupplierLabel = (value: string) => value.replace(/-/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
@@ -157,6 +192,21 @@ const getDefaultSupplierCapabilityColor = (capability: string) => {
   const colorIndex = Array.from(capability).reduce((total, character) => total + character.charCodeAt(0), 0) % supplierCapabilityFallbackColors.length;
   return supplierCapabilityFallbackColors[colorIndex];
 };
+
+const getSupplierTransferShift = (transfer: SupplierTransfer) => {
+  const voucherTimestamp = transfer.vouchers.find((voucher) => voucher.checkoutDate || voucher.receivedDate)?.checkoutDate
+    ?? transfer.vouchers.find((voucher) => voucher.receivedDate)?.receivedDate
+    ?? transfer.updatedAt
+    ?? transfer.createdAt;
+  const hour = new Date(voucherTimestamp).getHours();
+  if (hour >= 6 && hour < 14) return '1st';
+  if (hour >= 14 && hour < 22) return '2nd';
+  return '3rd';
+};
+
+const getSupplierTransferWorkCenter = (transfer: SupplierTransfer) => (
+  mockProductionOrders.find((order) => order.orderNumber === transfer.productionOrder)?.assignedWorkCenter || 'Unassigned'
+);
 
 function normalizeSupplierHexColor(color: string) {
   return /^#[0-9a-f]{6}$/i.test(color) ? color : supplierCapabilityColorOptions[0];
@@ -233,6 +283,26 @@ const formatSupplierTimestamp = (value: string) =>
 
 const getSupplierDocumentPreviewUrl = (fileUrl: string) => `${fileUrl}#toolbar=1&navpanes=0&scrollbar=1&view=FitH`;
 
+const createMockSupplierPdf = (supplier: Supplier, label: string): SupplierPdfDocument => ({
+  label,
+  fileName: `${supplier.name.replace(/\s+/g, '-')}-${label.toLowerCase().replace(/\s+/g, '-')}.pdf`,
+  fileUrl: '/assets/supplier-documents/sample-supplier-document.pdf',
+});
+
+const createInitialSupplierRecords = (): SupplierRecord[] => mockSuppliers.map((supplier) => ({
+  ...supplier,
+  fiscalDocument: createMockSupplierPdf(supplier, 'Fiscal Data'),
+  bankingDocument: createMockSupplierPdf(supplier, 'Banking Data'),
+}));
+
+const createUploadedSupplierPdf = (file: File | null, label: string): SupplierPdfDocument | undefined => (
+  file ? {
+    label,
+    fileName: file.name,
+    fileUrl: URL.createObjectURL(file),
+  } : undefined
+);
+
 const getTodayIsoDate = () => {
   const today = new Date();
   const localDate = new Date(today.getTime() - today.getTimezoneOffset() * 60_000);
@@ -255,7 +325,7 @@ function getTransferStatusAfterCheckin(
   }
 
   const hasMissingDocuments = current.requiredDocuments.some((documentType) => !receivedDocuments.includes(documentType));
-  return hasMissingDocuments ? 'documents-pending' : 'closed';
+  return hasMissingDocuments ? 'documents-pending' : 'completed';
 }
 
 function SupplierStatusBadge({ status }: { status: SupplierTransferStatus | Supplier['approvedStatus'] | SupplierDocument['approvalStatus'] }) {
@@ -322,13 +392,14 @@ function SupplierVoucherView({ voucher }: { voucher: SupplierVoucher }) {
 }
 
 export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTabChange }: SupplierOperationsWorkspaceProps) {
-  const [suppliers, setSuppliers] = React.useState<Supplier[]>(mockSuppliers);
+  const [suppliers, setSuppliers] = React.useState<SupplierRecord[]>(() => createInitialSupplierRecords());
   const [transfers, setTransfers] = React.useState<SupplierTransfer[]>(mockSupplierTransfers);
   const [selectedTransferId, setSelectedTransferId] = React.useState(mockSupplierTransfers[0]?.id ?? '');
   const [modalMode, setModalMode] = React.useState<SupplierModalMode>(null);
   const [activeVoucher, setActiveVoucher] = React.useState<SupplierVoucher | null>(null);
   const [transferForm, setTransferForm] = React.useState<SupplierTransferFormState>(defaultTransferForm);
   const [supplierForm, setSupplierForm] = React.useState<SupplierFormState>(defaultSupplierForm);
+  const [supplierDocsFilters, setSupplierDocsFilters] = React.useState<SupplierDocsFilters>(defaultSupplierDocsFilters);
   const [customSupplierCapabilityColors, setCustomSupplierCapabilityColors] = React.useState<Record<string, string>>({});
   const [addressLookup, setAddressLookup] = React.useState<AddressLookupState>({ status: 'idle', message: '' });
   const [addressSuggestions, setAddressSuggestions] = React.useState<AddressLookupMatch[]>([]);
@@ -343,6 +414,7 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
   const [checkinForm, setCheckinForm] = React.useState<CheckinFormState>({ quantityReceived: '', quantityAccepted: '', quantityRejected: '0', receivedDocuments: [], notes: '' });
   const [documentForm, setDocumentForm] = React.useState<DocumentFormState>({ documentType: 'certificate', fileName: '', approvalStatus: 'pending-review' });
   const [previewDocument, setPreviewDocument] = React.useState<SupplierDocument | null>(null);
+  const [previewSupplierPdf, setPreviewSupplierPdf] = React.useState<SupplierPdfDocument | null>(null);
   const addressLookupControlRef = React.useRef<HTMLDivElement | null>(null);
   const addressSuggestionMenuRef = React.useRef<HTMLDivElement | null>(null);
   const capabilityDropdownControlRef = React.useRef<HTMLDivElement | null>(null);
@@ -355,11 +427,14 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
   const sentTransfers = transfers.filter((transfer) => transfer.status === 'sent-to-supplier').length;
   const pendingReturn = transfers.filter((transfer) => ['sent-to-supplier', 'ready-for-checkout'].includes(transfer.status)).length;
   const missingDocuments = transfers.filter((transfer) => getMissingDocuments(transfer).length > 0 && ['received-back', 'documents-pending', 'discrepancy'].includes(transfer.status)).length;
-  const overdueTransfers = transfers.filter((transfer) => transfer.expectedReturnDate < todayIsoDate && !['closed'].includes(transfer.status)).length;
-  const activeSupplierTransfers = transfers.filter((transfer) => transfer.status !== 'closed');
+  const overdueTransfers = transfers.filter((transfer) => transfer.expectedReturnDate < todayIsoDate && !['closed', 'completed'].includes(transfer.status)).length;
+  const activeSupplierTransfers = transfers.filter((transfer) => !['closed', 'completed'].includes(transfer.status));
   const sentToSupplierTransfers = transfers.filter((transfer) => transfer.status === 'sent-to-supplier');
   const pendingReturnTransfers = transfers.filter((transfer) => ['sent-to-supplier', 'ready-for-checkout'].includes(transfer.status));
   const missingDocumentTransfers = transfers.filter((transfer) => getMissingDocuments(transfer).length > 0 && ['received-back', 'documents-pending', 'discrepancy'].includes(transfer.status));
+  const selectedCheckTransfer = activeSupplierTransfers.find((transfer) => transfer.id === selectedTransferId) ?? activeSupplierTransfers[0] ?? null;
+  const canCheckOutSelectedTransfer = selectedCheckTransfer ? ['draft', 'ready-for-checkout'].includes(selectedCheckTransfer.status) : false;
+  const canCheckInSelectedTransfer = selectedCheckTransfer ? selectedCheckTransfer.status === 'sent-to-supplier' : false;
   const allSupplierCapabilityTags = React.useMemo(() => Array.from(new Set([
     ...Object.keys(supplierCapabilityColors),
     ...suppliers.flatMap((supplier) => supplier.processCapabilities),
@@ -369,6 +444,34 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
   const newCapabilityHsv = React.useMemo(() => supplierHexToHsv(supplierForm.newCapabilityColor), [supplierForm.newCapabilityColor]);
   const presetSupplierCapabilityColorOptions = supplierCapabilityColorOptions.slice(0, 6);
   const usesCustomSupplierCapabilityColor = !presetSupplierCapabilityColorOptions.includes(supplierForm.newCapabilityColor);
+  const supplierDocsCapabilityOptions = React.useMemo(() => Array.from(new Set(transfers.map((transfer) => transfer.externalProcess))).sort(), [transfers]);
+  const supplierDocsWorkCenterOptions = React.useMemo(() => Array.from(new Set(transfers.map(getSupplierTransferWorkCenter))).sort(), [transfers]);
+  const filteredSupplierDocTransfers = React.useMemo(() => transfers.filter((transfer) => {
+    const transferQuery = supplierDocsFilters.transferSearch.trim().toLowerCase();
+    const supplierQuery = supplierDocsFilters.supplierSearch.trim().toLowerCase();
+    const transferHaystack = [
+      transfer.id,
+      transfer.productionOrder,
+      transfer.partNumber,
+      transfer.lotSerial,
+    ].join(' ').toLowerCase();
+    const supplierHaystack = [
+      transfer.supplierName,
+    ].join(' ').toLowerCase();
+    const expectedReturnDate = transfer.expectedReturnDate || '';
+    const transferShift = getSupplierTransferShift(transfer);
+    const transferWorkCenter = getSupplierTransferWorkCenter(transfer);
+
+    return (!transferQuery || transferHaystack.includes(transferQuery))
+      && (!supplierQuery || supplierHaystack.includes(supplierQuery))
+      && (!supplierDocsFilters.capability || transfer.externalProcess === supplierDocsFilters.capability)
+      && (!supplierDocsFilters.workCenter || transferWorkCenter === supplierDocsFilters.workCenter)
+      && (!supplierDocsFilters.dateFrom || expectedReturnDate >= supplierDocsFilters.dateFrom)
+      && (!supplierDocsFilters.dateTo || expectedReturnDate <= supplierDocsFilters.dateTo)
+      && (!supplierDocsFilters.shift || transferShift === supplierDocsFilters.shift);
+  }), [supplierDocsFilters, transfers]);
+  const selectedDocsTransfer = filteredSupplierDocTransfers.find((transfer) => transfer.id === selectedTransferId) ?? filteredSupplierDocTransfers[0] ?? null;
+  const hasSupplierDocsFilters = Object.values(supplierDocsFilters).some(Boolean);
 
   const updateTransfer = (transferId: string, updater: (transfer: SupplierTransfer) => SupplierTransfer) => {
     setTransfers((currentTransfers) => currentTransfers.map((transfer) => transfer.id === transferId ? updater(transfer) : transfer));
@@ -388,6 +491,28 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
     setShowCapabilityColorPicker(false);
     setModalMode('supplier');
   };
+
+  const selectCheckTransfer = (transfer: SupplierTransfer) => {
+    setSelectedTransferId(transfer.id);
+    setCheckoutForm({
+      quantitySent: String(transfer.quantitySent || ''),
+      notes: transfer.checkoutNotes,
+      confirmed: false,
+    });
+    setCheckinForm({
+      quantityReceived: String(transfer.quantityReceived || transfer.quantitySent || ''),
+      quantityAccepted: String(transfer.quantityAccepted || transfer.quantitySent || ''),
+      quantityRejected: String(transfer.quantityRejected || 0),
+      receivedDocuments: transfer.receivedDocuments,
+      notes: transfer.receivedNotes,
+    });
+  };
+
+  React.useEffect(() => {
+    if (activeTab === 'check-in-out' && selectedCheckTransfer && (selectedTransferId !== selectedCheckTransfer.id || (!checkoutForm.quantitySent && !checkinForm.quantityReceived))) {
+      selectCheckTransfer(selectedCheckTransfer);
+    }
+  }, [activeTab, checkoutForm.quantitySent, checkinForm.quantityReceived, selectedCheckTransfer?.id, selectedTransferId]);
 
   const getSupplierCapabilityColor = React.useCallback((capability: string) => (
     customSupplierCapabilityColors[capability] ?? getDefaultSupplierCapabilityColor(capability)
@@ -661,7 +786,7 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
   const closeTransfer = (transfer: SupplierTransfer) => {
     updateTransfer(transfer.id, (currentTransfer) => ({
       ...currentTransfer,
-      status: getMissingDocuments(currentTransfer).length > 0 ? 'documents-pending' : 'closed',
+      status: getMissingDocuments(currentTransfer).length > 0 ? 'documents-pending' : 'completed',
       updatedAt: new Date().toISOString(),
     }));
   };
@@ -709,7 +834,7 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
       ...(newCapability ? [newCapability] : []),
     ].map((capability) => capability.trim()).filter(Boolean)));
     if (supplierForm.capability === registerNewSupplierCapabilityValue && !newCapability) return;
-    const supplier: Supplier = {
+    const supplier: SupplierRecord = {
       id: `sup-${normalizedName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'supplier'}-${String(suppliers.length + 1).padStart(2, '0')}`,
       name: normalizedName,
       contactName: supplierForm.contactName.trim(),
@@ -718,6 +843,8 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
       address: supplierForm.address.trim(),
       approvedStatus: supplierForm.approvedStatus,
       processCapabilities: capabilities.length ? capabilities : ['General supplier'],
+      fiscalDocument: createUploadedSupplierPdf(supplierForm.fiscalDocumentFile, 'Fiscal Data'),
+      bankingDocument: createUploadedSupplierPdf(supplierForm.bankingDocumentFile, 'Banking Data'),
       notes: supplierForm.notes.trim(),
     };
     if (newCapability) {
@@ -928,10 +1055,10 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
                 <td>
                   <div className="supplier-table-actions">
                     <button type="button" onClick={() => setSelectedTransferId(transfer.id)} aria-label={`View ${transfer.id}`}><Eye size={15} /></button>
-                    <button type="button" onClick={() => openCheckout(transfer)} disabled={transfer.status === 'sent-to-supplier' || transfer.status === 'closed'} aria-label={`Check out ${transfer.id}`}><Truck size={15} /></button>
-                    <button type="button" onClick={() => openCheckin(transfer)} disabled={transfer.status === 'draft' || transfer.status === 'ready-for-checkout' || transfer.status === 'closed'} aria-label={`Check in ${transfer.id}`}><PackageCheck size={15} /></button>
+                    <button type="button" onClick={() => openCheckout(transfer)} disabled={transfer.status === 'sent-to-supplier' || transfer.status === 'closed' || transfer.status === 'completed'} aria-label={`Check out ${transfer.id}`}><Truck size={15} /></button>
+                    <button type="button" onClick={() => openCheckin(transfer)} disabled={transfer.status === 'draft' || transfer.status === 'ready-for-checkout' || transfer.status === 'closed' || transfer.status === 'completed'} aria-label={`Check in ${transfer.id}`}><PackageCheck size={15} /></button>
                     <button type="button" onClick={() => openDocumentUpload(transfer)} aria-label={`Upload document for ${transfer.id}`}><Upload size={15} /></button>
-                    <button type="button" onClick={() => closeTransfer(transfer)} disabled={transfer.status === 'closed'} aria-label={`Close ${transfer.id}`}><Check size={15} /></button>
+                    <button type="button" onClick={() => closeTransfer(transfer)} disabled={transfer.status === 'closed' || transfer.status === 'completed'} aria-label={`Close ${transfer.id}`}><Check size={15} /></button>
                   </div>
                 </td>
               </tr>
@@ -993,10 +1120,10 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
         </span>
       </div>
       <div className="supplier-selected-transfer-actions">
-        <button type="button" onClick={() => openCheckout(selectedTransfer)} disabled={selectedTransfer.status === 'sent-to-supplier' || selectedTransfer.status === 'closed'}><Truck size={16} /> Check Out</button>
-        <button type="button" onClick={() => openCheckin(selectedTransfer)} disabled={selectedTransfer.status === 'draft' || selectedTransfer.status === 'ready-for-checkout' || selectedTransfer.status === 'closed'}><PackageCheck size={16} /> Check In</button>
+        <button type="button" onClick={() => openCheckout(selectedTransfer)} disabled={selectedTransfer.status === 'sent-to-supplier' || selectedTransfer.status === 'closed' || selectedTransfer.status === 'completed'}><Truck size={16} /> Check Out</button>
+        <button type="button" onClick={() => openCheckin(selectedTransfer)} disabled={selectedTransfer.status === 'draft' || selectedTransfer.status === 'ready-for-checkout' || selectedTransfer.status === 'closed' || selectedTransfer.status === 'completed'}><PackageCheck size={16} /> Check In</button>
         <button type="button" onClick={() => openDocumentUpload(selectedTransfer)}><Upload size={16} /> Upload Document</button>
-        <button type="button" onClick={() => closeTransfer(selectedTransfer)} disabled={selectedTransfer.status === 'closed'}><Check size={16} /> Close Transfer</button>
+        <button type="button" onClick={() => closeTransfer(selectedTransfer)} disabled={selectedTransfer.status === 'closed' || selectedTransfer.status === 'completed'}><Check size={16} /> Close Transfer</button>
       </div>
       <div className="supplier-transfer-artifacts">
         <div className="supplier-detail-block">
@@ -1045,9 +1172,9 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
                   <strong>{supplier.name}</strong>
                   <SupplierStatusBadge status={supplier.approvedStatus} />
                 </div>
-                <span>{supplier.contactName}</span>
-                <span>{supplier.email}</span>
-                <span>{supplier.phone}</span>
+                <span><b>Contact:</b> {supplier.contactName}</span>
+                <span><b>Email:</b> {supplier.email}</span>
+                <span><b>Phone:</b> {supplier.phone}</span>
                 <div className="supplier-capability-pills">
                   {supplier.processCapabilities.map((capability) => (
                     <em
@@ -1058,10 +1185,39 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
                     </em>
                   ))}
                 </div>
-                <p>{supplier.notes}</p>
+                <p className="supplier-card-notes">
+                  <span>Comment:</span>
+                  {supplier.notes || 'No supplier notes yet.'}
+                </p>
               </div>
-              <div className="supplier-logo-frame" aria-label={`${supplier.name} logo`}>
-                <span>{getSupplierInitials(supplier.name)}</span>
+              <div className="supplier-card-media">
+                <div className="supplier-logo-frame" aria-label={`${supplier.name} logo`}>
+                  <span>{getSupplierInitials(supplier.name)}</span>
+                </div>
+                <div className="supplier-card-document-actions">
+                  <button
+                    type="button"
+                    disabled={!supplier.fiscalDocument}
+                    onClick={() => {
+                      if (!supplier.fiscalDocument) return;
+                      setPreviewSupplierPdf(supplier.fiscalDocument);
+                      setModalMode('supplier-pdf-preview');
+                    }}
+                  >
+                    Fiscal Data
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!supplier.bankingDocument}
+                    onClick={() => {
+                      if (!supplier.bankingDocument) return;
+                      setPreviewSupplierPdf(supplier.bankingDocument);
+                      setModalMode('supplier-pdf-preview');
+                    }}
+                  >
+                    Bank Data
+                  </button>
+                </div>
               </div>
             </div>
           </article>
@@ -1131,65 +1287,339 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
     <section className="supplier-section">
       <div className="supplier-section-heading">
         <span><FileText size={16} /> Vouchers and Docs</span>
-        <strong>{transfers.reduce((total, transfer) => total + transfer.vouchers.length + transfer.documents.length, 0)} records</strong>
+        <strong>{filteredSupplierDocTransfers.length} matching transfer orders</strong>
       </div>
-      <div className="supplier-docs-grid">
-        {transfers.map((transfer) => (
-          <article key={transfer.id}>
-            <div>
-              <strong>{transfer.id}</strong>
-              <SupplierStatusBadge status={transfer.status} />
-            </div>
-            <span>{transfer.supplierName} / {transfer.externalProcess}</span>
-            <div className="supplier-document-tags">
-              {transfer.requiredDocuments.map((documentType) => (
-                <span className={transfer.receivedDocuments.includes(documentType) ? 'received' : ''} key={documentType}>{formatSupplierLabel(documentType)}</span>
-              ))}
-            </div>
-            <div className="supplier-docs-actions">
-              <button type="button" onClick={() => openDocumentUpload(transfer)}><Upload size={15} /> Upload Document</button>
-              {transfer.vouchers.map((voucher) => (
-                <button
-                  type="button"
-                  key={voucher.id}
-                  onClick={() => {
-                    setSelectedTransferId(transfer.id);
-                    setActiveVoucher(voucher);
-                    setModalMode('voucher');
-                  }}
+      <div className="supplier-docs-filter-panel">
+        <label>
+          Transfer / Order
+          <input
+            type="search"
+            placeholder="Search ST-260615-001 or MO-24018"
+            value={supplierDocsFilters.transferSearch}
+            onChange={(event) => setSupplierDocsFilters((current) => ({ ...current, transferSearch: event.target.value }))}
+          />
+        </label>
+        <label>
+          Supplier Name
+          <input
+            type="search"
+            placeholder="Supplier name"
+            value={supplierDocsFilters.supplierSearch}
+            onChange={(event) => setSupplierDocsFilters((current) => ({ ...current, supplierSearch: event.target.value }))}
+          />
+        </label>
+        <label>
+          Capability
+          <select value={supplierDocsFilters.capability} onChange={(event) => setSupplierDocsFilters((current) => ({ ...current, capability: event.target.value }))}>
+            <option value="">All capabilities</option>
+            {supplierDocsCapabilityOptions.map((capability) => <option key={capability} value={capability}>{capability}</option>)}
+          </select>
+        </label>
+      </div>
+      <div className="supplier-docs-filter-panel supplier-docs-filter-panel-secondary">
+        <label>
+          Work Center
+          <select value={supplierDocsFilters.workCenter} onChange={(event) => setSupplierDocsFilters((current) => ({ ...current, workCenter: event.target.value }))}>
+            <option value="">All Work Centers</option>
+            {supplierDocsWorkCenterOptions.map((workCenter) => <option key={workCenter} value={workCenter}>{workCenter}</option>)}
+          </select>
+        </label>
+        <label>
+          From
+          <input
+            type="date"
+            value={supplierDocsFilters.dateFrom}
+            onChange={(event) => setSupplierDocsFilters((current) => ({ ...current, dateFrom: event.target.value }))}
+          />
+        </label>
+        <label>
+          To
+          <input
+            type="date"
+            value={supplierDocsFilters.dateTo}
+            onChange={(event) => setSupplierDocsFilters((current) => ({ ...current, dateTo: event.target.value }))}
+          />
+        </label>
+        <fieldset className="supplier-docs-shift-filter">
+          <legend>Shift</legend>
+          {[
+            { value: '', label: 'All' },
+            { value: '1st', label: '1st' },
+            { value: '2nd', label: '2nd' },
+            { value: '3rd', label: '3rd' },
+          ].map((shift) => (
+            <button
+              type="button"
+              key={shift.label}
+              className={supplierDocsFilters.shift === shift.value ? 'active' : ''}
+              onClick={() => setSupplierDocsFilters((current) => ({ ...current, shift: shift.value }))}
+            >
+              {shift.label}
+            </button>
+          ))}
+        </fieldset>
+      </div>
+      <div className="supplier-docs-toolbar">
+        <span><Eye size={16} /> {filteredSupplierDocTransfers.length} matching records {hasSupplierDocsFilters ? '/ filtered context on' : '/ all context'}</span>
+        <button type="button" onClick={() => setSupplierDocsFilters(defaultSupplierDocsFilters)}>Clear Filters</button>
+      </div>
+      {filteredSupplierDocTransfers.length ? (
+        <section className="supplier-context-transfers" aria-label="Transfer orders matching vouchers and docs context">
+          <div>
+            <span>Context Transfer Orders</span>
+            <strong>{filteredSupplierDocTransfers.length} matching transfer orders</strong>
+          </div>
+          <div className="supplier-context-transfer-list">
+            {filteredSupplierDocTransfers.map((transfer) => (
+              <button
+                type="button"
+                key={transfer.id}
+                className={selectedDocsTransfer?.id === transfer.id ? 'active' : ''}
+                onClick={() => setSelectedTransferId(transfer.id)}
+              >
+                <strong>{transfer.id}</strong>
+                <span>{transfer.productionOrder} / {transfer.partNumber}</span>
+                <em className="supplier-context-transfer-supplier">{transfer.supplierName}</em>
+                <span
+                  className="supplier-capability-pill supplier-context-transfer-capability"
+                  style={{
+                    '--supplier-capability-color': getSupplierCapabilityColor(transfer.externalProcess),
+                  } as React.CSSProperties}
                 >
-                  <FileText size={15} /> {voucher.id}
+                  {transfer.externalProcess}
+                </span>
+                <SupplierStatusBadge status={transfer.status} />
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : (
+        <div className="supplier-empty-note">No transfer orders match the current filters.</div>
+      )}
+      {selectedDocsTransfer ? (
+        <div className="supplier-documents-workspace">
+          <section>
+            <div className="supplier-section-heading">
+              <span><FileText size={16} /> Outbound Vouchers</span>
+              <strong>{selectedDocsTransfer.vouchers.filter((voucher) => voucher.direction === 'outbound').length} records</strong>
+            </div>
+            <div className="supplier-document-card-list">
+              {selectedDocsTransfer.vouchers.filter((voucher) => voucher.direction === 'outbound').map((voucher) => (
+                <button type="button" key={voucher.id} onClick={() => { setActiveVoucher(voucher); setModalMode('voucher'); }}>
+                  <FileText size={16} />
+                  <span><b>{voucher.id}</b>{formatSupplierTimestamp(voucher.checkoutDate ?? selectedDocsTransfer.updatedAt)}</span>
                 </button>
               ))}
+              {selectedDocsTransfer.vouchers.some((voucher) => voucher.direction === 'outbound') ? null : <em>No outbound vouchers generated.</em>}
             </div>
-          </article>
-        ))}
-      </div>
+          </section>
+          <section>
+            <div className="supplier-section-heading">
+              <span><FileText size={16} /> Inbound Vouchers</span>
+              <strong>{selectedDocsTransfer.vouchers.filter((voucher) => voucher.direction === 'inbound').length} records</strong>
+            </div>
+            <div className="supplier-document-card-list">
+              {selectedDocsTransfer.vouchers.filter((voucher) => voucher.direction === 'inbound').map((voucher) => (
+                <button type="button" key={voucher.id} onClick={() => { setActiveVoucher(voucher); setModalMode('voucher'); }}>
+                  <FileText size={16} />
+                  <span><b>{voucher.id}</b>{formatSupplierTimestamp(voucher.receivedDate ?? selectedDocsTransfer.updatedAt)}</span>
+                </button>
+              ))}
+              {selectedDocsTransfer.vouchers.some((voucher) => voucher.direction === 'inbound') ? null : <em>No inbound vouchers generated.</em>}
+            </div>
+          </section>
+          <section>
+            <div className="supplier-section-heading">
+              <span><ClipboardCheck size={16} /> Order Documents</span>
+              <strong>{selectedDocsTransfer.requiredDocuments.length} required</strong>
+            </div>
+            <div className="supplier-document-card-list supplier-order-document-list">
+              {selectedDocsTransfer.requiredDocuments.map((documentType) => (
+                <span className={selectedDocsTransfer.receivedDocuments.includes(documentType) ? 'received' : ''} key={documentType}>
+                  <b>{formatSupplierLabel(documentType)}</b>
+                  {selectedDocsTransfer.receivedDocuments.includes(documentType) ? 'Received' : 'Pending from supplier'}
+                </span>
+              ))}
+            </div>
+          </section>
+          <section>
+            <div className="supplier-section-heading">
+              <span><Upload size={16} /> Supplier Documents</span>
+              <strong>{selectedDocsTransfer.documents.length} uploaded</strong>
+            </div>
+            <div className="supplier-document-card-list">
+              {selectedDocsTransfer.documents.map((document) => (
+                <button
+                  type="button"
+                  key={document.id}
+                  onClick={() => {
+                    setPreviewDocument(document);
+                    setModalMode('document-preview');
+                  }}
+                >
+                  <FileText size={16} />
+                  <span><b>{document.fileName}</b>{formatSupplierLabel(document.documentType)} / {formatSupplierTimestamp(document.uploadedAt)}</span>
+                </button>
+              ))}
+              {selectedDocsTransfer.documents.length ? null : <em>No supplier documents uploaded.</em>}
+              <button type="button" onClick={() => openDocumentUpload(selectedDocsTransfer)}><Upload size={16} /> Upload Supplier Document</button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </section>
   );
 
   const checkInOutSection = (
-    <section className="supplier-section supplier-checkinout-section">
-      <div className="supplier-section-heading">
-        <span><Truck size={16} /> Check in/out</span>
-        <strong>{selectedTransfer?.id ?? 'No transfer selected'}</strong>
-      </div>
-      {selectedTransfer ? (
-        <>
-          <div className="supplier-checkinout-summary">
-            <strong>{selectedTransfer.supplierName}</strong>
-            <span>{selectedTransfer.productionOrder} / {selectedTransfer.partNumber} / {selectedTransfer.lotSerial}</span>
-            <SupplierStatusBadge status={selectedTransfer.status} />
+    <div className="supplier-checkinout-workspace">
+      <section className="supplier-section supplier-active-transfer-selector">
+        <div className="supplier-section-heading">
+          <span>Active Transfers</span>
+          <strong>{activeSupplierTransfers.length} active supplier transfers</strong>
+        </div>
+        {activeSupplierTransfers.length ? (
+          <div className="supplier-active-transfer-strip">
+            {activeSupplierTransfers.map((transfer) => (
+              <button
+                type="button"
+                key={transfer.id}
+                className={selectedCheckTransfer?.id === transfer.id ? 'active' : ''}
+                onClick={() => selectCheckTransfer(transfer)}
+              >
+                <strong>{transfer.id}</strong>
+                <span>{transfer.externalProcess}</span>
+                <em>{transfer.supplierName}</em>
+                <SupplierStatusBadge status={transfer.status} />
+              </button>
+            ))}
           </div>
-          <div className="supplier-checkinout-actions">
-            <button type="button" onClick={() => openCheckout(selectedTransfer)} disabled={selectedTransfer.status === 'sent-to-supplier' || selectedTransfer.status === 'closed'}><Truck size={16} /> Check Out</button>
-            <button type="button" onClick={() => openCheckin(selectedTransfer)} disabled={selectedTransfer.status === 'draft' || selectedTransfer.status === 'ready-for-checkout' || selectedTransfer.status === 'closed'}><PackageCheck size={16} /> Check In</button>
-            <button type="button" onClick={() => openDocumentUpload(selectedTransfer)}><Upload size={16} /> Upload Document</button>
-            <button type="button" onClick={() => closeTransfer(selectedTransfer)} disabled={selectedTransfer.status === 'closed'}><Check size={16} /> Close Transfer</button>
+        ) : <span className="supplier-empty-note">No active transfers available for check in/out.</span>}
+      </section>
+
+      {selectedCheckTransfer ? (
+        <section className="supplier-section supplier-terminal-panel">
+          <div className="supplier-terminal-heading">
+            <span><Truck size={16} /> Transfer Terminal</span>
+            <SupplierStatusBadge status={selectedCheckTransfer.status} />
           </div>
-        </>
-      ) : <span className="supplier-empty-note">Select a supplier transfer first.</span>}
-    </section>
+
+          <div className="supplier-terminal-selected-layout">
+            <div className="supplier-terminal-selected-main">
+              <div className="supplier-terminal-now">
+                <article>
+                  <span>Transfer ID</span>
+                  <strong>{selectedCheckTransfer.id}</strong>
+                </article>
+                <article>
+                  <span>Supplier</span>
+                  <strong>{selectedCheckTransfer.supplierName}</strong>
+                </article>
+                <article>
+                  <span>Capability</span>
+                  <strong>{selectedCheckTransfer.externalProcess}</strong>
+                </article>
+                <article>
+                  <span>Expected Return</span>
+                  <strong>{formatSupplierDate(selectedCheckTransfer.expectedReturnDate)}</strong>
+                </article>
+              </div>
+
+              <div className="supplier-terminal-detail-grid">
+                <article>
+                  <span>Production Order</span>
+                  <strong>{selectedCheckTransfer.productionOrder}</strong>
+                </article>
+                <article>
+                  <span>Part Number</span>
+                  <strong>{selectedCheckTransfer.partNumber}</strong>
+                </article>
+                <article>
+                  <span>Lot / Serial</span>
+                  <strong>{selectedCheckTransfer.lotSerial || 'N/A'}</strong>
+                </article>
+              </div>
+            </div>
+
+            <aside className="supplier-terminal-selected-summary">
+              <span>Selected Transfer</span>
+              <strong>{selectedCheckTransfer.id}</strong>
+              <div>
+                <article>
+                  <span>Sent Parts</span>
+                  <strong>{selectedCheckTransfer.quantitySent.toLocaleString()}</strong>
+                </article>
+                <article>
+                  <span>Pending Parts</span>
+                  <strong>{Math.max(selectedCheckTransfer.quantitySent - selectedCheckTransfer.quantityReceived, 0).toLocaleString()}</strong>
+                </article>
+              </div>
+            </aside>
+          </div>
+
+          <div className="supplier-terminal-actions">
+            <form onSubmit={checkoutTransfer}>
+              <button className="supplier-terminal-action supplier-terminal-action-out" type="submit" disabled={!canCheckOutSelectedTransfer || !checkoutForm.confirmed}>
+                <Truck size={28} />
+                <strong>Check-Out</strong>
+                <span>{canCheckOutSelectedTransfer ? 'Send parts to supplier' : 'Unavailable for current status'}</span>
+              </button>
+              <div className="supplier-terminal-form-grid">
+                <label>
+                  Qty Out
+                  <input min="1" type="number" value={checkoutForm.quantitySent} onChange={(event) => setCheckoutForm((current) => ({ ...current, quantitySent: event.target.value }))} disabled={!canCheckOutSelectedTransfer} />
+                </label>
+                <label>
+                  Carrier / Seal
+                  <input type="text" placeholder="Dock, carrier, seal" disabled={!canCheckOutSelectedTransfer} />
+                </label>
+                <label className="supplier-terminal-wide-field">
+                  Checkout Notes
+                  <textarea value={checkoutForm.notes} onChange={(event) => setCheckoutForm((current) => ({ ...current, notes: event.target.value }))} disabled={!canCheckOutSelectedTransfer} />
+                </label>
+                <label className="supplier-terminal-confirm-field">
+                  <input type="checkbox" checked={checkoutForm.confirmed} onChange={(event) => setCheckoutForm((current) => ({ ...current, confirmed: event.target.checked }))} disabled={!canCheckOutSelectedTransfer} />
+                  <span>Parts verified and ready to leave the facility</span>
+                </label>
+              </div>
+            </form>
+
+            <form onSubmit={checkinTransfer}>
+              <button className="supplier-terminal-action supplier-terminal-action-in" type="submit" disabled={!canCheckInSelectedTransfer}>
+                <PackageCheck size={28} />
+                <strong>Check-In</strong>
+                <span>{canCheckInSelectedTransfer ? 'Receive supplier return' : 'Unavailable for current status'}</span>
+              </button>
+              <div className="supplier-terminal-form-grid">
+                <label>
+                  Qty In
+                  <input min="0" type="number" value={checkinForm.quantityReceived} onChange={(event) => setCheckinForm((current) => ({ ...current, quantityReceived: event.target.value }))} disabled={!canCheckInSelectedTransfer} />
+                </label>
+                <label>
+                  Accepted
+                  <input min="0" type="number" value={checkinForm.quantityAccepted} onChange={(event) => setCheckinForm((current) => ({ ...current, quantityAccepted: event.target.value }))} disabled={!canCheckInSelectedTransfer} />
+                </label>
+                <label>
+                  Rejected
+                  <input min="0" type="number" value={checkinForm.quantityRejected} onChange={(event) => setCheckinForm((current) => ({ ...current, quantityRejected: event.target.value }))} disabled={!canCheckInSelectedTransfer} />
+                </label>
+                <label>
+                  Receiver / Dock
+                  <input type="text" placeholder="Receiver, dock" disabled={!canCheckInSelectedTransfer} />
+                </label>
+                <div className="supplier-terminal-wide-field supplier-terminal-documents">
+                  <span>Documents Received</span>
+                  <SupplierDocumentChecklist value={checkinForm.receivedDocuments} onChange={(receivedDocuments) => setCheckinForm((current) => ({ ...current, receivedDocuments }))} />
+                </div>
+                <label className="supplier-terminal-wide-field">
+                  Receiving Notes
+                  <textarea value={checkinForm.notes} onChange={(event) => setCheckinForm((current) => ({ ...current, notes: event.target.value }))} disabled={!canCheckInSelectedTransfer} />
+                </label>
+              </div>
+            </form>
+          </div>
+        </section>
+      ) : null}
+    </div>
   );
 
   const addressSuggestionMenu = (showAddressSuggestions || addressSuggestionsLoading) && (addressSuggestions.length > 0 || addressSuggestionsLoading) && addressSuggestionPosition
@@ -1217,6 +1647,35 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
       document.body,
     )
     : null;
+
+  const supplierHeaderContent: Record<SupplierContextTab, { eyebrow: string; title: string; description: string }> = {
+    dashboard: {
+      eyebrow: 'MES / Suppliers Dashboard',
+      title: 'Supplier Dashboard',
+      description: 'Monitor supplier transfer KPIs, overdue activity, and document risk at a glance.',
+    },
+    transfers: {
+      eyebrow: 'MES / Supplier Transfers',
+      title: 'Transfer Orders',
+      description: 'Review active supplier transfers, shipment status, vouchers, quantities, and return expectations.',
+    },
+    suppliers: {
+      eyebrow: 'MES / Supplier Directory',
+      title: 'Supplier Management',
+      description: 'Manage external suppliers, capabilities, contacts, fiscal files, and banking documents.',
+    },
+    'vouchers-docs': {
+      eyebrow: 'MES / Supplier Documents',
+      title: 'Vouchers and Docs',
+      description: 'Find transfer orders and inspect outbound vouchers, inbound vouchers, order documents, and supplier files.',
+    },
+    'check-in-out': {
+      eyebrow: 'MES / Supplier Terminal',
+      title: 'Check In / Out',
+      description: 'Process supplier check-outs and returns with focused transfer details and operational controls.',
+    },
+  };
+  const activeHeaderContent = supplierHeaderContent[activeTab];
 
   const capabilityDropdownMenu = showCapabilityDropdown && capabilityDropdownPosition
     ? createPortal(
@@ -1491,6 +1950,32 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
                   </div>
                 </div>
               ) : null}
+              <div className="supplier-form-grid supplier-form-wide">
+                <label>
+                  Fiscal Data PDF
+                  <span className="supplier-file-upload-control">
+                    <span><Upload size={15} /> Select PDF</span>
+                    <em>{supplierForm.fiscalDocumentFile?.name ?? 'No file selected'}</em>
+                    <input
+                      type="file"
+                      accept="application/pdf"
+                      onChange={(event) => setSupplierForm((current) => ({ ...current, fiscalDocumentFile: event.target.files?.[0] ?? null }))}
+                    />
+                  </span>
+                </label>
+                <label>
+                  Banking Data PDF
+                  <span className="supplier-file-upload-control">
+                    <span><Upload size={15} /> Select PDF</span>
+                    <em>{supplierForm.bankingDocumentFile?.name ?? 'No file selected'}</em>
+                    <input
+                      type="file"
+                      accept="application/pdf"
+                      onChange={(event) => setSupplierForm((current) => ({ ...current, bankingDocumentFile: event.target.files?.[0] ?? null }))}
+                    />
+                  </span>
+                </label>
+              </div>
               <label>
                 Notes
                 <textarea value={supplierForm.notes} onChange={(event) => setSupplierForm((current) => ({ ...current, notes: event.target.value }))} />
@@ -1616,6 +2101,21 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
             </div>
           ) : null}
 
+          {modalMode === 'supplier-pdf-preview' && previewSupplierPdf ? (
+            <div>
+              <div className="supplier-modal-header">
+                <span>{previewSupplierPdf.label}</span>
+                <strong>{previewSupplierPdf.fileName}</strong>
+              </div>
+              <div className="supplier-document-preview">
+                <iframe src={getSupplierDocumentPreviewUrl(previewSupplierPdf.fileUrl)} title={`Preview ${previewSupplierPdf.fileName}`} />
+              </div>
+              <div className="supplier-modal-actions">
+                <button type="button" onClick={() => setModalMode(null)}>Close</button>
+              </div>
+            </div>
+          ) : null}
+
           {modalMode === 'voucher' && activeVoucher ? (
             <div>
               <div className="supplier-modal-header">
@@ -1645,9 +2145,9 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
           MES Applications
         </button>
         <div className="mes-workspace-heading">
-          <p className="eyebrow">MES / Suppliers</p>
-          <h2>Supplier Operations</h2>
-          <p>Track external processing, supplier check-outs, returns, vouchers, and supplier documents.</p>
+          <p className="eyebrow">{activeHeaderContent.eyebrow}</p>
+          <h2>{activeHeaderContent.title}</h2>
+          <p>{activeHeaderContent.description}</p>
         </div>
         <div className="supplier-header-actions">
           {activeTab === 'suppliers' ? (
@@ -1684,13 +2184,7 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
           {activeTab === 'vouchers-docs' ? vouchersAndDocsSection : null}
 
           {activeTab === 'check-in-out' ? (
-            <div className="supplier-workspace-layout supplier-dashboard-layout">
-              <div className="supplier-main-panel">
-                {checkInOutSection}
-                {supplierTransfersTable}
-              </div>
-              {selectedTransferDetail}
-            </div>
+            checkInOutSection
           ) : null}
         </div>
 
