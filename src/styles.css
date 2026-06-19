@@ -4886,6 +4886,7 @@ body.work-center-map-expanded .logged-workspace {
 }
 
 .supplier-kpi-transfer-tray button {
+  position: relative;
   display: grid;
   gap: 6px;
   min-width: 0;
@@ -4906,6 +4907,18 @@ body.work-center-map-expanded .logged-workspace {
   outline: none;
 }
 
+.supplier-kpi-transfer-tray button.overdue {
+  border-color: rgba(239, 68, 68, 0.48);
+  background: #fff1f2;
+  box-shadow: 0 10px 22px rgba(239, 68, 68, 0.1);
+}
+
+.supplier-kpi-transfer-tray button.overdue:hover,
+.supplier-kpi-transfer-tray button.overdue:focus-visible {
+  border-color: #ef4444;
+  background: #fee2e2;
+}
+
 .supplier-kpi-transfer-tray button span {
   color: #ff7214;
   font-size: 0.68rem;
@@ -4914,10 +4927,26 @@ body.work-center-map-expanded .logged-workspace {
   text-transform: uppercase;
 }
 
+.supplier-kpi-transfer-tray button.overdue span,
+.supplier-kpi-transfer-tray button.overdue em {
+  color: #b91c1c;
+}
+
 .supplier-kpi-transfer-tray button strong {
   color: #07111c;
   font-size: 0.86rem;
   line-height: 1.18;
+}
+
+.supplier-kpi-transfer-tray button.overdue strong {
+  color: #7f1d1d;
+}
+
+.supplier-overdue-card-icon {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  color: #dc2626;
 }
 
 .supplier-kpi-transfer-tray button em,
@@ -5232,6 +5261,7 @@ body.work-center-map-expanded .logged-workspace {
 }
 
 .supplier-selected-transfer-grid span {
+  position: relative;
   display: grid;
   align-content: start;
   gap: 6px;
@@ -5262,6 +5292,24 @@ body.work-center-map-expanded .logged-workspace {
   text-transform: uppercase;
 }
 
+.supplier-selected-transfer-grid .supplier-selected-transfer-overdue-date {
+  border-color: rgba(239, 68, 68, 0.48);
+  background: #fff1f2;
+  color: #7f1d1d;
+  box-shadow: 0 10px 22px rgba(239, 68, 68, 0.08);
+}
+
+.supplier-selected-transfer-grid .supplier-selected-transfer-overdue-date b {
+  color: #b91c1c;
+}
+
+.supplier-selected-transfer-overdue-icon {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  color: #dc2626;
+}
+
 .supplier-selected-transfer-status {
   grid-column: span 2;
   min-height: 78px;
@@ -5282,43 +5330,46 @@ body.work-center-map-expanded .logged-workspace {
   line-height: 1.1;
 }
 
-.supplier-selected-transfer-status-ready-for-checkout,
-.supplier-selected-transfer-status-pending-review,
-.supplier-selected-transfer-status-pending-approval {
+.supplier-selected-transfer-grid .supplier-selected-transfer-status-ready-for-checkout,
+.supplier-selected-transfer-grid .supplier-selected-transfer-status-pending-review,
+.supplier-selected-transfer-grid .supplier-selected-transfer-status-pending-approval {
   border-color: rgba(245, 158, 11, 0.48);
   background: #f59e0b;
-  color: #1f1300;
+  color: #ffffff;
 }
 
-.supplier-selected-transfer-status-sent-to-supplier,
-.supplier-selected-transfer-status-received-back,
-.supplier-selected-transfer-status-approved {
+.supplier-selected-transfer-grid .supplier-selected-transfer-status-sent-to-supplier {
+  border-color: rgba(8, 145, 178, 0.5);
+  background: #0891b2;
+  color: #ffffff;
+}
+
+.supplier-selected-transfer-grid .supplier-selected-transfer-status-approved {
   border-color: rgba(16, 185, 129, 0.48);
   background: #10b981;
-  color: #042014;
+  color: #ffffff;
 }
 
-.supplier-selected-transfer-status-documents-pending {
+.supplier-selected-transfer-grid .supplier-selected-transfer-status-documents-pending {
   border-color: rgba(37, 99, 235, 0.5);
   background: #2563eb;
   color: #ffffff;
 }
 
-.supplier-selected-transfer-status-closed {
+.supplier-selected-transfer-grid .supplier-selected-transfer-status-completed {
   border-color: rgba(5, 150, 105, 0.5);
   background: #059669;
   color: #ffffff;
 }
 
-.supplier-selected-transfer-status-discrepancy,
-.supplier-selected-transfer-status-rejected {
+.supplier-selected-transfer-grid .supplier-selected-transfer-status-discrepancy,
+.supplier-selected-transfer-grid .supplier-selected-transfer-status-rejected {
   border-color: rgba(239, 68, 68, 0.5);
   background: #ef4444;
   color: #ffffff;
 }
 
-.supplier-selected-transfer-status-draft,
-.supplier-selected-transfer-status-inactive {
+.supplier-selected-transfer-grid .supplier-selected-transfer-status-inactive {
   border-color: rgba(100, 116, 139, 0.48);
   background: #64748b;
   color: #ffffff;
@@ -5331,30 +5382,53 @@ body.work-center-map-expanded .logged-workspace {
 }
 
 .supplier-selected-transfer-actions {
-  grid-template-columns: repeat(4, minmax(140px, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
 .supplier-selected-transfer-actions button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  min-height: 42px;
+  gap: 6px;
+  min-height: 40px;
   border: 1px solid rgba(255, 138, 31, 0.72);
   border-radius: 8px;
-  padding: 0 12px;
+  padding: 0 9px;
   background: #ff8a1f;
-  color: #17110b;
+  color: #ffffff;
   font: inherit;
-  font-size: 0.82rem;
+  font-size: 0.76rem;
   font-weight: 900;
   cursor: pointer;
   box-shadow: 0 10px 20px rgba(255, 138, 31, 0.14);
+  white-space: nowrap;
 }
 
 .supplier-selected-transfer-actions button:hover,
 .supplier-selected-transfer-actions button:focus-visible {
   background: #ff7214;
+}
+
+.supplier-selected-transfer-actions .supplier-transfer-edit-action {
+  border-color: rgba(37, 99, 235, 0.72);
+  background: #2563eb;
+  box-shadow: 0 10px 20px rgba(37, 99, 235, 0.14);
+}
+
+.supplier-selected-transfer-actions .supplier-transfer-edit-action:hover,
+.supplier-selected-transfer-actions .supplier-transfer-edit-action:focus-visible {
+  background: #1d4ed8;
+}
+
+.supplier-selected-transfer-actions .supplier-transfer-delete-action {
+  border-color: rgba(239, 68, 68, 0.76);
+  background: #ef4444;
+  box-shadow: 0 10px 20px rgba(239, 68, 68, 0.14);
+}
+
+.supplier-selected-transfer-actions .supplier-transfer-delete-action:hover,
+.supplier-selected-transfer-actions .supplier-transfer-delete-action:focus-visible {
+  background: #dc2626;
 }
 
 .supplier-selected-transfer-actions button:disabled {
@@ -5440,8 +5514,11 @@ body.work-center-map-expanded .logged-workspace {
   color: #ffffff;
 }
 
-.supplier-status-sent-to-supplier,
-.supplier-status-received-back,
+.supplier-status-sent-to-supplier {
+  background: #0891b2;
+  color: #ffffff;
+}
+
 .supplier-status-approved {
   background: #10b981;
   color: #ffffff;
@@ -5452,7 +5529,6 @@ body.work-center-map-expanded .logged-workspace {
   color: #ffffff;
 }
 
-.supplier-status-closed,
 .supplier-status-completed {
   background: #059669;
   color: #ffffff;
@@ -5464,7 +5540,6 @@ body.work-center-map-expanded .logged-workspace {
   color: #ffffff;
 }
 
-.supplier-status-draft,
 .supplier-status-inactive {
   background: #64748b;
   color: #ffffff;
@@ -5945,6 +6020,43 @@ body.work-center-map-expanded .logged-workspace {
   font-weight: 950;
 }
 
+.supplier-docs-toolbar-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.supplier-docs-completed-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  border: 1px solid rgba(255, 138, 31, 0.28);
+  border-radius: 8px;
+  padding: 0 11px;
+  background: #fff7ed;
+  color: #334155;
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.supplier-docs-completed-toggle input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: #ff8a1f;
+}
+
+.supplier-docs-completed-toggle span {
+  color: #334155;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
 .supplier-context-transfers {
   display: grid;
   gap: 12px;
@@ -6066,6 +6178,12 @@ body.work-center-map-expanded .logged-workspace {
   justify-self: start;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.supplier-terminal-capability-pill {
+  min-height: 26px;
+  padding: 5px 10px;
+  font-size: 0.72rem;
 }
 
 .supplier-documents-workspace {
@@ -6348,14 +6466,26 @@ body.work-center-map-expanded .logged-workspace {
   display: grid;
   gap: 7px;
   min-width: 0;
-  border: 1px solid rgba(18, 29, 41, 0.1);
+  border: 1px solid rgba(255, 138, 31, 0.28);
   border-radius: 8px;
   padding: 12px;
+  background: #fff7ed;
+}
+
+.supplier-terminal-now article.supplier-terminal-capability-card {
+  border-color: rgba(18, 29, 41, 0.1);
   background: #f8fafc;
 }
 
 .supplier-terminal-now span,
-.supplier-terminal-detail-grid span,
+.supplier-terminal-detail-grid span {
+  color: #ff7214;
+  font-size: 0.76rem;
+  font-weight: 950;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
 .supplier-terminal-form-grid label,
 .supplier-terminal-documents > span {
   color: #64748b;
@@ -6585,6 +6715,10 @@ body.work-center-map-expanded .logged-workspace {
   background: #ffffff;
   color: #17202a;
   box-shadow: 0 30px 90px rgba(0, 0, 0, 0.35);
+}
+
+.supplier-voucher-modal {
+  width: min(1180px, 100%);
 }
 
 .supplier-modal form,
@@ -6825,6 +6959,7 @@ body.work-center-map-expanded .logged-workspace {
 
 .supplier-voucher-sheet {
   display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.45fr);
   gap: 14px;
   border: 1px solid rgba(18, 29, 41, 0.12);
   border-radius: 8px;
@@ -6832,14 +6967,21 @@ body.work-center-map-expanded .logged-workspace {
   background: #f8fafc;
 }
 
-.supplier-voucher-sheet > div {
+.supplier-voucher-content {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.supplier-voucher-content > div {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
 
-.supplier-voucher-sheet > div span {
+.supplier-voucher-content > div span,
+.supplier-voucher-attachment-panel > span {
   color: #ff8a1f;
   font-size: 0.72rem;
   font-weight: 950;
@@ -6847,7 +6989,7 @@ body.work-center-map-expanded .logged-workspace {
   text-transform: uppercase;
 }
 
-.supplier-voucher-sheet > div strong {
+.supplier-voucher-content > div strong {
   color: #07111c;
   font-size: 1.2rem;
 }
@@ -6882,10 +7024,95 @@ body.work-center-map-expanded .logged-workspace {
   font-size: 0.84rem;
 }
 
-.supplier-voucher-sheet p {
+.supplier-voucher-note {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 76px;
+  border: 1px solid rgba(255, 138, 31, 0.25);
+  border-radius: 8px;
+  padding: 12px;
+  background: #ffffff;
+}
+
+.supplier-voucher-note span {
+  display: block;
+  align-self: flex-start;
+  justify-self: start;
+  width: auto;
+  text-align: left;
+  color: #ff7214;
+  font-size: 0.68rem;
+  font-weight: 950;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.supplier-voucher-note p {
   margin: 0;
-  color: #4d5c6b;
+  width: 100%;
+  color: #07111c;
   line-height: 1.5;
+  text-align: left;
+}
+
+.supplier-voucher-attachment-panel {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-width: 0;
+  border-left: 2px solid #ff8a1f;
+  padding-left: 14px;
+}
+
+.supplier-voucher-attachment-panel > strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #07111c;
+  font-size: 0.98rem;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.supplier-voucher-attachment-panel > div {
+  display: grid;
+  min-height: 360px;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid rgba(255, 138, 31, 0.28);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.supplier-voucher-attachment-panel iframe,
+.supplier-voucher-attachment-panel img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+.supplier-voucher-attachment-panel img {
+  object-fit: contain;
+  padding: 10px;
+}
+
+.supplier-voucher-attachment-panel em {
+  max-width: 220px;
+  color: #64748b;
+  font-size: 0.9rem;
+  font-style: normal;
+  font-weight: 750;
+  line-height: 1.35;
+  text-align: center;
+}
+
+.supplier-voucher-attachment-panel a {
+  color: #ff7214;
+  font-weight: 900;
 }
 
 @media (max-width: 1180px) {
@@ -7013,8 +7240,16 @@ body.work-center-map-expanded .logged-workspace {
   .supplier-terminal-now,
   .supplier-terminal-detail-grid,
   .supplier-terminal-selected-layout,
+  .supplier-voucher-sheet,
   .supplier-terminal-actions {
     grid-template-columns: 1fr;
+  }
+
+  .supplier-voucher-attachment-panel {
+    border-top: 2px solid #ff8a1f;
+    border-left: 0;
+    padding-top: 14px;
+    padding-left: 0;
   }
 
   .supplier-terminal-selected-summary {
@@ -7083,6 +7318,17 @@ body.work-center-map-expanded .logged-workspace {
   .supplier-voucher-sheet dl,
   .supplier-detail-grid {
     grid-template-columns: 1fr;
+  }
+
+  .supplier-voucher-sheet {
+    grid-template-columns: 1fr;
+  }
+
+  .supplier-voucher-attachment-panel {
+    border-top: 2px solid #ff8a1f;
+    border-left: 0;
+    padding-top: 14px;
+    padding-left: 0;
   }
 
   .supplier-context-transfer-list {
@@ -8482,6 +8728,21 @@ body.work-center-map-expanded .logged-workspace {
 .supplier-file-upload-control:focus-within {
   border-color: rgba(255, 138, 31, 0.76);
   background: #fff3e8;
+}
+
+.supplier-file-upload-control:has(input:disabled) {
+  border-color: rgba(18, 29, 41, 0.12);
+  background: #f1f5f9;
+  opacity: 0.72;
+}
+
+.supplier-file-upload-control:has(input:disabled) > span {
+  background: #cbd5e1;
+  color: #64748b;
+}
+
+.supplier-file-upload-control:has(input:disabled) input[type="file"] {
+  cursor: not-allowed;
 }
 
 .supplier-modal-floating-menu,

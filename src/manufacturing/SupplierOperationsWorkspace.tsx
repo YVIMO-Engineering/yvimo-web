@@ -6,10 +6,13 @@ import {
   Check,
   ChevronDown,
   ClipboardCheck,
+  Clock,
+  Pencil,
   Eye,
   FileText,
   PackageCheck,
   Plus,
+  Trash2,
   Truck,
   Upload,
   X,
@@ -32,7 +35,7 @@ type SupplierOperationsWorkspaceProps = {
   onActiveTabChange: (tab: SupplierContextTab) => void;
 };
 
-type SupplierModalMode = 'create' | 'supplier' | 'checkout' | 'checkin' | 'document' | 'document-preview' | 'supplier-pdf-preview' | 'voucher' | null;
+type SupplierModalMode = 'create' | 'edit-transfer' | 'supplier' | 'checkout' | 'checkin' | 'document' | 'document-preview' | 'supplier-pdf-preview' | 'voucher' | null;
 export type SupplierContextTab = 'dashboard' | 'transfers' | 'suppliers' | 'vouchers-docs' | 'check-in-out';
 
 type SupplierPdfDocument = {
@@ -62,6 +65,7 @@ type CheckoutFormState = {
   quantitySent: string;
   notes: string;
   confirmed: boolean;
+  attachmentFile: File | null;
 };
 
 type CheckinFormState = {
@@ -69,6 +73,7 @@ type CheckinFormState = {
   quantityAccepted: string;
   quantityRejected: string;
   receivedDocuments: SupplierDocumentType[];
+  attachmentFile: File | null;
   notes: string;
 };
 
@@ -102,6 +107,8 @@ type SupplierDocsFilters = {
   dateFrom: string;
   dateTo: string;
   shift: string;
+  showCompletedOrders: boolean;
+  onlyShowCompletedOrders: boolean;
 };
 
 type AddressLookupState = {
@@ -181,6 +188,8 @@ const defaultSupplierDocsFilters: SupplierDocsFilters = {
   dateFrom: '',
   dateTo: '',
   shift: '',
+  showCompletedOrders: true,
+  onlyShowCompletedOrders: false,
 };
 
 const formatSupplierLabel = (value: string) => value.replace(/-/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
@@ -303,6 +312,14 @@ const createUploadedSupplierPdf = (file: File | null, label: string): SupplierPd
   } : undefined
 );
 
+const createUploadedVoucherAttachment = (file: File | null): SupplierVoucher['attachment'] => (
+  file ? {
+    fileName: file.name,
+    fileUrl: URL.createObjectURL(file),
+    fileType: file.type,
+  } : undefined
+);
+
 const getTodayIsoDate = () => {
   const today = new Date();
   const localDate = new Date(today.getTime() - today.getTimezoneOffset() * 60_000);
@@ -320,12 +337,25 @@ function getTransferStatusAfterCheckin(
   quantityRejected: number,
   receivedDocuments: SupplierDocumentType[],
 ): SupplierTransferStatus {
-  if (quantityReceived !== current.quantitySent || quantityRejected > 0 || quantityAccepted + quantityRejected !== quantityReceived) {
+  if (quantityAccepted !== current.quantitySent || quantityAccepted + quantityRejected !== quantityReceived) {
     return 'discrepancy';
   }
 
   const hasMissingDocuments = current.requiredDocuments.some((documentType) => !receivedDocuments.includes(documentType));
   return hasMissingDocuments ? 'documents-pending' : 'completed';
+}
+
+function getCheckinDefaults(transfer: SupplierTransfer) {
+  const pendingQuantity = Math.max(transfer.quantitySent - transfer.quantityAccepted, 0);
+  const suggestedQuantity = pendingQuantity || transfer.quantitySent;
+  return {
+    quantityReceived: String(suggestedQuantity),
+    quantityAccepted: String(suggestedQuantity),
+    quantityRejected: '0',
+    receivedDocuments: transfer.receivedDocuments,
+    attachmentFile: null,
+    notes: transfer.receivedNotes,
+  };
 }
 
 function SupplierStatusBadge({ status }: { status: SupplierTransferStatus | Supplier['approvedStatus'] | SupplierDocument['approvalStatus'] }) {
@@ -363,30 +393,50 @@ function SupplierDocumentChecklist({
 
 function SupplierVoucherView({ voucher }: { voucher: SupplierVoucher }) {
   const inbound = voucher.direction === 'inbound';
+  const attachment = voucher.attachment;
+  const attachmentIsImage = attachment?.fileType.startsWith('image/');
+  const attachmentIsPdf = attachment?.fileType === 'application/pdf' || attachment?.fileName.toLowerCase().endsWith('.pdf');
 
   return (
     <div className="supplier-voucher-sheet">
-      <div>
-        <span>{inbound ? 'Inbound Voucher' : 'Outbound Voucher'}</span>
-        <strong>{voucher.id}</strong>
+      <div className="supplier-voucher-content">
+        <div>
+          <span>{inbound ? 'Inbound Voucher' : 'Outbound Voucher'}</span>
+          <strong>{voucher.id}</strong>
+        </div>
+        <dl>
+          <span><dt>Transfer ID</dt><dd>{voucher.transferId}</dd></span>
+          <span><dt>Supplier</dt><dd>{voucher.supplier}</dd></span>
+          <span><dt>Production Order</dt><dd>{voucher.productionOrder}</dd></span>
+          <span><dt>Part Number</dt><dd>{voucher.partNumber}</dd></span>
+          <span><dt>Lot / Serial</dt><dd>{voucher.lotSerial}</dd></span>
+          <span><dt>Quantity Sent</dt><dd>{voucher.quantitySent.toLocaleString()}</dd></span>
+          {inbound ? <span><dt>Quantity Received</dt><dd>{voucher.quantityReceived?.toLocaleString() ?? 'N/A'}</dd></span> : null}
+          {inbound ? <span><dt>Quantity Accepted</dt><dd>{voucher.quantityAccepted?.toLocaleString() ?? 'N/A'}</dd></span> : null}
+          {inbound ? <span><dt>Quantity Rejected</dt><dd>{voucher.quantityRejected?.toLocaleString() ?? 'N/A'}</dd></span> : null}
+          <span><dt>External Process</dt><dd>{voucher.externalProcess}</dd></span>
+          <span><dt>{inbound ? 'Received Date' : 'Checkout Date'}</dt><dd>{formatSupplierTimestamp(inbound ? voucher.receivedDate ?? '' : voucher.checkoutDate ?? '')}</dd></span>
+          <span><dt>{inbound ? 'Received By' : 'Checked Out By'}</dt><dd>{inbound ? voucher.receivedBy : voucher.checkedOutBy}</dd></span>
+          <span><dt>Expected Return</dt><dd>{formatSupplierDate(voucher.expectedReturnDate)}</dd></span>
+          {inbound ? <span><dt>Documents Received</dt><dd>{voucher.documentsReceived?.map(formatSupplierLabel).join(', ') || 'None'}</dd></span> : null}
+        </dl>
+        <div className="supplier-voucher-note">
+          <span>Comment</span>
+          <p>{voucher.notes || 'No notes entered.'}</p>
+        </div>
       </div>
-      <dl>
-        <span><dt>Transfer ID</dt><dd>{voucher.transferId}</dd></span>
-        <span><dt>Supplier</dt><dd>{voucher.supplier}</dd></span>
-        <span><dt>Production Order</dt><dd>{voucher.productionOrder}</dd></span>
-        <span><dt>Part Number</dt><dd>{voucher.partNumber}</dd></span>
-        <span><dt>Lot / Serial</dt><dd>{voucher.lotSerial}</dd></span>
-        <span><dt>Quantity Sent</dt><dd>{voucher.quantitySent.toLocaleString()}</dd></span>
-        {inbound ? <span><dt>Quantity Received</dt><dd>{voucher.quantityReceived?.toLocaleString() ?? 'N/A'}</dd></span> : null}
-        {inbound ? <span><dt>Quantity Accepted</dt><dd>{voucher.quantityAccepted?.toLocaleString() ?? 'N/A'}</dd></span> : null}
-        {inbound ? <span><dt>Quantity Rejected</dt><dd>{voucher.quantityRejected?.toLocaleString() ?? 'N/A'}</dd></span> : null}
-        <span><dt>External Process</dt><dd>{voucher.externalProcess}</dd></span>
-        <span><dt>{inbound ? 'Received Date' : 'Checkout Date'}</dt><dd>{formatSupplierTimestamp(inbound ? voucher.receivedDate ?? '' : voucher.checkoutDate ?? '')}</dd></span>
-        <span><dt>{inbound ? 'Received By' : 'Checked Out By'}</dt><dd>{inbound ? voucher.receivedBy : voucher.checkedOutBy}</dd></span>
-        <span><dt>Expected Return</dt><dd>{formatSupplierDate(voucher.expectedReturnDate)}</dd></span>
-        {inbound ? <span><dt>Documents Received</dt><dd>{voucher.documentsReceived?.map(formatSupplierLabel).join(', ') || 'None'}</dd></span> : null}
-      </dl>
-      <p>{voucher.notes || 'No notes entered.'}</p>
+      <aside className="supplier-voucher-attachment-panel">
+        <span>Attached File</span>
+        <strong>{attachment?.fileName ?? 'No file attached'}</strong>
+        <div>
+          {attachment && attachmentIsImage ? <img src={attachment.fileUrl} alt={attachment.fileName} /> : null}
+          {attachment && !attachmentIsImage && attachmentIsPdf ? <iframe src={getSupplierDocumentPreviewUrl(attachment.fileUrl)} title={`Preview ${attachment.fileName}`} /> : null}
+          {attachment && !attachmentIsImage && !attachmentIsPdf ? (
+            <a href={attachment.fileUrl} target="_blank" rel="noreferrer">{attachment.fileName}</a>
+          ) : null}
+          {attachment ? null : <em>No file attached to this voucher.</em>}
+        </div>
+      </aside>
     </div>
   );
 }
@@ -410,8 +460,8 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
   const [capabilityDropdownPosition, setCapabilityDropdownPosition] = React.useState<MenuPosition | null>(null);
   const [showCapabilityColorPicker, setShowCapabilityColorPicker] = React.useState(false);
   const [capabilityColorPickerPosition, setCapabilityColorPickerPosition] = React.useState<Omit<MenuPosition, 'maxHeight'> | null>(null);
-  const [checkoutForm, setCheckoutForm] = React.useState<CheckoutFormState>({ quantitySent: '', notes: '', confirmed: false });
-  const [checkinForm, setCheckinForm] = React.useState<CheckinFormState>({ quantityReceived: '', quantityAccepted: '', quantityRejected: '0', receivedDocuments: [], notes: '' });
+  const [checkoutForm, setCheckoutForm] = React.useState<CheckoutFormState>({ quantitySent: '', notes: '', confirmed: false, attachmentFile: null });
+  const [checkinForm, setCheckinForm] = React.useState<CheckinFormState>({ quantityReceived: '', quantityAccepted: '', quantityRejected: '0', receivedDocuments: [], attachmentFile: null, notes: '' });
   const [documentForm, setDocumentForm] = React.useState<DocumentFormState>({ documentType: 'certificate', fileName: '', approvalStatus: 'pending-review' });
   const [previewDocument, setPreviewDocument] = React.useState<SupplierDocument | null>(null);
   const [previewSupplierPdf, setPreviewSupplierPdf] = React.useState<SupplierPdfDocument | null>(null);
@@ -424,17 +474,18 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
 
   const selectedTransfer = transfers.find((transfer) => transfer.id === selectedTransferId) ?? transfers[0] ?? null;
   const todayIsoDate = getTodayIsoDate();
+  const isOverdueTransfer = React.useCallback((transfer: SupplierTransfer) => transfer.expectedReturnDate < todayIsoDate && transfer.status !== 'completed', [todayIsoDate]);
   const sentTransfers = transfers.filter((transfer) => transfer.status === 'sent-to-supplier').length;
   const pendingReturn = transfers.filter((transfer) => ['sent-to-supplier', 'ready-for-checkout'].includes(transfer.status)).length;
-  const missingDocuments = transfers.filter((transfer) => getMissingDocuments(transfer).length > 0 && ['received-back', 'documents-pending', 'discrepancy'].includes(transfer.status)).length;
-  const overdueTransfers = transfers.filter((transfer) => transfer.expectedReturnDate < todayIsoDate && !['closed', 'completed'].includes(transfer.status)).length;
-  const activeSupplierTransfers = transfers.filter((transfer) => !['closed', 'completed'].includes(transfer.status));
+  const missingDocuments = transfers.filter((transfer) => getMissingDocuments(transfer).length > 0 && ['documents-pending', 'discrepancy'].includes(transfer.status)).length;
+  const overdueTransfers = transfers.filter(isOverdueTransfer).length;
+  const activeSupplierTransfers = transfers.filter((transfer) => transfer.status !== 'completed');
   const sentToSupplierTransfers = transfers.filter((transfer) => transfer.status === 'sent-to-supplier');
   const pendingReturnTransfers = transfers.filter((transfer) => ['sent-to-supplier', 'ready-for-checkout'].includes(transfer.status));
-  const missingDocumentTransfers = transfers.filter((transfer) => getMissingDocuments(transfer).length > 0 && ['received-back', 'documents-pending', 'discrepancy'].includes(transfer.status));
+  const missingDocumentTransfers = transfers.filter((transfer) => getMissingDocuments(transfer).length > 0 && ['documents-pending', 'discrepancy'].includes(transfer.status));
   const selectedCheckTransfer = activeSupplierTransfers.find((transfer) => transfer.id === selectedTransferId) ?? activeSupplierTransfers[0] ?? null;
-  const canCheckOutSelectedTransfer = selectedCheckTransfer ? ['draft', 'ready-for-checkout'].includes(selectedCheckTransfer.status) : false;
-  const canCheckInSelectedTransfer = selectedCheckTransfer ? selectedCheckTransfer.status === 'sent-to-supplier' : false;
+  const canCheckOutSelectedTransfer = selectedCheckTransfer ? selectedCheckTransfer.status === 'ready-for-checkout' : false;
+  const canCheckInSelectedTransfer = selectedCheckTransfer ? ['sent-to-supplier', 'discrepancy'].includes(selectedCheckTransfer.status) : false;
   const allSupplierCapabilityTags = React.useMemo(() => Array.from(new Set([
     ...Object.keys(supplierCapabilityColors),
     ...suppliers.flatMap((supplier) => supplier.processCapabilities),
@@ -468,10 +519,12 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
       && (!supplierDocsFilters.workCenter || transferWorkCenter === supplierDocsFilters.workCenter)
       && (!supplierDocsFilters.dateFrom || expectedReturnDate >= supplierDocsFilters.dateFrom)
       && (!supplierDocsFilters.dateTo || expectedReturnDate <= supplierDocsFilters.dateTo)
-      && (!supplierDocsFilters.shift || transferShift === supplierDocsFilters.shift);
+      && (!supplierDocsFilters.shift || transferShift === supplierDocsFilters.shift)
+      && (!supplierDocsFilters.onlyShowCompletedOrders || transfer.status === 'completed')
+      && (supplierDocsFilters.showCompletedOrders || transfer.status !== 'completed');
   }), [supplierDocsFilters, transfers]);
   const selectedDocsTransfer = filteredSupplierDocTransfers.find((transfer) => transfer.id === selectedTransferId) ?? filteredSupplierDocTransfers[0] ?? null;
-  const hasSupplierDocsFilters = Object.values(supplierDocsFilters).some(Boolean);
+  const hasSupplierDocsFilters = Object.entries(supplierDocsFilters).some(([key, value]) => value !== defaultSupplierDocsFilters[key as keyof SupplierDocsFilters]);
 
   const updateTransfer = (transferId: string, updater: (transfer: SupplierTransfer) => SupplierTransfer) => {
     setTransfers((currentTransfers) => currentTransfers.map((transfer) => transfer.id === transferId ? updater(transfer) : transfer));
@@ -498,14 +551,9 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
       quantitySent: String(transfer.quantitySent || ''),
       notes: transfer.checkoutNotes,
       confirmed: false,
+      attachmentFile: null,
     });
-    setCheckinForm({
-      quantityReceived: String(transfer.quantityReceived || transfer.quantitySent || ''),
-      quantityAccepted: String(transfer.quantityAccepted || transfer.quantitySent || ''),
-      quantityRejected: String(transfer.quantityRejected || 0),
-      receivedDocuments: transfer.receivedDocuments,
-      notes: transfer.receivedNotes,
-    });
+    setCheckinForm(getCheckinDefaults(transfer));
   };
 
   React.useEffect(() => {
@@ -757,19 +805,13 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
 
   const openCheckout = (transfer: SupplierTransfer) => {
     setSelectedTransferId(transfer.id);
-    setCheckoutForm({ quantitySent: String(transfer.quantitySent || ''), notes: transfer.checkoutNotes, confirmed: false });
+    setCheckoutForm({ quantitySent: String(transfer.quantitySent || ''), notes: transfer.checkoutNotes, confirmed: false, attachmentFile: null });
     setModalMode('checkout');
   };
 
   const openCheckin = (transfer: SupplierTransfer) => {
     setSelectedTransferId(transfer.id);
-    setCheckinForm({
-      quantityReceived: String(transfer.quantityReceived || transfer.quantitySent || ''),
-      quantityAccepted: String(transfer.quantityAccepted || transfer.quantitySent || ''),
-      quantityRejected: String(transfer.quantityRejected || 0),
-      receivedDocuments: transfer.receivedDocuments,
-      notes: transfer.receivedNotes,
-    });
+    setCheckinForm(getCheckinDefaults(transfer));
     setModalMode('checkin');
   };
 
@@ -783,12 +825,43 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
     setModalMode('document');
   };
 
-  const closeTransfer = (transfer: SupplierTransfer) => {
-    updateTransfer(transfer.id, (currentTransfer) => ({
-      ...currentTransfer,
-      status: getMissingDocuments(currentTransfer).length > 0 ? 'documents-pending' : 'completed',
-      updatedAt: new Date().toISOString(),
-    }));
+  const goToCheckTerminal = (transfer: SupplierTransfer) => {
+    selectCheckTransfer(transfer);
+    onActiveTabChange('check-in-out');
+  };
+
+  const goToUploadDocument = (transfer: SupplierTransfer) => {
+    setSupplierDocsFilters(defaultSupplierDocsFilters);
+    openDocumentUpload(transfer);
+    onActiveTabChange('vouchers-docs');
+  };
+
+  const openEditTransfer = (transfer: SupplierTransfer) => {
+    if (transfer.status !== 'ready-for-checkout') return;
+    setSelectedTransferId(transfer.id);
+    setTransferForm({
+      productionOrder: transfer.productionOrder,
+      supplierId: transfer.supplierId,
+      externalProcess: transfer.externalProcess,
+      partNumber: transfer.partNumber,
+      lotSerial: transfer.lotSerial,
+      quantityToSend: String(transfer.quantitySent || ''),
+      expectedReturnDate: transfer.expectedReturnDate,
+      requiredDocuments: transfer.requiredDocuments,
+      notes: transfer.notes,
+    });
+    setModalMode('edit-transfer');
+  };
+
+  const deleteTransfer = (transfer: SupplierTransfer) => {
+    if (transfer.status !== 'ready-for-checkout') return;
+    setTransfers((currentTransfers) => {
+      const remainingTransfers = currentTransfers.filter((item) => item.id !== transfer.id);
+      if (selectedTransferId === transfer.id) {
+        setSelectedTransferId(remainingTransfers[0]?.id ?? '');
+      }
+      return remainingTransfers;
+    });
   };
 
   const createTransfer = (event: React.FormEvent<HTMLFormElement>) => {
@@ -822,6 +895,28 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
     setTransfers((currentTransfers) => [transfer, ...currentTransfers]);
     setSelectedTransferId(transfer.id);
     onActiveTabChange('transfers');
+    setModalMode(null);
+  };
+
+  const editTransfer = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!selectedTransfer || selectedTransfer.status !== 'ready-for-checkout') return;
+    const supplier = suppliers.find((item) => item.id === transferForm.supplierId) ?? suppliers[0];
+    const order = mockProductionOrders.find((item) => item.orderNumber === transferForm.productionOrder);
+    updateTransfer(selectedTransfer.id, (transfer) => ({
+      ...transfer,
+      productionOrder: transferForm.productionOrder,
+      supplierId: supplier.id,
+      supplierName: supplier.name,
+      externalProcess: transferForm.externalProcess.trim(),
+      partNumber: transferForm.partNumber.trim() || order?.partNumber || '',
+      lotSerial: transferForm.lotSerial.trim(),
+      quantitySent: Number(transferForm.quantityToSend) || 0,
+      expectedReturnDate: transferForm.expectedReturnDate,
+      requiredDocuments: transferForm.requiredDocuments,
+      notes: transferForm.notes.trim(),
+      updatedAt: new Date().toISOString(),
+    }));
     setModalMode(null);
   };
 
@@ -860,7 +955,7 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
 
   const checkoutTransfer = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!selectedTransfer || !checkoutForm.confirmed) return;
+    if (!selectedTransfer) return;
 
     const quantitySent = Number(checkoutForm.quantitySent) || selectedTransfer.quantitySent;
     const voucher: SupplierVoucher = {
@@ -876,6 +971,7 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
       checkoutDate: new Date().toISOString(),
       checkedOutBy: 'MES Supervisor',
       expectedReturnDate: selectedTransfer.expectedReturnDate,
+      attachment: createUploadedVoucherAttachment(checkoutForm.attachmentFile),
       notes: checkoutForm.notes.trim(),
     };
 
@@ -888,6 +984,7 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
       updatedAt: new Date().toISOString(),
     }));
     setActiveVoucher(voucher);
+    setCheckoutForm((current) => ({ ...current, confirmed: false, attachmentFile: null }));
     setModalMode('voucher');
   };
 
@@ -898,7 +995,16 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
     const quantityReceived = Number(checkinForm.quantityReceived) || 0;
     const quantityAccepted = Number(checkinForm.quantityAccepted) || 0;
     const quantityRejected = Number(checkinForm.quantityRejected) || 0;
-    const nextStatus = getTransferStatusAfterCheckin(selectedTransfer, quantityReceived, quantityAccepted, quantityRejected, checkinForm.receivedDocuments);
+    const accumulatedQuantityReceived = selectedTransfer.quantityReceived + quantityReceived;
+    const accumulatedQuantityAccepted = selectedTransfer.quantityAccepted + quantityAccepted;
+    const accumulatedQuantityRejected = selectedTransfer.quantityRejected + quantityRejected;
+    const nextStatus = getTransferStatusAfterCheckin(
+      selectedTransfer,
+      accumulatedQuantityReceived,
+      accumulatedQuantityAccepted,
+      accumulatedQuantityRejected,
+      checkinForm.receivedDocuments,
+    );
     const voucher: SupplierVoucher = {
       id: `IV-${new Date().toISOString().slice(2, 10).replace(/-/g, '')}-${String(selectedTransfer.vouchers.length + 1).padStart(3, '0')}`,
       transferId: selectedTransfer.id,
@@ -916,14 +1022,15 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
       receivedBy: 'Receiving',
       expectedReturnDate: selectedTransfer.expectedReturnDate,
       documentsReceived: checkinForm.receivedDocuments,
+      attachment: createUploadedVoucherAttachment(checkinForm.attachmentFile),
       notes: checkinForm.notes.trim(),
     };
 
     updateTransfer(selectedTransfer.id, (transfer) => ({
       ...transfer,
-      quantityReceived,
-      quantityAccepted,
-      quantityRejected,
+      quantityReceived: transfer.quantityReceived + quantityReceived,
+      quantityAccepted: transfer.quantityAccepted + quantityAccepted,
+      quantityRejected: transfer.quantityRejected + quantityRejected,
       status: nextStatus,
       receivedDocuments: checkinForm.receivedDocuments,
       receivedNotes: checkinForm.notes.trim(),
@@ -931,6 +1038,13 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
       updatedAt: new Date().toISOString(),
     }));
     setActiveVoucher(voucher);
+    setCheckinForm((current) => ({
+      ...current,
+      quantityReceived: '',
+      quantityAccepted: '',
+      quantityRejected: '0',
+      attachmentFile: null,
+    }));
     setModalMode('voucher');
   };
 
@@ -958,7 +1072,7 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
         ...transfer,
         documents: [...transfer.documents, document],
         receivedDocuments,
-        status: transfer.status === 'documents-pending' && !hasMissingDocuments ? 'closed' : transfer.status,
+        status: transfer.status === 'documents-pending' && !hasMissingDocuments ? 'completed' : transfer.status,
         updatedAt: new Date().toISOString(),
       };
     });
@@ -971,11 +1085,13 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
         <button
           key={transfer.id}
           type="button"
+          className={isOverdueTransfer(transfer) ? 'overdue' : ''}
           onClick={() => {
             setSelectedTransferId(transfer.id);
             onActiveTabChange('transfers');
           }}
         >
+          {isOverdueTransfer(transfer) ? <Clock className="supplier-overdue-card-icon" size={15} aria-hidden="true" /> : null}
           <span>{transfer.id}</span>
           <strong>{transfer.supplierName}</strong>
           <em>{formatSupplierDate(transfer.expectedReturnDate)}</em>
@@ -991,7 +1107,7 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
       <div className="supplier-kpi-group supplier-kpi-group-primary">
         <article><span><ClipboardCheck size={16} /> Active Transfers</span><strong>{activeSupplierTransfers.length}</strong><em>open supplier records</em></article>
         <article className={`supplier-overdue-kpi ${overdueTransfers > 0 ? 'risk' : 'clear'}`}>
-          <span><Check size={16} /> Overdue Transfers</span>
+          <span><Clock size={16} /> Overdue Transfers</span>
           <strong>{overdueTransfers}</strong>
           <em>past expected return</em>
         </article>
@@ -1055,10 +1171,11 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
                 <td>
                   <div className="supplier-table-actions">
                     <button type="button" onClick={() => setSelectedTransferId(transfer.id)} aria-label={`View ${transfer.id}`}><Eye size={15} /></button>
-                    <button type="button" onClick={() => openCheckout(transfer)} disabled={transfer.status === 'sent-to-supplier' || transfer.status === 'closed' || transfer.status === 'completed'} aria-label={`Check out ${transfer.id}`}><Truck size={15} /></button>
-                    <button type="button" onClick={() => openCheckin(transfer)} disabled={transfer.status === 'draft' || transfer.status === 'ready-for-checkout' || transfer.status === 'closed' || transfer.status === 'completed'} aria-label={`Check in ${transfer.id}`}><PackageCheck size={15} /></button>
-                    <button type="button" onClick={() => openDocumentUpload(transfer)} aria-label={`Upload document for ${transfer.id}`}><Upload size={15} /></button>
-                    <button type="button" onClick={() => closeTransfer(transfer)} disabled={transfer.status === 'closed' || transfer.status === 'completed'} aria-label={`Close ${transfer.id}`}><Check size={15} /></button>
+                    <button type="button" onClick={() => goToCheckTerminal(transfer)} disabled={transfer.status !== 'ready-for-checkout'} aria-label={`Check out ${transfer.id}`}><Truck size={15} /></button>
+                    <button type="button" onClick={() => goToCheckTerminal(transfer)} disabled={!['sent-to-supplier', 'discrepancy'].includes(transfer.status)} aria-label={`Check in ${transfer.id}`}><PackageCheck size={15} /></button>
+                    <button type="button" onClick={() => goToUploadDocument(transfer)} aria-label={`Upload document for ${transfer.id}`}><Upload size={15} /></button>
+                    <button type="button" onClick={() => openEditTransfer(transfer)} disabled={transfer.status !== 'ready-for-checkout'} aria-label={`Edit ${transfer.id}`}><Pencil size={15} /></button>
+                    <button type="button" onClick={() => deleteTransfer(transfer)} disabled={transfer.status !== 'ready-for-checkout'} aria-label={`Delete ${transfer.id}`}><Trash2 size={15} /></button>
                   </div>
                 </td>
               </tr>
@@ -1113,17 +1230,22 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
         <span><b>Part Number</b>{selectedTransfer.partNumber}</span>
         <span><b>Lot / Serial</b>{selectedTransfer.lotSerial}</span>
         <span><b>Date of Issuance</b>{formatSupplierDate(selectedTransfer.createdAt.slice(0, 10))}</span>
-        <span><b>Expected Return</b>{formatSupplierDate(selectedTransfer.expectedReturnDate)}</span>
+        <span className={isOverdueTransfer(selectedTransfer) ? 'supplier-selected-transfer-overdue-date' : ''}>
+          {isOverdueTransfer(selectedTransfer) ? <Clock className="supplier-selected-transfer-overdue-icon" size={15} aria-hidden="true" /> : null}
+          <b>Expected Return</b>
+          {formatSupplierDate(selectedTransfer.expectedReturnDate)}
+        </span>
         <span className={`supplier-selected-transfer-status supplier-selected-transfer-status-${selectedTransfer.status}`}>
           <b>Status</b>
           <strong>{formatSupplierLabel(selectedTransfer.status)}</strong>
         </span>
       </div>
       <div className="supplier-selected-transfer-actions">
-        <button type="button" onClick={() => openCheckout(selectedTransfer)} disabled={selectedTransfer.status === 'sent-to-supplier' || selectedTransfer.status === 'closed' || selectedTransfer.status === 'completed'}><Truck size={16} /> Check Out</button>
-        <button type="button" onClick={() => openCheckin(selectedTransfer)} disabled={selectedTransfer.status === 'draft' || selectedTransfer.status === 'ready-for-checkout' || selectedTransfer.status === 'closed' || selectedTransfer.status === 'completed'}><PackageCheck size={16} /> Check In</button>
-        <button type="button" onClick={() => openDocumentUpload(selectedTransfer)}><Upload size={16} /> Upload Document</button>
-        <button type="button" onClick={() => closeTransfer(selectedTransfer)} disabled={selectedTransfer.status === 'closed' || selectedTransfer.status === 'completed'}><Check size={16} /> Close Transfer</button>
+        <button type="button" onClick={() => goToCheckTerminal(selectedTransfer)} disabled={selectedTransfer.status !== 'ready-for-checkout'}><Truck size={16} /> Check Out</button>
+        <button type="button" onClick={() => goToCheckTerminal(selectedTransfer)} disabled={!['sent-to-supplier', 'discrepancy'].includes(selectedTransfer.status)}><PackageCheck size={16} /> Check In</button>
+        <button type="button" onClick={() => goToUploadDocument(selectedTransfer)}><Upload size={16} /> Upload Document</button>
+        <button className="supplier-transfer-edit-action" type="button" onClick={() => openEditTransfer(selectedTransfer)} disabled={selectedTransfer.status !== 'ready-for-checkout'}><Pencil size={16} /> Edit</button>
+        <button className="supplier-transfer-delete-action" type="button" onClick={() => deleteTransfer(selectedTransfer)} disabled={selectedTransfer.status !== 'ready-for-checkout'}><Trash2 size={16} /> Delete</button>
       </div>
       <div className="supplier-transfer-artifacts">
         <div className="supplier-detail-block">
@@ -1361,7 +1483,33 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
       </div>
       <div className="supplier-docs-toolbar">
         <span><Eye size={16} /> {filteredSupplierDocTransfers.length} matching records {hasSupplierDocsFilters ? '/ filtered context on' : '/ all context'}</span>
-        <button type="button" onClick={() => setSupplierDocsFilters(defaultSupplierDocsFilters)}>Clear Filters</button>
+        <div className="supplier-docs-toolbar-actions">
+          <label className="supplier-docs-completed-toggle">
+            <input
+              type="checkbox"
+              checked={supplierDocsFilters.showCompletedOrders}
+              onChange={(event) => setSupplierDocsFilters((current) => ({
+                ...current,
+                showCompletedOrders: event.target.checked,
+                onlyShowCompletedOrders: event.target.checked ? current.onlyShowCompletedOrders : false,
+              }))}
+            />
+            <span>Show Completed Orders</span>
+          </label>
+          <label className="supplier-docs-completed-toggle">
+            <input
+              type="checkbox"
+              checked={supplierDocsFilters.onlyShowCompletedOrders}
+              onChange={(event) => setSupplierDocsFilters((current) => ({
+                ...current,
+                showCompletedOrders: event.target.checked ? true : current.showCompletedOrders,
+                onlyShowCompletedOrders: event.target.checked,
+              }))}
+            />
+            <span>Only Show Completed Orders</span>
+          </label>
+          <button type="button" onClick={() => setSupplierDocsFilters(defaultSupplierDocsFilters)}>Clear Filters</button>
+        </div>
       </div>
       {filteredSupplierDocTransfers.length ? (
         <section className="supplier-context-transfers" aria-label="Transfer orders matching vouchers and docs context">
@@ -1430,7 +1578,7 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
           </section>
           <section>
             <div className="supplier-section-heading">
-              <span><ClipboardCheck size={16} /> Order Documents</span>
+              <span><ClipboardCheck size={16} /> Expected Documents from the Supplier</span>
               <strong>{selectedDocsTransfer.requiredDocuments.length} required</strong>
             </div>
             <div className="supplier-document-card-list supplier-order-document-list">
@@ -1444,7 +1592,7 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
           </section>
           <section>
             <div className="supplier-section-heading">
-              <span><Upload size={16} /> Supplier Documents</span>
+              <span><Upload size={16} /> Documents for the Supplier</span>
               <strong>{selectedDocsTransfer.documents.length} uploaded</strong>
             </div>
             <div className="supplier-document-card-list">
@@ -1514,9 +1662,18 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
                   <span>Supplier</span>
                   <strong>{selectedCheckTransfer.supplierName}</strong>
                 </article>
-                <article>
+                <article className="supplier-terminal-capability-card">
                   <span>Capability</span>
-                  <strong>{selectedCheckTransfer.externalProcess}</strong>
+                  <strong>
+                    <em
+                      className="supplier-capability-pill supplier-terminal-capability-pill"
+                      style={{
+                        '--supplier-capability-color': getSupplierCapabilityColor(selectedCheckTransfer.externalProcess),
+                      } as React.CSSProperties}
+                    >
+                      {selectedCheckTransfer.externalProcess}
+                    </em>
+                  </strong>
                 </article>
                 <article>
                   <span>Expected Return</span>
@@ -1558,7 +1715,7 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
 
           <div className="supplier-terminal-actions">
             <form onSubmit={checkoutTransfer}>
-              <button className="supplier-terminal-action supplier-terminal-action-out" type="submit" disabled={!canCheckOutSelectedTransfer || !checkoutForm.confirmed}>
+              <button className="supplier-terminal-action supplier-terminal-action-out" type="submit" disabled={!canCheckOutSelectedTransfer}>
                 <Truck size={28} />
                 <strong>Check-Out</strong>
                 <span>{canCheckOutSelectedTransfer ? 'Send parts to supplier' : 'Unavailable for current status'}</span>
@@ -1576,9 +1733,22 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
                   Checkout Notes
                   <textarea value={checkoutForm.notes} onChange={(event) => setCheckoutForm((current) => ({ ...current, notes: event.target.value }))} disabled={!canCheckOutSelectedTransfer} />
                 </label>
+                <label className="supplier-terminal-wide-field">
+                  Attach Physical Document
+                  <span className="supplier-file-upload-control">
+                    <span><Upload size={15} /> Select File</span>
+                    <em>{checkoutForm.attachmentFile?.name ?? 'No file selected'}</em>
+                    <input
+                      type="file"
+                      accept="application/pdf,image/*"
+                      disabled={!canCheckOutSelectedTransfer}
+                      onChange={(event) => setCheckoutForm((current) => ({ ...current, attachmentFile: event.target.files?.[0] ?? null }))}
+                    />
+                  </span>
+                </label>
                 <label className="supplier-terminal-confirm-field">
                   <input type="checkbox" checked={checkoutForm.confirmed} onChange={(event) => setCheckoutForm((current) => ({ ...current, confirmed: event.target.checked }))} disabled={!canCheckOutSelectedTransfer} />
-                  <span>Parts verified and ready to leave the facility</span>
+                  <span>Parts verified before leaving the facility</span>
                 </label>
               </div>
             </form>
@@ -1613,6 +1783,19 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
                 <label className="supplier-terminal-wide-field">
                   Receiving Notes
                   <textarea value={checkinForm.notes} onChange={(event) => setCheckinForm((current) => ({ ...current, notes: event.target.value }))} disabled={!canCheckInSelectedTransfer} />
+                </label>
+                <label className="supplier-terminal-wide-field">
+                  Attach Physical Document
+                  <span className="supplier-file-upload-control">
+                    <span><Upload size={15} /> Select File</span>
+                    <em>{checkinForm.attachmentFile?.name ?? 'No file selected'}</em>
+                    <input
+                      type="file"
+                      accept="application/pdf,image/*"
+                      disabled={!canCheckInSelectedTransfer}
+                      onChange={(event) => setCheckinForm((current) => ({ ...current, attachmentFile: event.target.files?.[0] ?? null }))}
+                    />
+                  </span>
                 </label>
               </div>
             </form>
@@ -1770,16 +1953,16 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
 
     return (
       <div className="supplier-modal-backdrop" role="presentation">
-        <div className="supplier-modal" role="dialog" aria-modal="true">
+        <div className={`supplier-modal ${modalMode === 'voucher' ? 'supplier-voucher-modal' : ''}`} role="dialog" aria-modal="true">
           <button className="supplier-modal-close" type="button" onClick={() => setModalMode(null)} aria-label="Close dialog">
             <X size={18} />
           </button>
 
-          {modalMode === 'create' ? (
-            <form onSubmit={createTransfer}>
+          {modalMode === 'create' || modalMode === 'edit-transfer' ? (
+            <form onSubmit={modalMode === 'edit-transfer' ? editTransfer : createTransfer}>
               <div className="supplier-modal-header">
                 <span>Supplier Transfer</span>
-                <strong>New Supplier Transfer</strong>
+                <strong>{modalMode === 'edit-transfer' ? 'Edit Supplier Transfer' : 'New Supplier Transfer'}</strong>
               </div>
               <div className="supplier-form-grid">
                 <label>
@@ -1828,7 +2011,7 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
               </label>
               <div className="supplier-modal-actions">
                 <button type="button" onClick={() => setModalMode(null)}>Cancel</button>
-                <button type="submit"><Plus size={16} /> Create Transfer</button>
+                <button type="submit">{modalMode === 'edit-transfer' ? <Pencil size={16} /> : <Plus size={16} />} {modalMode === 'edit-transfer' ? 'Save Transfer' : 'Create Transfer'}</button>
               </div>
             </form>
           ) : null}
@@ -2007,13 +2190,25 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
                 Checkout Notes
                 <textarea value={checkoutForm.notes} onChange={(event) => setCheckoutForm((current) => ({ ...current, notes: event.target.value }))} />
               </label>
+              <label>
+                Attach Physical Document
+                <span className="supplier-file-upload-control">
+                  <span><Upload size={15} /> Select File</span>
+                  <em>{checkoutForm.attachmentFile?.name ?? 'No file selected'}</em>
+                  <input
+                    type="file"
+                    accept="application/pdf,image/*"
+                    onChange={(event) => setCheckoutForm((current) => ({ ...current, attachmentFile: event.target.files?.[0] ?? null }))}
+                  />
+                </span>
+              </label>
               <label className="supplier-confirmation-check">
                 <input type="checkbox" checked={checkoutForm.confirmed} onChange={(event) => setCheckoutForm((current) => ({ ...current, confirmed: event.target.checked }))} />
-                <span>Confirm parts physically left the plant and create outbound voucher.</span>
+                <span>Parts physically left the plant and outbound voucher will be created.</span>
               </label>
               <div className="supplier-modal-actions">
                 <button type="button" onClick={() => setModalMode(null)}>Cancel</button>
-                <button type="submit" disabled={!checkoutForm.confirmed}><Truck size={16} /> Check Out</button>
+                <button type="submit"><Truck size={16} /> Check Out</button>
               </div>
             </form>
           ) : null}
@@ -2045,6 +2240,18 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
               <label>
                 Received Notes
                 <textarea value={checkinForm.notes} onChange={(event) => setCheckinForm((current) => ({ ...current, notes: event.target.value }))} />
+              </label>
+              <label>
+                Attach Physical Document
+                <span className="supplier-file-upload-control">
+                  <span><Upload size={15} /> Select File</span>
+                  <em>{checkinForm.attachmentFile?.name ?? 'No file selected'}</em>
+                  <input
+                    type="file"
+                    accept="application/pdf,image/*"
+                    onChange={(event) => setCheckinForm((current) => ({ ...current, attachmentFile: event.target.files?.[0] ?? null }))}
+                  />
+                </span>
               </label>
               <div className="supplier-modal-actions">
                 <button type="button" onClick={() => setModalMode(null)}>Cancel</button>

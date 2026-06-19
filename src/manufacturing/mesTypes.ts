@@ -63,12 +63,9 @@ export type TraceabilityEvent = {
 export type SupplierApprovedStatus = 'approved' | 'pending-approval' | 'inactive';
 
 export type SupplierTransferStatus =
-  | 'draft'
   | 'ready-for-checkout'
   | 'sent-to-supplier'
-  | 'received-back'
   | 'documents-pending'
-  | 'closed'
   | 'completed'
   | 'discrepancy';
 
@@ -106,6 +103,12 @@ export type SupplierDocument = {
   hash?: string;
 };
 
+export type SupplierVoucherAttachment = {
+  fileName: string;
+  fileUrl: string;
+  fileType: string;
+};
+
 export type SupplierVoucher = {
   id: string;
   transferId: string;
@@ -125,6 +128,7 @@ export type SupplierVoucher = {
   receivedBy?: string;
   expectedReturnDate: string;
   documentsReceived?: SupplierDocumentType[];
+  attachment?: SupplierVoucherAttachment;
   notes: string;
 };
 
