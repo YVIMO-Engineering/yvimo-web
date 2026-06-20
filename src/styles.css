@@ -25444,3 +25444,27 @@ body[data-screenshot-export="academy-track"] .academy-mobile-track-step em {
 body[data-screenshot-export="academy-track"] .academy-mobile-track-step button {
   display: none !important;
 }
+.supplier-backend-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 24px 12px;
+  border: 1px solid #fdba74;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #fff7ed;
+  color: #9a3412;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.supplier-backend-status button {
+  border: 1px solid #f97316;
+  border-radius: 6px;
+  padding: 6px 10px;
+  background: #f97316;
+  color: #ffffff;
+  cursor: pointer;
+  font: inherit;
+}

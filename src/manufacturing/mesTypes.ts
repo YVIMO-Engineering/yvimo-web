@@ -134,6 +134,7 @@ export type SupplierVoucher = {
 
 export type SupplierTransfer = {
   id: string;
+  databaseId?: string;
   productionOrder: string;
   supplierId: string;
   supplierName: string;

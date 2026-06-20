@@ -18,8 +18,10 @@ import {
   X,
 } from 'lucide-react';
 import { resolveGooglePlacesAddressMatch, searchGooglePlacesAddressMatches, type GooglePlacesAddressMatch } from '../lib/maps/googlePlacesAddressLookup';
+import { supabase } from '../lib/supabaseClient';
 import { mockProductionOrders, mockSupplierTransfers, mockSuppliers } from './mesMockData';
 import type {
+  ProductionOrder,
   Supplier,
   SupplierDocument,
   SupplierDocumentType,
@@ -81,6 +83,7 @@ type DocumentFormState = {
   documentType: SupplierDocumentType;
   fileName: string;
   approvalStatus: SupplierDocument['approvalStatus'];
+  file: File | null;
 };
 
 type SupplierFormState = {
@@ -192,6 +195,15 @@ const defaultSupplierDocsFilters: SupplierDocsFilters = {
   onlyShowCompletedOrders: false,
 };
 
+const supplierOperationsDemoMode = import.meta.env.VITE_SUPPLIERS_DEMO_MODE === 'true';
+const supplierFilesBucket = 'mes-supplier-files';
+const supplierFileInputType = 'file';
+const supplierDocumentAccept = 'application/pdf,image/*';
+const supplierBackendStatusClass = 'supplier-backend-status';
+const supplierAlertRole = 'alert';
+const supplierButtonType = 'button';
+const supplierFileUploadClass = 'supplier-file-upload-control';
+const supplierNoFileText = 'No file selected';
 const formatSupplierLabel = (value: string) => value.replace(/-/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 
 const getSupplierInitials = (name: string) => name.split(/\s+/).slice(0, 2).map((word) => word[0]).join('').toUpperCase();
@@ -213,8 +225,8 @@ const getSupplierTransferShift = (transfer: SupplierTransfer) => {
   return '3rd';
 };
 
-const getSupplierTransferWorkCenter = (transfer: SupplierTransfer) => (
-  mockProductionOrders.find((order) => order.orderNumber === transfer.productionOrder)?.assignedWorkCenter || 'Unassigned'
+const getSupplierTransferWorkCenter = (transfer: SupplierTransfer, productionOrders: ProductionOrder[]) => (
+  productionOrders.find((order) => order.orderNumber === transfer.productionOrder)?.assignedWorkCenter || 'Unassigned'
 );
 
 function normalizeSupplierHexColor(color: string) {
@@ -319,6 +331,43 @@ const createUploadedVoucherAttachment = (file: File | null): SupplierVoucher['at
     fileType: file.type,
   } : undefined
 );
+
+type SupplierBackendRow = Record<string, any>;
+
+const sanitizeSupplierFileName = (value: string) => (
+  value.trim().replace(/[^a-z0-9._-]+/gi, '-').replace(/^-+|-+$/g, '') || 'file'
+);
+
+async function uploadSupplierStorageFile(organizationId: string, category: string, ownerId: string, file: File) {
+  const filePath = [
+    organizationId,
+    category,
+    ownerId,
+    crypto.randomUUID() + '-' + sanitizeSupplierFileName(file.name),
+  ].join('/');
+  const { error } = await supabase.storage.from(supplierFilesBucket).upload(filePath, file, {
+    cacheControl: '3600',
+    contentType: file.type || undefined,
+    upsert: false,
+  });
+  if (error) throw error;
+  return filePath;
+}
+
+async function getSupplierStorageUrl(filePath: string | null) {
+  if (!filePath) return '';
+  const { data, error } = await supabase.storage.from(supplierFilesBucket).createSignedUrl(filePath, 3600);
+  if (error) throw error;
+  return data.signedUrl;
+}
+
+async function getSupplierFileHash(file: File) {
+  const digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
+  const hash = Array.from(new Uint8Array(digest))
+    .map((value) => value.toString(16).padStart(2, '0'))
+    .join('');
+  return 'sha256:' + hash;
+}
 
 const getTodayIsoDate = () => {
   const today = new Date();
@@ -441,10 +490,14 @@ function SupplierVoucherView({ voucher }: { voucher: SupplierVoucher }) {
   );
 }
 
-export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTabChange }: SupplierOperationsWorkspaceProps) {
-  const [suppliers, setSuppliers] = React.useState<SupplierRecord[]>(() => createInitialSupplierRecords());
-  const [transfers, setTransfers] = React.useState<SupplierTransfer[]>(mockSupplierTransfers);
-  const [selectedTransferId, setSelectedTransferId] = React.useState(mockSupplierTransfers[0]?.id ?? '');
+export function SupplierOperationsWorkspace({ onNavigate, organizationId, activeTab, onActiveTabChange }: SupplierOperationsWorkspaceProps) {
+  const [suppliers, setSuppliers] = React.useState<SupplierRecord[]>(() => supplierOperationsDemoMode ? createInitialSupplierRecords() : []);
+  const [transfers, setTransfers] = React.useState<SupplierTransfer[]>(supplierOperationsDemoMode ? mockSupplierTransfers : []);
+  const [productionOrders, setProductionOrders] = React.useState<ProductionOrder[]>(supplierOperationsDemoMode ? mockProductionOrders : []);
+  const [selectedTransferId, setSelectedTransferId] = React.useState(supplierOperationsDemoMode ? mockSupplierTransfers[0]?.id ?? '' : '');
+  const [backendLoading, setBackendLoading] = React.useState(!supplierOperationsDemoMode);
+  const [backendSaving, setBackendSaving] = React.useState(false);
+  const [backendError, setBackendError] = React.useState('');
   const [modalMode, setModalMode] = React.useState<SupplierModalMode>(null);
   const [activeVoucher, setActiveVoucher] = React.useState<SupplierVoucher | null>(null);
   const [transferForm, setTransferForm] = React.useState<SupplierTransferFormState>(defaultTransferForm);
@@ -462,7 +515,7 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
   const [capabilityColorPickerPosition, setCapabilityColorPickerPosition] = React.useState<Omit<MenuPosition, 'maxHeight'> | null>(null);
   const [checkoutForm, setCheckoutForm] = React.useState<CheckoutFormState>({ quantitySent: '', notes: '', confirmed: false, attachmentFile: null });
   const [checkinForm, setCheckinForm] = React.useState<CheckinFormState>({ quantityReceived: '', quantityAccepted: '', quantityRejected: '0', receivedDocuments: [], attachmentFile: null, notes: '' });
-  const [documentForm, setDocumentForm] = React.useState<DocumentFormState>({ documentType: 'certificate', fileName: '', approvalStatus: 'pending-review' });
+  const [documentForm, setDocumentForm] = React.useState<DocumentFormState>({ documentType: 'certificate', fileName: '', approvalStatus: 'pending-review', file: null });
   const [previewDocument, setPreviewDocument] = React.useState<SupplierDocument | null>(null);
   const [previewSupplierPdf, setPreviewSupplierPdf] = React.useState<SupplierPdfDocument | null>(null);
   const addressLookupControlRef = React.useRef<HTMLDivElement | null>(null);
@@ -471,6 +524,147 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
   const capabilityDropdownMenuRef = React.useRef<HTMLDivElement | null>(null);
   const capabilityColorTriggerRef = React.useRef<HTMLSpanElement | null>(null);
   const capabilityColorPickerRef = React.useRef<HTMLDivElement | null>(null);
+
+  const refreshSupplierOperations = React.useCallback(async () => {
+    if (supplierOperationsDemoMode) return;
+    setBackendLoading(true);
+    setBackendError('');
+    try {
+      const [supplierResult, transferResult, orderResult] = await Promise.all([
+        supabase.from('mes_suppliers').select(
+          '*, capability_links:mes_supplier_capability_links(capability:mes_supplier_capabilities(id,name,color))',
+        ).eq('organization_id', organizationId).order('name'),
+        supabase.from('mes_supplier_transfers').select(
+          '*, supplier:mes_suppliers(name), documents:mes_supplier_documents(*), vouchers:mes_supplier_vouchers(*)',
+        ).eq('organization_id', organizationId).order('created_at', { ascending: false }),
+        supabase.from('mes_production_orders').select('*').eq('organization_id', organizationId).order('order_number'),
+      ]);
+      const firstError = supplierResult.error ?? transferResult.error ?? orderResult.error;
+      if (firstError) throw firstError;
+
+      const supplierRows = (supplierResult.data ?? []) as SupplierBackendRow[];
+      const transferRows = (transferResult.data ?? []) as SupplierBackendRow[];
+      const filePaths = Array.from(new Set([
+        ...supplierRows.flatMap((supplier) => [supplier.fiscal_document_path, supplier.banking_document_path]),
+        ...transferRows.flatMap((transfer) => [
+          ...(transfer.documents ?? []).map((document: SupplierBackendRow) => document.file_path),
+          ...(transfer.vouchers ?? []).map((voucher: SupplierBackendRow) => voucher.attachment_path),
+        ]),
+      ].filter((filePath): filePath is string => Boolean(filePath))));
+      const signedFileUrls = new Map(await Promise.all(
+        filePaths.map(async (filePath) => [filePath, await getSupplierStorageUrl(filePath)] as const),
+      ));
+
+      const nextSuppliers: SupplierRecord[] = supplierRows.map((supplier) => ({
+        id: supplier.id,
+        name: supplier.name,
+        contactName: supplier.contact_name,
+        email: supplier.email,
+        phone: supplier.phone,
+        address: supplier.address,
+        approvedStatus: supplier.approved_status,
+        processCapabilities: (supplier.capability_links ?? [])
+          .map((link: SupplierBackendRow) => link.capability?.name)
+          .filter(Boolean),
+        fiscalDocument: supplier.fiscal_document_path ? {
+          label: 'Fiscal Data',
+          fileName: supplier.fiscal_document_name,
+          fileUrl: signedFileUrls.get(supplier.fiscal_document_path) ?? '',
+        } : undefined,
+        bankingDocument: supplier.banking_document_path ? {
+          label: 'Banking Data',
+          fileName: supplier.banking_document_name,
+          fileUrl: signedFileUrls.get(supplier.banking_document_path) ?? '',
+        } : undefined,
+        notes: supplier.notes,
+      }));
+      const nextTransfers: SupplierTransfer[] = transferRows.map((transfer) => {
+        const supplierName = transfer.supplier?.name ?? 'Unknown Supplier';
+        return {
+          id: transfer.transfer_number,
+          databaseId: transfer.id,
+          productionOrder: transfer.production_order_number,
+          supplierId: transfer.supplier_id,
+          supplierName,
+          externalProcess: transfer.external_process,
+          partNumber: transfer.part_number,
+          lotSerial: transfer.lot_serial,
+          quantitySent: transfer.quantity_sent,
+          quantityReceived: transfer.quantity_received,
+          quantityAccepted: transfer.quantity_accepted,
+          quantityRejected: transfer.quantity_rejected,
+          status: transfer.status,
+          expectedReturnDate: transfer.expected_return_date,
+          requiredDocuments: transfer.required_documents ?? [],
+          receivedDocuments: transfer.received_documents ?? [],
+          documents: (transfer.documents ?? []).map((document: SupplierBackendRow) => ({
+            id: document.id,
+            transferId: transfer.transfer_number,
+            supplier: supplierName,
+            documentType: document.document_type,
+            fileName: document.file_name,
+            fileUrl: signedFileUrls.get(document.file_path) ?? '',
+            uploadedBy: document.uploaded_by_label,
+            uploadedAt: document.created_at,
+            approvalStatus: document.approval_status,
+            hash: document.file_hash ?? undefined,
+          })),
+          vouchers: (transfer.vouchers ?? []).map((voucher: SupplierBackendRow) => ({
+            id: voucher.voucher_number,
+            transferId: transfer.transfer_number,
+            direction: voucher.direction,
+            supplier: supplierName,
+            productionOrder: transfer.production_order_number,
+            partNumber: transfer.part_number,
+            lotSerial: transfer.lot_serial,
+            quantitySent: voucher.quantity_sent,
+            quantityReceived: voucher.quantity_received ?? undefined,
+            quantityAccepted: voucher.quantity_accepted ?? undefined,
+            quantityRejected: voucher.quantity_rejected ?? undefined,
+            externalProcess: transfer.external_process,
+            checkoutDate: voucher.direction === 'outbound' ? voucher.processed_at : undefined,
+            checkedOutBy: voucher.direction === 'outbound' ? voucher.processed_by_label : undefined,
+            receivedDate: voucher.direction === 'inbound' ? voucher.processed_at : undefined,
+            receivedBy: voucher.direction === 'inbound' ? voucher.processed_by_label : undefined,
+            expectedReturnDate: transfer.expected_return_date,
+            documentsReceived: voucher.documents_received ?? [],
+            attachment: voucher.attachment_path ? {
+              fileName: voucher.attachment_name,
+              fileUrl: signedFileUrls.get(voucher.attachment_path) ?? '',
+              fileType: voucher.attachment_type ?? 'application/octet-stream',
+            } : undefined,
+            notes: voucher.notes,
+          })),
+          notes: transfer.notes,
+          checkoutNotes: transfer.checkout_notes,
+          receivedNotes: transfer.received_notes,
+          createdAt: transfer.created_at,
+          updatedAt: transfer.updated_at,
+        };
+      });
+      setSuppliers(nextSuppliers);
+      setTransfers(nextTransfers);
+      setProductionOrders((orderResult.data ?? []).map((order: SupplierBackendRow) => ({
+        id: order.id, orderNumber: order.order_number, partNumber: order.part_number, partName: order.part_name,
+        plannedQuantity: order.planned_quantity, completedQuantity: order.completed_quantity, scrapQuantity: order.scrap_quantity,
+        status: order.status, priority: order.priority, dueDate: order.due_date, assignedWorkCenter: order.assigned_work_center,
+        plannedShifts: order.planned_shifts ?? [], manufacturingType: order.manufacturing_type ?? 'multi-step',
+        productionFlow: order.production_flow ?? '', assignedStation: order.assigned_station ?? '',
+      })));
+      setCustomSupplierCapabilityColors(Object.fromEntries(supplierRows.flatMap((supplier) => (
+        (supplier.capability_links ?? []).map((link: SupplierBackendRow) => [link.capability?.name, link.capability?.color])
+      )).filter(([name, color]) => Boolean(name && color))));
+      setSelectedTransferId((current) => nextTransfers.some((transfer) => transfer.id === current) ? current : nextTransfers[0]?.id ?? '');
+    } catch (error) {
+      setBackendError(error instanceof Error ? error.message : 'Unable to load Supplier Operations.');
+    } finally {
+      setBackendLoading(false);
+    }
+  }, [organizationId]);
+
+  React.useEffect(() => {
+    void refreshSupplierOperations();
+  }, [refreshSupplierOperations]);
 
   const selectedTransfer = transfers.find((transfer) => transfer.id === selectedTransferId) ?? transfers[0] ?? null;
   const todayIsoDate = getTodayIsoDate();
@@ -496,7 +690,7 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
   const presetSupplierCapabilityColorOptions = supplierCapabilityColorOptions.slice(0, 6);
   const usesCustomSupplierCapabilityColor = !presetSupplierCapabilityColorOptions.includes(supplierForm.newCapabilityColor);
   const supplierDocsCapabilityOptions = React.useMemo(() => Array.from(new Set(transfers.map((transfer) => transfer.externalProcess))).sort(), [transfers]);
-  const supplierDocsWorkCenterOptions = React.useMemo(() => Array.from(new Set(transfers.map(getSupplierTransferWorkCenter))).sort(), [transfers]);
+  const supplierDocsWorkCenterOptions = React.useMemo(() => Array.from(new Set(transfers.map((transfer) => getSupplierTransferWorkCenter(transfer, productionOrders)))).sort(), [productionOrders, transfers]);
   const filteredSupplierDocTransfers = React.useMemo(() => transfers.filter((transfer) => {
     const transferQuery = supplierDocsFilters.transferSearch.trim().toLowerCase();
     const supplierQuery = supplierDocsFilters.supplierSearch.trim().toLowerCase();
@@ -511,7 +705,7 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
     ].join(' ').toLowerCase();
     const expectedReturnDate = transfer.expectedReturnDate || '';
     const transferShift = getSupplierTransferShift(transfer);
-    const transferWorkCenter = getSupplierTransferWorkCenter(transfer);
+    const transferWorkCenter = getSupplierTransferWorkCenter(transfer, productionOrders);
 
     return (!transferQuery || transferHaystack.includes(transferQuery))
       && (!supplierQuery || supplierHaystack.includes(supplierQuery))
@@ -522,7 +716,7 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
       && (!supplierDocsFilters.shift || transferShift === supplierDocsFilters.shift)
       && (!supplierDocsFilters.onlyShowCompletedOrders || transfer.status === 'completed')
       && (supplierDocsFilters.showCompletedOrders || transfer.status !== 'completed');
-  }), [supplierDocsFilters, transfers]);
+  }), [productionOrders, supplierDocsFilters, transfers]);
   const selectedDocsTransfer = filteredSupplierDocTransfers.find((transfer) => transfer.id === selectedTransferId) ?? filteredSupplierDocTransfers[0] ?? null;
   const hasSupplierDocsFilters = Object.entries(supplierDocsFilters).some(([key, value]) => value !== defaultSupplierDocsFilters[key as keyof SupplierDocsFilters]);
 
@@ -530,8 +724,28 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
     setTransfers((currentTransfers) => currentTransfers.map((transfer) => transfer.id === transferId ? updater(transfer) : transfer));
   };
 
+  const persistSupplierOperation = async (operation: () => Promise<void>) => {
+    setBackendSaving(true);
+    setBackendError('');
+    try {
+      await operation();
+      await refreshSupplierOperations();
+      return true;
+    } catch (error) {
+      setBackendError(error instanceof Error ? error.message : 'Unable to save Supplier Operations changes.');
+      return false;
+    } finally {
+      setBackendSaving(false);
+    }
+  };
+
   const openCreateTransfer = () => {
-    setTransferForm(defaultTransferForm);
+    setTransferForm({
+      ...defaultTransferForm,
+      productionOrder: productionOrders[0]?.orderNumber ?? '',
+      partNumber: productionOrders[0]?.partNumber ?? '',
+      supplierId: suppliers.find((supplier) => supplier.approvedStatus === 'approved')?.id ?? suppliers[0]?.id ?? '',
+    });
     setModalMode('create');
   };
 
@@ -821,6 +1035,7 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
       documentType: getMissingDocuments(transfer)[0] ?? transfer.requiredDocuments[0] ?? 'certificate',
       fileName: '',
       approvalStatus: 'pending-review',
+      file: null,
     });
     setModalMode('document');
   };
@@ -853,8 +1068,18 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
     setModalMode('edit-transfer');
   };
 
-  const deleteTransfer = (transfer: SupplierTransfer) => {
+  const deleteTransfer = async (transfer: SupplierTransfer) => {
     if (transfer.status !== 'ready-for-checkout') return;
+    if (!supplierOperationsDemoMode) {
+      if (!transfer.databaseId) return;
+      const saved = await persistSupplierOperation(async () => {
+        const { error } = await supabase.from('mes_supplier_transfers').delete()
+          .eq('id', transfer.databaseId).eq('organization_id', organizationId).eq('status', 'ready-for-checkout');
+        if (error) throw error;
+      });
+      if (saved && selectedTransferId === transfer.id) setSelectedTransferId('');
+      return;
+    }
     setTransfers((currentTransfers) => {
       const remainingTransfers = currentTransfers.filter((item) => item.id !== transfer.id);
       if (selectedTransferId === transfer.id) {
@@ -864,10 +1089,35 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
     });
   };
 
-  const createTransfer = (event: React.FormEvent<HTMLFormElement>) => {
+  const createTransfer = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const supplier = suppliers.find((item) => item.id === transferForm.supplierId) ?? suppliers[0];
-    const order = mockProductionOrders.find((item) => item.orderNumber === transferForm.productionOrder);
+    const order = productionOrders.find((item) => item.orderNumber === transferForm.productionOrder);
+    if (!supplier) return;
+    if (!supplierOperationsDemoMode) {
+      const saved = await persistSupplierOperation(async () => {
+        const { error } = await supabase.from('mes_supplier_transfers').insert({
+          organization_id: organizationId,
+          transfer_number: '',
+          production_order_id: order?.id ?? null,
+          production_order_number: transferForm.productionOrder,
+          supplier_id: supplier.id,
+          external_process: transferForm.externalProcess.trim(),
+          part_number: transferForm.partNumber.trim() || order?.partNumber || '',
+          lot_serial: transferForm.lotSerial.trim(),
+          quantity_sent: Number(transferForm.quantityToSend) || 0,
+          expected_return_date: transferForm.expectedReturnDate,
+          required_documents: transferForm.requiredDocuments,
+          notes: transferForm.notes.trim(),
+        });
+        if (error) throw error;
+      });
+      if (saved) {
+        onActiveTabChange('transfers');
+        setModalMode(null);
+      }
+      return;
+    }
     const transfer: SupplierTransfer = {
       id: `ST-${new Date().toISOString().slice(2, 10).replace(/-/g, '')}-${String(transfers.length + 1).padStart(3, '0')}`,
       productionOrder: transferForm.productionOrder,
@@ -898,11 +1148,34 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
     setModalMode(null);
   };
 
-  const editTransfer = (event: React.FormEvent<HTMLFormElement>) => {
+  const editTransfer = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!selectedTransfer || selectedTransfer.status !== 'ready-for-checkout') return;
     const supplier = suppliers.find((item) => item.id === transferForm.supplierId) ?? suppliers[0];
-    const order = mockProductionOrders.find((item) => item.orderNumber === transferForm.productionOrder);
+    const order = productionOrders.find((item) => item.orderNumber === transferForm.productionOrder);
+    if (!supplier) return;
+    if (!supplierOperationsDemoMode) {
+      if (!selectedTransfer.databaseId) return;
+      const saved = await persistSupplierOperation(async () => {
+        const { error } = await supabase.from('mes_supplier_transfers').update({
+          production_order_id: order?.id ?? null,
+          production_order_number: transferForm.productionOrder,
+          supplier_id: supplier.id,
+          external_process: transferForm.externalProcess.trim(),
+          part_number: transferForm.partNumber.trim() || order?.partNumber || '',
+          lot_serial: transferForm.lotSerial.trim(),
+          quantity_sent: Number(transferForm.quantityToSend) || 0,
+          expected_return_date: transferForm.expectedReturnDate,
+          required_documents: transferForm.requiredDocuments,
+          notes: transferForm.notes.trim(),
+        }).eq('id', selectedTransfer.databaseId)
+          .eq('organization_id', organizationId)
+          .eq('status', 'ready-for-checkout');
+        if (error) throw error;
+      });
+      if (saved) setModalMode(null);
+      return;
+    }
     updateTransfer(selectedTransfer.id, (transfer) => ({
       ...transfer,
       productionOrder: transferForm.productionOrder,
@@ -920,7 +1193,7 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
     setModalMode(null);
   };
 
-  const createSupplier = (event: React.FormEvent<HTMLFormElement>) => {
+  const createSupplier = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const normalizedName = supplierForm.name.trim();
     const newCapability = supplierForm.capability === registerNewSupplierCapabilityValue ? supplierForm.newCapabilityName.trim() : '';
@@ -929,6 +1202,66 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
       ...(newCapability ? [newCapability] : []),
     ].map((capability) => capability.trim()).filter(Boolean)));
     if (supplierForm.capability === registerNewSupplierCapabilityValue && !newCapability) return;
+    const processCapabilities = capabilities.length ? capabilities : ['General supplier'];
+    if (!supplierOperationsDemoMode) {
+      const supplierId = crypto.randomUUID();
+      const saved = await persistSupplierOperation(async () => {
+        const uploadedPaths: string[] = [];
+        try {
+          const fiscalPath = supplierForm.fiscalDocumentFile
+            ? await uploadSupplierStorageFile(organizationId, 'suppliers', supplierId, supplierForm.fiscalDocumentFile)
+            : null;
+          if (fiscalPath) uploadedPaths.push(fiscalPath);
+          const bankingPath = supplierForm.bankingDocumentFile
+            ? await uploadSupplierStorageFile(organizationId, 'suppliers', supplierId, supplierForm.bankingDocumentFile)
+            : null;
+          if (bankingPath) uploadedPaths.push(bankingPath);
+          const supplierResult = await supabase.from('mes_suppliers').insert({
+            id: supplierId,
+            organization_id: organizationId,
+            name: normalizedName,
+            contact_name: supplierForm.contactName.trim(),
+            email: supplierForm.email.trim(),
+            phone: supplierForm.phone.trim(),
+            address: supplierForm.address.trim(),
+            approved_status: supplierForm.approvedStatus,
+            fiscal_document_name: supplierForm.fiscalDocumentFile?.name ?? null,
+            fiscal_document_path: fiscalPath,
+            banking_document_name: supplierForm.bankingDocumentFile?.name ?? null,
+            banking_document_path: bankingPath,
+            notes: supplierForm.notes.trim(),
+          });
+          if (supplierResult.error) throw supplierResult.error;
+          const capabilityResult = await supabase.from('mes_supplier_capabilities').upsert(
+            processCapabilities.map((name) => ({
+              organization_id: organizationId,
+              name,
+              color: name === newCapability
+                ? supplierForm.newCapabilityColor
+                : customSupplierCapabilityColors[name] ?? getDefaultSupplierCapabilityColor(name),
+            })),
+            { onConflict: 'organization_id,name' },
+          ).select('id');
+          if (capabilityResult.error) throw capabilityResult.error;
+          const linkResult = await supabase.from('mes_supplier_capability_links').insert(
+            (capabilityResult.data ?? []).map((capability) => ({
+              supplier_id: supplierId,
+              capability_id: capability.id,
+              organization_id: organizationId,
+            })),
+          );
+          if (linkResult.error) throw linkResult.error;
+        } catch (error) {
+          if (uploadedPaths.length) await supabase.storage.from(supplierFilesBucket).remove(uploadedPaths);
+          throw error;
+        }
+      });
+      if (saved) {
+        onActiveTabChange('suppliers');
+        setModalMode(null);
+      }
+      return;
+    }
     const supplier: SupplierRecord = {
       id: `sup-${normalizedName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'supplier'}-${String(suppliers.length + 1).padStart(2, '0')}`,
       name: normalizedName,
@@ -937,7 +1270,7 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
       phone: supplierForm.phone.trim(),
       address: supplierForm.address.trim(),
       approvedStatus: supplierForm.approvedStatus,
-      processCapabilities: capabilities.length ? capabilities : ['General supplier'],
+      processCapabilities,
       fiscalDocument: createUploadedSupplierPdf(supplierForm.fiscalDocumentFile, 'Fiscal Data'),
       bankingDocument: createUploadedSupplierPdf(supplierForm.bankingDocumentFile, 'Banking Data'),
       notes: supplierForm.notes.trim(),
@@ -953,7 +1286,7 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
     setModalMode(null);
   };
 
-  const checkoutTransfer = (event: React.FormEvent<HTMLFormElement>) => {
+  const checkoutTransfer = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!selectedTransfer) return;
 
@@ -975,6 +1308,38 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
       notes: checkoutForm.notes.trim(),
     };
 
+    if (!supplierOperationsDemoMode) {
+      if (!selectedTransfer.databaseId) return;
+      const saved = await persistSupplierOperation(async () => {
+        let attachmentPath: string | null = null;
+        try {
+          attachmentPath = checkoutForm.attachmentFile
+            ? await uploadSupplierStorageFile(organizationId, 'vouchers', selectedTransfer.databaseId!, checkoutForm.attachmentFile)
+            : null;
+          const { error } = await supabase.rpc('mes_supplier_checkout', {
+            p_organization_id: organizationId,
+            p_transfer_id: selectedTransfer.databaseId,
+            p_quantity_sent: quantitySent,
+            p_notes: checkoutForm.notes.trim(),
+            p_processed_by_label: 'MES Supervisor',
+            p_attachment_name: checkoutForm.attachmentFile?.name ?? null,
+            p_attachment_path: attachmentPath,
+            p_attachment_type: checkoutForm.attachmentFile?.type ?? null,
+          });
+          if (error) throw error;
+        } catch (error) {
+          if (attachmentPath) await supabase.storage.from(supplierFilesBucket).remove([attachmentPath]);
+          throw error;
+        }
+      });
+      if (saved) {
+        setActiveVoucher(voucher);
+        setCheckoutForm((current) => ({ ...current, confirmed: false, attachmentFile: null }));
+        setModalMode('voucher');
+      }
+      return;
+    }
+
     updateTransfer(selectedTransfer.id, (transfer) => ({
       ...transfer,
       quantitySent,
@@ -988,7 +1353,7 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
     setModalMode('voucher');
   };
 
-  const checkinTransfer = (event: React.FormEvent<HTMLFormElement>) => {
+  const checkinTransfer = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!selectedTransfer) return;
 
@@ -1026,6 +1391,43 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
       notes: checkinForm.notes.trim(),
     };
 
+    if (!supplierOperationsDemoMode) {
+      if (!selectedTransfer.databaseId) return;
+      const saved = await persistSupplierOperation(async () => {
+        let attachmentPath: string | null = null;
+        try {
+          attachmentPath = checkinForm.attachmentFile
+            ? await uploadSupplierStorageFile(organizationId, 'vouchers', selectedTransfer.databaseId!, checkinForm.attachmentFile)
+            : null;
+          const { error } = await supabase.rpc('mes_supplier_checkin', {
+            p_organization_id: organizationId,
+            p_transfer_id: selectedTransfer.databaseId,
+            p_quantity_received: quantityReceived,
+            p_quantity_accepted: quantityAccepted,
+            p_quantity_rejected: quantityRejected,
+            p_documents_received: checkinForm.receivedDocuments,
+            p_notes: checkinForm.notes.trim(),
+            p_processed_by_label: 'Receiving',
+            p_attachment_name: checkinForm.attachmentFile?.name ?? null,
+            p_attachment_path: attachmentPath,
+            p_attachment_type: checkinForm.attachmentFile?.type ?? null,
+          });
+          if (error) throw error;
+        } catch (error) {
+          if (attachmentPath) await supabase.storage.from(supplierFilesBucket).remove([attachmentPath]);
+          throw error;
+        }
+      });
+      if (saved) {
+        setActiveVoucher(voucher);
+        setCheckinForm((current) => ({
+          ...current, quantityReceived: '', quantityAccepted: '', quantityRejected: '0', attachmentFile: null,
+        }));
+        setModalMode('voucher');
+      }
+      return;
+    }
+
     updateTransfer(selectedTransfer.id, (transfer) => ({
       ...transfer,
       quantityReceived: transfer.quantityReceived + quantityReceived,
@@ -1048,9 +1450,40 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
     setModalMode('voucher');
   };
 
-  const uploadDocument = (event: React.FormEvent<HTMLFormElement>) => {
+  const uploadDocument = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!selectedTransfer) return;
+
+    if (!supplierOperationsDemoMode) {
+      if (!selectedTransfer.databaseId || !documentForm.file) {
+        setBackendError('Select the supplier document file before saving.');
+        return;
+      }
+      const saved = await persistSupplierOperation(async () => {
+        const filePath = await uploadSupplierStorageFile(
+          organizationId, 'documents', selectedTransfer.databaseId!, documentForm.file!,
+        );
+        try {
+          const { error } = await supabase.from('mes_supplier_documents').insert({
+            organization_id: organizationId,
+            transfer_id: selectedTransfer.databaseId,
+            document_type: documentForm.documentType,
+            file_name: documentForm.file!.name,
+            file_path: filePath,
+            file_type: documentForm.file!.type || 'application/octet-stream',
+            uploaded_by_label: 'Quality',
+            approval_status: documentForm.approvalStatus,
+            file_hash: await getSupplierFileHash(documentForm.file!),
+          });
+          if (error) throw error;
+        } catch (error) {
+          await supabase.storage.from(supplierFilesBucket).remove([filePath]);
+          throw error;
+        }
+      });
+      if (saved) setModalMode(null);
+      return;
+    }
 
     const document: SupplierDocument = {
       id: `SD-${new Date().toISOString().slice(2, 10).replace(/-/g, '')}-${String(selectedTransfer.documents.length + 1).padStart(3, '0')}`,
@@ -1968,10 +2401,10 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
                 <label>
                   Production Order
                   <select value={transferForm.productionOrder} onChange={(event) => {
-                    const order = mockProductionOrders.find((item) => item.orderNumber === event.target.value);
+                    const order = productionOrders.find((item) => item.orderNumber === event.target.value);
                     setTransferForm((current) => ({ ...current, productionOrder: event.target.value, partNumber: order?.partNumber ?? current.partNumber }));
                   }}>
-                    {mockProductionOrders.map((order) => <option key={order.id} value={order.orderNumber}>{order.orderNumber} / {order.partNumber}</option>)}
+                    {productionOrders.map((order) => <option key={order.id} value={order.orderNumber}>{order.orderNumber} / {order.partNumber}</option>)}
                   </select>
                 </label>
                 <label>
@@ -2282,8 +2715,12 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
                   </select>
                 </label>
                 <label className="supplier-form-wide">
-                  File Name
-                  <input value={documentForm.fileName} placeholder={`${selectedTransfer.id}-certificate.pdf`} onChange={(event) => setDocumentForm((current) => ({ ...current, fileName: event.target.value }))} />
+                  Supplier Document
+                  <span className={supplierFileUploadClass}>
+                    <span><Upload size={15} /> Select File</span>
+                    <em>{documentForm.file?.name ?? supplierNoFileText}</em>
+                    <input type={supplierFileInputType} accept={supplierDocumentAccept} required={!supplierOperationsDemoMode} onChange={(event) => setDocumentForm((current) => ({ ...current, file: event.target.files?.[0] ?? null, fileName: event.target.files?.[0]?.name ?? String() }))} />
+                  </span>
                 </label>
               </div>
               <div className="supplier-modal-actions">
@@ -2368,6 +2805,9 @@ export function SupplierOperationsWorkspace({ onNavigate, activeTab, onActiveTab
         </div>
       </div>
 
+      {backendLoading ? <div className={supplierBackendStatusClass}>Loading Supplier Operations...</div> : null}
+      {backendSaving ? <div className={supplierBackendStatusClass}>Saving Supplier Operations...</div> : null}
+      {backendError ? <div className={supplierBackendStatusClass} role={supplierAlertRole}>{backendError}<button type={supplierButtonType} onClick={() => void refreshSupplierOperations()}>Retry</button></div> : null}
       <div className="supplier-app-shell">
         <div className="supplier-app-content">
           {activeTab === 'dashboard' ? (
