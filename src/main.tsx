@@ -20,7 +20,9 @@ import {
   Cpu,
   Database,
   Factory,
+  FileText,
   FileUp,
+  FolderCheck,
   GitBranch,
   Gauge,
   GraduationCap,
@@ -51,6 +53,7 @@ import { createSessionSupabaseClient, supabase } from './lib/supabaseClient';
 import { AcademyActivityPage, AcademyCatalogPage, AcademyCertificatesPage, AcademyCoursePage, AcademyHomePage, AcademyLessonPage, AcademyProgressPage, AcademyTrackPage } from './pages/AcademyPages';
 import { ProductionOrdersWorkspace, TraceabilityWorkspace, WorkCentersWorkspace } from './manufacturing/MesWorkspaces';
 import { OperatorTerminalWorkspace } from './manufacturing/OperatorTerminalWorkspace';
+import { QualityOperationsWorkspace, type QualityContextTab } from './manufacturing/QualityOperationsWorkspace';
 import { SupplierOperationsWorkspace, type SupplierContextTab } from './manufacturing/SupplierOperationsWorkspace';
 import './styles.css';
 
@@ -3195,7 +3198,8 @@ function LoggedDashboardPage({
       description: 'Record pass/fail checks, measurements, inspection results, and quality notes linked to production orders.',
       icon: ShieldCheck,
       path: '/workspace/manufacturing-ops/mes/quality',
-      implemented: false,
+      implemented: true,
+      tone: 'orange',
     },
     {
       label: 'Traceability',
@@ -3372,9 +3376,10 @@ function LoggedDashboardPage({
     setManufacturingUnavailableApp('');
     onNavigate(module.path);
   };
-  const activeMesModule = mesModules.find((module) => activePath === module.path);
+  const activeMesModule = mesModules.find((module) => activePath === module.path || (module.path === '/workspace/manufacturing-ops/mes/quality' && activePath.startsWith('/workspace/manufacturing-ops/mes/quality')));
   const isOperatorTerminalPage = activePath === '/workspace/manufacturing-ops/mes/operator-terminal';
   const isSupplierOperationsPage = activePath === '/workspace/manufacturing-ops/mes/suppliers';
+  const isQualityOperationsPage = activePath === '/workspace/manufacturing-ops/mes/quality' || activePath.startsWith('/workspace/manufacturing-ops/mes/quality/');
   const supplierContextTabs: Array<{
     value: SupplierContextTab;
     label: string;
@@ -3386,6 +3391,21 @@ function LoggedDashboardPage({
     { value: 'vouchers-docs', label: 'Vouchers and Docs', icon: FileUp },
     { value: 'check-in-out', label: 'Check in/out', icon: Truck },
   ];
+  const qualityContextTabs: Array<{
+    value: QualityContextTab;
+    label: string;
+    path: string;
+    icon: React.ComponentType<{ size?: number }>;
+  }> = [
+    { value: 'dashboard', label: 'Dashboard', path: '/workspace/manufacturing-ops/mes/quality', icon: Gauge },
+    { value: 'inspections', label: 'Inspections', path: '/workspace/manufacturing-ops/mes/quality/inspections', icon: ClipboardCheck },
+    { value: 'quality-plans', label: 'Quality Plans', path: '/workspace/manufacturing-ops/mes/quality/quality-plans', icon: FolderCheck },
+    { value: 'specifications', label: 'Specifications', path: '/workspace/manufacturing-ops/mes/quality/specifications', icon: ShieldCheck },
+    { value: 'certificates-docs', label: 'Certificates & Docs', path: '/workspace/manufacturing-ops/mes/quality/certificates-docs', icon: FileText },
+    { value: 'ncrs', label: 'NCRs', path: '/workspace/manufacturing-ops/mes/quality/ncrs', icon: AlertTriangle },
+    { value: 'holds-releases', label: 'Holds & Releases', path: '/workspace/manufacturing-ops/mes/quality/holds-releases', icon: PackageCheck },
+  ];
+  const activeQualityContextTab = qualityContextTabs.find((tab) => activePath === tab.path)?.value ?? 'dashboard';
   const activeManufacturingOrganizationId = manufacturingOrganization
     && !manufacturingOrganization.id.startsWith('local-')
     && !manufacturingOrganization.id.startsWith('joined-')
@@ -3432,6 +3452,9 @@ function LoggedDashboardPage({
     }
     if (activePath === '/workspace/manufacturing-ops/mes/traceability') {
       return <TraceabilityWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} />;
+    }
+    if (isQualityOperationsPage) {
+      return <QualityOperationsWorkspace onNavigate={onNavigate} activeTab={activeQualityContextTab} />;
     }
     if (isSupplierOperationsPage) {
       return (
@@ -3989,7 +4012,7 @@ function LoggedDashboardPage({
     <main className={[
       'logged-shell',
       isOperatorTerminalPage ? 'operator-terminal-shell' : '',
-      isSupplierOperationsPage ? 'supplier-context-shell' : '',
+      isSupplierOperationsPage || isQualityOperationsPage ? 'supplier-context-shell' : '',
       isSupplierAccessOverview ? 'supplier-access-shell' : '',
       isSupplierAccessOverview && supplierCustomerPickerOpen ? 'supplier-customer-picker-open' : '',
     ].filter(Boolean).join(' ')}>
@@ -4151,6 +4174,33 @@ function LoggedDashboardPage({
                   key={tab.value}
                   className={supplierContextTab === tab.value ? 'active' : ''}
                   onClick={() => setSupplierContextTab(tab.value)}
+                >
+                  <Icon size={18} />
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
+          </nav>
+        </aside>
+      ) : null}
+
+      {isQualityOperationsPage ? (
+        <aside className="supplier-shell-context-menu quality-shell-context-menu" aria-label="Quality sections">
+          <div>
+            <span>MES</span>
+            <strong>Quality</strong>
+          </div>
+          <nav>
+            {qualityContextTabs.map((tab) => {
+              const Icon = tab.icon;
+              return (
+                <button
+                  type="button"
+                  key={tab.value}
+                  className={activeQualityContextTab === tab.value ? 'active' : ''}
+                  onClick={() => {
+                    onNavigate(tab.path);
+                  }}
                 >
                   <Icon size={18} />
                   <span>{tab.label}</span>
@@ -5076,7 +5126,10 @@ function App() {
     currentPath === '/workspace/manufacturing-ops/mes/orders'
     || currentPath === '/workspace/manufacturing-ops/mes/work-centers'
     || currentPath === '/workspace/manufacturing-ops/mes/operator-terminal'
-    || currentPath === '/workspace/manufacturing-ops/mes/traceability';
+    || currentPath === '/workspace/manufacturing-ops/mes/traceability'
+    || currentPath === '/workspace/manufacturing-ops/mes/suppliers'
+    || currentPath === '/workspace/manufacturing-ops/mes/quality'
+    || currentPath.startsWith('/workspace/manufacturing-ops/mes/quality/');
   const isWorkspacePage = currentPath === '/dashboard';
   const isAcademyPage = currentPath === '/academy' || currentPath.startsWith('/academy/');
   const isAuthPage = isLoginPage || isSignUpPage;
