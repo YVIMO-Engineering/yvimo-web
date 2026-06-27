@@ -3454,7 +3454,7 @@ function LoggedDashboardPage({
       return <TraceabilityWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} />;
     }
     if (isQualityOperationsPage) {
-      return <QualityOperationsWorkspace onNavigate={onNavigate} activeTab={activeQualityContextTab} />;
+      return <QualityOperationsWorkspace onNavigate={onNavigate} activeTab={activeQualityContextTab} organizationId={activeManufacturingOrganizationId} />;
     }
     if (isSupplierOperationsPage) {
       return (

@@ -4,7 +4,8 @@ import { Activity, AlertTriangle, ArrowLeft, CalendarDays, Check, ChevronDown, C
 import { GoogleWorkCentersMap } from '../components/maps/GoogleWorkCentersMap';
 import { resolveGooglePlacesAddressMatch, searchGooglePlacesAddressMatches, type GooglePlacesAddressMatch } from '../lib/maps/googlePlacesAddressLookup';
 import { supabase } from '../lib/supabaseClient';
-import type { ProductionOrder, ProductionOrderManufacturingType, ProductionOrderPriority, ProductionOrderStatus, WorkCenterStatus } from './mesTypes';
+import type { ProductionOrder, ProductionOrderManufacturingType, ProductionOrderPriority, ProductionOrderStatus, QualityPieceType, WorkCenterStatus } from './mesTypes';
+import { qualityInspectionsByPieceType, qualityPieceTypeLabels, qualityPieceTypes } from './qualityInspectionConfig';
 
 type WorkspaceProps = {
   onNavigate: (path: string) => void;
@@ -29,6 +30,7 @@ type ProductionOrderFormState = {
   orderNumber: string;
   partNumber: string;
   partName: string;
+  clientName: string;
   plannedQuantity: string;
   completedQuantity: string;
   scrapQuantity: string;
@@ -40,6 +42,9 @@ type ProductionOrderFormState = {
   manufacturingType: ProductionOrderManufacturingType;
   productionFlow: string;
   assignedStation: string;
+  pieceType: QualityPieceType;
+  qualityChecksEnabled: boolean;
+  qualityChecks: string[];
 };
 
 type ProductionOrderRow = {
@@ -47,6 +52,7 @@ type ProductionOrderRow = {
   order_number: string;
   part_number: string;
   part_name: string;
+  client_name?: string | null;
   planned_quantity: number;
   completed_quantity: number;
   scrap_quantity: number;
@@ -58,6 +64,9 @@ type ProductionOrderRow = {
   manufacturing_type?: ProductionOrderManufacturingType | null;
   production_flow?: string | null;
   assigned_station?: string | null;
+  piece_type?: QualityPieceType | null;
+  quality_checks_enabled?: boolean | null;
+  quality_checks?: string[] | null;
 };
 
 type ProductionOrderWorkCenterOptionRow = {
@@ -641,6 +650,7 @@ function mapProductionOrderRow(row: ProductionOrderRow): ProductionOrder {
     orderNumber: row.order_number,
     partNumber: row.part_number,
     partName: row.part_name,
+    clientName: row.client_name ?? '',
     plannedQuantity: row.planned_quantity,
     completedQuantity: row.completed_quantity,
     scrapQuantity: row.scrap_quantity,
@@ -652,6 +662,9 @@ function mapProductionOrderRow(row: ProductionOrderRow): ProductionOrder {
     manufacturingType: row.manufacturing_type ?? 'multi-step',
     productionFlow: row.production_flow ?? productionFlowOptions[0]?.id ?? '',
     assignedStation: row.assigned_station ?? '',
+    pieceType: row.piece_type ?? 'hobs',
+    qualityChecksEnabled: row.quality_checks_enabled ?? false,
+    qualityChecks: row.quality_checks ?? [],
   };
 }
 
@@ -661,6 +674,7 @@ function toProductionOrderPayload(order: ProductionOrder | Omit<ProductionOrder,
     order_number: order.orderNumber,
     part_number: order.partNumber,
     part_name: order.partName,
+    client_name: order.clientName?.trim() ?? '',
     planned_quantity: order.plannedQuantity,
     completed_quantity: order.completedQuantity,
     scrap_quantity: order.scrapQuantity,
@@ -672,6 +686,9 @@ function toProductionOrderPayload(order: ProductionOrder | Omit<ProductionOrder,
     manufacturing_type: order.manufacturingType,
     production_flow: order.manufacturingType === 'multi-step' ? order.productionFlow : '',
     assigned_station: order.manufacturingType === 'single-operation' ? order.assignedStation : '',
+    piece_type: order.pieceType ?? 'hobs',
+    quality_checks_enabled: order.qualityChecksEnabled ?? false,
+    quality_checks: order.qualityChecksEnabled ? order.qualityChecks ?? [] : [],
   };
 }
 
@@ -680,6 +697,7 @@ function toFormState(order?: ProductionOrder): ProductionOrderFormState {
     orderNumber: order?.orderNumber ?? '',
     partNumber: order?.partNumber ?? '',
     partName: order?.partName ?? '',
+    clientName: order?.clientName ?? '',
     plannedQuantity: String(order?.plannedQuantity ?? 0),
     completedQuantity: String(order?.completedQuantity ?? 0),
     scrapQuantity: String(order?.scrapQuantity ?? 0),
@@ -691,6 +709,9 @@ function toFormState(order?: ProductionOrder): ProductionOrderFormState {
     manufacturingType: order?.manufacturingType ?? 'multi-step',
     productionFlow: order?.productionFlow ?? productionFlowOptions[0]?.id ?? '',
     assignedStation: order?.assignedStation ?? '',
+    pieceType: order?.pieceType ?? 'hobs',
+    qualityChecksEnabled: order?.qualityChecksEnabled ?? false,
+    qualityChecks: order?.qualityChecks ?? [],
   };
 }
 
@@ -700,6 +721,7 @@ function formStateToProductionOrder(formState: ProductionOrderFormState, id?: st
     orderNumber: formState.orderNumber.trim(),
     partNumber: formState.partNumber.trim(),
     partName: formState.partName.trim(),
+    clientName: formState.clientName.trim(),
     plannedQuantity: Number(formState.plannedQuantity) || 0,
     completedQuantity: Number(formState.completedQuantity) || 0,
     scrapQuantity: Number(formState.scrapQuantity) || 0,
@@ -711,6 +733,9 @@ function formStateToProductionOrder(formState: ProductionOrderFormState, id?: st
     manufacturingType: formState.manufacturingType,
     productionFlow: formState.manufacturingType === 'multi-step' ? formState.productionFlow : '',
     assignedStation: formState.manufacturingType === 'single-operation' ? formState.assignedStation : '',
+    pieceType: formState.pieceType,
+    qualityChecksEnabled: formState.qualityChecksEnabled,
+    qualityChecks: formState.qualityChecksEnabled ? formState.qualityChecks : [],
   };
 }
 
@@ -1213,19 +1238,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
   };
 
   const openCreateOrderForm = () => {
-    setFormState(toFormState({
-      id: '',
-      orderNumber: '',
-      partNumber: '',
-      partName: '',
-      plannedQuantity: 0,
-      completedQuantity: 0,
-      scrapQuantity: 0,
-      status: 'planned',
-      priority: 'normal',
-      dueDate: new Date().toISOString().slice(0, 10),
-      assignedWorkCenter: '',
-    }));
+    setFormState(toFormState());
     setFormMode('create');
   };
 
@@ -1242,7 +1255,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
 
   const saveOrderForm = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!formState.orderNumber.trim() || !formState.partNumber.trim() || !formState.partName.trim() || !formState.assignedWorkCenter.trim()) return;
+    if (!formState.orderNumber.trim() || !formState.clientName.trim() || !formState.partNumber.trim() || !formState.partName.trim() || !formState.assignedWorkCenter.trim()) return;
     if (formState.manufacturingType === 'single-operation' && !formState.assignedStation.trim()) return;
     const orderFromForm = formStateToProductionOrder(formState, formMode === 'edit' ? selectedOrder?.id : undefined);
 
@@ -1566,6 +1579,10 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
                 <input value={formState.orderNumber} onChange={(event) => setFormState((current) => ({ ...current, orderNumber: event.target.value }))} placeholder="PO-0000" required />
               </label>
               <label>
+                Client
+                <input value={formState.clientName} onChange={(event) => setFormState((current) => ({ ...current, clientName: event.target.value }))} placeholder="Client name" required />
+              </label>
+              <label>
                 Part number
                 <input value={formState.partNumber} onChange={(event) => setFormState((current) => ({ ...current, partNumber: event.target.value }))} required />
               </label>
@@ -1625,7 +1642,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
                   onChange={(dueDate) => setFormState((current) => ({ ...current, dueDate }))}
                 />
               </label>
-              <label>
+              <label className="production-order-work-center-field">
                 Assigned work center
                 <MesOrderDropdown
                   id="production-order-work-center"
@@ -1661,6 +1678,74 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
                   })}
                 </div>
                 <small className="mes-form-field-note">Used to calculate scheduled utilization and machine load.</small>
+              </fieldset>
+              <fieldset className="production-order-quality-checks mes-order-form-wide">
+                <div className="production-order-quality-heading">
+                  <div>
+                    <span className="production-order-quality-title">Quality Check</span>
+                    <small>Configure the inspections required for every serialized piece in this order.</small>
+                  </div>
+                  <button
+                    className={formState.qualityChecksEnabled ? 'active' : ''}
+                    type="button"
+                    role="switch"
+                    aria-checked={formState.qualityChecksEnabled}
+                    onClick={() => setFormState((current) => ({
+                      ...current,
+                      qualityChecksEnabled: !current.qualityChecksEnabled,
+                      qualityChecks: current.qualityChecksEnabled ? [] : current.qualityChecks,
+                    }))}
+                  >
+                    <span>{formState.qualityChecksEnabled ? 'Enabled' : 'Disabled'}</span>
+                    <i aria-hidden="true" />
+                  </button>
+                </div>
+                {formState.qualityChecksEnabled ? (
+                  <div className="production-order-quality-body">
+                    <div>
+                      <span className="production-order-quality-label">Piece Type</span>
+                      <div className="production-order-piece-types" role="radiogroup" aria-label="Piece type">
+                        {qualityPieceTypes.map((pieceType) => (
+                          <button
+                            className={formState.pieceType === pieceType ? 'active' : ''}
+                            type="button"
+                            role="radio"
+                            aria-checked={formState.pieceType === pieceType}
+                            key={pieceType}
+                            onClick={() => setFormState((current) => ({ ...current, pieceType, qualityChecks: [] }))}
+                          >
+                            {qualityPieceTypeLabels[pieceType]}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="production-order-quality-label">Required Inspections</span>
+                      <div className="production-order-quality-options">
+                        {qualityInspectionsByPieceType[formState.pieceType].map((inspection) => {
+                          const selected = formState.qualityChecks.includes(inspection);
+                          return (
+                            <button
+                              className={selected ? 'active' : ''}
+                              type="button"
+                              aria-pressed={selected}
+                              key={inspection}
+                              onClick={() => setFormState((current) => ({
+                                ...current,
+                                qualityChecks: selected
+                                  ? current.qualityChecks.filter((check) => check !== inspection)
+                                  : [...current.qualityChecks, inspection],
+                              }))}
+                            >
+                              <Check size={15} />
+                              {inspection}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
               </fieldset>
               <fieldset className="production-order-manufacturing-type mes-order-form-wide">
                 <legend>Manufacturing Type</legend>

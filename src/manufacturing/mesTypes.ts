@@ -4,6 +4,8 @@ export type ProductionOrderPriority = 'low' | 'normal' | 'high' | 'expedite';
 
 export type ProductionOrderManufacturingType = 'multi-step' | 'single-operation';
 
+export type QualityPieceType = 'hobs' | 'shaper' | 'shavers' | 'skiving';
+
 export type WorkCenterStatus = 'available' | 'idle' | 'running' | 'setup' | 'down' | 'maintenance' | 'offline';
 
 export type TraceabilityEventType =
@@ -33,6 +35,7 @@ export type ProductionOrder = {
   orderNumber: string;
   partNumber: string;
   partName: string;
+  clientName?: string;
   plannedQuantity: number;
   completedQuantity: number;
   scrapQuantity: number;
@@ -44,6 +47,9 @@ export type ProductionOrder = {
   manufacturingType: ProductionOrderManufacturingType;
   productionFlow: string;
   assignedStation: string;
+  pieceType?: QualityPieceType;
+  qualityChecksEnabled?: boolean;
+  qualityChecks?: string[];
 };
 
 export type TraceabilityEvent = {
