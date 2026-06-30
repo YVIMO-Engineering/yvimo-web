@@ -4,7 +4,7 @@ import { Activity, AlertTriangle, ArrowLeft, CalendarDays, Check, ChevronDown, C
 import { GoogleWorkCentersMap } from '../components/maps/GoogleWorkCentersMap';
 import { resolveGooglePlacesAddressMatch, searchGooglePlacesAddressMatches, type GooglePlacesAddressMatch } from '../lib/maps/googlePlacesAddressLookup';
 import { supabase } from '../lib/supabaseClient';
-import type { ProductionOrder, ProductionOrderManufacturingType, ProductionOrderPriority, ProductionOrderStatus, QualityPieceType, WorkCenterStatus } from './mesTypes';
+import type { ProductionOrder, ProductionOrderManufacturingType, ProductionOrderPriority, ProductionOrderStatus, QualityCheckLimit, QualityPieceType, WorkCenterStatus } from './mesTypes';
 import { qualityInspectionsByPieceType, qualityPieceTypeLabels, qualityPieceTypes } from './qualityInspectionConfig';
 
 type WorkspaceProps = {
@@ -45,6 +45,7 @@ type ProductionOrderFormState = {
   pieceType: QualityPieceType;
   qualityChecksEnabled: boolean;
   qualityChecks: string[];
+  qualityCheckLimits: Record<string, QualityCheckLimit>;
 };
 
 type ProductionOrderRow = {
@@ -67,6 +68,7 @@ type ProductionOrderRow = {
   piece_type?: QualityPieceType | null;
   quality_checks_enabled?: boolean | null;
   quality_checks?: string[] | null;
+  quality_check_limits?: Record<string, QualityCheckLimit> | null;
 };
 
 type ProductionOrderWorkCenterOptionRow = {
@@ -665,6 +667,7 @@ function mapProductionOrderRow(row: ProductionOrderRow): ProductionOrder {
     pieceType: row.piece_type ?? 'hobs',
     qualityChecksEnabled: row.quality_checks_enabled ?? false,
     qualityChecks: row.quality_checks ?? [],
+    qualityCheckLimits: row.quality_check_limits ?? {},
   };
 }
 
@@ -689,6 +692,7 @@ function toProductionOrderPayload(order: ProductionOrder | Omit<ProductionOrder,
     piece_type: order.pieceType ?? 'hobs',
     quality_checks_enabled: order.qualityChecksEnabled ?? false,
     quality_checks: order.qualityChecksEnabled ? order.qualityChecks ?? [] : [],
+    quality_check_limits: order.qualityChecksEnabled ? order.qualityCheckLimits ?? {} : {},
   };
 }
 
@@ -712,6 +716,7 @@ function toFormState(order?: ProductionOrder): ProductionOrderFormState {
     pieceType: order?.pieceType ?? 'hobs',
     qualityChecksEnabled: order?.qualityChecksEnabled ?? false,
     qualityChecks: order?.qualityChecks ?? [],
+    qualityCheckLimits: order?.qualityCheckLimits ?? {},
   };
 }
 
@@ -736,6 +741,7 @@ function formStateToProductionOrder(formState: ProductionOrderFormState, id?: st
     pieceType: formState.pieceType,
     qualityChecksEnabled: formState.qualityChecksEnabled,
     qualityChecks: formState.qualityChecksEnabled ? formState.qualityChecks : [],
+    qualityCheckLimits: formState.qualityChecksEnabled ? formState.qualityCheckLimits : {},
   };
 }
 
@@ -1694,6 +1700,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
                       ...current,
                       qualityChecksEnabled: !current.qualityChecksEnabled,
                       qualityChecks: current.qualityChecksEnabled ? [] : current.qualityChecks,
+                      qualityCheckLimits: current.qualityChecksEnabled ? {} : current.qualityCheckLimits,
                     }))}
                   >
                     <span>{formState.qualityChecksEnabled ? 'Enabled' : 'Disabled'}</span>
@@ -1712,7 +1719,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
                             role="radio"
                             aria-checked={formState.pieceType === pieceType}
                             key={pieceType}
-                            onClick={() => setFormState((current) => ({ ...current, pieceType, qualityChecks: [] }))}
+                            onClick={() => setFormState((current) => ({ ...current, pieceType, qualityChecks: [], qualityCheckLimits: {} }))}
                           >
                             {qualityPieceTypeLabels[pieceType]}
                           </button>
@@ -4990,12 +4997,13 @@ function formatTraceabilityStatus(status: ProductionOrderStatus | '') {
   return status ? formatLabel(status) : 'Unknown';
 }
 
-type TraceabilityEventTone = 'info' | 'success' | 'danger' | 'warning';
+type TraceabilityEventTone = 'info' | 'success' | 'danger' | 'warning' | 'quality';
 
 function getTraceabilityEventTone(eventType: string): TraceabilityEventTone {
   if (eventType === 'job-paused') return 'info';
   if (eventType === 'job-started' || eventType === 'job-resumed' || eventType === 'operation-completed') return 'success';
   if (eventType === 'downtime-started' || eventType === 'production-scrap') return 'danger';
+  if (eventType === 'quality-inspection-saved') return 'quality';
   return 'warning';
 }
 
@@ -5007,6 +5015,7 @@ function getTraceabilityEventLabel(eventType: string) {
     'downtime-started': 'Downtime Started',
     'production-scrap': '+1 Scrap',
     'operation-completed': 'Order Completed',
+    'quality-inspection-saved': 'Quality Inspection Saved',
     adjustment: 'Adjustment',
   };
   return eventLabels[eventType] ?? formatTitleLabel(eventType);
@@ -5021,6 +5030,10 @@ function getTraceabilityEventSummary(event: TraceabilityOperatorEventRow) {
   if (event.event_type === 'job-started') return 'Production was started from the Operator Terminal';
   if (event.event_type === 'job-resumed') return 'Production was resumed by the operator';
   if (event.event_type === 'operation-completed') return 'The production order was marked complete';
+  if (event.event_type === 'quality-inspection-saved') {
+    const serialNumber = event.payload && typeof event.payload.serial_number === 'string' ? event.payload.serial_number : '';
+    return serialNumber ? `Quality inspection completed for ${serialNumber}` : 'Quality inspection completed';
+  }
   return 'Operator event captured';
 }
 
@@ -5177,7 +5190,7 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
           )
         `)
         .eq('organization_id', organizationId)
-        .in('event_type', ['production-scrap', 'downtime-started', 'job-paused', 'job-started', 'job-resumed', 'operation-completed', 'adjustment'])
+        .in('event_type', ['production-scrap', 'downtime-started', 'job-paused', 'job-started', 'job-resumed', 'operation-completed', 'adjustment', 'quality-inspection-saved'])
         .order('created_at', { ascending: false })
         .limit(300),
     ]);

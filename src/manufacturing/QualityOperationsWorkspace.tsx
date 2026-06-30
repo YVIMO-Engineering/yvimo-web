@@ -10,6 +10,7 @@ import {
   PackageCheck,
   Minus,
   Plus,
+  Upload,
   Search,
   ShieldCheck,
   X,
@@ -17,7 +18,7 @@ import {
 import { supabase } from '../lib/supabaseClient';
 import { mockProductionOrders } from './mesMockData';
 import { qualityInspectionsByPieceType, qualityPieceTypes } from './qualityInspectionConfig';
-import type { ProductionOrder, ProductionOrderPriority, ProductionOrderStatus, QualityPieceType } from './mesTypes';
+import type { ProductionOrder, ProductionOrderPriority, ProductionOrderStatus, QualityCheckLimit, QualityPieceType } from './mesTypes';
 
 export type QualityContextTab =
   | 'dashboard'
@@ -60,6 +61,40 @@ const qualityDashboardPanels = [
 ];
 
 
+type QualityInspectionResult = 'ok' | 'nok' | 'approach';
+
+type QualityMeasurementRecord = {
+  id: string;
+  production_order_id: string;
+  serial_number: string;
+  inspection_name: string;
+  measured_value: number;
+  lower_limit: number | null;
+  upper_limit: number | null;
+  result: QualityInspectionResult;
+  measured_at: string;
+};
+
+type QualityInspectionDocument = {
+  id: string;
+  production_order_id: string;
+  serial_number: string;
+  inspection_name: string | null;
+  file_name: string;
+  file_path: string;
+  file_type: string;
+  uploaded_at: string;
+};
+
+type QualitySerialInspectionRecord = {
+  id: string;
+  production_order_id: string;
+  serial_number: string;
+  result: QualityInspectionResult;
+  inspected_at: string;
+};
+
+const qualityDocumentsBucket = 'mes-quality-inspection-documents';
 type QualityProductionOrderRow = {
   id: string;
   order_number: string;
@@ -80,6 +115,7 @@ type QualityProductionOrderRow = {
   piece_type?: QualityPieceType | null;
   quality_checks_enabled?: boolean | null;
   quality_checks?: string[] | null;
+  quality_check_limits?: Record<string, QualityCheckLimit> | null;
 };
 
 const qualityDemoOrders: ProductionOrder[] = mockProductionOrders.map((order, index) => {
@@ -89,6 +125,10 @@ const qualityDemoOrders: ProductionOrder[] = mockProductionOrders.map((order, in
     pieceType,
     qualityChecksEnabled: true,
     qualityChecks: qualityInspectionsByPieceType[pieceType],
+    qualityCheckLimits: Object.fromEntries(qualityInspectionsByPieceType[pieceType].map((inspection, inspectionIndex) => [
+      inspection,
+      { lowerLimit: inspectionIndex + 1, upperLimit: inspectionIndex + 5 },
+    ])),
   };
 });
 
@@ -113,6 +153,7 @@ function mapQualityProductionOrder(row: QualityProductionOrderRow): ProductionOr
     pieceType: row.piece_type ?? 'hobs',
     qualityChecksEnabled: row.quality_checks_enabled ?? false,
     qualityChecks: row.quality_checks ?? [],
+    qualityCheckLimits: row.quality_check_limits ?? {},
   };
 }
 
@@ -475,9 +516,10 @@ function QualityOrderPickerModal({ orders, currentOrderId, onClose, onSelect }: 
   );
 }
 
-function QualitySerialPickerModal({ order, currentSerial, onClose, onSelect }: {
+function QualitySerialPickerModal({ order, currentSerial, inspectedSerials, onClose, onSelect }: {
   order: ProductionOrder;
   currentSerial: string;
+  inspectedSerials: QualitySerialInspectionRecord[];
   onClose: () => void;
   onSelect: (serial: string) => void;
 }) {
@@ -501,7 +543,7 @@ function QualitySerialPickerModal({ order, currentSerial, onClose, onSelect }: {
         <div className="quality-serial-list">
           {filteredSerials.map((serial) => (
             <button className={serial === currentSerial ? 'active' : ''} type="button" key={serial} disabled={serial === currentSerial} onClick={() => onSelect(serial)}>
-              <span>{serial}</span><em>{serials.indexOf(serial) < getQualityInspectedQuantity(order) ? 'Inspected' : 'Pending'}</em>
+              <span>{serial}</span><em>{isQualitySerialInspected(inspectedSerials, order.id, serial) ? 'Inspected' : 'Pending'}</em>
             </button>
           ))}
           {!filteredSerials.length ? <p>No serial numbers found</p> : null}
@@ -512,21 +554,77 @@ function QualitySerialPickerModal({ order, currentSerial, onClose, onSelect }: {
   );
 }
 
-type QualityInspectionStatus = 'ok' | 'nok' | 'pending';
+type QualityInspectionStatus = 'ok' | 'approach' | 'nok' | 'pending';
 
-function getInspectionStatus(order: ProductionOrder, serial: string, inspectionIndex: number): QualityInspectionStatus {
-  if (!mockProductionOrders.some((demoOrder) => demoOrder.id === order.id)) return 'pending';
-  const serialIndex = Math.max(0, Number(serial.match(/(\d+)$/)?.[1] ?? 1) - 1);
-  const resultMarker = (serialIndex + inspectionIndex) % 5;
-  if (resultMarker === 2) return 'nok';
-  if (resultMarker >= 3) return 'pending';
+type MeasurementDraft = Record<string, string>;
+
+function isDemoQualityOrder(order: ProductionOrder) {
+  return mockProductionOrders.some((demoOrder) => demoOrder.id === order.id);
+}
+
+function getMeasurementKey(orderId: string, serial: string, inspectionName: string) {
+  return `${orderId}::${serial}::${inspectionName}`;
+}
+
+function getLatestMeasurement(records: QualityMeasurementRecord[], order: ProductionOrder, serial: string, inspectionName: string) {
+  return records
+    .filter((record) => record.production_order_id === order.id && record.serial_number === serial && record.inspection_name === inspectionName)
+    .sort((first, second) => new Date(second.measured_at).getTime() - new Date(first.measured_at).getTime())[0];
+}
+
+function evaluateMeasurement(value: number, limits?: QualityCheckLimit): QualityInspectionResult {
+  const lower = limits?.lowerLimit;
+  const upper = limits?.upperLimit;
+  if (typeof lower === 'number' && value < lower) return 'nok';
+  if (typeof upper === 'number' && value > upper) return 'nok';
+  const approachPercent = limits?.approachPercent ?? 0;
+  if (approachPercent > 0 && typeof lower === 'number' && typeof upper === 'number' && upper > lower) {
+    const approachBand = (upper - lower) * (approachPercent / 100);
+    if (value <= lower + approachBand || value >= upper - approachBand) return 'approach';
+  }
   return 'ok';
 }
 
-function RequiredInspections({ order, serial }: { order: ProductionOrder; serial: string }) {
+function formatLimit(value?: number | null) {
+  return typeof value === 'number' ? value : '-';
+}
+
+function getInspectionStatus(order: ProductionOrder, serial: string, inspection: string, records: QualityMeasurementRecord[]): QualityInspectionStatus {
+  const latestMeasurement = getLatestMeasurement(records, order, serial, inspection);
+  if (latestMeasurement) return latestMeasurement.result;
+  if (!isDemoQualityOrder(order)) return 'pending';
+  return 'pending';
+}
+
+function getRequiredInspectionStatuses(order: ProductionOrder, serial: string, measurements: QualityMeasurementRecord[]) {
+  const inspections = order.qualityChecksEnabled ? order.qualityChecks ?? [] : [];
+  return inspections.map((inspection) => ({
+    inspection,
+    status: getInspectionStatus(order, serial, inspection, measurements),
+  }));
+}
+
+function isSerialReadyToSaveInspection(order: ProductionOrder, serial: string, measurements: QualityMeasurementRecord[]) {
+  const statuses = getRequiredInspectionStatuses(order, serial, measurements);
+  return statuses.length > 0 && statuses.every(({ status }) => status !== 'pending');
+}
+
+function getOverallSerialInspectionResult(order: ProductionOrder, serial: string, measurements: QualityMeasurementRecord[]): QualityInspectionResult {
+  const statuses = getRequiredInspectionStatuses(order, serial, measurements).map(({ status }) => status);
+  if (statuses.includes('nok')) return 'nok';
+  if (statuses.includes('approach')) return 'approach';
+  return 'ok';
+}
+
+function isQualitySerialInspected(records: QualitySerialInspectionRecord[], orderId: string, serial: string) {
+  return records.some((record) => record.production_order_id === orderId && record.serial_number === serial);
+}
+
+function RequiredInspections({ order, serial, measurements, readyToSaveInspection, onSaveInspection }: { order: ProductionOrder; serial: string; measurements: QualityMeasurementRecord[]; readyToSaveInspection: boolean; onSaveInspection: () => Promise<void> }) {
   const inspections = order.qualityChecksEnabled ? order.qualityChecks ?? [] : [];
   const statusConfig = {
     ok: { label: 'OK', icon: CheckCircle2 },
+    approach: { label: 'Approach', icon: AlertTriangle },
     nok: { label: 'NOK', icon: CircleX },
     pending: { label: 'Pending', icon: Minus },
   } as const;
@@ -535,46 +633,312 @@ function RequiredInspections({ order, serial }: { order: ProductionOrder; serial
     <article className="quality-required-inspections">
       <div className="quality-inspection-panel-heading"><ClipboardCheck size={18} /><strong>Required Inspections</strong></div>
       {inspections.length ? (
-        <div className="quality-required-inspection-list">
-          {inspections.map((inspection, index) => {
-            const status = getInspectionStatus(order, serial, index);
-            const StatusIcon = statusConfig[status].icon;
-            return (
-              <div className={`quality-required-inspection ${status}`} key={inspection}>
-                <span>{inspection}</span>
-                <em><StatusIcon size={18} />{statusConfig[status].label}</em>
-              </div>
-            );
-          })}
-        </div>
+        <>
+          <div className="quality-required-inspection-list">
+            {inspections.map((inspection) => {
+              const status = getInspectionStatus(order, serial, inspection, measurements);
+              const StatusIcon = statusConfig[status].icon;
+              return (
+                <div className={`quality-required-inspection ${status}`} key={inspection}>
+                  <span>{inspection}</span>
+                  <em><StatusIcon size={18} />{statusConfig[status].label}</em>
+                </div>
+              );
+            })}
+          </div>
+          {readyToSaveInspection ? (
+            <div className="quality-save-inspection-actions">
+              <button type="button" onClick={onSaveInspection}><CheckCircle2 size={18} />Save Inspection</button>
+            </div>
+          ) : null}
+        </>
       ) : (
-        <p>No inspections configured for this work order</p>
+        <div className="quality-inspection-empty-message"><AlertTriangle size={16} /><span>No inspections configured for this work order.</span></div>
       )}
     </article>
   );
 }
 
-function QualityInspectionsPage({ selectedOrder, selectedSerial, onChangeOrder, onChangeSerial }: {
+function MeasurementCapture({ order, serial, measurements, onSaveMeasurement, onConfigureLimits }: {
+  order: ProductionOrder;
+  serial: string;
+  measurements: QualityMeasurementRecord[];
+  onSaveMeasurement: (inspectionName: string, measuredValue: number) => Promise<void>;
+  onConfigureLimits: (inspectionName: string) => void;
+}) {
+  const inspections = order.qualityChecksEnabled ? order.qualityChecks ?? [] : [];
+  const [drafts, setDrafts] = React.useState<MeasurementDraft>({});
+  const [savingInspection, setSavingInspection] = React.useState<string | null>(null);
+
+  React.useEffect(() => { setDrafts({}); }, [order.id, serial]);
+
+  return (
+    <article className="quality-measurement-capture">
+      <div className="quality-inspection-panel-heading"><ShieldCheck size={18} /><strong>Measurement Capture</strong></div>
+      {inspections.length ? (
+        <div className="quality-measurement-list">
+          {inspections.map((inspection) => {
+            const limits = order.qualityCheckLimits?.[inspection] ?? {};
+            const hasConfiguredLimits = typeof limits.lowerLimit === 'number' && typeof limits.upperLimit === 'number';
+            const latest = getLatestMeasurement(measurements, order, serial, inspection);
+            const draftValue = drafts[inspection] ?? '';
+            return (
+              <div className={`quality-measurement-row ${latest?.result ?? 'pending'} ${hasConfiguredLimits ? '' : 'missing-limits'}`} key={inspection}>
+                <div>
+                  <strong>{inspection}</strong>
+                </div>
+                {!hasConfiguredLimits ? (
+                  <button className="quality-measurement-limit-message" type="button" onClick={() => onConfigureLimits(inspection)}><AlertTriangle size={15} /><span>Limits have not been configured yet.</span></button>
+                ) : null}
+                <label>
+                  <span>Lower</span>
+                  <input type="number" value={limits.lowerLimit ?? ''} readOnly />
+                </label>
+                <label className="quality-measurement-value">
+                  <span>Measured</span>
+                  <input
+                    type="number"
+                    step="any"
+                    value={draftValue}
+                    placeholder={latest ? String(latest.measured_value) : '0.00'}
+                    disabled={!hasConfiguredLimits}
+                    onChange={(event) => setDrafts((current) => ({ ...current, [inspection]: event.target.value }))}
+                  />
+                </label>
+                <label>
+                  <span>Upper</span>
+                  <input type="number" value={limits.upperLimit ?? ''} readOnly />
+                </label>
+                <button
+                  type="button"
+                  disabled={!hasConfiguredLimits || draftValue === '' || savingInspection === inspection}
+                  onClick={async () => {
+                    setSavingInspection(inspection);
+                    await onSaveMeasurement(inspection, Number(draftValue));
+                    setSavingInspection(null);
+                    setDrafts((current) => ({ ...current, [inspection]: '' }));
+                  }}
+                  aria-label={`Save ${inspection} measurement`}
+                >
+                  <CheckCircle2 size={18} />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="quality-inspection-empty-message"><AlertTriangle size={16} /><span>No measurement records.</span></div>
+      )}
+    </article>
+  );
+}
+
+function InspectionDocuments({ order, serial, documents, onUploadDocument, onOpenDocument }: {
+  order: ProductionOrder;
+  serial: string;
+  documents: QualityInspectionDocument[];
+  onUploadDocument: (file: File) => Promise<void>;
+  onOpenDocument: (document: QualityInspectionDocument) => Promise<void>;
+}) {
+  const [uploading, setUploading] = React.useState(false);
+  const serialDocuments = documents.filter((document) => document.production_order_id === order.id && document.serial_number === serial);
+
+  return (
+    <article className="quality-inspection-documents">
+      <div className="quality-inspection-panel-heading"><FileText size={18} /><strong>Inspection Documents</strong></div>
+      <label className="quality-document-dropzone">
+        <Upload size={18} />
+        <strong>{uploading ? 'Uploading PDF' : 'Upload PDF'}</strong>
+        <span>{serialDocuments.length ? `${serialDocuments.length} files attached` : 'No attachments yet'}</span>
+        <input
+          type="file"
+          accept="application/pdf,.pdf"
+          multiple
+          disabled={uploading}
+          onChange={async (event) => {
+            const files = Array.from(event.target.files ?? []);
+            event.target.value = '';
+            if (!files.length) return;
+            setUploading(true);
+            for (const file of files) {
+              await onUploadDocument(file);
+            }
+            setUploading(false);
+          }}
+        />
+      </label>
+      {serialDocuments.length ? (
+        <div className="quality-document-list">
+          {serialDocuments.map((document) => (
+            <div className="quality-document-row" key={document.id}>
+              <div>
+                <strong>{document.file_name}</strong>
+                <span>{new Date(document.uploaded_at).toLocaleDateString()}</span>
+              </div>
+              <button type="button" onClick={() => onOpenDocument(document)}>Open</button>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </article>
+  );
+}
+function QualityInspectionsPage({ selectedOrder, selectedSerial, measurements, documents, inspectedSerials, onChangeOrder, onChangeSerial, onSaveMeasurement, onUploadDocument, onOpenDocument, onConfigureLimits, onSaveInspection }: {
   selectedOrder: ProductionOrder;
   selectedSerial: string;
+  measurements: QualityMeasurementRecord[];
+  documents: QualityInspectionDocument[];
+  inspectedSerials: QualitySerialInspectionRecord[];
   onChangeOrder: () => void;
   onChangeSerial: () => void;
+  onSaveMeasurement: (inspectionName: string, measuredValue: number) => Promise<void>;
+  onUploadDocument: (file: File) => Promise<void>;
+  onOpenDocument: (document: QualityInspectionDocument) => Promise<void>;
+  onConfigureLimits: (inspectionName: string) => void;
+  onSaveInspection: () => Promise<void>;
 }) {
+  const inspectedCount = inspectedSerials.filter((record) => record.production_order_id === selectedOrder.id).length;
+  const readyToSaveInspection = isSerialReadyToSaveInspection(selectedOrder, selectedSerial, measurements)
+    && !isQualitySerialInspected(inspectedSerials, selectedOrder.id, selectedSerial);
+
   return (
     <div className="quality-inspections-workspace">
       <div className="quality-inspection-order-row">
-        <QualityInspectionCounter inspected={getQualityInspectedQuantity(selectedOrder)} required={selectedOrder.plannedQuantity} />
+        <QualityInspectionCounter inspected={inspectedCount} required={selectedOrder.plannedQuantity} />
         <QualityOrderSelector order={selectedOrder} selectedSerial={selectedSerial} onOpenOrder={onChangeOrder} onOpenSerial={onChangeSerial} />
       </div>
       <section className="quality-inspection-board" aria-label="Inspection foundation for selected work order">
-        <RequiredInspections order={selectedOrder} serial={selectedSerial} />
-        <article><div><ShieldCheck size={18} /><strong>Measurement Capture</strong></div><p>No measurement records</p></article>
-        <article><div><FileText size={18} /><strong>Inspection Documents</strong></div><p>No attachments</p></article>
+        <RequiredInspections order={selectedOrder} serial={selectedSerial} measurements={measurements} readyToSaveInspection={readyToSaveInspection} onSaveInspection={onSaveInspection} />
+        <MeasurementCapture order={selectedOrder} serial={selectedSerial} measurements={measurements} onSaveMeasurement={onSaveMeasurement} onConfigureLimits={onConfigureLimits} />
+        <InspectionDocuments order={selectedOrder} serial={selectedSerial} documents={documents} onUploadDocument={onUploadDocument} onOpenDocument={onOpenDocument} />
       </section>
     </div>
   );
 }
+type SpecificationDraft = Record<string, { lowerLimit: string; upperLimit: string; approachPercent: string }>;
 
+type SpecificationHighlightRequest = { inspectionName: string; token: number };
+
+function QualitySpecificationOrderSelector({ order, onOpenOrder }: { order: ProductionOrder; onOpenOrder: () => void }) {
+  return (
+    <section className="quality-active-order-panel quality-specification-order-panel" aria-label="Selected production order for specifications">
+      <div className="quality-active-order-heading"><ClipboardCheck size={16} /><strong>Selected Work Order</strong></div>
+      <div className="quality-active-order-card quality-specification-order-card">
+        <button type="button" onClick={onOpenOrder}><em>Order Number</em><strong>{order.orderNumber}</strong></button>
+        <span><em>Part Name</em><strong>{order.partName}</strong></span>
+        <span><em>Part Number</em><strong>{order.partNumber}</strong></span>
+        <span><em>Due Date</em><strong>{formatQualityDate(order.dueDate)}</strong></span>
+        <span><em>Client</em><strong>{getQualityOrderClient(order)}</strong></span>
+      </div>
+    </section>
+  );
+}
+
+function createSpecificationDraft(order: ProductionOrder): SpecificationDraft {
+  const inspections = order.qualityChecksEnabled ? order.qualityChecks ?? [] : [];
+  return Object.fromEntries(inspections.map((inspection) => {
+    const limits = order.qualityCheckLimits?.[inspection] ?? {};
+    return [inspection, {
+      lowerLimit: limits.lowerLimit == null ? '' : String(limits.lowerLimit),
+      upperLimit: limits.upperLimit == null ? '' : String(limits.upperLimit),
+      approachPercent: limits.approachPercent == null ? '' : String(limits.approachPercent),
+    }];
+  })) as SpecificationDraft;
+}
+
+function draftToQualityLimits(draft: SpecificationDraft): Record<string, QualityCheckLimit> {
+  return Object.fromEntries(Object.entries(draft).map(([inspection, limits]) => [inspection, {
+    lowerLimit: limits.lowerLimit === '' ? null : Number(limits.lowerLimit),
+    upperLimit: limits.upperLimit === '' ? null : Number(limits.upperLimit),
+    approachPercent: limits.approachPercent === '' ? null : Number(limits.approachPercent),
+  }]));
+}
+
+function QualitySpecificationsPage({ selectedOrder, onChangeOrder, onSaveSpecifications, highlightRequest }: {
+  selectedOrder: ProductionOrder;
+  onChangeOrder: () => void;
+  onSaveSpecifications: (limits: Record<string, QualityCheckLimit>) => Promise<void>;
+  highlightRequest: SpecificationHighlightRequest | null;
+}) {
+  const inspections = selectedOrder.qualityChecksEnabled ? selectedOrder.qualityChecks ?? [] : [];
+  const [activeInspection, setActiveInspection] = React.useState(inspections[0] ?? '');
+  const [draft, setDraft] = React.useState<SpecificationDraft>(() => createSpecificationDraft(selectedOrder));
+  const [saving, setSaving] = React.useState(false);
+  const [highlightedInspection, setHighlightedInspection] = React.useState('');
+
+  React.useEffect(() => {
+    const nextDraft = createSpecificationDraft(selectedOrder);
+    setDraft(nextDraft);
+    setActiveInspection(Object.keys(nextDraft)[0] ?? '');
+  }, [selectedOrder.id, selectedOrder.qualityChecks?.join('|'), selectedOrder.qualityCheckLimits]);
+
+  React.useEffect(() => {
+    if (!highlightRequest || !inspections.includes(highlightRequest.inspectionName)) return;
+    setActiveInspection(highlightRequest.inspectionName);
+    setHighlightedInspection(highlightRequest.inspectionName);
+    const timeout = window.setTimeout(() => setHighlightedInspection(''), 3200);
+    return () => window.clearTimeout(timeout);
+  }, [highlightRequest?.token, highlightRequest?.inspectionName, inspections.join('|')]);
+
+  const activeLimits = draft[activeInspection];
+
+  return (
+    <div className="quality-specifications-workspace">
+      <QualitySpecificationOrderSelector order={selectedOrder} onOpenOrder={onChangeOrder} />
+      <section className="quality-specification-configurator" aria-label="Quality specification limits">
+        <aside className="quality-specification-menu">
+          <div className="quality-inspection-panel-heading"><ShieldCheck size={18} /><strong>Required Inspections</strong></div>
+          {inspections.length ? inspections.map((inspection) => {
+            const limits = draft[inspection];
+            const configured = limits?.lowerLimit !== '' || limits?.upperLimit !== '';
+            return (
+              <button className={`${activeInspection === inspection ? 'active' : ''} ${configured ? 'configured' : ''}`} type="button" key={inspection} onClick={() => setActiveInspection(inspection)}>
+                <span>{inspection}</span>
+                <em>{configured ? <><CheckCircle2 size={14} />Configured</> : <><CircleX size={14} />Missing limits</>}</em>
+              </button>
+            );
+          }) : <div className="quality-specification-message quality-specification-empty-message"><AlertTriangle size={16} /><span>No inspections configured for this work order.</span></div>}
+        </aside>
+        <article className="quality-specification-editor">
+          <div className="quality-inspection-panel-heading"><FileText size={18} /><strong>Specification Limits</strong></div>
+          {activeInspection && activeLimits ? (
+            <>
+              <div className="quality-specification-editor-title">
+                <h3>{activeInspection}</h3>
+                <div className="quality-specification-message"><AlertTriangle size={16} /><span>NOK is automatic outside lower and upper limits.</span></div>
+              </div>
+              <div className={`quality-specification-fields ${highlightedInspection === activeInspection ? 'highlight' : ''}`}>
+                <label>
+                  <span>Lower Limit</span>
+                  <input type="number" step="any" value={activeLimits.lowerLimit} onChange={(event) => setDraft((current) => ({ ...current, [activeInspection]: { ...current[activeInspection], lowerLimit: event.target.value } }))} />
+                </label>
+                <label>
+                  <span>Upper Limit</span>
+                  <input type="number" step="any" value={activeLimits.upperLimit} onChange={(event) => setDraft((current) => ({ ...current, [activeInspection]: { ...current[activeInspection], upperLimit: event.target.value } }))} />
+                </label>
+                <label>
+                  <span>Approach Range %</span>
+                  <input type="number" step="any" min="0" max="100" value={activeLimits.approachPercent} placeholder="10" onChange={(event) => setDraft((current) => ({ ...current, [activeInspection]: { ...current[activeInspection], approachPercent: event.target.value } }))} />
+                </label>
+              </div>
+              <div className="quality-specification-preview">
+                <strong>Category behavior</strong>
+                <span className="ok">OK: within tolerance</span>
+                <span className="approach">Approach: within configured percent near either limit</span>
+                <span className="nok">NOK: outside tolerance limits</span>
+              </div>
+              <button className="quality-specification-save" type="button" disabled={saving} onClick={async () => { setSaving(true); await onSaveSpecifications(draftToQualityLimits(draft)); setSaving(false); }}>
+                <CheckCircle2 size={18} /> {saving ? 'Saving' : 'Save Specifications'}
+              </button>
+            </>
+          ) : (
+            <div className="quality-specification-message quality-specification-empty-message"><AlertTriangle size={16} /><span>Select a required inspection to configure its specification.</span></div>
+          )}
+        </article>
+      </section>
+    </div>
+  );
+}
 function QualityPlaceholderPage({ config }: { config: QualityPageConfig }) {
   return (
     <div className="quality-page-foundation">
@@ -613,6 +977,10 @@ export function QualityOperationsWorkspace({ onNavigate, activeTab, organization
   const [selectedInspectionSerial, setSelectedInspectionSerial] = React.useState(
     selectedInspectionOrder ? getQualityOrderSerials(selectedInspectionOrder)[0] : '',
   );
+  const [measurementRecords, setMeasurementRecords] = React.useState<QualityMeasurementRecord[]>([]);
+  const [inspectionDocuments, setInspectionDocuments] = React.useState<QualityInspectionDocument[]>([]);
+  const [serialInspectionRecords, setSerialInspectionRecords] = React.useState<QualitySerialInspectionRecord[]>([]);
+  const [specificationHighlightRequest, setSpecificationHighlightRequest] = React.useState<SpecificationHighlightRequest | null>(null);
 
 
   React.useEffect(() => {
@@ -640,6 +1008,231 @@ export function QualityOperationsWorkspace({ onNavigate, activeTab, organization
     void loadInspectionOrders();
     return () => { active = false; };
   }, [organizationId]);
+
+  React.useEffect(() => {
+    let active = true;
+
+    const loadQualityInspectionRecords = async () => {
+      const [
+        { data: measurementsData, error: measurementsError },
+        { data: documentsData, error: documentsError },
+        { data: serialInspectionsData, error: serialInspectionsError },
+      ] = await Promise.all([
+        supabase.from('mes_quality_measurements').select('*').eq('organization_id', organizationId),
+        supabase.from('mes_quality_inspection_documents').select('*').eq('organization_id', organizationId),
+        supabase.from('mes_quality_serial_inspections').select('*').eq('organization_id', organizationId),
+      ]);
+
+      if (!active) return;
+      if (measurementsError) console.error('Unable to load Quality measurements', measurementsError);
+      if (documentsError) console.error('Unable to load Quality inspection documents', documentsError);
+      if (serialInspectionsError) console.error('Unable to load Quality serial inspections', serialInspectionsError);
+      setMeasurementRecords((measurementsData ?? []) as QualityMeasurementRecord[]);
+      setInspectionDocuments((documentsData ?? []) as QualityInspectionDocument[]);
+      setSerialInspectionRecords((serialInspectionsData ?? []) as QualitySerialInspectionRecord[]);
+    };
+
+    void loadQualityInspectionRecords();
+    return () => { active = false; };
+  }, [organizationId]);
+
+  const handleConfigureInspectionLimits = React.useCallback((inspectionName: string) => {
+    setSpecificationHighlightRequest({ inspectionName, token: Date.now() });
+    onNavigate('/workspace/manufacturing-ops/mes/quality/specifications');
+  }, [onNavigate]);
+  const handleSaveMeasurement = React.useCallback(async (inspectionName: string, measuredValue: number) => {
+    if (!selectedInspectionOrder || Number.isNaN(measuredValue)) return;
+    const limits = selectedInspectionOrder.qualityCheckLimits?.[inspectionName] ?? {};
+    const result = evaluateMeasurement(measuredValue, limits);
+    const nextRecord: QualityMeasurementRecord = {
+      id: `quality-measurement-${Date.now()}`,
+      production_order_id: selectedInspectionOrder.id,
+      serial_number: selectedInspectionSerial,
+      inspection_name: inspectionName,
+      measured_value: measuredValue,
+      lower_limit: limits.lowerLimit ?? null,
+      upper_limit: limits.upperLimit ?? null,
+      result,
+      measured_at: new Date().toISOString(),
+    };
+
+    if (!isDemoQualityOrder(selectedInspectionOrder)) {
+      const { data, error } = await supabase
+        .from('mes_quality_measurements')
+        .insert({
+          organization_id: organizationId,
+          production_order_id: selectedInspectionOrder.id,
+          serial_number: selectedInspectionSerial,
+          inspection_name: inspectionName,
+          measured_value: measuredValue,
+          lower_limit: limits.lowerLimit ?? null,
+          upper_limit: limits.upperLimit ?? null,
+          result,
+        })
+        .select('*')
+        .single();
+
+      if (error) {
+        console.error('Unable to save Quality measurement', error);
+        return;
+      }
+      Object.assign(nextRecord, data as QualityMeasurementRecord);
+    }
+
+    const measurementKey = getMeasurementKey(selectedInspectionOrder.id, selectedInspectionSerial, inspectionName);
+    setMeasurementRecords((current) => [
+      nextRecord,
+      ...current.filter((record) => getMeasurementKey(record.production_order_id, record.serial_number, record.inspection_name) !== measurementKey),
+    ]);
+  }, [organizationId, selectedInspectionOrder, selectedInspectionSerial]);
+
+  const handleSaveSerialInspection = React.useCallback(async () => {
+    if (!selectedInspectionOrder || !selectedInspectionSerial) return;
+    const result = getOverallSerialInspectionResult(selectedInspectionOrder, selectedInspectionSerial, measurementRecords);
+    let nextRecord: QualitySerialInspectionRecord = {
+      id: `quality-serial-inspection-${Date.now()}`,
+      production_order_id: selectedInspectionOrder.id,
+      serial_number: selectedInspectionSerial,
+      result,
+      inspected_at: new Date().toISOString(),
+    };
+
+    if (!isDemoQualityOrder(selectedInspectionOrder)) {
+      const { data, error } = await supabase
+        .from('mes_quality_serial_inspections')
+        .upsert({
+          organization_id: organizationId,
+          production_order_id: selectedInspectionOrder.id,
+          serial_number: selectedInspectionSerial,
+          result,
+          inspected_at: new Date().toISOString(),
+        }, { onConflict: 'production_order_id,serial_number' })
+        .select('*')
+        .single();
+
+      if (error) {
+        console.error('Unable to save Quality serial inspection', error);
+        return;
+      }
+      nextRecord = data as QualitySerialInspectionRecord;
+
+      const inspectionStatuses = getRequiredInspectionStatuses(selectedInspectionOrder, selectedInspectionSerial, measurementRecords);
+      const { error: traceabilityError } = await supabase
+        .from('mes_operator_terminal_events')
+        .insert({
+          organization_id: organizationId,
+          production_order_id: selectedInspectionOrder.id,
+          work_center_code: selectedInspectionOrder.assignedWorkCenter || 'QUALITY',
+          station_code: selectedInspectionOrder.assignedStation || 'QUALITY',
+          event_type: 'quality-inspection-saved',
+          quantity: 1,
+          reason: result.toUpperCase(),
+          comment: `Quality inspection saved for serial ${selectedInspectionSerial}.`,
+          payload: {
+            source: 'quality',
+            serial_number: selectedInspectionSerial,
+            result,
+            inspection_count: inspectionStatuses.length,
+            inspections: inspectionStatuses,
+            order_status: selectedInspectionOrder.status,
+          },
+        });
+
+      if (traceabilityError) {
+        console.error('Unable to create Quality traceability event', traceabilityError);
+      }
+    }
+
+    setSerialInspectionRecords((current) => [
+      nextRecord,
+      ...current.filter((record) => !(record.production_order_id === selectedInspectionOrder.id && record.serial_number === selectedInspectionSerial)),
+    ]);
+
+    const serials = getQualityOrderSerials(selectedInspectionOrder);
+    const currentIndex = serials.indexOf(selectedInspectionSerial);
+    const nextSerial = serials[currentIndex + 1] ?? serials.find((serial) => serial !== selectedInspectionSerial && !isQualitySerialInspected(serialInspectionRecords, selectedInspectionOrder.id, serial));
+    if (nextSerial) setSelectedInspectionSerial(nextSerial);
+  }, [measurementRecords, organizationId, selectedInspectionOrder, selectedInspectionSerial, serialInspectionRecords]);
+  const handleUploadDocument = React.useCallback(async (file: File) => {
+    if (!selectedInspectionOrder) return;
+    const safeFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '-');
+    const storagePath = `${organizationId}/${selectedInspectionOrder.id}/${selectedInspectionSerial}/${Date.now()}-${safeFileName}`;
+    const filePath = isDemoQualityOrder(selectedInspectionOrder) ? URL.createObjectURL(file) : storagePath;
+    let nextDocument: QualityInspectionDocument = {
+      id: `quality-document-${Date.now()}`,
+      production_order_id: selectedInspectionOrder.id,
+      serial_number: selectedInspectionSerial,
+      inspection_name: null,
+      file_name: file.name,
+      file_path: filePath,
+      file_type: file.type || 'application/pdf',
+      uploaded_at: new Date().toISOString(),
+    };
+
+    if (!isDemoQualityOrder(selectedInspectionOrder)) {
+      const { error: uploadError } = await supabase.storage.from(qualityDocumentsBucket).upload(storagePath, file, { contentType: file.type || 'application/pdf' });
+      if (uploadError) {
+        console.error('Unable to upload Quality inspection document', uploadError);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('mes_quality_inspection_documents')
+        .insert({
+          organization_id: organizationId,
+          production_order_id: selectedInspectionOrder.id,
+          serial_number: selectedInspectionSerial,
+          inspection_name: null,
+          file_name: file.name,
+          file_path: storagePath,
+          file_type: file.type || 'application/pdf',
+        })
+        .select('*')
+        .single();
+
+      if (error) {
+        console.error('Unable to save Quality inspection document', error);
+        return;
+      }
+      nextDocument = data as QualityInspectionDocument;
+    }
+
+    setInspectionDocuments((current) => [nextDocument, ...current]);
+  }, [organizationId, selectedInspectionOrder, selectedInspectionSerial]);
+
+  const handleSaveSpecifications = React.useCallback(async (limits: Record<string, QualityCheckLimit>) => {
+    if (!selectedInspectionOrder) return;
+
+    if (!isDemoQualityOrder(selectedInspectionOrder)) {
+      const { error } = await supabase
+        .from('mes_production_orders')
+        .update({ quality_check_limits: limits })
+        .eq('id', selectedInspectionOrder.id)
+        .eq('organization_id', organizationId);
+
+      if (error) {
+        console.error('Unable to save Quality specifications', error);
+        return;
+      }
+    }
+
+    setInspectionOrders((current) => current.map((order) => (
+      order.id === selectedInspectionOrder.id ? { ...order, qualityCheckLimits: limits } : order
+    )));
+  }, [organizationId, selectedInspectionOrder]);
+  const handleOpenDocument = React.useCallback(async (document: QualityInspectionDocument) => {
+    if (document.file_path.startsWith('blob:')) {
+      window.open(document.file_path, '_blank', 'noopener,noreferrer');
+      return;
+    }
+
+    const { data, error } = await supabase.storage.from(qualityDocumentsBucket).createSignedUrl(document.file_path, 60 * 5);
+    if (error || !data?.signedUrl) {
+      console.error('Unable to open Quality inspection document', error);
+      return;
+    }
+    window.open(data.signedUrl, '_blank', 'noopener,noreferrer');
+  }, []);
   const isDashboard = activeTab === 'dashboard';
   const activeConfig = isDashboard ? null : qualityPageConfig[activeTab as Exclude<QualityContextTab, 'dashboard'>];
   const eyebrow = isDashboard ? 'MES / QUALITY DASHBOARD' : activeConfig!.eyebrow;
@@ -674,11 +1267,27 @@ export function QualityOperationsWorkspace({ onNavigate, activeTab, organization
           <QualityInspectionsPage
             selectedOrder={selectedInspectionOrder}
             selectedSerial={selectedInspectionSerial}
+            measurements={measurementRecords}
+            documents={inspectionDocuments}
+            inspectedSerials={serialInspectionRecords}
             onChangeOrder={() => setOrderPickerOpen(true)}
             onChangeSerial={() => setSerialPickerOpen(true)}
+            onSaveMeasurement={handleSaveMeasurement}
+            onUploadDocument={handleUploadDocument}
+            onOpenDocument={handleOpenDocument}
+            onConfigureLimits={handleConfigureInspectionLimits}
+            onSaveInspection={handleSaveSerialInspection}
           />
         ) : null}
-        {!isDashboard && activeTab !== 'inspections' ? <QualityPlaceholderPage config={activeConfig!} /> : null}
+        {activeTab === 'specifications' && selectedInspectionOrder ? (
+          <QualitySpecificationsPage
+            selectedOrder={selectedInspectionOrder}
+            onChangeOrder={() => setOrderPickerOpen(true)}
+            onSaveSpecifications={handleSaveSpecifications}
+            highlightRequest={specificationHighlightRequest}
+          />
+        ) : null}
+        {!isDashboard && activeTab !== 'inspections' && activeTab !== 'specifications' ? <QualityPlaceholderPage config={activeConfig!} /> : null}
       </div>
 
       {orderPickerOpen ? (
@@ -698,6 +1307,7 @@ export function QualityOperationsWorkspace({ onNavigate, activeTab, organization
         <QualitySerialPickerModal
           order={selectedInspectionOrder}
           currentSerial={selectedInspectionSerial}
+          inspectedSerials={serialInspectionRecords}
           onClose={() => setSerialPickerOpen(false)}
           onSelect={(serial) => {
             setSelectedInspectionSerial(serial);

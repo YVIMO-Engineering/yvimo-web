@@ -3384,6 +3384,7 @@ function LoggedDashboardPage({
     value: SupplierContextTab;
     label: string;
     icon: React.ComponentType<{ size?: number }>;
+    disabled?: boolean;
   }> = [
     { value: 'dashboard', label: 'Dashboard', icon: ClipboardCheck },
     { value: 'transfers', label: 'Transfers', icon: PackageCheck },
@@ -3396,10 +3397,11 @@ function LoggedDashboardPage({
     label: string;
     path: string;
     icon: React.ComponentType<{ size?: number }>;
+    disabled?: boolean;
   }> = [
     { value: 'dashboard', label: 'Dashboard', path: '/workspace/manufacturing-ops/mes/quality', icon: Gauge },
     { value: 'inspections', label: 'Inspections', path: '/workspace/manufacturing-ops/mes/quality/inspections', icon: ClipboardCheck },
-    { value: 'quality-plans', label: 'Quality Plans', path: '/workspace/manufacturing-ops/mes/quality/quality-plans', icon: FolderCheck },
+    { value: 'quality-plans', label: 'Quality Plans', path: '/workspace/manufacturing-ops/mes/quality/quality-plans', icon: FolderCheck, disabled: true },
     { value: 'specifications', label: 'Specifications', path: '/workspace/manufacturing-ops/mes/quality/specifications', icon: ShieldCheck },
     { value: 'certificates-docs', label: 'Certificates & Docs', path: '/workspace/manufacturing-ops/mes/quality/certificates-docs', icon: FileText },
     { value: 'ncrs', label: 'NCRs', path: '/workspace/manufacturing-ops/mes/quality/ncrs', icon: AlertTriangle },
@@ -4197,9 +4199,11 @@ function LoggedDashboardPage({
                 <button
                   type="button"
                   key={tab.value}
-                  className={activeQualityContextTab === tab.value ? 'active' : ''}
+                  className={[activeQualityContextTab === tab.value ? 'active' : '', tab.disabled ? 'disabled' : ''].filter(Boolean).join(' ')}
+                  disabled={tab.disabled}
+                  aria-disabled={tab.disabled}
                   onClick={() => {
-                    onNavigate(tab.path);
+                    if (!tab.disabled) onNavigate(tab.path);
                   }}
                 >
                   <Icon size={18} />
