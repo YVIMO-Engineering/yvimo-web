@@ -3407,10 +3407,10 @@ function LoggedDashboardPage({
     { value: 'quality-plans', label: 'Quality Plans', path: '/workspace/manufacturing-ops/mes/quality/quality-plans', icon: FolderCheck, disabled: true },
     { value: 'specifications', label: 'Specifications', path: '/workspace/manufacturing-ops/mes/quality/specifications', icon: ShieldCheck },
     { value: 'certificates-docs', label: 'Certificates & Docs', path: '/workspace/manufacturing-ops/mes/quality/certificates-docs', icon: FileText },
-    { value: 'ncrs', label: 'NCRs', path: '/workspace/manufacturing-ops/mes/quality/ncrs', icon: AlertTriangle },
-    { value: 'holds-releases', label: 'Holds & Releases', path: '/workspace/manufacturing-ops/mes/quality/holds-releases', icon: PackageCheck },
+    { value: 'ncrs', label: 'NCRs', path: '/workspace/manufacturing-ops/mes/quality/ncrs', icon: AlertTriangle, disabled: true },
+    { value: 'holds-releases', label: 'Holds & Releases', path: '/workspace/manufacturing-ops/mes/quality/holds-releases', icon: PackageCheck, disabled: true },
   ];
-  const activeQualityContextTab = qualityContextTabs.find((tab) => activePath === tab.path)?.value ?? 'dashboard';
+  const activeQualityContextTab = qualityContextTabs.find((tab) => activePath === tab.path && !tab.disabled)?.value ?? 'dashboard';
   const activeManufacturingOrganizationId = manufacturingOrganization
     && !manufacturingOrganization.id.startsWith('local-')
     && !manufacturingOrganization.id.startsWith('joined-')
@@ -3459,7 +3459,7 @@ function LoggedDashboardPage({
       return <TraceabilityWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} />;
     }
     if (isQualityOperationsPage) {
-      return <QualityOperationsWorkspace onNavigate={onNavigate} activeTab={activeQualityContextTab} organizationId={activeManufacturingOrganizationId} />;
+      return <QualityOperationsWorkspace onNavigate={onNavigate} activeTab={activeQualityContextTab} organizationId={activeManufacturingOrganizationId} organizationName={manufacturingOrganization?.name} organizationLogoUrl={manufacturingOrganization?.logoUrl} />;
     }
     if (isSupplierOperationsPage) {
       return (

@@ -1,14 +1,18 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
+import html2canvas from 'html2canvas';
+import { jsPDF } from 'jspdf';
 import {
   AlertTriangle,
   ArrowLeft,
+  Award,
   CalendarDays,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
   CircleX,
   ClipboardCheck,
+  Download,
   FileText,
   FolderCheck,
   PackageCheck,
@@ -37,6 +41,8 @@ type QualityOperationsWorkspaceProps = {
   onNavigate: (path: string) => void;
   activeTab: QualityContextTab;
   organizationId: string;
+  organizationName?: string;
+  organizationLogoUrl?: string;
 };
 
 type QualityPageConfig = {
@@ -123,6 +129,11 @@ function isQualityDateInRange(value: string, range: QualityDashboardDateRange) {
   const isoDate = value.includes('T') ? toQualityIsoDate(new Date(value)) : value;
   if (!isoDate) return false;
   return (!range.from || isoDate >= range.from) && (!range.to || isoDate <= range.to);
+}
+
+function isQualityDateOnOrBefore(value: string, date: string) {
+  const isoDate = value.includes('T') ? toQualityIsoDate(new Date(value)) : value;
+  return Boolean(isoDate) && (!date || isoDate <= date);
 }
 
 function QualityDatePicker({ id, value, placeholder = 'Select date', onChange, onQuickRange }: {
@@ -458,7 +469,7 @@ const qualityPageConfig: Record<Exclude<QualityContextTab, 'dashboard'>, Quality
   'certificates-docs': {
     eyebrow: 'MES / QUALITY / CERTIFICATES & DOCS',
     title: 'Certificates & Docs',
-    description: 'Store and review quality certificates, inspection files, and production order documentation.',
+    description: 'Review completed inspections, measurement evidence, attached files, and issued quality certificates.',
     actionLabel: 'Upload Document',
     fields: [
       'Document Name',
@@ -586,6 +597,7 @@ type QualityDashboardQueueItem = {
   title: string;
   meta: string;
   detail: string;
+  inspections?: string[];
   status: string;
   tone?: 'ok' | 'nok' | 'approach' | 'pending';
 };
@@ -615,11 +627,32 @@ function getQualityDashboardData(orders: ProductionOrder[], measurements: Qualit
   const recentNokMeasurements = measurements
     .filter((measurement) => measurement.result === 'nok')
     .sort((first, second) => new Date(second.measured_at).getTime() - new Date(first.measured_at).getTime())
-    .slice(0, 12)
     .flatMap((measurement) => {
       const order = orders.find((candidate) => candidate.id === measurement.production_order_id);
       return order ? [{ order, measurement }] : [];
     });
+
+  const recentNcrItems = recentNokMeasurements.reduce<QualityDashboardQueueItem[]>((items, { order, measurement }) => {
+    const id = `${order.id}-${measurement.serial_number}`;
+    const inspectionName = measurement.inspection_name ?? 'Unknown inspection';
+    const existingItem = items.find((item) => item.id === id);
+
+    if (existingItem) {
+      if (!existingItem.inspections?.includes(inspectionName)) existingItem.inspections?.push(inspectionName);
+      return items;
+    }
+
+    items.push({
+      id,
+      title: order.orderNumber,
+      meta: measurement.serial_number,
+      detail: inspectionName,
+      inspections: [inspectionName],
+      status: 'NOK',
+      tone: 'nok',
+    });
+    return items;
+  }, []).slice(0, 12);
 
   const kpis: QualityDashboardKpi[] = [
     { label: 'Pending Inspections', value: pendingSerials.length, helper: 'waiting for quality review' },
@@ -655,14 +688,7 @@ function getQualityDashboardData(orders: ProductionOrder[], measurements: Qualit
       status: 'Missing docs',
       tone: 'pending',
     })),
-    'Recent NCRs': recentNokMeasurements.map(({ order, measurement }) => ({
-      id: measurement.id,
-      title: order.orderNumber,
-      meta: measurement.serial_number,
-      detail: `${measurement.inspection_name}: ${measurement.measured_value} outside ${formatLimit(measurement.lower_limit)} - ${formatLimit(measurement.upper_limit)}`,
-      status: 'NOK',
-      tone: 'nok',
-    })),
+    'Recent NCRs': recentNcrItems,
   };
 
   return { kpis, queues };
@@ -705,10 +731,21 @@ function QualityDashboard({ orders, measurements, documents, inspectedSerials }:
                   <div className="quality-dashboard-record-list">
                     {visibleItems.map((item, index) => (
                       <div className={`quality-dashboard-record ${index === 0 ? 'featured' : 'stacked'} ${item.tone ?? 'pending'}`} key={item.id}>
-                        <strong>{item.title}</strong>
-                        <span>{item.meta}</span>
-                        <em>{item.detail}</em>
-                        <b>{item.status}</b>
+                        <strong><i className="quality-dashboard-field-label"><ClipboardCheck size={13} />Order name:</i>{item.title}</strong>
+                        <span><i className="quality-dashboard-field-label"><PackageCheck size={13} />{panel.title === 'Missing Docs' ? 'Part number:' : 'Serial:'}</i>{item.meta}</span>
+                        {panel.title === 'Recent NCRs' ? (
+                          <div className="quality-dashboard-ncr-inspections">
+                            {(item.inspections ?? [item.detail]).map((inspection) => (
+                              <div className="quality-dashboard-ncr-inspection" key={inspection}>
+                                <p>{inspection}</p>
+                                <p><CircleX size={15} />NOK</p>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <em><i className="quality-dashboard-field-label">{panel.title === 'Missing Docs' ? <FileText size={13} /> : <PackageCheck size={13} />}{panel.title === 'Missing Docs' ? 'Part name:' : 'Part:'}</i>{item.detail}</em>
+                        )}
+                        {panel.title !== 'Recent NCRs' ? <b>{item.status}</b> : null}
                       </div>
                     ))}
                     {hiddenItemCount > 0 ? <div className="quality-dashboard-more">+{hiddenItemCount} Items</div> : null}
@@ -780,12 +817,19 @@ function QualityOrderSelector({ order, selectedSerial, onOpenOrder, onOpenSerial
   );
 }
 
-function QualityOrderPickerModal({ orders, currentOrderId, onClose, onSelect }: {
+function QualityOrderPickerModal({ orders, currentOrderId, completedOnly = false, onClose, onSelect }: {
   orders: ProductionOrder[];
   currentOrderId: string;
+  completedOnly?: boolean;
   onClose: () => void;
   onSelect: (order: ProductionOrder) => void;
 }) {
+  const [query, setQuery] = React.useState('');
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredOrders = normalizedQuery
+    ? orders.filter((order) => [order.orderNumber, order.partName, order.partNumber, getQualityOrderClient(order)].some((value) => value.toLowerCase().includes(normalizedQuery)))
+    : orders;
+
   return (
     <div className="quality-order-modal-backdrop" role="presentation">
       <section className="quality-order-modal" role="dialog" aria-modal="true" aria-labelledby="quality-order-modal-title">
@@ -794,9 +838,13 @@ function QualityOrderPickerModal({ orders, currentOrderId, onClose, onSelect }: 
           <div><p className="eyebrow">Quality</p><h3 id="quality-order-modal-title">Change Work Order</h3></div>
           <button type="button" aria-label="Close" onClick={onClose}><X size={18} /></button>
         </div>
-        <p className="quality-order-modal-copy">Select the Production Order that should be inspected by Quality.</p>
+        <p className="quality-order-modal-copy">{completedOnly ? 'Select a Production Order with completed Quality inspections.' : 'Select the Production Order that should be inspected by Quality.'}</p>
+        <label className="quality-serial-search quality-order-search">
+          <Search size={17} />
+          <input autoFocus type="search" value={query} placeholder="Search order, part, or client" onChange={(event) => setQuery(event.target.value)} />
+        </label>
         <div className="quality-order-switch-list">
-          {orders.map((order) => {
+          {filteredOrders.map((order) => {
             const reported = order.completedQuantity + order.scrapQuantity;
             return (
               <button className={order.id === currentOrderId ? 'active' : ''} type="button" key={order.id} disabled={order.id === currentOrderId} onClick={() => onSelect(order)}>
@@ -805,6 +853,7 @@ function QualityOrderPickerModal({ orders, currentOrderId, onClose, onSelect }: 
               </button>
             );
           })}
+          {!filteredOrders.length ? <p>{completedOnly ? 'No completed work orders found' : 'No work orders found'}</p> : null}
         </div>
         <div className="quality-order-modal-actions"><button type="button" onClick={onClose}>Cancel</button></div>
       </section>
@@ -812,16 +861,19 @@ function QualityOrderPickerModal({ orders, currentOrderId, onClose, onSelect }: 
   );
 }
 
-function QualitySerialPickerModal({ order, currentSerial, inspectedSerials, onClose, onSelect }: {
+function QualitySerialPickerModal({ order, currentSerial, inspectedSerials, completedOnly = false, onClose, onSelect }: {
   order: ProductionOrder;
   currentSerial: string;
   inspectedSerials: QualitySerialInspectionRecord[];
+  completedOnly?: boolean;
   onClose: () => void;
   onSelect: (serial: string) => void;
 }) {
   const [query, setQuery] = React.useState('');
   const normalizedQuery = query.trim().toLowerCase();
-  const serials = getQualityOrderSerials(order);
+  const serials = completedOnly
+    ? inspectedSerials.filter((record) => record.production_order_id === order.id).map((record) => record.serial_number)
+    : getQualityOrderSerials(order);
   const filteredSerials = normalizedQuery ? serials.filter((serial) => serial.toLowerCase().includes(normalizedQuery)) : serials;
   return (
     <div className="quality-order-modal-backdrop" role="presentation">
@@ -831,7 +883,7 @@ function QualitySerialPickerModal({ order, currentSerial, inspectedSerials, onCl
           <div><p className="eyebrow">{order.orderNumber}</p><h3 id="quality-serial-modal-title">Select Serial Number</h3></div>
           <button type="button" aria-label="Close" onClick={onClose}><X size={18} /></button>
         </div>
-        <p className="quality-order-modal-copy">Select the individual piece that will be inspected.</p>
+        <p className="quality-order-modal-copy">{completedOnly ? 'Select a completed inspection to review its certificate and documents.' : 'Select the individual piece that will be inspected.'}</p>
         <label className="quality-serial-search">
           <Search size={17} />
           <input autoFocus type="search" value={query} placeholder="Search serial number" onChange={(event) => setQuery(event.target.value)} />
@@ -1235,6 +1287,235 @@ function QualitySpecificationsPage({ selectedOrder, onChangeOrder, onSaveSpecifi
     </div>
   );
 }
+function getQualityCertificateCode(record: QualitySerialInspectionRecord) {
+  return `YVIMO-QC-${record.id.toUpperCase()}`;
+}
+
+function getQualityCertificateHash(value: string) {
+  let first = 2166136261;
+  let second = 2246822519;
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    first = Math.imul(first ^ code, 16777619);
+    second = Math.imul(second ^ code, 3266489917);
+  }
+  return `${(first >>> 0).toString(16).padStart(8, '0')}-${(second >>> 0).toString(16).padStart(8, '0')}`.toUpperCase();
+}
+
+function QualityCertificateQr({ value }: { value: string }) {
+  return (
+    <span className="quality-certificate-qr" aria-label={`Inspection certificate QR ${value}`}>
+      {Array.from({ length: 49 }, (_, index) => {
+        const code = value.charCodeAt(index % value.length) || index;
+        const active = index % 8 === 0 || (code + index * 7) % 5 < 2;
+        return <i className={active ? 'active' : ''} key={index} />;
+      })}
+    </span>
+  );
+}
+
+function QualityCertificatesPage({ selectedOrder, selectedSerial, inspectionRecord, measurements, documents, organizationName, organizationLogoUrl, onChangeOrder, onChangeSerial, onOpenDocument }: {
+  selectedOrder: ProductionOrder;
+  selectedSerial: string;
+  inspectionRecord: QualitySerialInspectionRecord;
+  measurements: QualityMeasurementRecord[];
+  documents: QualityInspectionDocument[];
+  organizationName: string;
+  organizationLogoUrl: string;
+  onChangeOrder: () => void;
+  onChangeSerial: () => void;
+  onOpenDocument: (document: QualityInspectionDocument) => Promise<void>;
+}) {
+  const certificateCode = getQualityCertificateCode(inspectionRecord);
+  const certificateHash = getQualityCertificateHash(certificateCode);
+  const certificateRef = React.useRef<HTMLElement>(null);
+  const [downloadingCertificate, setDownloadingCertificate] = React.useState(false);
+  const [certificateDownloadError, setCertificateDownloadError] = React.useState('');
+  const serialMeasurements = measurements
+    .filter((measurement) => measurement.production_order_id === selectedOrder.id && measurement.serial_number === selectedSerial)
+    .sort((first, second) => new Date(second.measured_at).getTime() - new Date(first.measured_at).getTime());
+  const latestMeasurements = Array.from(serialMeasurements.reduce<Map<string, QualityMeasurementRecord>>((records, measurement) => {
+    if (!records.has(measurement.inspection_name)) records.set(measurement.inspection_name, measurement);
+    return records;
+  }, new Map()).values());
+  const serialDocuments = documents
+    .filter((document) => document.production_order_id === selectedOrder.id && document.serial_number === selectedSerial)
+    .sort((first, second) => new Date(second.uploaded_at).getTime() - new Date(first.uploaded_at).getTime());
+
+  const handleDownloadCertificate = async () => {
+    if (!certificateRef.current || downloadingCertificate) return;
+    setDownloadingCertificate(true);
+    setCertificateDownloadError('');
+
+    try {
+      await document.fonts?.ready;
+      const images = Array.from(certificateRef.current.querySelectorAll('img'));
+      await Promise.all(images.map((image) => image.complete ? Promise.resolve() : new Promise<void>((resolve) => {
+        image.addEventListener('load', () => resolve(), { once: true });
+        image.addEventListener('error', () => resolve(), { once: true });
+      })));
+
+      const canvas = await html2canvas(certificateRef.current, {
+        backgroundColor: '#ffffff',
+        logging: false,
+        scale: 2,
+        useCORS: true,
+      });
+      const certificatePageWidth = 841.89;
+      const certificatePageHeight = certificatePageWidth * (canvas.height / canvas.width);
+      const certificatePdf = new jsPDF({
+        format: [certificatePageWidth, certificatePageHeight],
+        orientation: 'landscape',
+        unit: 'pt',
+      });
+      certificatePdf.addImage(canvas.toDataURL('image/jpeg', 0.96), 'JPEG', 0, 0, certificatePageWidth, certificatePageHeight);
+
+      const pdfLibModuleUrl = 'https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/+esm';
+      const { PDFDocument } = await import(/* @vite-ignore */ pdfLibModuleUrl) as { PDFDocument: any };
+      const outputPdf = await PDFDocument.create();
+      const certificateDocument = await PDFDocument.load(certificatePdf.output('arraybuffer'));
+      const certificatePages = await outputPdf.copyPages(certificateDocument, certificateDocument.getPageIndices());
+      certificatePages.forEach((page: unknown) => outputPdf.addPage(page));
+      const normalizedPageWidth = certificateDocument.getPage(0).getWidth();
+
+      for (const inspectionDocument of serialDocuments) {
+        const isPdf = inspectionDocument.file_type === 'application/pdf' || inspectionDocument.file_name.toLowerCase().endsWith('.pdf');
+        if (!isPdf) continue;
+
+        let documentUrl = inspectionDocument.file_path;
+        if (!documentUrl.startsWith('blob:')) {
+          const { data, error } = await supabase.storage.from(qualityDocumentsBucket).createSignedUrl(documentUrl, 60 * 10);
+          if (error || !data?.signedUrl) throw error ?? new Error(`Unable to access ${inspectionDocument.file_name}`);
+          documentUrl = data.signedUrl;
+        }
+
+        const response = await fetch(documentUrl);
+        if (!response.ok) throw new Error(`Unable to download ${inspectionDocument.file_name}`);
+        const sourceDocument = await PDFDocument.load(await response.arrayBuffer());
+        for (const pageIndex of sourceDocument.getPageIndices()) {
+          const sourcePage = sourceDocument.getPage(pageIndex);
+          const sourceWidth = sourcePage.getWidth();
+          const sourceHeight = sourcePage.getHeight();
+          const normalizedPageHeight = normalizedPageWidth * (sourceHeight / sourceWidth);
+          const embeddedPage = await outputPdf.embedPage(sourcePage);
+          const outputPage = outputPdf.addPage([normalizedPageWidth, normalizedPageHeight]);
+          outputPage.drawPage(embeddedPage, {
+            height: normalizedPageHeight,
+            width: normalizedPageWidth,
+            x: 0,
+            y: 0,
+          });
+        }
+      }
+
+      const pdfBytes = await outputPdf.save();
+      const downloadUrl = URL.createObjectURL(new Blob([pdfBytes], { type: 'application/pdf' }));
+      const downloadLink = document.createElement('a');
+      const safeOrderNumber = selectedOrder.orderNumber.replace(/[^a-z0-9_-]+/gi, '-');
+      const safeSerial = selectedSerial.replace(/[^a-z0-9_-]+/gi, '-');
+      downloadLink.href = downloadUrl;
+      downloadLink.download = `quality-certificate-${safeOrderNumber}-${safeSerial}.pdf`;
+      downloadLink.click();
+      window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
+    } catch (error) {
+      console.error('Unable to generate Quality inspection certificate', error);
+      setCertificateDownloadError('The certificate could not be generated. Check the attached PDFs and try again.');
+    } finally {
+      setDownloadingCertificate(false);
+    }
+  };
+
+  return (
+    <div className="quality-certificates-workspace">
+      <QualityOrderSelector order={selectedOrder} selectedSerial={selectedSerial} onOpenOrder={onChangeOrder} onOpenSerial={onChangeSerial} />
+
+      <section className={`quality-certificate-package ${inspectionRecord.result}`} ref={certificateRef}>
+      <section className={`quality-inspection-certificate ${inspectionRecord.result}`} aria-label={`Inspection certificate ${certificateCode}`}>
+        <div className="quality-certificate-main">
+          <span className="quality-certificate-seal"><Award size={32} /></span>
+          <div>
+            <p>Quality Inspection Certificate</p>
+            <h3>{selectedOrder.partName} - {selectedSerial}</h3>
+            <span className="quality-certificate-issued">Issued {formatQualityDate(inspectionRecord.inspected_at)}</span>
+            <div className="quality-certificate-order-data">
+              <span><em>Work Order</em><strong>{selectedOrder.orderNumber}</strong></span>
+              <span><em>Part Number</em><strong>{selectedOrder.partNumber}</strong></span>
+              <span><em>Client</em><strong>{getQualityOrderClient(selectedOrder)}</strong></span>
+              <span><em>Serial Number</em><strong>{selectedSerial}</strong></span>
+            </div>
+          </div>
+        </div>
+
+        <div className="quality-certificate-identifiers">
+          <span><em>Certificate ID</em><code>{certificateCode}</code></span>
+          <span><em>Certificate Hash</em><code>{certificateHash}</code></span>
+        </div>
+        <div className="quality-certificate-verification">
+          <span className="quality-certificate-brand-mark"><img crossOrigin="anonymous" src="/assets/logos/yvimo-square-logo-2024.png" alt="YVIMO" /></span>
+          <span className="quality-certificate-brand-mark organization">
+            {organizationLogoUrl ? <img crossOrigin="anonymous" src={organizationLogoUrl} alt={organizationName} /> : <b>{organizationName.trim().charAt(0).toUpperCase() || 'M'}</b>}
+          </span>
+          <QualityCertificateQr value={certificateCode} />
+          <div className={`quality-certificate-result ${inspectionRecord.result}`}>
+            {inspectionRecord.result === 'nok' ? <CircleX size={18} /> : inspectionRecord.result === 'approach' ? <AlertTriangle size={18} /> : <CheckCircle2 size={18} />}
+            {inspectionRecord.result.toUpperCase()}
+          </div>
+          <button className="quality-certificate-download" type="button" disabled={downloadingCertificate} data-html2canvas-ignore="true" onClick={() => void handleDownloadCertificate()}>
+            <Download size={17} /> {downloadingCertificate ? 'Generating PDF' : 'Download Certificate'}
+          </button>
+          {certificateDownloadError ? <span className="quality-certificate-download-error" data-html2canvas-ignore="true">{certificateDownloadError}</span> : null}
+        </div>
+      </section>
+
+      <div className="quality-certificate-detail-grid">
+        <section className="quality-certificate-measurements">
+          <div className="quality-inspection-panel-heading"><ClipboardCheck size={18} /><strong>Completed Inspections</strong></div>
+          {latestMeasurements.length ? (
+            <div className="quality-certificate-measurement-list">
+              {latestMeasurements.map((measurement) => (
+                <article className={measurement.result} key={measurement.id}>
+                  <div>
+                    <strong>{measurement.inspection_name}</strong>
+                    <span>Measured {formatQualityDate(measurement.measured_at)}</span>
+                  </div>
+                  <dl>
+                    <div><dt>Lower</dt><dd>{formatLimit(measurement.lower_limit)}</dd></div>
+                    <div><dt>Measured</dt><dd>{measurement.measured_value}</dd></div>
+                    <div><dt>Upper</dt><dd>{formatLimit(measurement.upper_limit)}</dd></div>
+                  </dl>
+                  <b>
+                    {measurement.result === 'nok' ? <CircleX size={16} /> : measurement.result === 'approach' ? <AlertTriangle size={16} /> : <CheckCircle2 size={16} />}
+                    {measurement.result.toUpperCase()}
+                  </b>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="quality-certificate-empty"><AlertTriangle size={17} /><span>No measurement values were saved for this completed inspection.</span></div>
+          )}
+        </section>
+
+        <section className="quality-certificate-documents">
+          <div className="quality-inspection-panel-heading"><FileText size={18} /><strong>Inspection Documents</strong></div>
+          {serialDocuments.length ? (
+            <div className="quality-certificate-document-list">
+              {serialDocuments.map((document) => (
+                <article key={document.id}>
+                  <FileText size={20} />
+                  <div><strong>{document.file_name}</strong><span>Uploaded {formatQualityDate(document.uploaded_at)}</span></div>
+                  <button type="button" onClick={() => void onOpenDocument(document)}>Open</button>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="quality-certificate-empty"><AlertTriangle size={17} /><span>No files were attached to this inspection.</span></div>
+          )}
+        </section>
+      </div>
+      </section>
+    </div>
+  );
+}
 function QualityPlaceholderPage({ config }: { config: QualityPageConfig }) {
   return (
     <div className="quality-page-foundation">
@@ -1264,7 +1545,7 @@ function QualityPlaceholderPage({ config }: { config: QualityPageConfig }) {
   );
 }
 
-export function QualityOperationsWorkspace({ onNavigate, activeTab, organizationId }: QualityOperationsWorkspaceProps) {
+export function QualityOperationsWorkspace({ onNavigate, activeTab, organizationId, organizationName = 'Manufacturing Organization', organizationLogoUrl = '' }: QualityOperationsWorkspaceProps) {
   const [inspectionOrders, setInspectionOrders] = React.useState<ProductionOrder[]>(qualityDemoOrders);
   const [selectedInspectionOrderId, setSelectedInspectionOrderId] = React.useState(qualityDemoOrders[0]?.id ?? '');
   const [orderPickerOpen, setOrderPickerOpen] = React.useState(false);
@@ -1544,8 +1825,24 @@ export function QualityOperationsWorkspace({ onNavigate, activeTab, organization
     : activeConfig!.description;
   const actionLabel = isDashboard ? 'New Inspection' : activeConfig!.actionLabel;
   const dashboardMeasurements = React.useMemo(() => measurementRecords.filter((measurement) => isQualityDateInRange(measurement.measured_at, dashboardDateRange)), [dashboardDateRange, measurementRecords]);
-  const dashboardDocuments = React.useMemo(() => inspectionDocuments.filter((document) => isQualityDateInRange(document.uploaded_at, dashboardDateRange)), [dashboardDateRange, inspectionDocuments]);
-  const dashboardInspectedSerials = React.useMemo(() => serialInspectionRecords.filter((record) => isQualityDateInRange(record.inspected_at, dashboardDateRange)), [dashboardDateRange, serialInspectionRecords]);
+  const dashboardDocuments = React.useMemo(() => inspectionDocuments.filter((document) => isQualityDateOnOrBefore(document.uploaded_at, dashboardDateRange.to)), [dashboardDateRange.to, inspectionDocuments]);
+  const dashboardInspectedSerials = React.useMemo(() => serialInspectionRecords.filter((record) => isQualityDateOnOrBefore(record.inspected_at, dashboardDateRange.to)), [dashboardDateRange.to, serialInspectionRecords]);
+  const isCertificatesPage = activeTab === 'certificates-docs';
+  const completedOrderIds = React.useMemo(() => new Set(serialInspectionRecords.map((record) => record.production_order_id)), [serialInspectionRecords]);
+  const completedOrders = React.useMemo(() => inspectionOrders.filter((order) => completedOrderIds.has(order.id)), [completedOrderIds, inspectionOrders]);
+  const selectedCertificateRecord = serialInspectionRecords.find((record) => record.production_order_id === selectedInspectionOrder?.id && record.serial_number === selectedInspectionSerial);
+
+  React.useEffect(() => {
+    if (!isCertificatesPage || !completedOrders.length) return;
+    const nextOrder = completedOrders.find((order) => order.id === selectedInspectionOrderId) ?? completedOrders[0];
+    const completedSerials = serialInspectionRecords.filter((record) => record.production_order_id === nextOrder.id);
+    const nextSerial = completedSerials.some((record) => record.serial_number === selectedInspectionSerial)
+      ? selectedInspectionSerial
+      : completedSerials[0]?.serial_number ?? '';
+
+    if (nextOrder.id !== selectedInspectionOrderId) setSelectedInspectionOrderId(nextOrder.id);
+    if (nextSerial !== selectedInspectionSerial) setSelectedInspectionSerial(nextSerial);
+  }, [completedOrders, isCertificatesPage, selectedInspectionOrderId, selectedInspectionSerial, serialInspectionRecords]);
 
   return (
     <section className="mes-workspace-panel quality-operations-workspace">
@@ -1561,7 +1858,7 @@ export function QualityOperationsWorkspace({ onNavigate, activeTab, organization
         </div>
         {isDashboard ? (
           <QualityDashboardDateFilters range={dashboardDateRange} onChange={setDashboardDateRange} />
-        ) : activeTab !== 'inspections' ? (
+        ) : activeTab !== 'inspections' && activeTab !== 'certificates-docs' ? (
           <div className="quality-header-actions">
             <button type="button">
               <Plus size={16} /> {actionLabel}
@@ -1596,17 +1893,36 @@ export function QualityOperationsWorkspace({ onNavigate, activeTab, organization
             highlightRequest={specificationHighlightRequest}
           />
         ) : null}
-        {!isDashboard && activeTab !== 'inspections' && activeTab !== 'specifications' ? <QualityPlaceholderPage config={activeConfig!} /> : null}
+        {isCertificatesPage && selectedInspectionOrder && selectedCertificateRecord ? (
+          <QualityCertificatesPage
+            selectedOrder={selectedInspectionOrder}
+            selectedSerial={selectedInspectionSerial}
+            inspectionRecord={selectedCertificateRecord}
+            measurements={measurementRecords}
+            documents={inspectionDocuments}
+            organizationName={organizationName}
+            organizationLogoUrl={organizationLogoUrl}
+            onChangeOrder={() => setOrderPickerOpen(true)}
+            onChangeSerial={() => setSerialPickerOpen(true)}
+            onOpenDocument={handleOpenDocument}
+          />
+        ) : null}
+        {isCertificatesPage && (!selectedInspectionOrder || !selectedCertificateRecord) ? (
+          <div className="quality-certificates-empty-state"><ShieldCheck size={28} /><strong>No completed inspections yet</strong><span>Certificates will appear here after a serial inspection is saved.</span></div>
+        ) : null}
+        {!isDashboard && activeTab !== 'inspections' && activeTab !== 'specifications' && activeTab !== 'certificates-docs' ? <QualityPlaceholderPage config={activeConfig!} /> : null}
       </div>
 
       {orderPickerOpen ? (
         <QualityOrderPickerModal
-          orders={inspectionOrders}
+          orders={isCertificatesPage ? completedOrders : inspectionOrders}
           currentOrderId={selectedInspectionOrder?.id ?? ''}
+          completedOnly={isCertificatesPage}
           onClose={() => setOrderPickerOpen(false)}
           onSelect={(order) => {
             setSelectedInspectionOrderId(order.id);
-            setSelectedInspectionSerial(getQualityOrderSerials(order)[0]);
+            const firstCompletedSerial = serialInspectionRecords.find((record) => record.production_order_id === order.id)?.serial_number;
+            setSelectedInspectionSerial(isCertificatesPage ? firstCompletedSerial ?? '' : getQualityOrderSerials(order)[0]);
             setOrderPickerOpen(false);
           }}
         />
@@ -1617,6 +1933,7 @@ export function QualityOperationsWorkspace({ onNavigate, activeTab, organization
           order={selectedInspectionOrder}
           currentSerial={selectedInspectionSerial}
           inspectedSerials={serialInspectionRecords}
+          completedOnly={isCertificatesPage}
           onClose={() => setSerialPickerOpen(false)}
           onSelect={(serial) => {
             setSelectedInspectionSerial(serial);
