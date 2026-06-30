@@ -1,6 +1,6 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { Activity, AlertTriangle, ArrowLeft, CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleHelp, Database, Eye, Factory, Frown, ImagePlus, Maximize2, Meh, Minimize2, Plus, RadioTower, Search, Smile, Timer } from 'lucide-react';
+import { Activity, AlertTriangle, ArrowLeft, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleHelp, CircleX, Database, Eye, Factory, Frown, FileText, ImagePlus, Maximize2, Meh, Minimize2, Minus, Plus, RadioTower, Search, Smile, Timer } from 'lucide-react';
 import { GoogleWorkCentersMap } from '../components/maps/GoogleWorkCentersMap';
 import { resolveGooglePlacesAddressMatch, searchGooglePlacesAddressMatches, type GooglePlacesAddressMatch } from '../lib/maps/googlePlacesAddressLookup';
 import { supabase } from '../lib/supabaseClient';
@@ -5043,6 +5043,31 @@ function getTraceabilityEventShift(event: TraceabilityOperatorEventRow) {
     : 'N/A';
 }
 
+type TraceabilityQualityStatus = 'ok' | 'approach' | 'nok' | 'pending';
+
+type TraceabilityQualityInspection = {
+  inspection: string;
+  status: TraceabilityQualityStatus;
+};
+
+function getTraceabilityQualityInspections(event: TraceabilityOperatorEventRow): TraceabilityQualityInspection[] {
+  const inspections = event.payload?.inspections;
+  if (!Array.isArray(inspections)) return [];
+  return inspections.flatMap((item) => {
+    if (!item || typeof item !== 'object') return [];
+    const entry = item as Record<string, unknown>;
+    const inspection = typeof entry.inspection === 'string' ? entry.inspection : '';
+    const status = typeof entry.status === 'string' ? entry.status : '';
+    if (!inspection || !['ok', 'approach', 'nok', 'pending'].includes(status)) return [];
+    return [{ inspection, status: status as TraceabilityQualityStatus }];
+  });
+}
+
+function getTraceabilityQualityDocumentCount(event: TraceabilityOperatorEventRow) {
+  const count = event.payload?.document_count;
+  return typeof count === 'number' && Number.isFinite(count) ? count : 0;
+}
+
 function renderTraceabilityCaptureTime(timestamp: string, shift: string) {
   return (
     <div className="traceability-capture-time-group">
@@ -5652,6 +5677,14 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
             const eventLabel = getTraceabilityEventLabel(event.event_type);
             const payloadComment = event.payload && typeof event.payload.comment === 'string' ? event.payload.comment : '';
             const comment = event.comment || payloadComment;
+            const qualityInspections = getTraceabilityQualityInspections(event);
+            const qualityDocumentCount = getTraceabilityQualityDocumentCount(event);
+            const qualityStatusConfig = {
+              ok: { label: 'OK', icon: CheckCircle2 },
+              approach: { label: 'Approach', icon: AlertTriangle },
+              nok: { label: 'NOK', icon: CircleX },
+              pending: { label: 'Pending', icon: Minus },
+            } as const;
             return (
               <article
                 className={['mes-event-row traceability-event-row', `event-tone-${item.tone}`, newCaptureIds.has(item.id) ? 'new-capture' : ''].filter(Boolean).join(' ')}
@@ -5663,7 +5696,7 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
                     <div className="traceability-event-title">
                       <span>Event record</span>
                       <strong>{eventLabel}</strong>
-                      <p>{getTraceabilityEventSummary(event)}</p>
+                      {event.event_type !== 'quality-inspection-saved' ? <p>{getTraceabilityEventSummary(event)}</p> : null}
                     </div>
                     {renderTraceabilityCaptureTime(event.created_at, getTraceabilityEventShift(event))}
                   </div>
@@ -5671,20 +5704,38 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
                     <span><b>Order Number</b>{order?.order_number ?? 'Unassigned order'}</span>
                     <span><b>Part Name</b>{order?.part_name ?? 'N/A'}</span>
                     <span><b>Part Number</b>{order?.part_number ?? 'N/A'}</span>
-                    <span><b>Quantity</b>{event.quantity || 'N/A'}</span>
+                    {event.event_type !== 'quality-inspection-saved' ? <span><b>Quantity</b>{event.quantity || 'N/A'}</span> : null}
                   </div>
                   <div className="mes-event-meta traceability-capture-meta">
                     <span><Factory size={15} /><b>Work Center</b>{event.work_center_code || 'No work center'}</span>
                     <span><RadioTower size={15} /><b>Station</b>{event.station_code || 'No station'}</span>
-                    <span><AlertTriangle size={15} /><b>Reason</b>{event.reason || 'No reason entered'}</span>
-                    <span><Activity size={15} /><b>Status</b>{order?.status ? formatTraceabilityStatus(order.status) : 'Unknown'}</span>
+                    {event.event_type !== 'quality-inspection-saved' ? <span><AlertTriangle size={15} /><b>Reason</b>{event.reason || 'No reason entered'}</span> : null}
+                    {event.event_type !== 'quality-inspection-saved' ? <span><Activity size={15} /><b>Status</b>{order?.status ? formatTraceabilityStatus(order.status) : 'Unknown'}</span> : null}
                   </div>
+                  {event.event_type === 'quality-inspection-saved' ? (
+                    <div className="traceability-quality-summary">
+                      {qualityInspections.length ? (
+                        <div className="traceability-quality-inspection-list">
+                          {qualityInspections.map((inspection) => {
+                            const StatusIcon = qualityStatusConfig[inspection.status].icon;
+                            return (
+                              <span className={`traceability-quality-inspection ${inspection.status}`} key={inspection.inspection}>
+                                <b>{inspection.inspection}</b>
+                                <em><StatusIcon size={18} />{qualityStatusConfig[inspection.status].label}</em>
+                              </span>
+                            );
+                          })}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
                   {comment ? (
                     <p className="traceability-event-comment">{comment}</p>
                   ) : null}
                   <div className="traceability-tags traceability-event-tags">
                     <span>{eventLabel}</span>
                     {event.reason ? <span>{event.reason}</span> : null}
+                    {qualityDocumentCount > 0 ? <span className="traceability-quality-document-tag"><FileText size={14} />{qualityDocumentCount === 1 ? '1 inspection document attached' : `${qualityDocumentCount} inspection documents attached`}</span> : null}
                     {comment ? <span>Comment added</span> : null}
                   </div>
                 </div>

@@ -1,8 +1,12 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import {
   AlertTriangle,
   ArrowLeft,
+  CalendarDays,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   CircleX,
   ClipboardCheck,
   FileText,
@@ -59,6 +63,193 @@ const qualityDashboardPanels = [
   { title: 'Missing Docs', icon: FileText },
   { title: 'Recent NCRs', icon: AlertTriangle },
 ];
+
+type QualityDashboardDateRange = { from: string; to: string };
+
+type QualityCalendarPosition = { top: number; left: number; width: number };
+
+type QualityQuickRangeValue = 'today' | 'week' | 'month' | 'year';
+
+function toQualityIsoDate(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function getQualityTodayIsoDate() {
+  return toQualityIsoDate(new Date());
+}
+
+function formatQualityDateInputLabel(value: string) {
+  if (!value) return '';
+  const [year, month, day] = value.split('-');
+  if (!year || !month || !day) return value;
+  return `${month}/${day}/${year}`;
+}
+
+function getQualityMonthDates(displayDate: Date) {
+  const year = displayDate.getFullYear();
+  const month = displayDate.getMonth();
+  const firstDay = new Date(year, month, 1);
+  const firstGridDate = new Date(year, month, 1 - firstDay.getDay());
+
+  return Array.from({ length: 42 }, (_, index) => {
+    const date = new Date(firstGridDate);
+    date.setDate(firstGridDate.getDate() + index);
+    return date;
+  });
+}
+
+function getQualityQuickRange(range: QualityQuickRangeValue): QualityDashboardDateRange {
+  const today = new Date();
+  const startDate = new Date(today);
+  const endDate = new Date(today);
+
+  if (range === 'week') {
+    startDate.setDate(today.getDate() - today.getDay());
+  }
+  if (range === 'month') {
+    startDate.setDate(1);
+  }
+  if (range === 'year') {
+    startDate.setMonth(0, 1);
+  }
+
+  return { from: toQualityIsoDate(startDate), to: toQualityIsoDate(endDate) };
+}
+
+function isQualityDateInRange(value: string, range: QualityDashboardDateRange) {
+  const isoDate = value.includes('T') ? toQualityIsoDate(new Date(value)) : value;
+  if (!isoDate) return false;
+  return (!range.from || isoDate >= range.from) && (!range.to || isoDate <= range.to);
+}
+
+function QualityDatePicker({ id, value, placeholder = 'Select date', onChange, onQuickRange }: {
+  id: string;
+  value: string;
+  placeholder?: string;
+  onChange: (value: string) => void;
+  onQuickRange?: (range: QualityDashboardDateRange) => void;
+}) {
+  const selectedDate = React.useMemo(() => value ? new Date(`${value}T12:00:00`) : new Date(), [value]);
+  const [open, setOpen] = React.useState(false);
+  const [displayDate, setDisplayDate] = React.useState(selectedDate);
+  const [calendarPosition, setCalendarPosition] = React.useState<QualityCalendarPosition | null>(null);
+  const triggerRef = React.useRef<HTMLDivElement | null>(null);
+  const calendarRef = React.useRef<HTMLDivElement | null>(null);
+
+  React.useEffect(() => { setDisplayDate(selectedDate); }, [selectedDate]);
+
+  const updateCalendarPosition = React.useCallback(() => {
+    const trigger = triggerRef.current;
+    if (!trigger) return;
+    const rect = trigger.getBoundingClientRect();
+    const viewportPadding = 16;
+    const calendarWidth = Math.min(Math.max(rect.width, 312), window.innerWidth - (viewportPadding * 2));
+    const availableBelow = window.innerHeight - rect.bottom - viewportPadding;
+    const availableAbove = rect.top - viewportPadding;
+    const calendarHeight = onQuickRange ? 454 : 374;
+    const openUp = availableBelow < calendarHeight && availableAbove > availableBelow;
+    const left = Math.max(viewportPadding, Math.min(rect.left, window.innerWidth - calendarWidth - viewportPadding));
+
+    setCalendarPosition({
+      top: openUp ? Math.max(viewportPadding, rect.top - calendarHeight) : rect.bottom + 6,
+      left,
+      width: calendarWidth,
+    });
+  }, [onQuickRange]);
+
+  React.useLayoutEffect(() => {
+    if (!open) return;
+    updateCalendarPosition();
+  }, [open, updateCalendarPosition]);
+
+  React.useEffect(() => {
+    if (!open) return undefined;
+
+    const closeIfOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (triggerRef.current?.contains(target) || calendarRef.current?.contains(target)) return;
+      setOpen(false);
+    };
+    const reposition = () => updateCalendarPosition();
+
+    document.addEventListener('mousedown', closeIfOutside);
+    window.addEventListener('resize', reposition);
+    window.addEventListener('scroll', reposition, true);
+
+    return () => {
+      document.removeEventListener('mousedown', closeIfOutside);
+      window.removeEventListener('resize', reposition);
+      window.removeEventListener('scroll', reposition, true);
+    };
+  }, [open, updateCalendarPosition]);
+
+  const calendarDates = getQualityMonthDates(displayDate);
+  const selectedIsoDate = value ? toQualityIsoDate(selectedDate) : '';
+  const todayIsoDate = getQualityTodayIsoDate();
+  const monthLabel = new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric' }).format(displayDate);
+  const calendar = open && calendarPosition
+    ? createPortal(
+      <div className="mes-order-calendar" id={`${id}-calendar`} ref={calendarRef} style={{ top: calendarPosition.top, left: calendarPosition.left, width: calendarPosition.width }}>
+        <div className="mes-order-calendar-header">
+          <button type="button" onClick={() => setDisplayDate((current) => new Date(current.getFullYear(), current.getMonth() - 1, 1))} aria-label="Previous month"><ChevronLeft size={16} /></button>
+          <strong>{monthLabel}</strong>
+          <button type="button" onClick={() => setDisplayDate((current) => new Date(current.getFullYear(), current.getMonth() + 1, 1))} aria-label="Next month"><ChevronRight size={16} /></button>
+        </div>
+        <div className="mes-order-calendar-weekdays" aria-hidden="true">
+          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => <span key={day}>{day}</span>)}
+        </div>
+        <div className="mes-order-calendar-grid">
+          {calendarDates.map((date) => {
+            const isoDate = toQualityIsoDate(date);
+            const outsideMonth = date.getMonth() !== displayDate.getMonth();
+            return (
+              <button className={[outsideMonth ? 'outside-month' : '', isoDate === selectedIsoDate ? 'selected' : '', isoDate === todayIsoDate ? 'today' : ''].filter(Boolean).join(' ')} type="button" key={isoDate} onClick={() => { onChange(isoDate); setOpen(false); }}>
+                {date.getDate()}
+              </button>
+            );
+          })}
+        </div>
+        <div className="mes-order-calendar-shortcuts">
+          {([
+            { value: 'today', label: 'Today' },
+            { value: 'week', label: 'This week' },
+            { value: 'month', label: 'This month' },
+            { value: 'year', label: 'This year' },
+          ] as Array<{ value: QualityQuickRangeValue; label: string }>).map((shortcut) => (
+            <button type="button" key={shortcut.value} onClick={() => { const range = getQualityQuickRange(shortcut.value); setDisplayDate(new Date(`${range.from}T12:00:00`)); if (onQuickRange) onQuickRange(range); else onChange(range.from); setOpen(false); }}>
+              {shortcut.label}
+            </button>
+          ))}
+        </div>
+      </div>,
+      document.body,
+    )
+    : null;
+
+  return (
+    <div className={['mes-order-date-picker', open ? 'open' : ''].filter(Boolean).join(' ')} ref={triggerRef}>
+      <button className={!value ? 'placeholder' : ''} type="button" aria-expanded={open} aria-controls={`${id}-calendar`} onClick={() => setOpen((current) => !current)}>
+        <span>{value ? formatQualityDateInputLabel(value) : placeholder}</span>
+        <CalendarDays size={16} />
+      </button>
+      {calendar}
+    </div>
+  );
+}
+
+function QualityDashboardDateFilters({ range, onChange }: { range: QualityDashboardDateRange; onChange: (range: QualityDashboardDateRange) => void }) {
+  const setDateRange = (nextRange: QualityDashboardDateRange) => onChange(nextRange.from > nextRange.to ? { from: nextRange.to, to: nextRange.from } : nextRange);
+
+  return (
+    <div className="quality-dashboard-date-filters" aria-label="Quality dashboard date filters">
+      <label><span>From</span><QualityDatePicker id="quality-dashboard-date-from" value={range.from} onChange={(from) => setDateRange({ ...range, from })} onQuickRange={setDateRange} /></label>
+      <label><span>To</span><QualityDatePicker id="quality-dashboard-date-to" value={range.to} onChange={(to) => setDateRange({ ...range, to })} onQuickRange={setDateRange} /></label>
+    </div>
+  );
+}
 
 
 type QualityInspectionResult = 'ok' | 'nok' | 'approach';
@@ -336,7 +527,7 @@ const qualityPageConfig: Record<Exclude<QualityContextTab, 'dashboard'>, Quality
     plannedOptions: [
       {
         title: 'Disposition options',
-        values: ['Rework', 'Repair', 'Scrap', 'Use As Is', 'Return to Supplier', 'Customer Deviation Required', 'Engineering Review'],
+        values: ['Rework', 'Repair', 'Scrap', 'Use As Is', 'Retun to Supplier', 'Customer Deviation Required', 'Engineering Review'],
       },
       {
         title: 'Statuses',
@@ -388,7 +579,18 @@ const qualityPageConfig: Record<Exclude<QualityContextTab, 'dashboard'>, Quality
   },
 };
 
-function getQualityKpiTone(kpi: typeof qualityKpis[number]) {
+type QualityDashboardKpi = typeof qualityKpis[number];
+
+type QualityDashboardQueueItem = {
+  id: string;
+  title: string;
+  meta: string;
+  detail: string;
+  status: string;
+  tone?: 'ok' | 'nok' | 'approach' | 'pending';
+};
+
+function getQualityKpiTone(kpi: QualityDashboardKpi) {
   if (kpi.value === 0) return 'neutral';
   if (kpi.label === 'NOK Results') return 'red';
   if (kpi.label === 'OK Results') return 'green';
@@ -396,14 +598,91 @@ function getQualityKpiTone(kpi: typeof qualityKpis[number]) {
   return 'neutral';
 }
 
-function QualityDashboard() {
+function getQualityDashboardData(orders: ProductionOrder[], measurements: QualityMeasurementRecord[], documents: QualityInspectionDocument[], inspectedSerials: QualitySerialInspectionRecord[]) {
+  const qualityOrders = orders.filter((order) => order.qualityChecksEnabled && (order.qualityChecks?.length ?? 0) > 0);
+  const inspectedKeys = new Set(inspectedSerials.map((record) => `${record.production_order_id}::${record.serial_number}`));
+  const documentOrderIds = new Set(documents.map((document) => document.production_order_id));
+  const pendingSerials = qualityOrders.flatMap((order) => getQualityOrderSerials(order)
+    .filter((serial) => !inspectedKeys.has(`${order.id}::${serial}`))
+    .map((serial) => ({ order, serial })));
+  const holdSerials = inspectedSerials
+    .filter((record) => record.result === 'nok')
+    .flatMap((record) => {
+      const order = orders.find((candidate) => candidate.id === record.production_order_id);
+      return order ? [{ order, record }] : [];
+    });
+  const missingDocOrders = qualityOrders.filter((order) => !documentOrderIds.has(order.id));
+  const recentNokMeasurements = measurements
+    .filter((measurement) => measurement.result === 'nok')
+    .sort((first, second) => new Date(second.measured_at).getTime() - new Date(first.measured_at).getTime())
+    .slice(0, 12)
+    .flatMap((measurement) => {
+      const order = orders.find((candidate) => candidate.id === measurement.production_order_id);
+      return order ? [{ order, measurement }] : [];
+    });
+
+  const kpis: QualityDashboardKpi[] = [
+    { label: 'Pending Inspections', value: pendingSerials.length, helper: 'waiting for quality review' },
+    { label: 'OK Results', value: measurements.filter((measurement) => measurement.result === 'ok').length, helper: 'within specification' },
+    { label: 'NOK Results', value: measurements.filter((measurement) => measurement.result === 'nok').length, helper: 'out of specification' },
+    { label: 'Orders on Hold', value: new Set(holdSerials.map(({ order }) => order.id)).size, helper: 'blocked by quality' },
+    { label: 'Missing Certificates', value: missingDocOrders.length, helper: 'required quality docs' },
+    { label: 'Released Orders', value: inspectedSerials.filter((record) => record.result !== 'nok').length, helper: 'cleared by quality' },
+  ];
+
+  const queues: Record<string, QualityDashboardQueueItem[]> = {
+    'Waiting for Inspection': pendingSerials.slice(0, 12).map(({ order, serial }) => ({
+      id: `${order.id}-${serial}`,
+      title: order.orderNumber,
+      meta: serial,
+      detail: `${order.partName} / ${order.partNumber}`,
+      status: 'Pending',
+      tone: 'pending',
+    })),
+    'Quality Hold': holdSerials.slice(0, 12).map(({ order, record }) => ({
+      id: record.id,
+      title: order.orderNumber,
+      meta: record.serial_number,
+      detail: `${order.partName} / ${order.partNumber}`,
+      status: 'NOK',
+      tone: 'nok',
+    })),
+    'Missing Docs': missingDocOrders.slice(0, 12).map((order) => ({
+      id: order.id,
+      title: order.orderNumber,
+      meta: order.partNumber,
+      detail: order.partName,
+      status: 'Missing docs',
+      tone: 'pending',
+    })),
+    'Recent NCRs': recentNokMeasurements.map(({ order, measurement }) => ({
+      id: measurement.id,
+      title: order.orderNumber,
+      meta: measurement.serial_number,
+      detail: `${measurement.inspection_name}: ${measurement.measured_value} outside ${formatLimit(measurement.lower_limit)} - ${formatLimit(measurement.upper_limit)}`,
+      status: 'NOK',
+      tone: 'nok',
+    })),
+  };
+
+  return { kpis, queues };
+}
+
+function QualityDashboard({ orders, measurements, documents, inspectedSerials }: {
+  orders: ProductionOrder[];
+  measurements: QualityMeasurementRecord[];
+  documents: QualityInspectionDocument[];
+  inspectedSerials: QualitySerialInspectionRecord[];
+}) {
+  const { kpis, queues } = getQualityDashboardData(orders, measurements, documents, inspectedSerials);
+
   return (
     <>
       <section className="quality-kpi-grid" aria-label="Quality KPI summary">
-        {qualityKpis.map((kpi) => (
+        {kpis.map((kpi) => (
           <article key={kpi.label} className={'quality-kpi-' + getQualityKpiTone(kpi)}>
             <span>{kpi.label}</span>
-            <strong>{kpi.value}</strong>
+            <strong>{kpi.value.toLocaleString()}</strong>
             <em>{kpi.helper}</em>
           </article>
         ))}
@@ -413,13 +692,30 @@ function QualityDashboard() {
         <div className="quality-dashboard-panel-grid">
           {qualityDashboardPanels.map((panel) => {
             const Icon = panel.icon;
+            const items = queues[panel.title] ?? [];
+            const visibleItems = items.slice(0, 7);
+            const hiddenItemCount = Math.max(items.length - visibleItems.length, 0);
             return (
               <article key={panel.title}>
                 <div>
                   <Icon size={18} />
                   <strong>{panel.title}</strong>
                 </div>
-                <p>No records</p>
+                {items.length ? (
+                  <div className="quality-dashboard-record-list">
+                    {visibleItems.map((item, index) => (
+                      <div className={`quality-dashboard-record ${index === 0 ? 'featured' : 'stacked'} ${item.tone ?? 'pending'}`} key={item.id}>
+                        <strong>{item.title}</strong>
+                        <span>{item.meta}</span>
+                        <em>{item.detail}</em>
+                        <b>{item.status}</b>
+                      </div>
+                    ))}
+                    {hiddenItemCount > 0 ? <div className="quality-dashboard-more">+{hiddenItemCount} Items</div> : null}
+                  </div>
+                ) : (
+                  <p>No records</p>
+                )}
               </article>
             );
           })}
@@ -980,6 +1276,7 @@ export function QualityOperationsWorkspace({ onNavigate, activeTab, organization
   const [measurementRecords, setMeasurementRecords] = React.useState<QualityMeasurementRecord[]>([]);
   const [inspectionDocuments, setInspectionDocuments] = React.useState<QualityInspectionDocument[]>([]);
   const [serialInspectionRecords, setSerialInspectionRecords] = React.useState<QualitySerialInspectionRecord[]>([]);
+  const [dashboardDateRange, setDashboardDateRange] = React.useState<QualityDashboardDateRange>(() => getQualityQuickRange('month'));
   const [specificationHighlightRequest, setSpecificationHighlightRequest] = React.useState<SpecificationHighlightRequest | null>(null);
 
 
@@ -1117,6 +1414,7 @@ export function QualityOperationsWorkspace({ onNavigate, activeTab, organization
       nextRecord = data as QualitySerialInspectionRecord;
 
       const inspectionStatuses = getRequiredInspectionStatuses(selectedInspectionOrder, selectedInspectionSerial, measurementRecords);
+      const documentCount = inspectionDocuments.filter((document) => document.production_order_id === selectedInspectionOrder.id && document.serial_number === selectedInspectionSerial).length;
       const { error: traceabilityError } = await supabase
         .from('mes_operator_terminal_events')
         .insert({
@@ -1134,6 +1432,7 @@ export function QualityOperationsWorkspace({ onNavigate, activeTab, organization
             result,
             inspection_count: inspectionStatuses.length,
             inspections: inspectionStatuses,
+            document_count: documentCount,
             order_status: selectedInspectionOrder.status,
           },
         });
@@ -1143,16 +1442,19 @@ export function QualityOperationsWorkspace({ onNavigate, activeTab, organization
       }
     }
 
-    setSerialInspectionRecords((current) => [
+    const nextSerialInspectionRecords = [
       nextRecord,
-      ...current.filter((record) => !(record.production_order_id === selectedInspectionOrder.id && record.serial_number === selectedInspectionSerial)),
-    ]);
+      ...serialInspectionRecords.filter((record) => !(record.production_order_id === selectedInspectionOrder.id && record.serial_number === selectedInspectionSerial)),
+    ];
+    setSerialInspectionRecords(nextSerialInspectionRecords);
 
     const serials = getQualityOrderSerials(selectedInspectionOrder);
     const currentIndex = serials.indexOf(selectedInspectionSerial);
-    const nextSerial = serials[currentIndex + 1] ?? serials.find((serial) => serial !== selectedInspectionSerial && !isQualitySerialInspected(serialInspectionRecords, selectedInspectionOrder.id, serial));
-    if (nextSerial) setSelectedInspectionSerial(nextSerial);
-  }, [measurementRecords, organizationId, selectedInspectionOrder, selectedInspectionSerial, serialInspectionRecords]);
+    const followingSerials = currentIndex >= 0 ? serials.slice(currentIndex + 1) : serials;
+    const nextPendingSerial = followingSerials.find((serial) => !isQualitySerialInspected(nextSerialInspectionRecords, selectedInspectionOrder.id, serial))
+      ?? serials.find((serial) => !isQualitySerialInspected(nextSerialInspectionRecords, selectedInspectionOrder.id, serial));
+    if (nextPendingSerial) setSelectedInspectionSerial(nextPendingSerial);
+  }, [inspectionDocuments, measurementRecords, organizationId, selectedInspectionOrder, selectedInspectionSerial, serialInspectionRecords]);
   const handleUploadDocument = React.useCallback(async (file: File) => {
     if (!selectedInspectionOrder) return;
     const safeFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '-');
@@ -1241,6 +1543,9 @@ export function QualityOperationsWorkspace({ onNavigate, activeTab, organization
     ? 'Monitor inspections, NOK results, quality holds, and certificate risk at a glance.'
     : activeConfig!.description;
   const actionLabel = isDashboard ? 'New Inspection' : activeConfig!.actionLabel;
+  const dashboardMeasurements = React.useMemo(() => measurementRecords.filter((measurement) => isQualityDateInRange(measurement.measured_at, dashboardDateRange)), [dashboardDateRange, measurementRecords]);
+  const dashboardDocuments = React.useMemo(() => inspectionDocuments.filter((document) => isQualityDateInRange(document.uploaded_at, dashboardDateRange)), [dashboardDateRange, inspectionDocuments]);
+  const dashboardInspectedSerials = React.useMemo(() => serialInspectionRecords.filter((record) => isQualityDateInRange(record.inspected_at, dashboardDateRange)), [dashboardDateRange, serialInspectionRecords]);
 
   return (
     <section className="mes-workspace-panel quality-operations-workspace">
@@ -1254,15 +1559,19 @@ export function QualityOperationsWorkspace({ onNavigate, activeTab, organization
           <h2>{title}</h2>
           <p>{description}</p>
         </div>
-        <div className="quality-header-actions">
-          <button type="button">
-            <Plus size={16} /> {actionLabel}
-          </button>
-        </div>
+        {isDashboard ? (
+          <QualityDashboardDateFilters range={dashboardDateRange} onChange={setDashboardDateRange} />
+        ) : activeTab !== 'inspections' ? (
+          <div className="quality-header-actions">
+            <button type="button">
+              <Plus size={16} /> {actionLabel}
+            </button>
+          </div>
+        ) : <div className="quality-header-actions empty" aria-hidden="true" />}
       </div>
 
       <div className="quality-app-shell">
-        {isDashboard ? <QualityDashboard /> : null}
+        {isDashboard ? <QualityDashboard orders={inspectionOrders} measurements={dashboardMeasurements} documents={dashboardDocuments} inspectedSerials={dashboardInspectedSerials} /> : null}
         {activeTab === 'inspections' && selectedInspectionOrder ? (
           <QualityInspectionsPage
             selectedOrder={selectedInspectionOrder}
