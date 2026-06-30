@@ -11439,10 +11439,12 @@ body.work-center-map-expanded .logged-workspace {
   font-weight: 700;
 }
 
+.compact-mes-application-shell,
 .operator-terminal-shell {
   grid-template-columns: 76px minmax(0, 1fr);
 }
 
+.compact-mes-application-shell .logged-sidebar,
 .operator-terminal-shell .logged-sidebar {
   width: 76px;
   padding: 18px 10px;
@@ -11450,21 +11452,28 @@ body.work-center-map-expanded .logged-workspace {
   overflow-x: hidden;
 }
 
+.compact-mes-application-shell .logged-sidebar-title,
 .operator-terminal-shell .logged-sidebar-title {
   justify-content: center;
   padding: 0 0 10px;
 }
 
+.compact-mes-application-shell .logged-sidebar-title > div,
+.compact-mes-application-shell .logged-sidebar nav button span,
+.compact-mes-application-shell .logged-signout span,
 .operator-terminal-shell .logged-sidebar-title > div,
 .operator-terminal-shell .logged-sidebar nav button span,
 .operator-terminal-shell .logged-signout span {
   display: none;
 }
 
+.compact-mes-application-shell .logged-sidebar-toggle,
 .operator-terminal-shell .logged-sidebar-toggle {
   display: grid;
 }
 
+.compact-mes-application-shell .logged-sidebar nav button,
+.compact-mes-application-shell .logged-signout,
 .operator-terminal-shell .logged-sidebar nav button,
 .operator-terminal-shell .logged-signout {
   justify-content: center;

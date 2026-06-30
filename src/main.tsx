@@ -3380,6 +3380,9 @@ function LoggedDashboardPage({
   const isOperatorTerminalPage = activePath === '/workspace/manufacturing-ops/mes/operator-terminal';
   const isSupplierOperationsPage = activePath === '/workspace/manufacturing-ops/mes/suppliers';
   const isQualityOperationsPage = activePath === '/workspace/manufacturing-ops/mes/quality' || activePath.startsWith('/workspace/manufacturing-ops/mes/quality/');
+  const isCompactMesApplicationPage = activePath === '/workspace/manufacturing-ops/mes/orders'
+    || activePath === '/workspace/manufacturing-ops/mes/work-centers'
+    || activePath === '/workspace/manufacturing-ops/mes/traceability';
   const supplierContextTabs: Array<{
     value: SupplierContextTab;
     label: string;
@@ -4014,6 +4017,7 @@ function LoggedDashboardPage({
     <main className={[
       'logged-shell',
       isOperatorTerminalPage ? 'operator-terminal-shell' : '',
+      isCompactMesApplicationPage ? 'compact-mes-application-shell' : '',
       isSupplierOperationsPage || isQualityOperationsPage ? 'supplier-context-shell' : '',
       isSupplierAccessOverview ? 'supplier-access-shell' : '',
       isSupplierAccessOverview && supplierCustomerPickerOpen ? 'supplier-customer-picker-open' : '',
