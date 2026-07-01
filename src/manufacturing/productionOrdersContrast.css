@@ -1,0 +1,68 @@
+.production-orders-workspace .production-orders-panel-title {
+  border-bottom-color: #d9e1ea;
+  background: #ffffff;
+  color: #07111c;
+}
+
+.production-orders-workspace .production-orders-panel-copy strong {
+  color: #07111c;
+}
+
+.production-orders-workspace .production-orders-panel-copy span {
+  color: #e86100;
+}
+
+.production-orders-workspace .production-orders-client-filter > span,
+.production-orders-workspace .production-orders-panel-title > span {
+  color: #526175;
+}
+
+.production-orders-workspace .production-orders-view-toggle {
+  border-color: #cbd5e1;
+  background: #e9eef4;
+}
+
+.production-orders-workspace .production-orders-view-toggle button {
+  border-color: transparent;
+  background: #ffffff;
+  color: #334155;
+}
+
+.production-orders-workspace .production-orders-view-toggle button:not(.active):hover,
+.production-orders-workspace .production-orders-view-toggle button:not(.active):focus-visible {
+  border-color: #94a3b8;
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+.production-orders-workspace .production-orders-view-toggle button.active {
+  border-color: #ff8a1f;
+  background: #fff0e4;
+  color: #9a3412;
+  box-shadow: inset 0 0 0 1px rgba(255, 138, 31, 0.12);
+}
+
+.production-order-customer-message {
+  color: #b45309;
+  font-size: 0.68rem;
+  font-weight: 760;
+  line-height: 1.35;
+}
+
+.production-orders-workspace .mes-order-dropdown-menu,
+.mes-order-dropdown-menu {
+  background: #ffffff;
+  color: #07111c;
+}
+
+.production-orders-workspace .mes-order-dropdown-menu button,
+.mes-order-dropdown-menu button {
+  background: transparent;
+  color: #17202a;
+}
+
+.production-orders-workspace .mes-order-dropdown-menu button.selected,
+.mes-order-dropdown-menu button.selected {
+  background: #ff8a1f;
+  color: #17110b;
+}

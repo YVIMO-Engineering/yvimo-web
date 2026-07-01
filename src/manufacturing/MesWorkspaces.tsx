@@ -10,6 +10,7 @@ import './productionOrders.css';
 import './productionOrdersDateFilter.css';
 import './productionOrdersDateFilterResponsive.css';
 import './productionOrdersClientFilter.css';
+import './productionOrdersContrast.css';
 
 type WorkspaceProps = {
   onNavigate: (path: string) => void;
@@ -35,6 +36,7 @@ type ProductionOrderFormState = {
   partNumber: string;
   partName: string;
   clientName: string;
+  customerId: string;
   plannedQuantity: string;
   completedQuantity: string;
   scrapQuantity: string;
@@ -59,6 +61,7 @@ type ProductionOrderRow = {
   part_number: string;
   part_name: string;
   client_name?: string | null;
+  customer_id?: string | null;
   planned_quantity: number;
   completed_quantity: number;
   scrap_quantity: number;
@@ -89,6 +92,13 @@ type ProductionOrderStationOptionRow = {
   work_center_id: string;
   code: string;
   name: string;
+};
+
+type ProductionOrderCustomerOptionRow = {
+  id: string;
+  customer_name: string;
+  legal_name: string;
+  status: 'active' | 'inactive';
 };
 
 type TraceabilityCaptureRow = {
@@ -661,6 +671,7 @@ function mapProductionOrderRow(row: ProductionOrderRow): ProductionOrder {
     partNumber: row.part_number,
     partName: row.part_name,
     clientName: row.client_name ?? '',
+    customerId: row.customer_id ?? '',
     plannedQuantity: row.planned_quantity,
     completedQuantity: row.completed_quantity,
     scrapQuantity: row.scrap_quantity,
@@ -687,6 +698,7 @@ function toProductionOrderPayload(order: ProductionOrder | Omit<ProductionOrder,
     part_number: order.partNumber,
     part_name: order.partName,
     client_name: order.clientName?.trim() ?? '',
+    customer_id: order.customerId || null,
     planned_quantity: order.plannedQuantity,
     completed_quantity: order.completedQuantity,
     scrap_quantity: order.scrapQuantity,
@@ -714,6 +726,7 @@ function toFormState(order?: ProductionOrder): ProductionOrderFormState {
     partNumber: order?.partNumber ?? '',
     partName: order?.partName ?? '',
     clientName: order?.clientName ?? '',
+    customerId: order?.customerId ?? '',
     plannedQuantity: String(order?.plannedQuantity ?? 0),
     completedQuantity: String(order?.completedQuantity ?? 0),
     scrapQuantity: String(order?.scrapQuantity ?? 0),
@@ -740,6 +753,7 @@ function formStateToProductionOrder(formState: ProductionOrderFormState, id?: st
     partNumber: formState.partNumber.trim(),
     partName: formState.partName.trim(),
     clientName: formState.clientName.trim(),
+    customerId: formState.customerId,
     plannedQuantity: Number(formState.plannedQuantity) || 0,
     completedQuantity: Number(formState.completedQuantity) || 0,
     scrapQuantity: Number(formState.scrapQuantity) || 0,
@@ -1045,6 +1059,8 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
   const [kpiDateRange, setKpiDateRange] = React.useState<MesOrderDateRange>(() => getMesOrderQuickRange('today'));
   const [workCenterOptions, setWorkCenterOptions] = React.useState<MesOrderDropdownOption[]>([]);
   const [stationOptionsByWorkCenter, setStationOptionsByWorkCenter] = React.useState<Record<string, MesOrderDropdownOption[]>>({});
+  const [customerOptions, setCustomerOptions] = React.useState<ProductionOrderCustomerOptionRow[]>([]);
+  const [customerOptionsMessage, setCustomerOptionsMessage] = React.useState('');
   const [workCenterOptionsMessage, setWorkCenterOptionsMessage] = React.useState('');
   const [page, setPage] = React.useState(1);
   const [formMode, setFormMode] = React.useState<'create' | 'edit' | null>(null);
@@ -1059,12 +1075,25 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
 
   const selectedOrder = orders.find((order) => order.orderNumber === selectedOrderNumber) ?? null;
   const selectedWorkCenterStationOptions = stationOptionsByWorkCenter[formState.assignedWorkCenter] ?? [];
+  const activeCustomerFormOptions = React.useMemo<MesOrderDropdownOption[]>(() => {
+    const options = customerOptions
+      .filter((customer) => customer.status === 'active' || customer.id === formState.customerId)
+      .map((customer) => ({
+        value: customer.id,
+        label: customer.status === 'inactive' ? `${customer.customer_name} (Inactive)` : customer.customer_name,
+      }));
+    if (formState.customerId && !options.some((option) => option.value === formState.customerId) && formState.clientName) {
+      options.push({ value: formState.customerId, label: `${formState.clientName} (Unavailable)` });
+    }
+    return options;
+  }, [customerOptions, formState.clientName, formState.customerId]);
   const clientFilterOptions = React.useMemo<MesOrderDropdownOption[]>(() => [
     { value: 'all', label: 'All clients' },
-    ...Array.from(new Set(orders.map((order) => order.clientName?.trim()).filter((client): client is string => Boolean(client))))
-      .sort((firstClient, secondClient) => firstClient.localeCompare(secondClient))
-      .map((client) => ({ value: client, label: client })),
-  ], [orders]);
+    ...customerOptions.map((customer) => ({
+      value: customer.id,
+      label: customer.status === 'inactive' ? `${customer.customer_name} (Inactive)` : customer.customer_name,
+    })),
+  ], [customerOptions]);
   const filteredOrders = orders.filter((order) => {
     const haystack = [
       order.orderNumber,
@@ -1079,7 +1108,10 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
     const matchesView = orderView === 'all'
       || (orderView === 'in-progress' && ['released', 'running', 'paused'].includes(order.status))
       || (orderView === 'completed' && order.status === 'completed');
-    const matchesClient = clientFilter === 'all' || order.clientName?.trim() === clientFilter;
+    const selectedFilterCustomer = customerOptions.find((customer) => customer.id === clientFilter);
+    const matchesClient = clientFilter === 'all'
+      || order.customerId === clientFilter
+      || (!order.customerId && order.clientName?.trim() === selectedFilterCustomer?.customer_name);
     return matchesSearch && matchesView && matchesClient;
   });
   const priorityRank = {
@@ -1164,7 +1196,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
   React.useEffect(() => {
     let active = true;
     const loadProductionOrders = async () => {
-      const [{ data, error }, { data: workCenterData, error: workCenterError }, { data: stationData, error: stationError }] = await Promise.all([
+      const [{ data, error }, { data: workCenterData, error: workCenterError }, { data: stationData, error: stationError }, { data: customerData, error: customerError }] = await Promise.all([
         supabase
           .from('mes_production_orders')
           .select('*')
@@ -1180,9 +1212,24 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
           .select('work_center_id, code, name')
           .eq('organization_id', organizationId)
           .order('name', { ascending: true }),
+        supabase
+          .from('mes_customers')
+          .select('id, customer_name, legal_name, status')
+          .eq('organization_id', organizationId)
+          .order('customer_name', { ascending: true }),
       ]);
 
       if (!active) return;
+      if (customerError) {
+        setCustomerOptions([]);
+        setCustomerOptionsMessage(customerError.message);
+      } else {
+        const nextCustomerOptions = (customerData ?? []) as ProductionOrderCustomerOptionRow[];
+        setCustomerOptions(nextCustomerOptions);
+        setCustomerOptionsMessage(nextCustomerOptions.some((customer) => customer.status === 'active')
+          ? ''
+          : 'No active customers configured yet. Add a customer from the Clients app.');
+      }
       if (workCenterError || stationError) {
         setWorkCenterOptions([]);
         setStationOptionsByWorkCenter({});
@@ -1283,7 +1330,15 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
 
   const openEditOrderForm = () => {
     if (!selectedOrder) return;
-    setFormState(toFormState(selectedOrder));
+    const linkedCustomer = customerOptions.find((customer) =>
+      customer.id === selectedOrder.customerId
+      || (!selectedOrder.customerId && customer.customer_name === selectedOrder.clientName)
+    );
+    setFormState({
+      ...toFormState(selectedOrder),
+      customerId: linkedCustomer?.id ?? selectedOrder.customerId ?? '',
+      clientName: linkedCustomer?.customer_name ?? selectedOrder.clientName ?? '',
+    });
     setFormMode('edit');
   };
 
@@ -1294,7 +1349,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
 
   const saveOrderForm = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!formState.orderNumber.trim() || !formState.clientName.trim() || !formState.partNumber.trim() || !formState.partName.trim() || !formState.assignedWorkCenter.trim()) return;
+    if (!formState.orderNumber.trim() || !formState.customerId || !formState.clientName.trim() || !formState.partNumber.trim() || !formState.partName.trim() || !formState.assignedWorkCenter.trim()) return;
     if (formState.manufacturingType === 'single-operation' && !formState.assignedStation.trim()) return;
     const orderFromForm = {
       ...formStateToProductionOrder(formState, formMode === 'edit' ? selectedOrder?.id : undefined),
@@ -1642,7 +1697,22 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
               </label>
               <label>
                 Client
-                <input value={formState.clientName} onChange={(event) => setFormState((current) => ({ ...current, clientName: event.target.value }))} placeholder="Client name" required />
+                <MesOrderDropdown
+                  id="production-order-customer"
+                  value={formState.customerId}
+                  options={activeCustomerFormOptions}
+                  placeholder={customerOptionsMessage || 'Select customer'}
+                  disabled={!activeCustomerFormOptions.length}
+                  onChange={(customerId) => {
+                    const customer = customerOptions.find((option) => option.id === customerId);
+                    setFormState((current) => ({
+                      ...current,
+                      customerId,
+                      clientName: customer?.customer_name ?? current.clientName,
+                    }));
+                  }}
+                />
+                {customerOptionsMessage ? <small className="production-order-customer-message">{customerOptionsMessage}</small> : null}
               </label>
               <label>
                 Part number

@@ -44,6 +44,7 @@ export type ProductionOrder = {
   partNumber: string;
   partName: string;
   clientName?: string;
+  customerId?: string;
   plannedQuantity: number;
   completedQuantity: number;
   scrapQuantity: number;
