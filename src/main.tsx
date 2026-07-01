@@ -55,6 +55,8 @@ import { ProductionOrdersWorkspace, TraceabilityWorkspace, WorkCentersWorkspace 
 import { OperatorTerminalWorkspace } from './manufacturing/OperatorTerminalWorkspace';
 import { QualityOperationsWorkspace, type QualityContextTab } from './manufacturing/QualityOperationsWorkspace';
 import { SupplierOperationsWorkspace, type SupplierContextTab } from './manufacturing/SupplierOperationsWorkspace';
+import { CustomerOperationsWorkspace, type ClientsContextTab } from './manufacturing/CustomerOperationsWorkspace';
+import './manufacturing/customerOperations.css';
 import './styles.css';
 
 type BusinessLine = {
@@ -1253,7 +1255,7 @@ Object.assign(translations.es, {
   'Production Events': 'Eventos de producci\u00f3n',
   'Quality Checks': 'Revisiones de calidad',
   'Downtime Events': 'Eventos de paro',
-  'MES Dashboard': 'Dashboard MES',
+  Clients: 'Clientes',
   'Create, release, assign, and track manufacturing orders from planned quantity to completion.':
     'Crea, libera, asigna y rastrea \u00f3rdenes de manufactura desde la cantidad planeada hasta su terminaci\u00f3n.',
   'Manage machines, lines, cells, and stations where production is executed.':
@@ -1268,8 +1270,8 @@ Object.assign(translations.es, {
     'Registra revisiones aprobado/rechazado, mediciones, resultados de inspecci\u00f3n y notas de calidad ligadas a \u00f3rdenes de producci\u00f3n.',
   'View the complete production history for an order, lot, serial number, work center, or operation.':
     'Consulta el historial completo de producci\u00f3n por orden, lote, n\u00famero de serie, centro de trabajo u operaci\u00f3n.',
-  'Show active orders, running work centers, completed quantity, scrap, downtime, and production KPIs.':
-    'Muestra \u00f3rdenes activas, centros de trabajo corriendo, cantidad completada, scrap, paros y KPIs de producci\u00f3n.',
+  'Manage customers, their assets and equipment, deliveries, returns, balances, documents, and vouchers.':
+    'Administra clientes, sus activos y equipos, entregas, devoluciones, saldos, documentos y comprobantes.',
   'Production Schedule': 'Programa de producci\u00f3n',
   'Capacity Planning': 'Planeaci\u00f3n de capacidad',
   'Work Center Loading': 'Carga de centros de trabajo',
@@ -3218,11 +3220,12 @@ function LoggedDashboardPage({
       tone: 'blue',
     },
     {
-      label: 'MES Dashboard',
-      description: 'Show active orders, running work centers, completed quantity, scrap, downtime, and production KPIs.',
-      icon: Gauge,
-      path: '/workspace/manufacturing-ops/mes/dashboard',
-      implemented: false,
+      label: 'Clients',
+      description: 'Manage customers, their assets and equipment, deliveries, returns, balances, documents, and vouchers.',
+      icon: Users,
+      path: '/workspace/manufacturing-ops/mes/clients',
+      implemented: true,
+      tone: 'blue',
     },
   ];
   const apsModules: Array<{
@@ -3376,10 +3379,13 @@ function LoggedDashboardPage({
     setManufacturingUnavailableApp('');
     onNavigate(module.path);
   };
-  const activeMesModule = mesModules.find((module) => activePath === module.path || (module.path === '/workspace/manufacturing-ops/mes/quality' && activePath.startsWith('/workspace/manufacturing-ops/mes/quality')));
+  const activeMesModule = mesModules.find((module) => activePath === module.path
+    || (module.path === '/workspace/manufacturing-ops/mes/quality' && activePath.startsWith('/workspace/manufacturing-ops/mes/quality/'))
+    || (module.path === '/workspace/manufacturing-ops/mes/clients' && activePath.startsWith('/workspace/manufacturing-ops/mes/clients/')));
   const isOperatorTerminalPage = activePath === '/workspace/manufacturing-ops/mes/operator-terminal';
   const isSupplierOperationsPage = activePath === '/workspace/manufacturing-ops/mes/suppliers';
   const isQualityOperationsPage = activePath === '/workspace/manufacturing-ops/mes/quality' || activePath.startsWith('/workspace/manufacturing-ops/mes/quality/');
+  const isClientsOperationsPage = activePath === '/workspace/manufacturing-ops/mes/clients' || activePath.startsWith('/workspace/manufacturing-ops/mes/clients/');
   const isCompactMesApplicationPage = activePath === '/workspace/manufacturing-ops/mes/orders'
     || activePath === '/workspace/manufacturing-ops/mes/work-centers'
     || activePath === '/workspace/manufacturing-ops/mes/traceability';
@@ -3411,6 +3417,19 @@ function LoggedDashboardPage({
     { value: 'holds-releases', label: 'Holds & Releases', path: '/workspace/manufacturing-ops/mes/quality/holds-releases', icon: PackageCheck, disabled: true },
   ];
   const activeQualityContextTab = qualityContextTabs.find((tab) => activePath === tab.path && !tab.disabled)?.value ?? 'dashboard';
+  const clientsContextTabs: Array<{
+    value: ClientsContextTab;
+    label: string;
+    path: string;
+    icon: React.ComponentType<{ size?: number }>;
+  }> = [
+    { value: 'customers', label: 'Customers', path: '/workspace/manufacturing-ops/mes/clients', icon: Users },
+    { value: 'assets-equipment', label: 'Assets & Equipment', path: '/workspace/manufacturing-ops/mes/clients/assets-equipment', icon: Wrench },
+    { value: 'deliveries-returns', label: 'Deliveries & Returns', path: '/workspace/manufacturing-ops/mes/clients/deliveries-returns', icon: Truck },
+    { value: 'balances', label: 'Balances', path: '/workspace/manufacturing-ops/mes/clients/balances', icon: Calculator },
+    { value: 'docs-vouchers', label: 'Docs & Vouchers', path: '/workspace/manufacturing-ops/mes/clients/docs-vouchers', icon: FileText },
+  ];
+  const activeClientsContextTab = clientsContextTabs.find((tab) => activePath === tab.path)?.value ?? 'customers';
   const activeManufacturingOrganizationId = manufacturingOrganization
     && !manufacturingOrganization.id.startsWith('local-')
     && !manufacturingOrganization.id.startsWith('joined-')
@@ -3460,6 +3479,9 @@ function LoggedDashboardPage({
     }
     if (isQualityOperationsPage) {
       return <QualityOperationsWorkspace onNavigate={onNavigate} activeTab={activeQualityContextTab} organizationId={activeManufacturingOrganizationId} organizationName={manufacturingOrganization?.name} organizationLogoUrl={manufacturingOrganization?.logoUrl} />;
+    }
+    if (isClientsOperationsPage) {
+      return <CustomerOperationsWorkspace onNavigate={onNavigate} activeTab={activeClientsContextTab} organizationId={activeManufacturingOrganizationId} />;
     }
     if (isSupplierOperationsPage) {
       return (
@@ -4018,7 +4040,7 @@ function LoggedDashboardPage({
       'logged-shell',
       isOperatorTerminalPage ? 'operator-terminal-shell' : '',
       isCompactMesApplicationPage ? 'compact-mes-application-shell' : '',
-      isSupplierOperationsPage || isQualityOperationsPage ? 'supplier-context-shell' : '',
+      isSupplierOperationsPage || isQualityOperationsPage || isClientsOperationsPage ? 'supplier-context-shell' : '',
       isSupplierAccessOverview ? 'supplier-access-shell' : '',
       isSupplierAccessOverview && supplierCustomerPickerOpen ? 'supplier-customer-picker-open' : '',
     ].filter(Boolean).join(' ')}>
@@ -4209,6 +4231,31 @@ function LoggedDashboardPage({
                   onClick={() => {
                     if (!tab.disabled) onNavigate(tab.path);
                   }}
+                >
+                  <Icon size={18} />
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
+          </nav>
+        </aside>
+      ) : null}
+
+      {isClientsOperationsPage ? (
+        <aside className="supplier-shell-context-menu clients-shell-context-menu" aria-label="Clients sections">
+          <div>
+            <span>MES</span>
+            <strong>Clients</strong>
+          </div>
+          <nav>
+            {clientsContextTabs.map((tab) => {
+              const Icon = tab.icon;
+              return (
+                <button
+                  type="button"
+                  key={tab.value}
+                  className={activeClientsContextTab === tab.value ? 'active' : ''}
+                  onClick={() => onNavigate(tab.path)}
                 >
                   <Icon size={18} />
                   <span>{tab.label}</span>
@@ -5137,7 +5184,9 @@ function App() {
     || currentPath === '/workspace/manufacturing-ops/mes/traceability'
     || currentPath === '/workspace/manufacturing-ops/mes/suppliers'
     || currentPath === '/workspace/manufacturing-ops/mes/quality'
-    || currentPath.startsWith('/workspace/manufacturing-ops/mes/quality/');
+    || currentPath.startsWith('/workspace/manufacturing-ops/mes/quality/')
+    || currentPath === '/workspace/manufacturing-ops/mes/clients'
+    || currentPath.startsWith('/workspace/manufacturing-ops/mes/clients/');
   const isWorkspacePage = currentPath === '/dashboard';
   const isAcademyPage = currentPath === '/academy' || currentPath.startsWith('/academy/');
   const isAuthPage = isLoginPage || isSignUpPage;

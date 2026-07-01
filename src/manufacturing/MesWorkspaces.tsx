@@ -2291,8 +2291,8 @@ async function resolveAddressMatch(match: AddressLookupMatch, signal?: AbortSign
 
 // Future integration: Work Center capabilities should drive Production Flow allowed resources,
 // Production Orders should assign queued jobs, Operator Terminal should publish live operations,
-// Downtime/Production Events should update status and logs, and MES Dashboard/Traceability should
-// consume queue, WIP, utilization, bottleneck, serial, lot, and event data from this model.
+// Downtime and Production Events should update status and logs, while Traceability should consume
+// queue, WIP, utilization, bottleneck, serial, lot, and event data from this model.
 const mockMesWorkCenters = [
   {
     id: 'wc-receiving-dock',
