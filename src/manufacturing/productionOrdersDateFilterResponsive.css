@@ -1,0 +1,10 @@
+@media (max-width: 760px) {
+  .production-orders-workspace .production-orders-heading {
+    grid-template-columns: 1fr;
+  }
+
+  .production-orders-header-controls .production-orders-create {
+    justify-content: center;
+    width: 100%;
+  }
+}

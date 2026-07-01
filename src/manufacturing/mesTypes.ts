@@ -60,6 +60,8 @@ export type ProductionOrder = {
   qualityChecks?: string[];
   qualityCheckLimits?: Record<string, QualityCheckLimit>;
   qualityMeasurementUnit?: QualityMeasurementUnit;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 export type TraceabilityEvent = {

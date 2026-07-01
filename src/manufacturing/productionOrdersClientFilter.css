@@ -1,0 +1,85 @@
+.production-orders-client-filter {
+  display: grid;
+  flex: 0 0 180px;
+  gap: 4px;
+  margin-right: auto;
+  margin-left: auto;
+  min-width: 0;
+}
+
+.production-orders-client-filter > span {
+  color: #526175;
+  font-size: 0.64rem;
+  font-weight: 950;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.production-orders-client-filter .mes-order-dropdown > button {
+  min-height: 36px;
+  border-color: #d8e0e8;
+  border-radius: 7px;
+  padding: 0 10px;
+  background: #f8fafc;
+  color: #17202a;
+  font-size: 0.74rem;
+}
+
+.production-order-work-center-card {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  padding: 10px;
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+.production-order-work-center-card > svg {
+  justify-self: center;
+}
+
+.production-order-work-center-card > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.production-orders-selection-card .production-order-work-center-card span {
+  color: #526175;
+  font-size: 0.64rem;
+}
+
+.production-orders-selection-card .production-order-work-center-card strong {
+  overflow: hidden;
+  color: #1e3a5f;
+  font-size: 0.88rem;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 1280px) {
+  .production-orders-panel-title {
+    flex-wrap: wrap;
+  }
+
+  .production-orders-panel-title > span {
+    margin-left: auto;
+  }
+}
+
+@media (max-width: 760px) {
+  .production-orders-client-filter {
+    flex-basis: auto;
+    margin-right: 0;
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .production-orders-panel-title > span {
+    margin-left: 0;
+  }
+}

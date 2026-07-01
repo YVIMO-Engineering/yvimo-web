@@ -6,6 +6,10 @@ import { resolveGooglePlacesAddressMatch, searchGooglePlacesAddressMatches, type
 import { supabase } from '../lib/supabaseClient';
 import type { ProductionOrder, ProductionOrderManufacturingType, ProductionOrderPriority, ProductionOrderStatus, QualityCheckLimit, QualityMeasurementUnit, QualityPieceType, WorkCenterStatus } from './mesTypes';
 import { qualityInspectionsByPieceType, qualityPieceTypeLabels, qualityPieceTypes } from './qualityInspectionConfig';
+import './productionOrders.css';
+import './productionOrdersDateFilter.css';
+import './productionOrdersDateFilterResponsive.css';
+import './productionOrdersClientFilter.css';
 
 type WorkspaceProps = {
   onNavigate: (path: string) => void;
@@ -71,6 +75,8 @@ type ProductionOrderRow = {
   quality_checks?: string[] | null;
   quality_check_limits?: Record<string, QualityCheckLimit> | null;
   quality_measurement_unit?: QualityMeasurementUnit | null;
+  created_at?: string | null;
+  updated_at?: string | null;
 };
 
 type ProductionOrderWorkCenterOptionRow = {
@@ -688,6 +694,8 @@ function toProductionOrderPayload(order: ProductionOrder | Omit<ProductionOrder,
     priority: order.priority,
     due_date: order.dueDate,
     assigned_work_center: order.assignedWorkCenter,
+    createdAt: row.created_at ?? undefined,
+    updatedAt: row.updated_at ?? undefined,
     planned_shifts: order.plannedShifts,
     manufacturing_type: order.manufacturingType,
     production_flow: order.manufacturingType === 'multi-step' ? order.productionFlow : '',
@@ -1033,6 +1041,8 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
   const [searchTerm, setSearchTerm] = React.useState('');
   const [orderView, setOrderView] = React.useState<'all' | 'in-progress' | 'completed'>('all');
   const [sortByPriority, setSortByPriority] = React.useState(false);
+  const [clientFilter, setClientFilter] = React.useState('all');
+  const [kpiDateRange, setKpiDateRange] = React.useState<MesOrderDateRange>(() => getMesOrderQuickRange('today'));
   const [workCenterOptions, setWorkCenterOptions] = React.useState<MesOrderDropdownOption[]>([]);
   const [stationOptionsByWorkCenter, setStationOptionsByWorkCenter] = React.useState<Record<string, MesOrderDropdownOption[]>>({});
   const [workCenterOptionsMessage, setWorkCenterOptionsMessage] = React.useState('');
@@ -1049,11 +1059,18 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
 
   const selectedOrder = orders.find((order) => order.orderNumber === selectedOrderNumber) ?? null;
   const selectedWorkCenterStationOptions = stationOptionsByWorkCenter[formState.assignedWorkCenter] ?? [];
+  const clientFilterOptions = React.useMemo<MesOrderDropdownOption[]>(() => [
+    { value: 'all', label: 'All clients' },
+    ...Array.from(new Set(orders.map((order) => order.clientName?.trim()).filter((client): client is string => Boolean(client))))
+      .sort((firstClient, secondClient) => firstClient.localeCompare(secondClient))
+      .map((client) => ({ value: client, label: client })),
+  ], [orders]);
   const filteredOrders = orders.filter((order) => {
     const haystack = [
       order.orderNumber,
       order.partNumber,
       order.partName,
+      order.clientName ?? '',
       order.status,
       order.priority,
       order.assignedWorkCenter,
@@ -1062,7 +1079,8 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
     const matchesView = orderView === 'all'
       || (orderView === 'in-progress' && ['released', 'running', 'paused'].includes(order.status))
       || (orderView === 'completed' && order.status === 'completed');
-    return matchesSearch && matchesView;
+    const matchesClient = clientFilter === 'all' || order.clientName?.trim() === clientFilter;
+    return matchesSearch && matchesView && matchesClient;
   });
   const priorityRank = {
     expedite: 0,
@@ -1085,11 +1103,17 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
   const currentPage = Math.min(page, pageCount);
   const paginatedOrders = visibleOrders.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   const currentOrders = orders.filter((order) => ['released', 'running', 'paused'].includes(order.status)).length;
-  const completedOrders = orders.filter((order) => order.status === 'completed').length;
-  const todayTotalProduction = orders.reduce((total, order) => total + order.completedQuantity, 0);
+  const kpiOrders = orders.filter((order) => {
+    const activityDate = toLocalIsoDate(order.updatedAt ?? order.createdAt ?? order.dueDate);
+    return (!kpiDateRange.from || activityDate >= kpiDateRange.from) && (!kpiDateRange.to || activityDate <= kpiDateRange.to);
+  });
+  const completedOrders = kpiOrders.filter((order) => order.status === 'completed').length;
+  const todayTotalProduction = kpiOrders.reduce((total, order) => total + order.completedQuantity, 0);
   const selectedOrderProgress = selectedOrder && selectedOrder.plannedQuantity > 0
     ? Math.min(100, Math.round((selectedOrder.completedQuantity / selectedOrder.plannedQuantity) * 100))
     : 0;
+  const updateKpiDateRange = (nextRange: MesOrderDateRange) =>
+    setKpiDateRange(nextRange.from > nextRange.to ? { from: nextRange.to, to: nextRange.from } : nextRange);
   const selectedOrderProgressTone = selectedOrderProgress >= 100
     ? 'complete'
     : selectedOrderProgress >= 67
@@ -1135,7 +1159,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
       return;
     }
     setPage(1);
-  }, [searchTerm, orderView]);
+  }, [clientFilter, searchTerm, orderView]);
 
   React.useEffect(() => {
     let active = true;
@@ -1211,6 +1235,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
   };
 
   const openSelectedOrderJobQueue = () => {
+    const activityTimestamp = new Date().toISOString();
     if (!selectedOrder || selectedOrder.manufacturingType !== 'single-operation' || !selectedOrder.assignedStation) return;
     setJobQueueSummary(getJobQueueSummary(orders, {
       workCenterCode: selectedOrder.assignedWorkCenter,
@@ -1221,6 +1246,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
 
   const updateOrder = (orderNumber: string, action: string) => {
     let updatedOrder: ProductionOrder | null = null;
+    const activityTimestamp = new Date().toISOString();
     setOrders((currentOrders) =>
       currentOrders.map((order) => {
         if (order.orderNumber !== orderNumber) return order;
@@ -1230,17 +1256,18 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
             ...order,
             completedQuantity: nextCompleted,
             status: nextCompleted >= order.plannedQuantity ? 'completed' : order.status,
+            updatedAt: activityTimestamp,
           };
           return updatedOrder;
         }
         if (action === 'scrap') {
-          updatedOrder = { ...order, scrapQuantity: order.scrapQuantity + 2 };
+          updatedOrder = { ...order, scrapQuantity: order.scrapQuantity + 2, updatedAt: activityTimestamp };
           return updatedOrder;
         }
         const nextStatus = action === 'start' && ['released', 'paused'].includes(order.status)
           ? (shouldStartSingleOperationOrder(order, currentOrders) ? 'running' : 'released')
           : actionStatus(order.status, action);
-        updatedOrder = { ...order, status: nextStatus };
+        updatedOrder = { ...order, status: nextStatus, updatedAt: activityTimestamp };
         return updatedOrder;
       }),
     );
@@ -1269,7 +1296,11 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
     event.preventDefault();
     if (!formState.orderNumber.trim() || !formState.clientName.trim() || !formState.partNumber.trim() || !formState.partName.trim() || !formState.assignedWorkCenter.trim()) return;
     if (formState.manufacturingType === 'single-operation' && !formState.assignedStation.trim()) return;
-    const orderFromForm = formStateToProductionOrder(formState, formMode === 'edit' ? selectedOrder?.id : undefined);
+    const orderFromForm = {
+      ...formStateToProductionOrder(formState, formMode === 'edit' ? selectedOrder?.id : undefined),
+      createdAt: selectedOrder?.createdAt,
+      updatedAt: new Date().toISOString(),
+    };
 
     if (formMode === 'edit' && selectedOrder) {
       setConfirmation({
@@ -1368,21 +1399,62 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
 
   return (
     <section className="mes-workspace-panel production-orders-workspace">
+      <div className="mes-screen-header production-orders-heading">
+        <button className="academy-back-button engineering-back-button mes-workspace-back" type="button" onClick={() => onNavigate('/workspace/manufacturing-ops/mes')}>
+          <ArrowLeft size={16} />
+          MES Applications
+        </button>
+        <div className="mes-workspace-heading">
+          <p className="eyebrow">MES / Production Orders</p>
+          <h2>Production Orders</h2>
+          <p>Create, release, execute, and close orders with live quantities and shop-floor actions.</p>
+        </div>
+        <div className="production-orders-header-controls">
+          <div className="production-orders-date-filters" aria-label="Production KPI date filters">
+            <label>
+              <span>From</span>
+              <MesOrderDatePicker id="production-orders-kpi-from" value={kpiDateRange.from} onChange={(from) => updateKpiDateRange({ ...kpiDateRange, from })} onQuickRange={updateKpiDateRange} />
+            </label>
+            <label>
+              <span>To</span>
+              <MesOrderDatePicker id="production-orders-kpi-to" value={kpiDateRange.to} onChange={(to) => updateKpiDateRange({ ...kpiDateRange, to })} onQuickRange={updateKpiDateRange} />
+            </label>
+          </div>
+          <button className="mes-primary-action production-orders-create" type="button" onClick={openCreateOrderForm}>
+            <Plus size={16} /> Add Production Order
+          </button>
+        </div>
+      </div>
+
+      <section className="production-orders-overview" aria-label="Production order overview">
+        <article className="production-orders-overview-card current">
+          <span><Activity size={18} /></span>
+          <div><em>Active orders</em><strong>{currentOrders}</strong><small>released, running, or paused</small></div>
+        </article>
+        <article className="production-orders-overview-card completed">
+          <span><CheckCircle2 size={18} /></span>
+          <div><em>Completed</em><strong>{completedOrders}</strong><small>closed in selected range</small></div>
+        </article>
+        <article className="production-orders-overview-card output">
+          <span><Factory size={18} /></span>
+          <div><em>Reported production</em><strong>{todayTotalProduction.toLocaleString()}</strong><small>units in selected range</small></div>
+        </article>
+        <label className="production-orders-search production-orders-overview-search">
+          <span>Search orders</span>
+          <div><Search size={17} /><input type="search" value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Order, part, client, status" /></div>
+        </label>
+      </section>
       <div className="production-orders-layout">
         <div className="production-orders-main-panel">
-          <div className="mes-screen-header production-orders-heading">
-            <button className="academy-back-button engineering-back-button mes-workspace-back" type="button" onClick={() => onNavigate('/workspace/manufacturing-ops/mes')}>
-              <ArrowLeft size={16} />
-              MES Applications
-            </button>
-            <div className="mes-workspace-heading">
-              <p className="eyebrow">MES / Production Orders</p>
-              <h2>Production Orders</h2>
-              <p>Create, release, execute, and close orders with live quantities and shop-floor actions.</p>
-            </div>
-          </div>
           <div className="production-orders-panel-title">
-            <strong>Production orders</strong>
+            <div className="production-orders-panel-copy">
+              <span>Order register</span>
+              <strong>Production order queue</strong>
+            </div>
+            <div className="production-orders-client-filter">
+              <span>Client</span>
+              <MesOrderDropdown id="production-orders-client-filter" value={clientFilter} options={clientFilterOptions} onChange={setClientFilter} />
+            </div>
             <div className="production-orders-view-toggle" aria-label="Production order view">
               <button className={orderView === 'all' ? 'active' : ''} type="button" onClick={() => setOrderView('all')}>
                 All
@@ -1411,7 +1483,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
                   <th>Status</th>
                   <th>Priority</th>
                   <th>Due</th>
-                  <th>Work center</th>
+                  <th>Client</th>
                 </tr>
               </thead>
               <tbody>
@@ -1453,7 +1525,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
                       <td><MesStatusBadge value={order.status} /></td>
                       <td><MesStatusBadge value={order.priority} tone="priority" /></td>
                       <td>{formatDate(order.dueDate)}</td>
-                      <td>{order.assignedWorkCenter}</td>
+                      <td><strong>{order.clientName?.trim() || 'Unassigned'}</strong></td>
                     </tr>
                   );
                 })}
@@ -1486,33 +1558,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
         </div>
 
         <aside className="production-orders-side-panel" aria-label="Production order controls">
-          <div className="production-orders-metric-grid">
-            <article>
-              <span>Current</span>
-              <strong>{currentOrders}</strong>
-            </article>
-            <article>
-              <span>Completed</span>
-              <strong>{completedOrders}</strong>
-            </article>
-          </div>
-          <article className="production-orders-total">
-            <span>Today expected production</span>
-            <strong>{todayTotalProduction.toLocaleString()}</strong>
-          </article>
-          <label className="production-orders-search">
-            <span>Search</span>
-            <input
-              type="search"
-              value={searchTerm}
-              onChange={(event) => setSearchTerm(event.target.value)}
-              placeholder="Order, part, status, work center"
-            />
-          </label>
-          <button className="mes-primary-action production-orders-create" type="button" onClick={openCreateOrderForm}>
-            <Plus size={16} />
-            Add new production order
-          </button>
+          <div className="production-orders-side-heading"><span>Selected order</span><strong>Order controls</strong></div>
           <div className="production-orders-manage-actions">
             <button type="button" onClick={openEditOrderForm} disabled={!selectedOrder}>
               Edit
@@ -1529,7 +1575,11 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
                   <MesStatusBadge value={selectedOrder.priority} tone="priority" />
                 </div>
                 <strong>{selectedOrder.orderNumber}</strong>
-                <em>{selectedOrder.partNumber} / {selectedOrder.assignedWorkCenter}</em>
+                <em>{selectedOrder.partNumber} / {selectedOrder.clientName?.trim() || 'Unassigned client'}</em>
+              </div>
+              <div className="production-order-work-center-card">
+                <Factory size={17} />
+                <div><span>Work center</span><strong>{selectedOrder.assignedWorkCenter || 'Not assigned'}</strong></div>
               </div>
               <div className="production-order-progress">
                 <p>
