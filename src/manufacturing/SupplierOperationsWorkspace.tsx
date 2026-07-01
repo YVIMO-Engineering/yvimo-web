@@ -37,7 +37,7 @@ type SupplierOperationsWorkspaceProps = {
   onActiveTabChange: (tab: SupplierContextTab) => void;
 };
 
-type SupplierModalMode = 'create' | 'edit-transfer' | 'supplier' | 'checkout' | 'checkin' | 'document' | 'document-preview' | 'supplier-pdf-preview' | 'voucher' | null;
+type SupplierModalMode = 'create' | 'edit-transfer' | 'supplier' | 'delete-supplier' | 'checkout' | 'checkin' | 'document' | 'document-preview' | 'supplier-pdf-preview' | 'voucher' | null;
 export type SupplierContextTab = 'dashboard' | 'transfers' | 'suppliers' | 'vouchers-docs' | 'check-in-out';
 
 type SupplierPdfDocument = {
@@ -47,7 +47,11 @@ type SupplierPdfDocument = {
 };
 
 type SupplierRecord = Supplier & {
+  logoPath?: string;
+  logoUrl?: string;
+  fiscalDocumentPath?: string;
   fiscalDocument?: SupplierPdfDocument;
+  bankingDocumentPath?: string;
   bankingDocument?: SupplierPdfDocument;
 };
 
@@ -97,6 +101,7 @@ type SupplierFormState = {
   capability: string;
   newCapabilityName: string;
   newCapabilityColor: string;
+  logoFile: File | null;
   fiscalDocumentFile: File | null;
   bankingDocumentFile: File | null;
   notes: string;
@@ -178,6 +183,7 @@ const defaultSupplierForm: SupplierFormState = {
   capability: '',
   newCapabilityName: '',
   newCapabilityColor: supplierCapabilityColorOptions[0],
+  logoFile: null,
   fiscalDocumentFile: null,
   bankingDocumentFile: null,
   notes: '',
@@ -502,6 +508,7 @@ export function SupplierOperationsWorkspace({ onNavigate, organizationId, active
   const [activeVoucher, setActiveVoucher] = React.useState<SupplierVoucher | null>(null);
   const [transferForm, setTransferForm] = React.useState<SupplierTransferFormState>(defaultTransferForm);
   const [supplierForm, setSupplierForm] = React.useState<SupplierFormState>(defaultSupplierForm);
+  const [selectedSupplierId, setSelectedSupplierId] = React.useState('');
   const [supplierDocsFilters, setSupplierDocsFilters] = React.useState<SupplierDocsFilters>(defaultSupplierDocsFilters);
   const [customSupplierCapabilityColors, setCustomSupplierCapabilityColors] = React.useState<Record<string, string>>({});
   const [addressLookup, setAddressLookup] = React.useState<AddressLookupState>({ status: 'idle', message: '' });
@@ -545,7 +552,7 @@ export function SupplierOperationsWorkspace({ onNavigate, organizationId, active
       const supplierRows = (supplierResult.data ?? []) as SupplierBackendRow[];
       const transferRows = (transferResult.data ?? []) as SupplierBackendRow[];
       const filePaths = Array.from(new Set([
-        ...supplierRows.flatMap((supplier) => [supplier.fiscal_document_path, supplier.banking_document_path]),
+        ...supplierRows.flatMap((supplier) => [supplier.logo_path, supplier.fiscal_document_path, supplier.banking_document_path]),
         ...transferRows.flatMap((transfer) => [
           ...(transfer.documents ?? []).map((document: SupplierBackendRow) => document.file_path),
           ...(transfer.vouchers ?? []).map((voucher: SupplierBackendRow) => voucher.attachment_path),
@@ -566,11 +573,15 @@ export function SupplierOperationsWorkspace({ onNavigate, organizationId, active
         processCapabilities: (supplier.capability_links ?? [])
           .map((link: SupplierBackendRow) => link.capability?.name)
           .filter(Boolean),
+        logoPath: supplier.logo_path ?? undefined,
+        logoUrl: supplier.logo_path ? signedFileUrls.get(supplier.logo_path) ?? '' : undefined,
+        fiscalDocumentPath: supplier.fiscal_document_path ?? undefined,
         fiscalDocument: supplier.fiscal_document_path ? {
           label: 'Fiscal Data',
           fileName: supplier.fiscal_document_name,
           fileUrl: signedFileUrls.get(supplier.fiscal_document_path) ?? '',
         } : undefined,
+        bankingDocumentPath: supplier.banking_document_path ?? undefined,
         bankingDocument: supplier.banking_document_path ? {
           label: 'Banking Data',
           fileName: supplier.banking_document_name,
@@ -667,6 +678,7 @@ export function SupplierOperationsWorkspace({ onNavigate, organizationId, active
   }, [refreshSupplierOperations]);
 
   const selectedTransfer = transfers.find((transfer) => transfer.id === selectedTransferId) ?? transfers[0] ?? null;
+  const selectedSupplier = suppliers.find((supplier) => supplier.id === selectedSupplierId) ?? null;
   const todayIsoDate = getTodayIsoDate();
   const isOverdueTransfer = React.useCallback((transfer: SupplierTransfer) => transfer.expectedReturnDate < todayIsoDate && transfer.status !== 'completed', [todayIsoDate]);
   const sentTransfers = transfers.filter((transfer) => transfer.status === 'sent-to-supplier').length;
@@ -750,6 +762,7 @@ export function SupplierOperationsWorkspace({ onNavigate, organizationId, active
   };
 
   const openCreateSupplier = () => {
+    setSelectedSupplierId('');
     setSupplierForm(defaultSupplierForm);
     setAddressLookup({ status: 'idle', message: '' });
     setAddressSuggestions([]);
@@ -757,6 +770,32 @@ export function SupplierOperationsWorkspace({ onNavigate, organizationId, active
     setShowCapabilityDropdown(false);
     setShowCapabilityColorPicker(false);
     setModalMode('supplier');
+  };
+
+  const openEditSupplier = (supplier: SupplierRecord) => {
+    setSelectedSupplierId(supplier.id);
+    setSupplierForm({
+      ...defaultSupplierForm,
+      name: supplier.name,
+      contactName: supplier.contactName,
+      email: supplier.email,
+      phone: supplier.phone,
+      address: supplier.address,
+      approvedStatus: supplier.approvedStatus,
+      processCapabilities: [...supplier.processCapabilities],
+      notes: supplier.notes,
+    });
+    setAddressLookup({ status: 'idle', message: '' });
+    setAddressSuggestions([]);
+    setShowAddressSuggestions(false);
+    setShowCapabilityDropdown(false);
+    setShowCapabilityColorPicker(false);
+    setModalMode('supplier');
+  };
+
+  const openDeleteSupplier = (supplier: SupplierRecord) => {
+    setSelectedSupplierId(supplier.id);
+    setModalMode('delete-supplier');
   };
 
   const selectCheckTransfer = (transfer: SupplierTransfer) => {
@@ -1204,19 +1243,23 @@ export function SupplierOperationsWorkspace({ onNavigate, organizationId, active
     if (supplierForm.capability === registerNewSupplierCapabilityValue && !newCapability) return;
     const processCapabilities = capabilities.length ? capabilities : ['General supplier'];
     if (!supplierOperationsDemoMode) {
-      const supplierId = crypto.randomUUID();
+      const supplierId = selectedSupplier?.id ?? crypto.randomUUID();
       const saved = await persistSupplierOperation(async () => {
         const uploadedPaths: string[] = [];
         try {
+          const logoPath = supplierForm.logoFile
+            ? await uploadSupplierStorageFile(organizationId, 'suppliers', supplierId, supplierForm.logoFile)
+            : selectedSupplier?.logoPath ?? null;
+          if (supplierForm.logoFile && logoPath) uploadedPaths.push(logoPath);
           const fiscalPath = supplierForm.fiscalDocumentFile
             ? await uploadSupplierStorageFile(organizationId, 'suppliers', supplierId, supplierForm.fiscalDocumentFile)
-            : null;
-          if (fiscalPath) uploadedPaths.push(fiscalPath);
+            : selectedSupplier?.fiscalDocumentPath ?? null;
+          if (supplierForm.fiscalDocumentFile && fiscalPath) uploadedPaths.push(fiscalPath);
           const bankingPath = supplierForm.bankingDocumentFile
             ? await uploadSupplierStorageFile(organizationId, 'suppliers', supplierId, supplierForm.bankingDocumentFile)
-            : null;
-          if (bankingPath) uploadedPaths.push(bankingPath);
-          const supplierResult = await supabase.from('mes_suppliers').insert({
+            : selectedSupplier?.bankingDocumentPath ?? null;
+          if (supplierForm.bankingDocumentFile && bankingPath) uploadedPaths.push(bankingPath);
+          const supplierPayload = {
             id: supplierId,
             organization_id: organizationId,
             name: normalizedName,
@@ -1225,13 +1268,23 @@ export function SupplierOperationsWorkspace({ onNavigate, organizationId, active
             phone: supplierForm.phone.trim(),
             address: supplierForm.address.trim(),
             approved_status: supplierForm.approvedStatus,
-            fiscal_document_name: supplierForm.fiscalDocumentFile?.name ?? null,
+            logo_path: logoPath,
+            fiscal_document_name: supplierForm.fiscalDocumentFile?.name ?? selectedSupplier?.fiscalDocument?.fileName ?? null,
             fiscal_document_path: fiscalPath,
-            banking_document_name: supplierForm.bankingDocumentFile?.name ?? null,
+            banking_document_name: supplierForm.bankingDocumentFile?.name ?? selectedSupplier?.bankingDocument?.fileName ?? null,
             banking_document_path: bankingPath,
             notes: supplierForm.notes.trim(),
-          });
+          };
+          const supplierResult = selectedSupplier
+            ? await supabase.from('mes_suppliers').update(supplierPayload)
+              .eq('id', supplierId).eq('organization_id', organizationId)
+            : await supabase.from('mes_suppliers').insert(supplierPayload);
           if (supplierResult.error) throw supplierResult.error;
+          if (selectedSupplier) {
+            const unlinkResult = await supabase.from('mes_supplier_capability_links')
+              .delete().eq('supplier_id', supplierId).eq('organization_id', organizationId);
+            if (unlinkResult.error) throw unlinkResult.error;
+          }
           const capabilityResult = await supabase.from('mes_supplier_capabilities').upsert(
             processCapabilities.map((name) => ({
               organization_id: organizationId,
@@ -1251,6 +1304,14 @@ export function SupplierOperationsWorkspace({ onNavigate, organizationId, active
             })),
           );
           if (linkResult.error) throw linkResult.error;
+          if (selectedSupplier) {
+            const replacedPaths = [
+              supplierForm.logoFile ? selectedSupplier.logoPath : undefined,
+              supplierForm.fiscalDocumentFile ? selectedSupplier.fiscalDocumentPath : undefined,
+              supplierForm.bankingDocumentFile ? selectedSupplier.bankingDocumentPath : undefined,
+            ].filter((path): path is string => Boolean(path));
+            if (replacedPaths.length) await supabase.storage.from(supplierFilesBucket).remove(replacedPaths);
+          }
         } catch (error) {
           if (uploadedPaths.length) await supabase.storage.from(supplierFilesBucket).remove(uploadedPaths);
           throw error;
@@ -1263,7 +1324,7 @@ export function SupplierOperationsWorkspace({ onNavigate, organizationId, active
       return;
     }
     const supplier: SupplierRecord = {
-      id: `sup-${normalizedName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'supplier'}-${String(suppliers.length + 1).padStart(2, '0')}`,
+      id: selectedSupplier?.id ?? `sup-${normalizedName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'supplier'}-${String(suppliers.length + 1).padStart(2, '0')}`,
       name: normalizedName,
       contactName: supplierForm.contactName.trim(),
       email: supplierForm.email.trim(),
@@ -1271,8 +1332,9 @@ export function SupplierOperationsWorkspace({ onNavigate, organizationId, active
       address: supplierForm.address.trim(),
       approvedStatus: supplierForm.approvedStatus,
       processCapabilities,
-      fiscalDocument: createUploadedSupplierPdf(supplierForm.fiscalDocumentFile, 'Fiscal Data'),
-      bankingDocument: createUploadedSupplierPdf(supplierForm.bankingDocumentFile, 'Banking Data'),
+      logoUrl: supplierForm.logoFile ? URL.createObjectURL(supplierForm.logoFile) : selectedSupplier?.logoUrl,
+      fiscalDocument: createUploadedSupplierPdf(supplierForm.fiscalDocumentFile, 'Fiscal Data') ?? selectedSupplier?.fiscalDocument,
+      bankingDocument: createUploadedSupplierPdf(supplierForm.bankingDocumentFile, 'Banking Data') ?? selectedSupplier?.bankingDocument,
       notes: supplierForm.notes.trim(),
     };
     if (newCapability) {
@@ -1281,8 +1343,43 @@ export function SupplierOperationsWorkspace({ onNavigate, organizationId, active
         [newCapability]: supplierForm.newCapabilityColor,
       }));
     }
-    setSuppliers((currentSuppliers) => [supplier, ...currentSuppliers]);
+    setSuppliers((currentSuppliers) => selectedSupplier
+      ? currentSuppliers.map((currentSupplier) => currentSupplier.id === supplier.id ? supplier : currentSupplier)
+      : [supplier, ...currentSuppliers]);
     onActiveTabChange('suppliers');
+    setModalMode(null);
+  };
+
+  const deleteSupplier = async () => {
+    if (!selectedSupplier) return;
+    if (!supplierOperationsDemoMode) {
+      const deleted = await persistSupplierOperation(async () => {
+        const deleteResult = await supabase.from('mes_suppliers')
+          .delete().eq('id', selectedSupplier.id).eq('organization_id', organizationId).select('id').maybeSingle();
+        if (deleteResult.error) throw deleteResult.error;
+        if (!deleteResult.data) {
+          throw new Error('You do not have permission to delete this supplier.');
+        }
+        const filePaths = [
+          selectedSupplier.logoPath,
+          selectedSupplier.fiscalDocumentPath,
+          selectedSupplier.bankingDocumentPath,
+        ].filter((path): path is string => Boolean(path));
+        if (filePaths.length) await supabase.storage.from(supplierFilesBucket).remove(filePaths);
+      });
+      if (deleted) {
+        setSelectedSupplierId('');
+        setModalMode(null);
+      }
+      return;
+    }
+    if (transfers.some((transfer) => transfer.supplierId === selectedSupplier.id)) {
+      setBackendError('This supplier cannot be deleted because it has supplier transfers assigned.');
+      setModalMode(null);
+      return;
+    }
+    setSuppliers((currentSuppliers) => currentSuppliers.filter((supplier) => supplier.id !== selectedSupplier.id));
+    setSelectedSupplierId('');
     setModalMode(null);
   };
 
@@ -1725,7 +1822,20 @@ export function SupplierOperationsWorkspace({ onNavigate, organizationId, active
               <div className="supplier-card-copy">
                 <div className="supplier-card-topline">
                   <strong>{supplier.name}</strong>
-                  <SupplierStatusBadge status={supplier.approvedStatus} />
+                  <div className="supplier-card-topline-actions">
+                    <SupplierStatusBadge status={supplier.approvedStatus} />
+                    <button type="button" onClick={() => openEditSupplier(supplier)} aria-label={`Edit ${supplier.name}`}>
+                      <Pencil size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      className="supplier-card-delete-action"
+                      onClick={() => openDeleteSupplier(supplier)}
+                      aria-label={`Delete ${supplier.name}`}
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
                 </div>
                 <span><b>Contact:</b> {supplier.contactName}</span>
                 <span><b>Email:</b> {supplier.email}</span>
@@ -1747,7 +1857,8 @@ export function SupplierOperationsWorkspace({ onNavigate, organizationId, active
               </div>
               <div className="supplier-card-media">
                 <div className="supplier-logo-frame" aria-label={`${supplier.name} logo`}>
-                  <span>{getSupplierInitials(supplier.name)}</span>
+                  {supplier.logoUrl ? <img src={supplier.logoUrl} alt={`${supplier.name} logo`} /> : null}
+                  {supplier.logoUrl ? null : <span>{getSupplierInitials(supplier.name)}</span>}
                 </div>
                 <div className="supplier-card-document-actions">
                   <button
@@ -2453,7 +2564,7 @@ export function SupplierOperationsWorkspace({ onNavigate, organizationId, active
             <form onSubmit={createSupplier}>
               <div className="supplier-modal-header">
                 <span>Supplier</span>
-                <strong>Add New Supplier</strong>
+                <strong>{selectedSupplier ? 'Edit Supplier' : 'Add New Supplier'}</strong>
               </div>
               <div className="supplier-form-grid">
                 <label>
@@ -2567,11 +2678,23 @@ export function SupplierOperationsWorkspace({ onNavigate, organizationId, active
                 </div>
               ) : null}
               <div className="supplier-form-grid supplier-form-wide">
+                <label className="supplier-form-wide">
+                  Supplier Image
+                  <span className="supplier-file-upload-control">
+                    <span><Upload size={15} /> Select Image</span>
+                    <em>{supplierForm.logoFile?.name ?? (selectedSupplier?.logoUrl ? 'Current image' : 'No file selected')}</em>
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      onChange={(event) => setSupplierForm((current) => ({ ...current, logoFile: event.target.files?.[0] ?? null }))}
+                    />
+                  </span>
+                </label>
                 <label>
                   Fiscal Data PDF
                   <span className="supplier-file-upload-control">
                     <span><Upload size={15} /> Select PDF</span>
-                    <em>{supplierForm.fiscalDocumentFile?.name ?? 'No file selected'}</em>
+                    <em>{supplierForm.fiscalDocumentFile?.name ?? selectedSupplier?.fiscalDocument?.fileName ?? 'No file selected'}</em>
                     <input
                       type="file"
                       accept="application/pdf"
@@ -2583,7 +2706,7 @@ export function SupplierOperationsWorkspace({ onNavigate, organizationId, active
                   Banking Data PDF
                   <span className="supplier-file-upload-control">
                     <span><Upload size={15} /> Select PDF</span>
-                    <em>{supplierForm.bankingDocumentFile?.name ?? 'No file selected'}</em>
+                    <em>{supplierForm.bankingDocumentFile?.name ?? selectedSupplier?.bankingDocument?.fileName ?? 'No file selected'}</em>
                     <input
                       type="file"
                       accept="application/pdf"
@@ -2598,9 +2721,25 @@ export function SupplierOperationsWorkspace({ onNavigate, organizationId, active
               </label>
               <div className="supplier-modal-actions">
                 <button type="button" onClick={() => setModalMode(null)}>Cancel</button>
-                <button type="submit"><Plus size={16} /> Create Supplier</button>
+                <button type="submit">{selectedSupplier ? <Pencil size={16} /> : <Plus size={16} />} {selectedSupplier ? 'Save Supplier' : 'Create Supplier'}</button>
               </div>
             </form>
+          ) : null}
+
+          {modalMode === 'delete-supplier' && selectedSupplier ? (
+            <div className="supplier-delete-confirmation">
+              <div className="supplier-modal-header">
+                <span>Delete Supplier</span>
+                <strong>Delete {selectedSupplier.name}?</strong>
+              </div>
+              <p>This action cannot be undone. Suppliers with existing transfers cannot be deleted.</p>
+              <div className="supplier-modal-actions">
+                <button type="button" onClick={() => setModalMode(null)}>Cancel</button>
+                <button type="button" className="supplier-confirm-delete-button" onClick={() => { void deleteSupplier(); }}>
+                  <Trash2 size={16} /> Delete Supplier
+                </button>
+              </div>
+            </div>
           ) : null}
 
           {modalMode === 'checkout' && selectedTransfer ? (

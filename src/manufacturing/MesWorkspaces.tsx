@@ -4,7 +4,7 @@ import { Activity, AlertTriangle, ArrowLeft, CalendarDays, Check, CheckCircle2, 
 import { GoogleWorkCentersMap } from '../components/maps/GoogleWorkCentersMap';
 import { resolveGooglePlacesAddressMatch, searchGooglePlacesAddressMatches, type GooglePlacesAddressMatch } from '../lib/maps/googlePlacesAddressLookup';
 import { supabase } from '../lib/supabaseClient';
-import type { ProductionOrder, ProductionOrderManufacturingType, ProductionOrderPriority, ProductionOrderStatus, QualityCheckLimit, QualityPieceType, WorkCenterStatus } from './mesTypes';
+import type { ProductionOrder, ProductionOrderManufacturingType, ProductionOrderPriority, ProductionOrderStatus, QualityCheckLimit, QualityMeasurementUnit, QualityPieceType, WorkCenterStatus } from './mesTypes';
 import { qualityInspectionsByPieceType, qualityPieceTypeLabels, qualityPieceTypes } from './qualityInspectionConfig';
 
 type WorkspaceProps = {
@@ -46,6 +46,7 @@ type ProductionOrderFormState = {
   qualityChecksEnabled: boolean;
   qualityChecks: string[];
   qualityCheckLimits: Record<string, QualityCheckLimit>;
+  qualityMeasurementUnit: QualityMeasurementUnit;
 };
 
 type ProductionOrderRow = {
@@ -69,6 +70,7 @@ type ProductionOrderRow = {
   quality_checks_enabled?: boolean | null;
   quality_checks?: string[] | null;
   quality_check_limits?: Record<string, QualityCheckLimit> | null;
+  quality_measurement_unit?: QualityMeasurementUnit | null;
 };
 
 type ProductionOrderWorkCenterOptionRow = {
@@ -668,6 +670,7 @@ function mapProductionOrderRow(row: ProductionOrderRow): ProductionOrder {
     qualityChecksEnabled: row.quality_checks_enabled ?? false,
     qualityChecks: row.quality_checks ?? [],
     qualityCheckLimits: row.quality_check_limits ?? {},
+    qualityMeasurementUnit: row.quality_measurement_unit ?? 'microns',
   };
 }
 
@@ -693,6 +696,7 @@ function toProductionOrderPayload(order: ProductionOrder | Omit<ProductionOrder,
     quality_checks_enabled: order.qualityChecksEnabled ?? false,
     quality_checks: order.qualityChecksEnabled ? order.qualityChecks ?? [] : [],
     quality_check_limits: order.qualityChecksEnabled ? order.qualityCheckLimits ?? {} : {},
+    quality_measurement_unit: order.qualityMeasurementUnit ?? 'microns',
   };
 }
 
@@ -717,6 +721,7 @@ function toFormState(order?: ProductionOrder): ProductionOrderFormState {
     qualityChecksEnabled: order?.qualityChecksEnabled ?? false,
     qualityChecks: order?.qualityChecks ?? [],
     qualityCheckLimits: order?.qualityCheckLimits ?? {},
+    qualityMeasurementUnit: order?.qualityMeasurementUnit ?? 'microns',
   };
 }
 
@@ -742,6 +747,7 @@ function formStateToProductionOrder(formState: ProductionOrderFormState, id?: st
     qualityChecksEnabled: formState.qualityChecksEnabled,
     qualityChecks: formState.qualityChecksEnabled ? formState.qualityChecks : [],
     qualityCheckLimits: formState.qualityChecksEnabled ? formState.qualityCheckLimits : {},
+    qualityMeasurementUnit: formState.qualityMeasurementUnit,
   };
 }
 

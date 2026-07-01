@@ -6,6 +6,8 @@ export type ProductionOrderManufacturingType = 'multi-step' | 'single-operation'
 
 export type QualityPieceType = 'hobs' | 'shaper' | 'shavers' | 'skiving';
 
+export type QualityMeasurementUnit = 'microns' | 'tenths';
+
 export type QualityCheckLimit = {
   lowerLimit?: number | null;
   upperLimit?: number | null;
@@ -57,6 +59,7 @@ export type ProductionOrder = {
   qualityChecksEnabled?: boolean;
   qualityChecks?: string[];
   qualityCheckLimits?: Record<string, QualityCheckLimit>;
+  qualityMeasurementUnit?: QualityMeasurementUnit;
 };
 
 export type TraceabilityEvent = {

@@ -6660,6 +6660,48 @@ body.work-center-map-expanded .logged-workspace {
   flex: 0 0 auto;
 }
 
+.supplier-card-topline-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.supplier-card-topline-actions > button {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(71, 85, 105, 0.2);
+  border-radius: 7px;
+  padding: 0;
+  background: #ffffff;
+  color: #475569;
+  cursor: pointer;
+}
+
+.supplier-card-topline-actions > button:hover,
+.supplier-card-topline-actions > button:focus-visible {
+  border-color: #ff8a1f;
+  color: #d95d00;
+  outline: none;
+}
+
+.supplier-card-topline-actions > .supplier-card-delete-action:hover,
+.supplier-card-topline-actions > .supplier-card-delete-action:focus-visible {
+  border-color: #dc2626;
+  background: #fff1f2;
+  color: #dc2626;
+}
+
+.supplier-logo-frame img {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: contain;
+  background: #ffffff;
+}
+
 .supplier-card-media {
   display: grid;
   gap: 8px;
@@ -7810,6 +7852,25 @@ body.work-center-map-expanded .logged-workspace {
   background: #eef2f6;
   color: #94a3b8;
   cursor: not-allowed;
+}
+
+.supplier-delete-confirmation p {
+  margin: 0;
+  color: #526171;
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
+.supplier-modal-actions .supplier-confirm-delete-button {
+  border-color: #dc2626;
+  background: #dc2626;
+  color: #ffffff;
+}
+
+.supplier-modal-actions .supplier-confirm-delete-button:hover,
+.supplier-modal-actions .supplier-confirm-delete-button:focus-visible {
+  border-color: #b91c1c;
+  background: #b91c1c;
 }
 
 .supplier-document-preview {
@@ -28208,6 +28269,25 @@ body[data-screenshot-export="academy-track"] .academy-mobile-track-step button {
   display: none;
   content: none;
 }
+
+.quality-dashboard-panel-grid article .quality-dashboard-record-list {
+  gap: 12px !important;
+}
+
+.quality-dashboard-panel-grid article .quality-dashboard-record-list .quality-dashboard-record,
+.quality-dashboard-panel-grid article .quality-dashboard-record-list .quality-dashboard-record.featured,
+.quality-dashboard-panel-grid article .quality-dashboard-record-list .quality-dashboard-record.stacked,
+.quality-dashboard-panel-grid article .quality-dashboard-record-list .quality-dashboard-record.featured + .quality-dashboard-record.stacked {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+.quality-dashboard-panel-grid article .quality-dashboard-record-list .quality-dashboard-record.stacked {
+  min-height: 76px;
+  padding-bottom: 14px;
+  box-shadow: 0 8px 18px rgba(23, 32, 42, 0.07);
+}
+
 .quality-dashboard-date-filters {
   display: grid;
   grid-template-columns: repeat(2, minmax(150px, 1fr));
@@ -28976,4 +29056,60 @@ body[data-screenshot-export="academy-track"] .academy-mobile-track-step button {
   font-size: 0.68rem;
   font-weight: 850;
   line-height: 1.3;
+}
+.quality-specification-editor-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 10px;
+}
+
+.quality-specification-unit-control {
+  display: grid;
+  gap: 6px;
+  min-width: min(360px, 100%);
+}
+
+.quality-specification-unit-control > strong {
+  color: #f97316;
+  font-size: 0.7rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.quality-specification-unit-control > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border: 1px solid #d8e0e8;
+  border-radius: 7px;
+  padding: 3px;
+  background: #f1f5f9;
+}
+
+.quality-specification-unit-control button {
+  min-height: 36px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  padding: 7px 10px;
+  background: transparent;
+  color: #526175;
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.quality-specification-unit-control button.active {
+  border-color: rgba(255, 138, 31, 0.55);
+  background: #fff0e4;
+  color: #c2410c;
+  box-shadow: 0 4px 12px rgba(255, 138, 31, 0.12);
+}
+
+@media (max-width: 860px) {
+  .quality-specification-editor-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
 }

@@ -26,7 +26,7 @@ import {
 import { supabase } from '../lib/supabaseClient';
 import { mockProductionOrders } from './mesMockData';
 import { qualityInspectionsByPieceType, qualityPieceTypes } from './qualityInspectionConfig';
-import type { ProductionOrder, ProductionOrderPriority, ProductionOrderStatus, QualityCheckLimit, QualityPieceType } from './mesTypes';
+import type { ProductionOrder, ProductionOrderPriority, ProductionOrderStatus, QualityCheckLimit, QualityMeasurementUnit, QualityPieceType } from './mesTypes';
 
 export type QualityContextTab =
   | 'dashboard'
@@ -288,6 +288,11 @@ type QualityInspectionDocument = {
   uploaded_at: string;
 };
 
+type QualityDocumentPreview = {
+  fileName: string;
+  fileUrl: string;
+};
+
 type QualitySerialInspectionRecord = {
   id: string;
   production_order_id: string;
@@ -297,6 +302,19 @@ type QualitySerialInspectionRecord = {
 };
 
 const qualityDocumentsBucket = 'mes-quality-inspection-documents';
+const getQualityDocumentPreviewUrl = (fileUrl: string) => `${fileUrl}#toolbar=1&navpanes=0&scrollbar=1&view=FitH`;
+const qualityMeasurementUnitOptions: Array<{ value: QualityMeasurementUnit; label: string; symbol: string }> = [
+  { value: 'microns', label: 'Microns (mm)', symbol: 'mm' },
+  { value: 'tenths', label: 'Tenths (in)', symbol: 'in' },
+];
+
+function getQualityMeasurementUnit(order: ProductionOrder) {
+  return order.qualityMeasurementUnit ?? 'microns';
+}
+
+function getQualityMeasurementUnitSymbol(order: ProductionOrder) {
+  return qualityMeasurementUnitOptions.find((option) => option.value === getQualityMeasurementUnit(order))?.symbol ?? 'mm';
+}
 type QualityProductionOrderRow = {
   id: string;
   order_number: string;
@@ -318,6 +336,7 @@ type QualityProductionOrderRow = {
   quality_checks_enabled?: boolean | null;
   quality_checks?: string[] | null;
   quality_check_limits?: Record<string, QualityCheckLimit> | null;
+  quality_measurement_unit?: QualityMeasurementUnit | null;
 };
 
 const qualityDemoOrders: ProductionOrder[] = mockProductionOrders.map((order, index) => {
@@ -331,6 +350,7 @@ const qualityDemoOrders: ProductionOrder[] = mockProductionOrders.map((order, in
       inspection,
       { lowerLimit: inspectionIndex + 1, upperLimit: inspectionIndex + 5 },
     ])),
+    qualityMeasurementUnit: 'microns',
   };
 });
 
@@ -356,6 +376,7 @@ function mapQualityProductionOrder(row: QualityProductionOrderRow): ProductionOr
     qualityChecksEnabled: row.quality_checks_enabled ?? false,
     qualityChecks: row.quality_checks ?? [],
     qualityCheckLimits: row.quality_check_limits ?? {},
+    qualityMeasurementUnit: row.quality_measurement_unit ?? 'microns',
   };
 }
 
@@ -1015,6 +1036,7 @@ function MeasurementCapture({ order, serial, measurements, onSaveMeasurement, on
   onConfigureLimits: (inspectionName: string) => void;
 }) {
   const inspections = order.qualityChecksEnabled ? order.qualityChecks ?? [] : [];
+  const measurementUnitSymbol = getQualityMeasurementUnitSymbol(order);
   const [drafts, setDrafts] = React.useState<MeasurementDraft>({});
   const [savingInspection, setSavingInspection] = React.useState<string | null>(null);
 
@@ -1039,11 +1061,11 @@ function MeasurementCapture({ order, serial, measurements, onSaveMeasurement, on
                   <button className="quality-measurement-limit-message" type="button" onClick={() => onConfigureLimits(inspection)}><AlertTriangle size={15} /><span>Limits have not been configured yet.</span></button>
                 ) : null}
                 <label>
-                  <span>Lower</span>
+                  <span>Lower ({measurementUnitSymbol})</span>
                   <input type="number" value={limits.lowerLimit ?? ''} readOnly />
                 </label>
                 <label className="quality-measurement-value">
-                  <span>Measured</span>
+                  <span>Measured ({measurementUnitSymbol})</span>
                   <input
                     type="number"
                     step="any"
@@ -1054,7 +1076,7 @@ function MeasurementCapture({ order, serial, measurements, onSaveMeasurement, on
                   />
                 </label>
                 <label>
-                  <span>Upper</span>
+                  <span>Upper ({measurementUnitSymbol})</span>
                   <input type="number" value={limits.upperLimit ?? ''} readOnly />
                 </label>
                 <button
@@ -1205,20 +1227,22 @@ function draftToQualityLimits(draft: SpecificationDraft): Record<string, Quality
 function QualitySpecificationsPage({ selectedOrder, onChangeOrder, onSaveSpecifications, highlightRequest }: {
   selectedOrder: ProductionOrder;
   onChangeOrder: () => void;
-  onSaveSpecifications: (limits: Record<string, QualityCheckLimit>) => Promise<void>;
+  onSaveSpecifications: (limits: Record<string, QualityCheckLimit>, measurementUnit: QualityMeasurementUnit) => Promise<void>;
   highlightRequest: SpecificationHighlightRequest | null;
 }) {
   const inspections = selectedOrder.qualityChecksEnabled ? selectedOrder.qualityChecks ?? [] : [];
   const [activeInspection, setActiveInspection] = React.useState(inspections[0] ?? '');
   const [draft, setDraft] = React.useState<SpecificationDraft>(() => createSpecificationDraft(selectedOrder));
+  const [measurementUnit, setMeasurementUnit] = React.useState<QualityMeasurementUnit>(() => getQualityMeasurementUnit(selectedOrder));
   const [saving, setSaving] = React.useState(false);
   const [highlightedInspection, setHighlightedInspection] = React.useState('');
 
   React.useEffect(() => {
     const nextDraft = createSpecificationDraft(selectedOrder);
     setDraft(nextDraft);
+    setMeasurementUnit(getQualityMeasurementUnit(selectedOrder));
     setActiveInspection(Object.keys(nextDraft)[0] ?? '');
-  }, [selectedOrder.id, selectedOrder.qualityChecks?.join('|'), selectedOrder.qualityCheckLimits]);
+  }, [selectedOrder.id, selectedOrder.qualityChecks?.join('|'), selectedOrder.qualityCheckLimits, selectedOrder.qualityMeasurementUnit]);
 
   React.useEffect(() => {
     if (!highlightRequest || !inspections.includes(highlightRequest.inspectionName)) return;
@@ -1229,6 +1253,7 @@ function QualitySpecificationsPage({ selectedOrder, onChangeOrder, onSaveSpecifi
   }, [highlightRequest?.token, highlightRequest?.inspectionName, inspections.join('|')]);
 
   const activeLimits = draft[activeInspection];
+  const measurementUnitSymbol = qualityMeasurementUnitOptions.find((option) => option.value === measurementUnit)?.symbol ?? 'mm';
 
   return (
     <div className="quality-specifications-workspace">
@@ -1248,7 +1273,17 @@ function QualitySpecificationsPage({ selectedOrder, onChangeOrder, onSaveSpecifi
           }) : <div className="quality-specification-message quality-specification-empty-message"><AlertTriangle size={16} /><span>No inspections configured for this work order.</span></div>}
         </aside>
         <article className="quality-specification-editor">
-          <div className="quality-inspection-panel-heading"><FileText size={18} /><strong>Specification Limits</strong></div>
+          <div className="quality-specification-editor-header">
+            <div className="quality-inspection-panel-heading"><FileText size={18} /><strong>Specification Limits</strong></div>
+            <div className="quality-specification-unit-control">
+              <strong>Measurement Unit</strong>
+              <div role="radiogroup" aria-label="Quality measurement unit">
+                {qualityMeasurementUnitOptions.map((option) => (
+                  <button className={measurementUnit === option.value ? 'active' : ''} type="button" role="radio" aria-checked={measurementUnit === option.value} key={option.value} onClick={() => setMeasurementUnit(option.value)}>{option.label}</button>
+                ))}
+              </div>
+            </div>
+          </div>
           {activeInspection && activeLimits ? (
             <>
               <div className="quality-specification-editor-title">
@@ -1257,11 +1292,11 @@ function QualitySpecificationsPage({ selectedOrder, onChangeOrder, onSaveSpecifi
               </div>
               <div className={`quality-specification-fields ${highlightedInspection === activeInspection ? 'highlight' : ''}`}>
                 <label>
-                  <span>Lower Limit</span>
+                  <span>Lower Limit ({measurementUnitSymbol})</span>
                   <input type="number" step="any" value={activeLimits.lowerLimit} onChange={(event) => setDraft((current) => ({ ...current, [activeInspection]: { ...current[activeInspection], lowerLimit: event.target.value } }))} />
                 </label>
                 <label>
-                  <span>Upper Limit</span>
+                  <span>Upper Limit ({measurementUnitSymbol})</span>
                   <input type="number" step="any" value={activeLimits.upperLimit} onChange={(event) => setDraft((current) => ({ ...current, [activeInspection]: { ...current[activeInspection], upperLimit: event.target.value } }))} />
                 </label>
                 <label>
@@ -1275,7 +1310,7 @@ function QualitySpecificationsPage({ selectedOrder, onChangeOrder, onSaveSpecifi
                 <span className="approach">Approach: within configured percent near either limit</span>
                 <span className="nok">NOK: outside tolerance limits</span>
               </div>
-              <button className="quality-specification-save" type="button" disabled={saving} onClick={async () => { setSaving(true); await onSaveSpecifications(draftToQualityLimits(draft)); setSaving(false); }}>
+              <button className="quality-specification-save" type="button" disabled={saving} onClick={async () => { setSaving(true); await onSaveSpecifications(draftToQualityLimits(draft), measurementUnit); setSaving(false); }}>
                 <CheckCircle2 size={18} /> {saving ? 'Saving' : 'Save Specifications'}
               </button>
             </>
@@ -1327,6 +1362,7 @@ function QualityCertificatesPage({ selectedOrder, selectedSerial, inspectionReco
   onOpenDocument: (document: QualityInspectionDocument) => Promise<void>;
 }) {
   const certificateCode = getQualityCertificateCode(inspectionRecord);
+  const measurementUnitSymbol = getQualityMeasurementUnitSymbol(selectedOrder);
   const certificateHash = getQualityCertificateHash(certificateCode);
   const certificateRef = React.useRef<HTMLElement>(null);
   const [downloadingCertificate, setDownloadingCertificate] = React.useState(false);
@@ -1479,9 +1515,9 @@ function QualityCertificatesPage({ selectedOrder, selectedSerial, inspectionReco
                     <span>Measured {formatQualityDate(measurement.measured_at)}</span>
                   </div>
                   <dl>
-                    <div><dt>Lower</dt><dd>{formatLimit(measurement.lower_limit)}</dd></div>
-                    <div><dt>Measured</dt><dd>{measurement.measured_value}</dd></div>
-                    <div><dt>Upper</dt><dd>{formatLimit(measurement.upper_limit)}</dd></div>
+                    <div><dt>Lower ({measurementUnitSymbol})</dt><dd>{formatLimit(measurement.lower_limit)}</dd></div>
+                    <div><dt>Measured ({measurementUnitSymbol})</dt><dd>{measurement.measured_value}</dd></div>
+                    <div><dt>Upper ({measurementUnitSymbol})</dt><dd>{formatLimit(measurement.upper_limit)}</dd></div>
                   </dl>
                   <b>
                     {measurement.result === 'nok' ? <CircleX size={16} /> : measurement.result === 'approach' ? <AlertTriangle size={16} /> : <CheckCircle2 size={16} />}
@@ -1559,6 +1595,7 @@ export function QualityOperationsWorkspace({ onNavigate, activeTab, organization
   const [serialInspectionRecords, setSerialInspectionRecords] = React.useState<QualitySerialInspectionRecord[]>([]);
   const [dashboardDateRange, setDashboardDateRange] = React.useState<QualityDashboardDateRange>(() => getQualityQuickRange('month'));
   const [specificationHighlightRequest, setSpecificationHighlightRequest] = React.useState<SpecificationHighlightRequest | null>(null);
+  const [documentPreview, setDocumentPreview] = React.useState<QualityDocumentPreview | null>(null);
 
 
   React.useEffect(() => {
@@ -1714,6 +1751,8 @@ export function QualityOperationsWorkspace({ onNavigate, activeTab, organization
             inspection_count: inspectionStatuses.length,
             inspections: inspectionStatuses,
             document_count: documentCount,
+            measurement_unit: getQualityMeasurementUnit(selectedInspectionOrder),
+            measurement_unit_symbol: getQualityMeasurementUnitSymbol(selectedInspectionOrder),
             order_status: selectedInspectionOrder.status,
           },
         });
@@ -1783,13 +1822,13 @@ export function QualityOperationsWorkspace({ onNavigate, activeTab, organization
     setInspectionDocuments((current) => [nextDocument, ...current]);
   }, [organizationId, selectedInspectionOrder, selectedInspectionSerial]);
 
-  const handleSaveSpecifications = React.useCallback(async (limits: Record<string, QualityCheckLimit>) => {
+  const handleSaveSpecifications = React.useCallback(async (limits: Record<string, QualityCheckLimit>, measurementUnit: QualityMeasurementUnit) => {
     if (!selectedInspectionOrder) return;
 
     if (!isDemoQualityOrder(selectedInspectionOrder)) {
       const { error } = await supabase
         .from('mes_production_orders')
-        .update({ quality_check_limits: limits })
+        .update({ quality_check_limits: limits, quality_measurement_unit: measurementUnit })
         .eq('id', selectedInspectionOrder.id)
         .eq('organization_id', organizationId);
 
@@ -1800,12 +1839,12 @@ export function QualityOperationsWorkspace({ onNavigate, activeTab, organization
     }
 
     setInspectionOrders((current) => current.map((order) => (
-      order.id === selectedInspectionOrder.id ? { ...order, qualityCheckLimits: limits } : order
+      order.id === selectedInspectionOrder.id ? { ...order, qualityCheckLimits: limits, qualityMeasurementUnit: measurementUnit } : order
     )));
   }, [organizationId, selectedInspectionOrder]);
   const handleOpenDocument = React.useCallback(async (document: QualityInspectionDocument) => {
     if (document.file_path.startsWith('blob:')) {
-      window.open(document.file_path, '_blank', 'noopener,noreferrer');
+      setDocumentPreview({ fileName: document.file_name, fileUrl: document.file_path });
       return;
     }
 
@@ -1814,7 +1853,7 @@ export function QualityOperationsWorkspace({ onNavigate, activeTab, organization
       console.error('Unable to open Quality inspection document', error);
       return;
     }
-    window.open(data.signedUrl, '_blank', 'noopener,noreferrer');
+    setDocumentPreview({ fileName: document.file_name, fileUrl: data.signedUrl });
   }, []);
   const isDashboard = activeTab === 'dashboard';
   const activeConfig = isDashboard ? null : qualityPageConfig[activeTab as Exclude<QualityContextTab, 'dashboard'>];
@@ -1940,6 +1979,28 @@ export function QualityOperationsWorkspace({ onNavigate, activeTab, organization
             setSerialPickerOpen(false);
           }}
         />
+      ) : null}
+
+      {documentPreview ? (
+        <div className="supplier-modal-backdrop" role="presentation">
+          <div className="supplier-modal quality-document-viewer-modal" role="dialog" aria-modal="true" aria-labelledby="quality-document-viewer-title">
+            <button className="supplier-modal-close" type="button" onClick={() => setDocumentPreview(null)} aria-label="Close document viewer">
+              <X size={18} />
+            </button>
+            <div>
+              <div className="supplier-modal-header">
+                <span>Inspection Document</span>
+                <strong id="quality-document-viewer-title">{documentPreview.fileName}</strong>
+              </div>
+              <div className="supplier-document-preview">
+                <iframe src={getQualityDocumentPreviewUrl(documentPreview.fileUrl)} title={`Preview ${documentPreview.fileName}`} />
+              </div>
+              <div className="supplier-modal-actions">
+                <button type="button" onClick={() => setDocumentPreview(null)}>Close</button>
+              </div>
+            </div>
+          </div>
+        </div>
       ) : null}
     </section>
   );
