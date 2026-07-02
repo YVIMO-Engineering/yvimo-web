@@ -58,6 +58,7 @@ import { SupplierOperationsWorkspace, type SupplierContextTab } from './manufact
 import { CustomerOperationsWorkspace, type ClientsContextTab } from './manufacturing/CustomerOperationsWorkspace';
 import './manufacturing/customerOperations.css';
 import './styles.css';
+import './manufacturing/customerModalControls.css';
 
 type BusinessLine = {
   title: string;

@@ -1,7 +1,10 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import {
   ArrowLeft,
   Building2,
+  Check,
+  ChevronDown,
   FileText,
   Mail,
   MapPin,
@@ -12,6 +15,11 @@ import {
   UserRound,
   X,
 } from 'lucide-react';
+import {
+  resolveGooglePlacesAddressMatch,
+  searchGooglePlacesAddressMatches,
+  type GooglePlacesAddressMatch,
+} from '../lib/maps/googlePlacesAddressLookup';
 import { supabase } from '../lib/supabaseClient';
 
 export type ClientsContextTab =
@@ -22,6 +30,19 @@ export type ClientsContextTab =
   | 'docs-vouchers';
 
 type CustomerStatus = 'active' | 'inactive';
+type PaymentTermsMode = 'Net 30' | 'Net 60' | '50/50' | 'Immediate' | 'Custom';
+
+type CustomerDropdownOption<T extends string> = {
+  value: T;
+  label: string;
+};
+
+type FloatingMenuPosition = {
+  top: number;
+  left: number;
+  width: number;
+  maxHeight: number;
+};
 
 type CustomerRecord = {
   id: string;
@@ -89,6 +110,23 @@ const emptyCustomerForm: CustomerFormState = {
   status: 'active',
 };
 
+const customerStatusOptions: Array<CustomerDropdownOption<CustomerStatus>> = [
+  { value: 'active', label: 'Active' },
+  { value: 'inactive', label: 'Inactive' },
+];
+
+const paymentTermsOptions: Array<CustomerDropdownOption<PaymentTermsMode>> = [
+  { value: 'Net 30', label: 'Net 30' },
+  { value: 'Net 60', label: 'Net 60' },
+  { value: '50/50', label: '50/50' },
+  { value: 'Immediate', label: 'Immediate' },
+  { value: 'Custom', label: 'Custom' },
+];
+
+const standardPaymentTerms = new Set<PaymentTermsMode>(
+  paymentTermsOptions.filter((option) => option.value !== 'Custom').map((option) => option.value),
+);
+
 const customerSelectColumns = [
   'id',
   'organization_id',
@@ -134,6 +172,104 @@ const clientsPageContent: Record<ClientsContextTab, { eyebrow: string; title: st
   },
 };
 
+function CustomerDropdown<T extends string>({
+  id,
+  value,
+  options,
+  onChange,
+}: {
+  id: string;
+  value: T;
+  options: Array<CustomerDropdownOption<T>>;
+  onChange: (value: T) => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const [position, setPosition] = React.useState<FloatingMenuPosition | null>(null);
+  const triggerRef = React.useRef<HTMLDivElement | null>(null);
+  const menuRef = React.useRef<HTMLDivElement | null>(null);
+  const selectedOption = options.find((option) => option.value === value) ?? options[0];
+
+  const updatePosition = React.useCallback(() => {
+    const trigger = triggerRef.current;
+    if (!trigger) return;
+    const rect = trigger.getBoundingClientRect();
+    const viewportPadding = 16;
+    const desiredHeight = Math.min(224, (options.length * 40) + 12);
+    const availableBelow = window.innerHeight - rect.bottom - viewportPadding;
+    const availableAbove = rect.top - viewportPadding;
+    const openUp = availableBelow < desiredHeight && availableAbove > availableBelow;
+    const maxHeight = Math.max(52, Math.min(desiredHeight, openUp ? availableAbove - 7 : availableBelow - 7));
+    const width = Math.min(rect.width, window.innerWidth - (viewportPadding * 2));
+    const left = Math.max(viewportPadding, Math.min(rect.left, window.innerWidth - width - viewportPadding));
+    setPosition({
+      top: openUp ? Math.max(viewportPadding, rect.top - maxHeight - 7) : rect.bottom + 7,
+      left,
+      width,
+      maxHeight,
+    });
+  }, [options.length]);
+
+  React.useLayoutEffect(() => {
+    if (open) updatePosition();
+  }, [open, updatePosition]);
+
+  React.useEffect(() => {
+    if (!open) return undefined;
+    const closeIfOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (triggerRef.current?.contains(target) || menuRef.current?.contains(target)) return;
+      setOpen(false);
+    };
+    const reposition = () => updatePosition();
+    document.addEventListener('mousedown', closeIfOutside);
+    window.addEventListener('resize', reposition);
+    window.addEventListener('scroll', reposition, true);
+    return () => {
+      document.removeEventListener('mousedown', closeIfOutside);
+      window.removeEventListener('resize', reposition);
+      window.removeEventListener('scroll', reposition, true);
+    };
+  }, [open, updatePosition]);
+
+  const menu = open && position ? createPortal(
+    <div
+      className="mes-order-dropdown-menu customer-dropdown-menu"
+      id={`${id}-listbox`}
+      role="listbox"
+      ref={menuRef}
+      style={position}
+    >
+      {options.map((option) => (
+        <button
+          className={option.value === value ? 'selected' : ''}
+          type="button"
+          role="option"
+          aria-selected={option.value === value}
+          key={option.value}
+          onClick={() => {
+            onChange(option.value);
+            setOpen(false);
+          }}
+        >
+          <span>{option.label}</span>
+          {option.value === value ? <Check size={14} /> : null}
+        </button>
+      ))}
+    </div>,
+    document.body,
+  ) : null;
+
+  return (
+    <div className={open ? 'mes-order-dropdown customer-dropdown open' : 'mes-order-dropdown customer-dropdown'} ref={triggerRef}>
+      <button type="button" aria-haspopup="listbox" aria-expanded={open} aria-controls={`${id}-listbox`} onClick={() => setOpen((current) => !current)}>
+        <span>{selectedOption?.label}</span>
+        <ChevronDown size={16} />
+      </button>
+      {menu}
+    </div>
+  );
+}
+
 function mapCustomerRow(row: CustomerRow): CustomerRecord {
   return {
     id: row.id,
@@ -178,6 +314,16 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
   const [customerToDelete, setCustomerToDelete] = React.useState<CustomerRecord | null>(null);
   const [selectedCustomer, setSelectedCustomer] = React.useState<CustomerRecord | null>(null);
   const [customerForm, setCustomerForm] = React.useState<CustomerFormState>(emptyCustomerForm);
+  const [sameLegalName, setSameLegalName] = React.useState(false);
+  const [sameContactName, setSameContactName] = React.useState(false);
+  const [paymentTermsMode, setPaymentTermsMode] = React.useState<PaymentTermsMode>('Net 30');
+  const [addressLookup, setAddressLookup] = React.useState<{ status: 'idle' | 'loading' | 'success' | 'error'; message: string }>({ status: 'idle', message: '' });
+  const [addressSuggestions, setAddressSuggestions] = React.useState<GooglePlacesAddressMatch[]>([]);
+  const [showAddressSuggestions, setShowAddressSuggestions] = React.useState(false);
+  const [addressSuggestionsLoading, setAddressSuggestionsLoading] = React.useState(false);
+  const [addressSuggestionPosition, setAddressSuggestionPosition] = React.useState<FloatingMenuPosition | null>(null);
+  const addressLookupControlRef = React.useRef<HTMLDivElement | null>(null);
+  const addressSuggestionMenuRef = React.useRef<HTMLDivElement | null>(null);
 
   const loadCustomers = React.useCallback(async () => {
     if (!organizationId) return;
@@ -214,10 +360,91 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [formMode, customerToDelete, saving]);
 
+  const updateAddressSuggestionPosition = React.useCallback(() => {
+    const control = addressLookupControlRef.current;
+    if (!control) return;
+    const rect = control.getBoundingClientRect();
+    const viewportPadding = 16;
+    const availableBelow = window.innerHeight - rect.bottom - viewportPadding;
+    const availableAbove = rect.top - viewportPadding;
+    const maxHeight = Math.max(132, Math.min(246, availableBelow >= 150 ? availableBelow - 8 : availableAbove - 8));
+    const openUp = availableBelow < 150 && availableAbove > availableBelow;
+    const width = Math.min(rect.width, window.innerWidth - (viewportPadding * 2));
+    const left = Math.max(viewportPadding, Math.min(rect.left, window.innerWidth - width - viewportPadding));
+    setAddressSuggestionPosition({
+      top: openUp ? Math.max(viewportPadding, rect.top - maxHeight - 7) : rect.bottom + 7,
+      left,
+      width,
+      maxHeight,
+    });
+  }, []);
+
+  React.useLayoutEffect(() => {
+    if (!(showAddressSuggestions || addressSuggestionsLoading)) return;
+    if (!addressSuggestions.length && !addressSuggestionsLoading) return;
+    updateAddressSuggestionPosition();
+  }, [addressSuggestions.length, addressSuggestionsLoading, showAddressSuggestions, updateAddressSuggestionPosition]);
+
+  React.useEffect(() => {
+    if (!formMode || customerForm.address.trim().length < 3) {
+      setAddressSuggestions([]);
+      setShowAddressSuggestions(false);
+      setAddressSuggestionsLoading(false);
+      return undefined;
+    }
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => {
+      setAddressSuggestionsLoading(true);
+      searchGooglePlacesAddressMatches(customerForm.address.trim(), 5, controller.signal)
+        .then((matches) => {
+          if (controller.signal.aborted) return;
+          setAddressSuggestions(matches);
+          setShowAddressSuggestions(matches.length > 0);
+        })
+        .catch((error) => {
+          if ((error as Error).name === 'AbortError') return;
+          setAddressSuggestions([]);
+          setShowAddressSuggestions(false);
+          setAddressLookup({ status: 'error', message: 'Unable to load Google address suggestions.' });
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setAddressSuggestionsLoading(false);
+        });
+    }, 350);
+    return () => {
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [customerForm.address, formMode]);
+
+  React.useEffect(() => {
+    const menuOpen = (showAddressSuggestions || addressSuggestionsLoading) && (addressSuggestions.length > 0 || addressSuggestionsLoading);
+    if (!menuOpen) return undefined;
+    const closeIfOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (addressLookupControlRef.current?.contains(target) || addressSuggestionMenuRef.current?.contains(target)) return;
+      setShowAddressSuggestions(false);
+    };
+    const reposition = () => updateAddressSuggestionPosition();
+    document.addEventListener('mousedown', closeIfOutside);
+    window.addEventListener('resize', reposition);
+    window.addEventListener('scroll', reposition, true);
+    return () => {
+      document.removeEventListener('mousedown', closeIfOutside);
+      window.removeEventListener('resize', reposition);
+      window.removeEventListener('scroll', reposition, true);
+    };
+  }, [addressSuggestions.length, addressSuggestionsLoading, showAddressSuggestions, updateAddressSuggestionPosition]);
+
   const openCreateCustomer = () => {
     setErrorMessage('');
     setSelectedCustomer(null);
     setCustomerForm(emptyCustomerForm);
+    setSameLegalName(false);
+    setSameContactName(false);
+    setPaymentTermsMode('Net 30');
+    setAddressLookup({ status: 'idle', message: '' });
+    setAddressSuggestions([]);
     setFormMode('create');
   };
 
@@ -225,7 +452,51 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
     setErrorMessage('');
     setSelectedCustomer(customer);
     setCustomerForm(customerToForm(customer));
+    setSameLegalName(customer.customerName.trim() === customer.legalName.trim());
+    setSameContactName(customer.customerName.trim() === customer.contactName.trim());
+    setPaymentTermsMode(standardPaymentTerms.has(customer.paymentTerms as PaymentTermsMode)
+      ? customer.paymentTerms as PaymentTermsMode
+      : 'Custom');
+    setAddressLookup({ status: 'idle', message: '' });
+    setAddressSuggestions([]);
     setFormMode('edit');
+  };
+
+  const lookupCustomerAddress = async () => {
+    const address = customerForm.address.trim();
+    if (!address) {
+      setAddressLookup({ status: 'error', message: 'Enter an address before searching.' });
+      return;
+    }
+    setAddressLookup({ status: 'loading', message: 'Searching address...' });
+    try {
+      const match = (await searchGooglePlacesAddressMatches(address, 1))[0];
+      const resolvedMatch = match ? await resolveGooglePlacesAddressMatch(match) : null;
+      if (!resolvedMatch) {
+        setAddressLookup({ status: 'error', message: 'No match found. Try street, city, state, and country.' });
+        return;
+      }
+      setCustomerForm((current) => ({ ...current, address: resolvedMatch.address }));
+      setAddressSuggestions([]);
+      setShowAddressSuggestions(false);
+      setAddressLookup({ status: 'success', message: 'Address verified with Google Maps.' });
+    } catch {
+      setAddressLookup({ status: 'error', message: 'Could not reach the address lookup service. Try again.' });
+    }
+  };
+
+  const selectAddressSuggestion = async (match: GooglePlacesAddressMatch) => {
+    setAddressLookup({ status: 'loading', message: 'Loading selected address...' });
+    try {
+      const resolvedMatch = await resolveGooglePlacesAddressMatch(match);
+      if (!resolvedMatch) throw new Error('Address details unavailable');
+      setCustomerForm((current) => ({ ...current, address: resolvedMatch.address }));
+      setAddressSuggestions([]);
+      setShowAddressSuggestions(false);
+      setAddressLookup({ status: 'success', message: 'Address verified with Google Maps.' });
+    } catch {
+      setAddressLookup({ status: 'error', message: 'Could not load the selected address details.' });
+    }
   };
 
   const closeDialog = () => {
@@ -304,9 +575,32 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
   };
 
   const activeCustomers = customers.filter((customer) => customer.status === 'active').length;
+  const addressSuggestionMenu = (showAddressSuggestions || addressSuggestionsLoading)
+    && (addressSuggestions.length > 0 || addressSuggestionsLoading)
+    && addressSuggestionPosition
+    ? createPortal(
+      <div
+        className="address-suggestion-menu customer-address-suggestion-menu"
+        role="listbox"
+        aria-label="Customer address suggestions"
+        ref={addressSuggestionMenuRef}
+        style={addressSuggestionPosition}
+      >
+        {addressSuggestionsLoading ? <span className="address-suggestion-loading">Searching locations...</span> : null}
+        {addressSuggestions.map((suggestion) => (
+          <button type="button" role="option" key={suggestion.placeId ?? suggestion.address} onClick={() => void selectAddressSuggestion(suggestion)}>
+            <strong>{suggestion.address.split(',')[0]}</strong>
+            <span>{suggestion.address.split(',').slice(1).join(',').trim()}</span>
+          </button>
+        ))}
+      </div>,
+      document.body,
+    )
+    : null;
 
   return (
     <section className="mes-workspace-panel clients-operations-workspace">
+      {addressSuggestionMenu}
       <div className="mes-screen-header">
         <button className="academy-back-button engineering-back-button mes-workspace-back" type="button" onClick={() => onNavigate('/workspace/manufacturing-ops/mes')}>
           <ArrowLeft size={17} />
@@ -409,39 +703,85 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
               <div className="supplier-form-grid">
                 <label>
                   Customer Name
-                  <input required autoFocus value={customerForm.customerName} onChange={(event) => setCustomerForm((current) => ({ ...current, customerName: event.target.value }))} />
+                  <input
+                    required
+                    autoFocus
+                    value={customerForm.customerName}
+                    onChange={(event) => {
+                      const customerName = event.target.value;
+                      setCustomerForm((current) => ({
+                        ...current,
+                        customerName,
+                        legalName: sameLegalName ? customerName : current.legalName,
+                        contactName: sameContactName ? customerName : current.contactName,
+                      }));
+                    }}
+                  />
                 </label>
                 <label>
                   Status
-                  <select value={customerForm.status} onChange={(event) => setCustomerForm((current) => ({ ...current, status: event.target.value as CustomerStatus }))}>
-                    <option value="active">Active</option>
-                    <option value="inactive">Inactive</option>
-                  </select>
+                  <CustomerDropdown id="customer-status" value={customerForm.status} options={customerStatusOptions} onChange={(status) => setCustomerForm((current) => ({ ...current, status }))} />
                 </label>
-                <label className="supplier-form-wide">
-                  Legal / Billing Name
-                  <input required value={customerForm.legalName} onChange={(event) => setCustomerForm((current) => ({ ...current, legalName: event.target.value }))} />
-                </label>
+                <div className="clients-form-field supplier-form-wide">
+                  <span>Legal / Billing Name</span>
+                  <input required disabled={sameLegalName} value={customerForm.legalName} onChange={(event) => setCustomerForm((current) => ({ ...current, legalName: event.target.value }))} />
+                  <label className="customer-copy-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={sameLegalName}
+                      onChange={(event) => {
+                        setSameLegalName(event.target.checked);
+                        if (event.target.checked) setCustomerForm((current) => ({ ...current, legalName: current.customerName }));
+                      }}
+                    />
+                    <span><Check size={12} /></span>
+                    Same as Customer Name
+                  </label>
+                </div>
                 <label>
                   RFC / Tax ID <em>Optional</em>
                   <input value={customerForm.taxId} onChange={(event) => setCustomerForm((current) => ({ ...current, taxId: event.target.value }))} />
                 </label>
                 <label>
                   Payment Terms
-                  <input required list="customer-payment-terms" value={customerForm.paymentTerms} onChange={(event) => setCustomerForm((current) => ({ ...current, paymentTerms: event.target.value }))} />
-                  <datalist id="customer-payment-terms">
-                    <option value="Due on receipt" />
-                    <option value="Net 15" />
-                    <option value="Net 30" />
-                    <option value="Net 45" />
-                    <option value="Net 60" />
-                    <option value="Net 90" />
-                  </datalist>
+                  <CustomerDropdown
+                    id="customer-payment-terms"
+                    value={paymentTermsMode}
+                    options={paymentTermsOptions}
+                    onChange={(paymentTerms) => {
+                      setPaymentTermsMode(paymentTerms);
+                      setCustomerForm((current) => ({
+                        ...current,
+                        paymentTerms: paymentTerms === 'Custom' ? '' : paymentTerms,
+                      }));
+                    }}
+                  />
+                  {paymentTermsMode === 'Custom' ? (
+                    <input
+                      className="customer-custom-payment-terms"
+                      required
+                      value={customerForm.paymentTerms}
+                      onChange={(event) => setCustomerForm((current) => ({ ...current, paymentTerms: event.target.value }))}
+                      placeholder="Enter custom terms"
+                    />
+                  ) : null}
                 </label>
-                <label>
-                  Contact Name
-                  <input required value={customerForm.contactName} onChange={(event) => setCustomerForm((current) => ({ ...current, contactName: event.target.value }))} />
-                </label>
+                <div className="clients-form-field">
+                  <span>Contact Name</span>
+                  <input required disabled={sameContactName} value={customerForm.contactName} onChange={(event) => setCustomerForm((current) => ({ ...current, contactName: event.target.value }))} />
+                  <label className="customer-copy-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={sameContactName}
+                      onChange={(event) => {
+                        setSameContactName(event.target.checked);
+                        if (event.target.checked) setCustomerForm((current) => ({ ...current, contactName: current.customerName }));
+                      }}
+                    />
+                    <span><Check size={12} /></span>
+                    Same as Customer Name
+                  </label>
+                </div>
                 <label>
                   Email
                   <input required type="email" value={customerForm.email} onChange={(event) => setCustomerForm((current) => ({ ...current, email: event.target.value }))} />
@@ -450,9 +790,25 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
                   Phone
                   <input required type="tel" value={customerForm.phone} onChange={(event) => setCustomerForm((current) => ({ ...current, phone: event.target.value }))} />
                 </label>
-                <label className="supplier-form-wide">
+                <label className="supplier-form-wide work-center-address-field">
                   Address
-                  <input required value={customerForm.address} onChange={(event) => setCustomerForm((current) => ({ ...current, address: event.target.value }))} />
+                  <div className="address-lookup-control" ref={addressLookupControlRef}>
+                    <input
+                      required
+                      value={customerForm.address}
+                      onChange={(event) => {
+                        setCustomerForm((current) => ({ ...current, address: event.target.value }));
+                        setAddressLookup({ status: 'idle', message: '' });
+                        setShowAddressSuggestions(true);
+                      }}
+                      onFocus={() => setShowAddressSuggestions(addressSuggestions.length > 0)}
+                      placeholder="Street, city, state, country"
+                    />
+                    <button type="button" onClick={() => void lookupCustomerAddress()} disabled={addressLookup.status === 'loading'}>
+                      {addressLookup.status === 'loading' ? 'Searching...' : 'Find address'}
+                    </button>
+                  </div>
+                  {addressLookup.message ? <small className={`address-lookup-message ${addressLookup.status}`}>{addressLookup.message}</small> : null}
                 </label>
               </div>
               <label>

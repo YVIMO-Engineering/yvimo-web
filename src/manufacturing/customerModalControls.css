@@ -1,0 +1,124 @@
+.clients-customer-modal .clients-form-field {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  color: #34465a;
+  font-size: 0.78rem;
+  font-weight: 850;
+  letter-spacing: 0.01em;
+  text-transform: none;
+}
+
+.clients-customer-modal .customer-dropdown > button {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid #cfd8e3;
+  border-radius: 8px;
+  padding: 0 12px;
+  background: #ffffff;
+  color: #17202a;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.clients-customer-modal .customer-dropdown.open > button,
+.clients-customer-modal .customer-dropdown > button:focus-visible {
+  border-color: #ff8a1f;
+  background: #fffaf5;
+  outline: 2px solid rgba(255, 138, 31, 0.16);
+}
+
+.customer-dropdown-menu {
+  z-index: 260;
+}
+
+.customer-dropdown-menu button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.customer-dropdown-menu button svg {
+  flex: 0 0 auto;
+}
+
+.clients-customer-modal .customer-copy-checkbox {
+  position: relative;
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: 7px;
+  color: #536476;
+  font-size: 0.72rem;
+  font-weight: 760;
+  letter-spacing: 0;
+  line-height: 1.25;
+  cursor: pointer;
+  text-transform: none;
+}
+
+.clients-customer-modal .customer-copy-checkbox input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  min-height: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.clients-customer-modal .customer-copy-checkbox > span {
+  display: grid;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid #bdc8d5;
+  border-radius: 5px;
+  background: #ffffff;
+  color: transparent;
+  transition: 140ms ease;
+}
+
+.clients-customer-modal .customer-copy-checkbox input:checked + span {
+  border-color: #e86600;
+  background: #ff8a1f;
+  color: #ffffff;
+}
+
+.clients-customer-modal .customer-copy-checkbox input:focus-visible + span {
+  outline: 3px solid rgba(255, 138, 31, 0.2);
+}
+
+.clients-customer-modal input:disabled {
+  border-color: #d8e0e8;
+  background: #f1f5f9;
+  color: #64748b;
+  opacity: 1;
+}
+
+.clients-customer-modal .customer-custom-payment-terms {
+  margin-top: 2px;
+}
+
+.clients-customer-modal .address-lookup-control {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.clients-customer-modal .address-lookup-control > button {
+  min-height: 44px;
+}
+
+.customer-address-suggestion-menu {
+  z-index: 270;
+}
+
+@media (max-width: 620px) {
+  .clients-customer-modal .address-lookup-control {
+    grid-template-columns: 1fr;
+  }
+
+  .clients-customer-modal .address-lookup-control > button {
+    width: 100%;
+  }
+}
