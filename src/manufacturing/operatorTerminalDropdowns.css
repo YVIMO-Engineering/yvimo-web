@@ -1,0 +1,52 @@
+.operator-terminal-production-dropdown > button {
+  min-height: 36px;
+  border-color: #cbd5e1;
+  background: #f8fafc;
+  color: #17202a;
+  font-size: 0.8rem;
+  font-weight: 820;
+}
+
+.operator-terminal-production-dropdown > button:hover:not(:disabled),
+.operator-terminal-production-dropdown > button:focus-visible,
+.operator-terminal-production-dropdown.open > button {
+  border-color: #ff8a1f;
+  background: #ffffff;
+  color: #07111c;
+}
+
+.operator-terminal-production-dropdown > button span {
+  color: inherit;
+}
+
+.operator-terminal-production-dropdown > button svg {
+  color: #ff7214;
+}
+
+.operator-terminal-production-dropdown-menu {
+  z-index: 260;
+}
+
+.operator-terminal-production-dropdown-menu button {
+  min-height: 36px;
+}
+
+.operator-terminal-trace-meta .operator-terminal-production-dropdown > button {
+  min-height: 28px;
+  border: 0;
+  padding: 0 7px;
+  background: #ffffff;
+  color: #07111c;
+  font-size: 0.78rem;
+}
+
+.operator-terminal-trace-meta .operator-terminal-production-dropdown > button:focus-visible,
+.operator-terminal-trace-meta .operator-terminal-production-dropdown.open > button {
+  outline: 2px solid rgba(255, 138, 31, 0.2);
+}
+
+.operator-terminal-production-dropdown > button:disabled {
+  background: #f1f5f9;
+  color: #94a3b8;
+  opacity: 1;
+}

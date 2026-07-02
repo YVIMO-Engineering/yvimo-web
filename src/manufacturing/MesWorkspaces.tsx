@@ -11,6 +11,7 @@ import './productionOrdersDateFilter.css';
 import './productionOrdersDateFilterResponsive.css';
 import './productionOrdersClientFilter.css';
 import './productionOrdersContrast.css';
+import './productionOrderSaveFeedback.css';
 
 type WorkspaceProps = {
   onNavigate: (path: string) => void;
@@ -18,6 +19,46 @@ type WorkspaceProps = {
 };
 
 const productionOrderDeepLinkKey = 'yvimo:mes:selectedProductionOrderNumber';
+const productionOrdersViewStateKeyPrefix = 'yvimo:mes:production-orders:view';
+
+type ProductionOrdersViewState = {
+  selectedOrderNumber: string;
+  page: number;
+  searchTerm: string;
+  orderView: 'all' | 'in-progress' | 'completed';
+  sortByPriority: boolean;
+  clientFilter: string;
+};
+
+const defaultProductionOrdersViewState: ProductionOrdersViewState = {
+  selectedOrderNumber: '',
+  page: 1,
+  searchTerm: '',
+  orderView: 'all',
+  sortByPriority: false,
+  clientFilter: 'all',
+};
+
+function getProductionOrdersViewStateKey(organizationId: string) {
+  return `${productionOrdersViewStateKeyPrefix}:${organizationId}`;
+}
+
+function loadProductionOrdersViewState(organizationId: string): ProductionOrdersViewState {
+  if (typeof window === 'undefined') return defaultProductionOrdersViewState;
+  try {
+    const savedState = JSON.parse(window.sessionStorage.getItem(getProductionOrdersViewStateKey(organizationId)) ?? '{}') as Partial<ProductionOrdersViewState>;
+    return {
+      selectedOrderNumber: typeof savedState.selectedOrderNumber === 'string' ? savedState.selectedOrderNumber : '',
+      page: typeof savedState.page === 'number' && savedState.page > 0 ? Math.floor(savedState.page) : 1,
+      searchTerm: typeof savedState.searchTerm === 'string' ? savedState.searchTerm : '',
+      orderView: ['all', 'in-progress', 'completed'].includes(savedState.orderView ?? '') ? savedState.orderView as ProductionOrdersViewState['orderView'] : 'all',
+      sortByPriority: savedState.sortByPriority === true,
+      clientFilter: typeof savedState.clientFilter === 'string' ? savedState.clientFilter : 'all',
+    };
+  } catch {
+    return defaultProductionOrdersViewState;
+  }
+}
 
 type StatusBadgeProps = {
   value: string;
@@ -706,8 +747,6 @@ function toProductionOrderPayload(order: ProductionOrder | Omit<ProductionOrder,
     priority: order.priority,
     due_date: order.dueDate,
     assigned_work_center: order.assignedWorkCenter,
-    createdAt: row.created_at ?? undefined,
-    updatedAt: row.updated_at ?? undefined,
     planned_shifts: order.plannedShifts,
     manufacturing_type: order.manufacturingType,
     production_flow: order.manufacturingType === 'multi-step' ? order.productionFlow : '',
@@ -1050,28 +1089,32 @@ function getProductionOrderActions(status: ProductionOrderStatus): ProductionOrd
 }
 
 export function ProductionOrdersWorkspace({ onNavigate, organizationId }: WorkspaceProps) {
+  const restoredViewState = React.useMemo(() => loadProductionOrdersViewState(organizationId), [organizationId]);
   const [orders, setOrders] = React.useState<ProductionOrder[]>([]);
-  const [selectedOrderNumber, setSelectedOrderNumber] = React.useState('');
-  const [searchTerm, setSearchTerm] = React.useState('');
-  const [orderView, setOrderView] = React.useState<'all' | 'in-progress' | 'completed'>('all');
-  const [sortByPriority, setSortByPriority] = React.useState(false);
-  const [clientFilter, setClientFilter] = React.useState('all');
+  const [selectedOrderNumber, setSelectedOrderNumber] = React.useState(restoredViewState.selectedOrderNumber);
+  const [searchTerm, setSearchTerm] = React.useState(restoredViewState.searchTerm);
+  const [orderView, setOrderView] = React.useState<'all' | 'in-progress' | 'completed'>(restoredViewState.orderView);
+  const [sortByPriority, setSortByPriority] = React.useState(restoredViewState.sortByPriority);
+  const [clientFilter, setClientFilter] = React.useState(restoredViewState.clientFilter);
   const [kpiDateRange, setKpiDateRange] = React.useState<MesOrderDateRange>(() => getMesOrderQuickRange('today'));
   const [workCenterOptions, setWorkCenterOptions] = React.useState<MesOrderDropdownOption[]>([]);
   const [stationOptionsByWorkCenter, setStationOptionsByWorkCenter] = React.useState<Record<string, MesOrderDropdownOption[]>>({});
   const [customerOptions, setCustomerOptions] = React.useState<ProductionOrderCustomerOptionRow[]>([]);
   const [customerOptionsMessage, setCustomerOptionsMessage] = React.useState('');
   const [workCenterOptionsMessage, setWorkCenterOptionsMessage] = React.useState('');
-  const [page, setPage] = React.useState(1);
+  const [page, setPage] = React.useState(restoredViewState.page);
   const [formMode, setFormMode] = React.useState<'create' | 'edit' | null>(null);
   const [formState, setFormState] = React.useState<ProductionOrderFormState>(() => toFormState());
   const [tableMessage, setTableMessage] = React.useState<string | null>('Loading production orders...');
+  const [ordersLoaded, setOrdersLoaded] = React.useState(false);
   const [savingOrder, setSavingOrder] = React.useState(false);
+  const [orderFormError, setOrderFormError] = React.useState('');
   const [confirmation, setConfirmation] = React.useState<ConfirmationState | null>(null);
   const [jobQueueSummary, setJobQueueSummary] = React.useState<JobQueueSummary | null>(null);
   const orderRowRefs = React.useRef<Record<string, HTMLTableRowElement | null>>({});
   const pendingScrollOrderNumberRef = React.useRef('');
-  const skipNextPageResetRef = React.useRef(false);
+  const skipNextPageResetRef = React.useRef(restoredViewState.page > 1);
+  const restoredSelectedOrderNumberRef = React.useRef(restoredViewState.selectedOrderNumber);
 
   const selectedOrder = orders.find((order) => order.orderNumber === selectedOrderNumber) ?? null;
   const selectedWorkCenterStationOptions = stationOptionsByWorkCenter[formState.assignedWorkCenter] ?? [];
@@ -1155,6 +1198,27 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
         : 'low';
 
   React.useEffect(() => {
+    if (!ordersLoaded) return;
+    try {
+      const viewState: ProductionOrdersViewState = {
+        selectedOrderNumber,
+        page: currentPage,
+        searchTerm,
+        orderView,
+        sortByPriority,
+        clientFilter,
+      };
+      window.sessionStorage.setItem(getProductionOrdersViewStateKey(organizationId), JSON.stringify(viewState));
+    } catch (error) {
+      console.warn('Unable to preserve Production Orders view state', error);
+    }
+  }, [clientFilter, currentPage, orderView, ordersLoaded, organizationId, searchTerm, selectedOrderNumber, sortByPriority]);
+
+  React.useEffect(() => {
+    if (ordersLoaded && page > pageCount) setPage(pageCount);
+  }, [ordersLoaded, page, pageCount]);
+
+  React.useEffect(() => {
     const pendingOrderNumber = window.sessionStorage.getItem(productionOrderDeepLinkKey);
     if (!pendingOrderNumber || orders.length === 0) return;
 
@@ -1196,6 +1260,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
   React.useEffect(() => {
     let active = true;
     const loadProductionOrders = async () => {
+      setOrdersLoaded(false);
       const [{ data, error }, { data: workCenterData, error: workCenterError }, { data: stationData, error: stationError }, { data: customerData, error: customerError }] = await Promise.all([
         supabase
           .from('mes_production_orders')
@@ -1255,12 +1320,20 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
         setOrders([]);
         setSelectedOrderNumber('');
         setTableMessage(unavailableProductionOrdersMessage);
+        setOrdersLoaded(true);
         return;
       }
       const nextOrders = ((data ?? []) as ProductionOrderRow[]).map(mapProductionOrderRow);
+      const rememberedOrderNumber = restoredSelectedOrderNumberRef.current;
+      const nextSelectedOrderNumber = rememberedOrderNumber
+        && nextOrders.some((order) => order.orderNumber === rememberedOrderNumber)
+        ? rememberedOrderNumber
+        : nextOrders[0]?.orderNumber ?? '';
+      restoredSelectedOrderNumberRef.current = '';
       setOrders(nextOrders);
-      setSelectedOrderNumber(nextOrders[0]?.orderNumber ?? '');
+      setSelectedOrderNumber(nextSelectedOrderNumber);
       setTableMessage(nextOrders.length === 0 ? emptyProductionOrdersMessage : null);
+      setOrdersLoaded(true);
     };
 
     void loadProductionOrders();
@@ -1324,12 +1397,14 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
   };
 
   const openCreateOrderForm = () => {
+    setOrderFormError('');
     setFormState(toFormState());
     setFormMode('create');
   };
 
   const openEditOrderForm = () => {
     if (!selectedOrder) return;
+    setOrderFormError('');
     const linkedCustomer = customerOptions.find((customer) =>
       customer.id === selectedOrder.customerId
       || (!selectedOrder.customerId && customer.customer_name === selectedOrder.clientName)
@@ -1345,12 +1420,20 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
   const closeOrderForm = () => {
     setFormMode(null);
     setSavingOrder(false);
+    setOrderFormError('');
   };
 
   const saveOrderForm = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!formState.orderNumber.trim() || !formState.customerId || !formState.clientName.trim() || !formState.partNumber.trim() || !formState.partName.trim() || !formState.assignedWorkCenter.trim()) return;
-    if (formState.manufacturingType === 'single-operation' && !formState.assignedStation.trim()) return;
+    setOrderFormError('');
+    if (!formState.orderNumber.trim() || !formState.customerId || !formState.clientName.trim() || !formState.partNumber.trim() || !formState.partName.trim() || !formState.assignedWorkCenter.trim()) {
+      setOrderFormError('Complete Order Number, Client, Part Number, Part Name, and Work Center before saving.');
+      return;
+    }
+    if (formState.manufacturingType === 'single-operation' && !formState.assignedStation.trim()) {
+      setOrderFormError('Select a Station for this Single Operation order.');
+      return;
+    }
     const orderFromForm = {
       ...formStateToProductionOrder(formState, formMode === 'edit' ? selectedOrder?.id : undefined),
       createdAt: selectedOrder?.createdAt,
@@ -1365,20 +1448,30 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
         tone: 'primary',
         onConfirm: async () => {
           setSavingOrder(true);
-          const { error } = await supabase
-            .from('mes_production_orders')
-            .update(toProductionOrderPayload(orderFromForm, organizationId))
-            .eq('id', selectedOrder.id);
-          if (error) {
+          setOrderFormError('');
+          const controller = new AbortController();
+          const timeout = window.setTimeout(() => controller.abort(), 15000);
+          try {
+            const { error } = await supabase
+              .from('mes_production_orders')
+              .update(toProductionOrderPayload(orderFromForm, organizationId))
+              .eq('id', selectedOrder.id)
+              .abortSignal(controller.signal);
+            if (error) throw error;
+            setOrders((currentOrders) => currentOrders.map((order) => (order.id === selectedOrder.id ? orderFromForm : order)));
+            setSelectedOrderNumber(orderFromForm.orderNumber);
+            setTableMessage(null);
+            closeOrderForm();
+          } catch (error) {
             console.error('Unable to update MES production order', error);
-            setTableMessage('This Production Order could not be updated right now. Try again in a moment.');
+            const message = controller.signal.aborted
+              ? 'Supabase did not respond within 15 seconds. Check the connection and try again.'
+              : (error as { message?: string }).message || 'This Production Order could not be updated right now.';
+            setOrderFormError(message);
             setSavingOrder(false);
-            return;
+          } finally {
+            window.clearTimeout(timeout);
           }
-          setOrders((currentOrders) => currentOrders.map((order) => (order.id === selectedOrder.id ? orderFromForm : order)));
-          setSelectedOrderNumber(orderFromForm.orderNumber);
-          setTableMessage(null);
-          closeOrderForm();
         },
       });
       return;
@@ -1391,22 +1484,32 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
       tone: 'primary',
       onConfirm: async () => {
         setSavingOrder(true);
-        const { data, error } = await supabase
-          .from('mes_production_orders')
-          .insert(toProductionOrderPayload(orderFromForm, organizationId))
-          .select('*')
-          .single();
-        if (error) {
+        setOrderFormError('');
+        const controller = new AbortController();
+        const timeout = window.setTimeout(() => controller.abort(), 15000);
+        try {
+          const { data, error } = await supabase
+            .from('mes_production_orders')
+            .insert(toProductionOrderPayload(orderFromForm, organizationId))
+            .select('*')
+            .single()
+            .abortSignal(controller.signal);
+          if (error) throw error;
+          const nextOrder = mapProductionOrderRow(data as ProductionOrderRow);
+          setTableMessage(null);
+          setOrders((currentOrders) => [nextOrder, ...currentOrders]);
+          setSelectedOrderNumber(nextOrder.orderNumber);
+          closeOrderForm();
+        } catch (error) {
           console.error('Unable to create MES production order', error);
-          setTableMessage('This Production Order could not be created right now. Try again in a moment.');
+          const message = controller.signal.aborted
+            ? 'Supabase did not respond within 15 seconds. Check the connection and try again.'
+            : (error as { message?: string }).message || 'This Production Order could not be created right now.';
+          setOrderFormError(message);
           setSavingOrder(false);
-          return;
+        } finally {
+          window.clearTimeout(timeout);
         }
-        const nextOrder = mapProductionOrderRow(data as ProductionOrderRow);
-        setTableMessage(null);
-        setOrders((currentOrders) => [nextOrder, ...currentOrders]);
-        setSelectedOrderNumber(nextOrder.orderNumber);
-        closeOrderForm();
       },
     });
   };
@@ -1929,6 +2032,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
                   </>
                 )}
               </label>
+              {orderFormError ? <div className="mes-order-form-error mes-order-form-wide" role="alert"><AlertTriangle size={16} />{orderFormError}</div> : null}
               <div className="mes-order-form-actions">
                 <button type="button" onClick={closeOrderForm}>Cancel</button>
                 <button type="submit" disabled={savingOrder}>{savingOrder ? 'Saving...' : 'Save order'}</button>

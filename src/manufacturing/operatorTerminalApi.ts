@@ -7,6 +7,8 @@ type ProductionOrderRow = {
   order_number: string;
   part_number: string;
   part_name: string;
+  client_name?: string | null;
+  customer_id?: string | null;
   planned_quantity: number;
   completed_quantity: number;
   scrap_quantity: number;
@@ -107,6 +109,8 @@ function mapProductionOrderRow(row: ProductionOrderRow): ProductionOrder {
     orderNumber: row.order_number,
     partNumber: row.part_number,
     partName: row.part_name,
+    clientName: row.client_name ?? '',
+    customerId: row.customer_id ?? '',
     plannedQuantity: row.planned_quantity,
     completedQuantity: row.completed_quantity,
     scrapQuantity: row.scrap_quantity,

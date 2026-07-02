@@ -1,4 +1,5 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import {
   AlertTriangle,
   ArrowLeft,
@@ -11,11 +12,13 @@ import {
   Pause,
   Play,
   RotateCcw,
+  Search,
   SquareTerminal,
   Timer,
   Wrench,
   X,
 } from 'lucide-react';
+import { supabase } from '../lib/supabaseClient';
 import { JobQueueModal, type JobQueueSummary } from './MesWorkspaces';
 import type { ProductionOrder } from './mesTypes';
 import {
@@ -48,6 +51,7 @@ type ReportEvent = {
 };
 
 type TraceabilityFormState = {
+  customerId: string;
   client: string;
   shipper: string;
   reception: string;
@@ -60,6 +64,12 @@ type TraceabilityFormState = {
   damageC: string;
   stockToRemove: string;
   afterToothLength: string;
+};
+
+type OperatorCustomerOption = {
+  id: string;
+  customer_name: string;
+  status: 'active' | 'inactive';
 };
 
 const scrapReasons = [
@@ -139,13 +149,13 @@ const fallbackCurrentOrder: ProductionOrder = {
 };
 
 const dataCards = [
-  { key: 'client', label: 'Client', value: 'Client Name' },
   { key: 'shipper', label: 'Shipper', value: 'SHIP-000245' },
   { key: 'reception', label: 'Reception', value: 'REC-000884' },
 ] as const;
 
 const initialTraceabilityForm: TraceabilityFormState = {
-  client: 'Client Name',
+  customerId: '',
+  client: '',
   shipper: 'SHIP-000245',
   reception: 'REC-000884',
   toolId: 'TOOL-1034',
@@ -360,42 +370,57 @@ function SwitchOrderModal({
   onClose: () => void;
   onSelect: (order: ProductionOrder) => void;
 }) {
+  const [query, setQuery] = React.useState('');
+  const normalizedQuery = query.trim().toLowerCase();
+  const availableOrders = orders.filter((order) => ['released', 'running', 'paused'].includes(order.status));
+  const filteredOrders = normalizedQuery
+    ? availableOrders.filter((order) => [
+      order.orderNumber,
+      order.partName,
+      order.partNumber,
+      order.clientName ?? '',
+    ].some((value) => value.toLowerCase().includes(normalizedQuery)))
+    : availableOrders;
+
   return (
-    <div className="operator-terminal-modal-backdrop" role="presentation">
-      <section className="operator-terminal-modal operator-terminal-switch-order-modal" role="dialog" aria-modal="true" aria-labelledby="operator-terminal-switch-order-title">
-        <div className="operator-terminal-modal-heading">
+    <div className="quality-order-modal-backdrop" role="presentation">
+      <section className="quality-order-modal operator-terminal-switch-order-modal" role="dialog" aria-modal="true" aria-labelledby="operator-terminal-switch-order-title">
+        <div className="quality-order-modal-heading">
           <span><ClipboardCheck size={22} /></span>
-          <div>
-            <p className="eyebrow">Operator Terminal</p>
-            <h3 id="operator-terminal-switch-order-title">Change Active Order</h3>
-          </div>
+          <div><p className="eyebrow">Operator Terminal</p><h3 id="operator-terminal-switch-order-title">Change Active Order</h3></div>
           <button type="button" aria-label="Close" onClick={onClose}><X size={18} /></button>
         </div>
-        <p className="operator-terminal-switch-copy">
-          Select the Production Order that should become the active running job for this station.
-        </p>
-        <div className="operator-terminal-switch-list">
-          {orders.map((order) => {
-            const reported = order.completedQuantity + order.scrapQuantity;
-            return (
-              <button
-                className={order.id === currentOrderId ? 'active' : ''}
-                type="button"
-                key={order.id}
-                disabled={loading || order.id === currentOrderId}
-                onClick={() => onSelect(order)}
-              >
-                <div>
-                  <strong>{order.orderNumber}</strong>
-                  <span>{order.partName} / {order.partNumber}</span>
-                </div>
-                <em>{order.status}</em>
-                <b>{reported.toLocaleString()} of {order.plannedQuantity.toLocaleString()}</b>
-              </button>
-            );
-          })}
+        <p className="quality-order-modal-copy">Select any non-completed Production Order to make it the active running job for this station.</p>
+        <label className="quality-serial-search quality-order-search">
+          <Search size={17} />
+          <input autoFocus type="search" value={query} placeholder="Search order, part, or client" onChange={(event) => setQuery(event.target.value)} />
+        </label>
+        <div className="quality-order-switch-header" aria-hidden="true">
+          <span>Work Order / Part</span><span>Manufacturing Status</span><span>Manufacturing Progress</span>
         </div>
-        <div className="operator-terminal-modal-actions">
+        <div className="quality-order-switch-list operator-terminal-order-picker-list">
+          {filteredOrders.map((order) => (
+            <button
+              className={order.id === currentOrderId ? 'active' : ''}
+              type="button"
+              key={order.id}
+              disabled={loading || order.id === currentOrderId}
+              onClick={() => onSelect(order)}
+            >
+              <div>
+                <strong>{order.orderNumber}</strong>
+                <span>{order.partName} / {order.partNumber}</span>
+              </div>
+              <em className={`quality-picker-status quality-picker-status-${order.status}`}>{order.status}</em>
+              <b>
+                <span>Manufactured</span>
+                {order.completedQuantity.toLocaleString()} of {order.plannedQuantity.toLocaleString()}
+              </b>
+            </button>
+          ))}
+          {!filteredOrders.length ? <p>No non-completed work orders found</p> : null}
+        </div>
+        <div className="quality-order-modal-actions">
           <button type="button" onClick={onClose}>Cancel</button>
         </div>
       </section>
@@ -421,6 +446,8 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId }: Operat
   const [dimensionUnit, setDimensionUnit] = React.useState<'in' | 'mm'>('in');
   const [templateId, setTemplateId] = React.useState('sharpening');
   const [traceabilityForm, setTraceabilityForm] = React.useState<TraceabilityFormState>(initialTraceabilityForm);
+  const [customerOptions, setCustomerOptions] = React.useState<OperatorCustomerOption[]>([]);
+  const [customerOptionsMessage, setCustomerOptionsMessage] = React.useState('');
   const [selectedShift, setSelectedShift] = React.useState<'1st' | '2nd' | '3rd'>('1st');
   const baseSnapshotOrder = snapshot?.currentOrder ?? fallbackCurrentOrder;
   const baseWorkCenterCode = snapshot?.workCenter?.code ?? baseSnapshotOrder.assignedWorkCenter;
@@ -478,6 +505,12 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId }: Operat
   const isOrderDown = hasAssignedOrder && state === 'down';
   const isOrderNotStarted = hasAssignedOrder && state === 'not-started';
   const startLabel = state === 'paused' || state === 'down' ? 'Resume' : 'Start Job';
+  const traceabilityCustomerOptions = customerOptions
+    .filter((customer) => customer.status === 'active' || customer.id === traceabilityForm.customerId)
+    .map((customer) => ({
+      value: customer.id,
+      label: customer.status === 'inactive' ? `${customer.customer_name} (Inactive)` : customer.customer_name,
+    }));
   const jobQueueSummary: JobQueueSummary = {
     machine: {
       workCenterCode,
@@ -549,6 +582,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId }: Operat
         part_name: order.partName,
         reason: reason || null,
         comment: comment || null,
+        customer_id: traceabilityForm.customerId || null,
         client: traceabilityForm.client,
         shipper: traceabilityForm.shipper,
         reception: traceabilityForm.reception,
@@ -666,6 +700,45 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId }: Operat
       active = false;
     };
   }, [organizationId]);
+
+  React.useEffect(() => {
+    let active = true;
+    const loadCustomers = async () => {
+      const { data, error } = await supabase
+        .from('mes_customers')
+        .select('id, customer_name, status')
+        .eq('organization_id', organizationId)
+        .order('customer_name', { ascending: true });
+      if (!active) return;
+      if (error) {
+        setCustomerOptions([]);
+        setCustomerOptionsMessage(error.message);
+        return;
+      }
+      const nextCustomers = (data ?? []) as OperatorCustomerOption[];
+      setCustomerOptions(nextCustomers);
+      setCustomerOptionsMessage(nextCustomers.some((customer) => customer.status === 'active')
+        ? ''
+        : 'No active customers configured in Clients.');
+    };
+    void loadCustomers();
+    return () => {
+      active = false;
+    };
+  }, [organizationId]);
+
+  React.useEffect(() => {
+    if (!currentOrder || !customerOptions.length) return;
+    const linkedCustomer = customerOptions.find((customer) => (
+      customer.id === currentOrder.customerId
+      || (!currentOrder.customerId && customer.customer_name === currentOrder.clientName)
+    ));
+    setTraceabilityForm((current) => ({
+      ...current,
+      customerId: linkedCustomer?.id ?? '',
+      client: linkedCustomer?.customer_name ?? '',
+    }));
+  }, [currentOrder?.id, currentOrder?.customerId, currentOrder?.clientName, customerOptions]);
 
   React.useEffect(() => {
     if (!snapshot) return;
@@ -863,13 +936,16 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId }: Operat
 
     setSwitchOrderLoading(true);
     try {
+      const targetStationCode = order.assignedStation || stationCode;
       const nextOrder = await switchOperatorActiveOrder({
         orderId: order.id,
         organizationId,
-        stationCode,
+        stationCode: targetStationCode,
         shift: selectedShift,
         comment: `Operator Terminal active order changed from ${currentOrder?.orderNumber ?? 'none'} to ${order.orderNumber}`,
       });
+      setSelectedWorkCenterCode(order.assignedWorkCenter);
+      setSelectedStationCode(targetStationCode);
       applyOrder(nextOrder);
       syncSwitchedOrder(nextOrder);
       setEvents([]);
@@ -1064,6 +1140,24 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId }: Operat
                 <h3>Sharpening capture</h3>
               </div>
               {hasAssignedOrder ? <div className="operator-terminal-trace-meta" aria-label="Job metadata">
+                <label>
+                  Client
+                  <OperatorTerminalDropdown
+                    ariaLabel="Client"
+                    value={traceabilityForm.customerId}
+                    options={traceabilityCustomerOptions}
+                    placeholder={customerOptionsMessage || 'Select customer'}
+                    disabled={!traceabilityCustomerOptions.length}
+                    onChange={(customerId) => {
+                      const customer = customerOptions.find((option) => option.id === customerId);
+                      setTraceabilityForm((current) => ({
+                        ...current,
+                        customerId,
+                        client: customer?.customer_name ?? '',
+                      }));
+                    }}
+                  />
+                </label>
                 {dataCards.map((card) => (
                   <label key={card.label}>
                     {card.label}
@@ -1151,7 +1245,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId }: Operat
       ) : null}
       {modal === 'switch-order' ? (
         <SwitchOrderModal
-          orders={stationOrders}
+          orders={(snapshot?.activeOrders ?? stationOrders).filter((order) => ['released', 'running', 'paused'].includes(order.status))}
           currentOrderId={currentOrder?.id ?? null}
           loading={switchOrderLoading}
           onClose={() => setModal(null)}
@@ -1171,58 +1265,115 @@ function OperatorTerminalDropdown({
   value,
   options,
   onChange,
+  placeholder = 'Select',
+  disabled = false,
 }: {
   ariaLabel: string;
   value: string;
   options: Array<{ value: string; label: string }>;
   onChange: (value: string) => void;
+  placeholder?: string;
+  disabled?: boolean;
 }) {
   const [open, setOpen] = React.useState(false);
-  const rootRef = React.useRef<HTMLDivElement | null>(null);
-  const selected = options.find((option) => option.value === value) ?? options[0];
+  const [menuPosition, setMenuPosition] = React.useState<{ top: number; left: number; width: number; maxHeight: number } | null>(null);
+  const triggerRef = React.useRef<HTMLDivElement | null>(null);
+  const menuRef = React.useRef<HTMLDivElement | null>(null);
+  const selected = options.find((option) => option.value === value);
+
+  const updateMenuPosition = React.useCallback(() => {
+    const trigger = triggerRef.current;
+    if (!trigger || disabled) return;
+    const rect = trigger.getBoundingClientRect();
+    const viewportPadding = 16;
+    const availableBelow = window.innerHeight - rect.bottom - viewportPadding;
+    const availableAbove = rect.top - viewportPadding;
+    const desiredHeight = Math.min(240, Math.max(48, (options.length * 38) + 12));
+    const openUp = availableBelow < desiredHeight && availableAbove > availableBelow;
+    const maxHeight = Math.max(48, Math.min(desiredHeight, openUp ? availableAbove - 7 : availableBelow - 7));
+    const width = Math.min(rect.width, window.innerWidth - (viewportPadding * 2));
+    const left = Math.max(viewportPadding, Math.min(rect.left, window.innerWidth - width - viewportPadding));
+    setMenuPosition({
+      top: openUp ? Math.max(viewportPadding, rect.top - maxHeight - 7) : rect.bottom + 7,
+      left,
+      width,
+      maxHeight,
+    });
+  }, [disabled, options.length]);
+
+  React.useLayoutEffect(() => {
+    if (!open || disabled) return;
+    updateMenuPosition();
+  }, [disabled, open, updateMenuPosition]);
 
   React.useEffect(() => {
-    if (!open) return undefined;
+    if (!open || disabled) return undefined;
     const handlePointerDown = (event: PointerEvent) => {
-      if (rootRef.current?.contains(event.target as Node)) return;
+      const target = event.target as Node;
+      if (triggerRef.current?.contains(target) || menuRef.current?.contains(target)) return;
       setOpen(false);
     };
+    const reposition = () => updateMenuPosition();
 
     document.addEventListener('pointerdown', handlePointerDown);
-    return () => document.removeEventListener('pointerdown', handlePointerDown);
-  }, [open]);
+    window.addEventListener('resize', reposition);
+    window.addEventListener('scroll', reposition, true);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      window.removeEventListener('resize', reposition);
+      window.removeEventListener('scroll', reposition, true);
+    };
+  }, [disabled, open, updateMenuPosition]);
+
+  const dropdownMenu = open && !disabled && menuPosition
+    ? createPortal(
+      <div
+        className="mes-order-dropdown-menu operator-terminal-production-dropdown-menu"
+        role="listbox"
+        aria-label={ariaLabel}
+        ref={menuRef}
+        style={menuPosition}
+      >
+        {options.map((option) => (
+          <button
+            className={option.value === value ? 'selected' : ''}
+            type="button"
+            key={option.value}
+            role="option"
+            aria-selected={option.value === value}
+            onClick={() => {
+              onChange(option.value);
+              setOpen(false);
+            }}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>,
+      document.body,
+    )
+    : null;
 
   return (
-    <div className="operator-terminal-dropdown" ref={rootRef}>
+    <div
+      className={['mes-order-dropdown', 'operator-terminal-production-dropdown', open ? 'open' : ''].filter(Boolean).join(' ')}
+      ref={triggerRef}
+    >
       <button
-        className="operator-terminal-dropdown-trigger"
+        className={!selected ? 'placeholder' : ''}
         type="button"
         aria-label={ariaLabel}
-        aria-expanded={open}
-        onClick={() => setOpen((current) => !current)}
+        aria-haspopup="listbox"
+        aria-expanded={disabled ? false : open}
+        disabled={disabled}
+        onClick={() => {
+          if (!disabled) setOpen((current) => !current);
+        }}
       >
-        <span>{selected?.label ?? 'Select'}</span>
+        <span>{selected?.label ?? placeholder}</span>
         <ChevronDown size={16} />
       </button>
-      {open ? (
-        <div className="operator-terminal-dropdown-menu" role="listbox" aria-label={ariaLabel}>
-          {options.map((option) => (
-            <button
-              className={option.value === selected?.value ? 'active' : ''}
-              type="button"
-              key={option.value}
-              role="option"
-              aria-selected={option.value === selected?.value}
-              onClick={() => {
-                onChange(option.value);
-                setOpen(false);
-              }}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
-      ) : null}
+      {dropdownMenu}
     </div>
   );
 }
