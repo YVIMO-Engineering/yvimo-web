@@ -337,6 +337,10 @@ function getQualityMeasurementUnit(order: ProductionOrder) {
 function getQualityMeasurementUnitSymbol(order: ProductionOrder) {
   return qualityMeasurementUnitOptions.find((option) => option.value === getQualityMeasurementUnit(order))?.symbol ?? 'mm';
 }
+
+function isQualityCheckEnabledOrder(order: ProductionOrder) {
+  return order.qualityChecksEnabled === true;
+}
 type QualityProductionOrderRow = {
   id: string;
   order_number: string;
@@ -1620,10 +1624,11 @@ export function QualityOperationsWorkspace({ onNavigate, activeTab, organization
   const initialOrder = qualityDemoOrders.find((order) => order.id === initialSelection?.orderId) ?? qualityDemoOrders[0];
   const selectionOrganizationRef = React.useRef('');
   const [inspectionOrders, setInspectionOrders] = React.useState<ProductionOrder[]>(qualityDemoOrders);
+  const qualityEnabledOrders = React.useMemo(() => inspectionOrders.filter(isQualityCheckEnabledOrder), [inspectionOrders]);
   const [selectedInspectionOrderId, setSelectedInspectionOrderId] = React.useState(initialOrder?.id ?? '');
   const [orderPickerOpen, setOrderPickerOpen] = React.useState(false);
   const [serialPickerOpen, setSerialPickerOpen] = React.useState(false);
-  const selectedInspectionOrder = inspectionOrders.find((order) => order.id === selectedInspectionOrderId) ?? inspectionOrders[0];
+  const selectedInspectionOrder = qualityEnabledOrders.find((order) => order.id === selectedInspectionOrderId) ?? qualityEnabledOrders[0];
   const [selectedInspectionSerial, setSelectedInspectionSerial] = React.useState(
     initialSelection?.serial && initialOrder && getQualityOrderSerials(initialOrder).includes(initialSelection.serial)
       ? initialSelection.serial
@@ -1660,8 +1665,9 @@ export function QualityOperationsWorkspace({ onNavigate, activeTab, organization
 
       const loadedOrders = ((data ?? []) as QualityProductionOrderRow[]).map(mapQualityProductionOrder);
       const nextOrders = loadedOrders.length ? loadedOrders : qualityDemoOrders;
+      const nextQualityOrders = nextOrders.filter(isQualityCheckEnabledOrder);
       const savedSelection = readQualitySelection(organizationId);
-      const nextOrder = nextOrders.find((order) => order.id === savedSelection?.orderId) ?? nextOrders[0];
+      const nextOrder = nextQualityOrders.find((order) => order.id === savedSelection?.orderId) ?? nextQualityOrders[0];
       const nextOrderSerials = nextOrder ? getQualityOrderSerials(nextOrder) : [];
       const nextSerial = savedSelection?.serial && nextOrderSerials.includes(savedSelection.serial) ? savedSelection.serial : nextOrderSerials[0] ?? '';
       selectionOrganizationRef.current = organizationId;
@@ -1917,10 +1923,10 @@ export function QualityOperationsWorkspace({ onNavigate, activeTab, organization
   const dashboardDocuments = React.useMemo(() => inspectionDocuments.filter((document) => isQualityDateOnOrBefore(document.uploaded_at, dashboardDateRange.to)), [dashboardDateRange.to, inspectionDocuments]);
   const dashboardInspectedSerials = React.useMemo(() => serialInspectionRecords.filter((record) => isQualityDateOnOrBefore(record.inspected_at, dashboardDateRange.to)), [dashboardDateRange.to, serialInspectionRecords]);
   const isInspectionsPage = activeTab === 'inspections';
-  const pendingInspectionOrders = React.useMemo(() => inspectionOrders.filter((order) => getPendingQualityOrderSerials(order, serialInspectionRecords).length > 0), [inspectionOrders, serialInspectionRecords]);
+  const pendingInspectionOrders = React.useMemo(() => qualityEnabledOrders.filter((order) => getPendingQualityOrderSerials(order, serialInspectionRecords).length > 0), [qualityEnabledOrders, serialInspectionRecords]);
   const isCertificatesPage = activeTab === 'certificates-docs';
   const completedOrderIds = React.useMemo(() => new Set(serialInspectionRecords.map((record) => record.production_order_id)), [serialInspectionRecords]);
-  const completedOrders = React.useMemo(() => inspectionOrders.filter((order) => completedOrderIds.has(order.id)), [completedOrderIds, inspectionOrders]);
+  const completedOrders = React.useMemo(() => qualityEnabledOrders.filter((order) => completedOrderIds.has(order.id)), [completedOrderIds, qualityEnabledOrders]);
   const selectedCertificateRecord = serialInspectionRecords.find((record) => record.production_order_id === selectedInspectionOrder?.id && record.serial_number === selectedInspectionSerial);
 
   React.useEffect(() => {
@@ -2024,7 +2030,7 @@ export function QualityOperationsWorkspace({ onNavigate, activeTab, organization
 
       {orderPickerOpen ? (
         <QualityOrderPickerModal
-          orders={isCertificatesPage ? completedOrders : isInspectionsPage ? pendingInspectionOrders : inspectionOrders}
+          orders={isCertificatesPage ? completedOrders : isInspectionsPage ? pendingInspectionOrders : qualityEnabledOrders}
           currentOrderId={selectedInspectionOrder?.id ?? ''}
           inspectedSerials={serialInspectionRecords}
           completedOnly={isCertificatesPage}
