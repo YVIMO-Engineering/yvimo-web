@@ -1,0 +1,1168 @@
+.client-balances {
+  display: grid;
+  gap: 14px;
+}
+
+.client-balance-toolbar,
+.client-balance-ledger {
+  border: 1px solid #ffbb82;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.client-balance-toolbar {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 14px 16px;
+}
+
+.client-balance-toolbar > label {
+  display: grid;
+  gap: 6px;
+  min-width: 290px;
+}
+
+.client-balance-toolbar label > span:first-child,
+.client-balance-filters label > span:first-child {
+  color: #52647a;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.client-balance-select {
+  position: relative;
+  display: block;
+  min-width: 150px;
+}
+
+.client-balance-select select {
+  width: 100%;
+  height: 42px;
+  padding: 0 38px 0 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 9px;
+  outline: none;
+  appearance: none;
+  background: #f6f8fb;
+  color: #101927;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.client-balance-select select:focus {
+  border-color: #ff7f18;
+  box-shadow: 0 0 0 3px rgba(255, 127, 24, .12);
+}
+
+.client-balance-select > svg {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  pointer-events: none;
+  transform: translateY(-50%);
+  color: #182333;
+}
+
+.client-balance-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.client-balance-actions button,
+.client-balance-detail-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 40px;
+  padding: 0 13px;
+  border: 1px solid #ff7f18;
+  border-radius: 9px;
+  background: #ff7f18;
+  color: #08111d;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.client-balance-actions button.secondary {
+  background: #fff7ef;
+  color: #823b00;
+}
+
+.client-balance-actions button:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+
+.client-balance-summary {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.client-balance-summary article {
+  min-height: 116px;
+  padding: 14px;
+  border: 1px solid #d5dde7;
+  border-radius: 10px;
+  background: #f7f9fc;
+}
+
+.client-balance-summary article.primary {
+  border-color: #ff9b49;
+  background: #fff3e7;
+}
+
+.client-balance-summary article.warning {
+  border-color: #ffc46f;
+  background: #fff8df;
+}
+
+.client-balance-summary article > span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #43566d;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .045em;
+  text-transform: uppercase;
+}
+
+.client-balance-summary article svg {
+  color: #ff6f00;
+}
+
+.client-balance-summary article strong {
+  display: block;
+  margin-top: 13px;
+  color: #0b1522;
+  font-size: clamp(19px, 1.5vw, 27px);
+  line-height: 1;
+}
+
+.client-balance-summary article small {
+  display: block;
+  margin-top: 8px;
+  color: #66768a;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.client-balance-view-tabs {
+  display: flex;
+  gap: 5px;
+  padding: 12px 14px 0;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.client-balance-view-tabs button {
+  padding: 10px 14px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: transparent;
+  color: #607086;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.client-balance-view-tabs button.active {
+  border-color: #ff7f18;
+  color: #111b29;
+}
+
+.client-balance-filters {
+  display: grid;
+  grid-template-columns: minmax(240px, 1.4fr) 135px 135px repeat(4, minmax(150px, .7fr));
+  gap: 8px;
+  align-items: end;
+  padding: 12px 14px;
+  background: #f8fafc;
+}
+
+.client-balance-filters > label:not(.client-balance-search) {
+  display: grid;
+  gap: 5px;
+}
+
+.client-balance-filters input,
+.client-balance-modal input,
+.client-balance-modal textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #cbd5e1;
+  border-radius: 9px;
+  outline: none;
+  background: #f7f9fc;
+  color: #101927;
+  font: inherit;
+}
+
+.client-balance-filters input {
+  height: 42px;
+  padding: 0 10px;
+}
+
+.client-balance-search {
+  position: relative;
+}
+
+.client-balance-search svg {
+  position: absolute;
+  top: 13px;
+  left: 12px;
+  color: #738197;
+}
+
+.client-balance-search input {
+  padding-left: 37px;
+}
+
+.client-balance-table-wrap {
+  overflow-x: auto;
+  min-height: 210px;
+}
+
+.client-balance-table-wrap table {
+  width: 100%;
+  min-width: 1900px;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.client-balance-table-wrap th {
+  padding: 11px 10px;
+  border-bottom: 2px solid #ff7f18;
+  background: #e8eef5;
+  color: #26374c;
+  font-size: 10px;
+  letter-spacing: .055em;
+  text-align: left;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.client-balance-table-wrap td {
+  max-width: 210px;
+  padding: 11px 10px;
+  border-bottom: 1px solid #dfe5ed;
+  color: #33475f;
+  font-weight: 700;
+  vertical-align: middle;
+}
+
+.client-balance-table-wrap tbody tr:hover:not(.client-balance-detail-row) {
+  background: #fff9f3;
+}
+
+.client-balance-table-wrap td.description {
+  min-width: 190px;
+  color: #101927;
+  font-weight: 900;
+}
+
+.client-balance-table-wrap td.money,
+.client-balance-table-wrap td.uuid {
+  white-space: nowrap;
+}
+
+.client-balance-table-wrap td.money.strong {
+  color: #111b29;
+  font-weight: 950;
+}
+
+.client-balance-table-wrap td.money.charge {
+  color: #b44a00;
+}
+
+.client-balance-table-wrap td.money.payment {
+  color: #087b58;
+}
+
+.client-movement-pill,
+.client-invoice-pill,
+.client-movement-status {
+  display: inline-flex;
+  padding: 5px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 950;
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.client-movement-pill.charge {
+  background: #ffe5cd;
+  color: #a64200;
+}
+
+.client-movement-pill.payment,
+.client-movement-pill.credit {
+  background: #d7f7e9;
+  color: #087454;
+}
+
+.client-movement-pill.adjustment {
+  background: #e5e7ff;
+  color: #4148a2;
+}
+
+.client-invoice-pill.pending,
+.client-movement-status.open,
+.client-movement-status.pending_confirmation,
+.client-movement-status.partially_paid {
+  background: #fff0c7;
+  color: #8c5800;
+}
+
+.client-invoice-pill.issued,
+.client-movement-status.confirmed,
+.client-movement-status.paid {
+  background: #d7f7e9;
+  color: #087454;
+}
+
+.client-invoice-pill.not_required {
+  background: #edf1f6;
+  color: #586a7f;
+}
+
+.client-invoice-pill.cancelled,
+.client-movement-status.cancelled,
+.client-movement-status.disputed,
+.client-movement-status.refunded {
+  background: #ffe0e1;
+  color: #b3262d;
+}
+
+.client-balance-detail-button {
+  min-height: 30px;
+  padding: 0 9px;
+  background: #fff7ef;
+  color: #833b00;
+  font-size: 11px;
+}
+
+.client-balance-detail-row td {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(150px, 1fr));
+  gap: 10px;
+  max-width: none;
+  padding: 13px 18px;
+  background: #f6f8fb;
+}
+
+.client-balance-detail-row span {
+  display: grid;
+  gap: 3px;
+}
+
+.client-balance-detail-row span.wide {
+  grid-column: 1 / -1;
+}
+
+.client-balance-detail-row b {
+  color: #ff6500;
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.client-balance-ledger > footer {
+  padding: 10px 14px;
+  border-top: 1px solid #e3e8ef;
+  color: #66768a;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.client-balance-empty,
+.client-balance-loading {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  min-height: 210px;
+  color: #62738a;
+  text-align: center;
+}
+
+.client-balance-empty svg {
+  margin-bottom: 9px;
+  color: #ff7200;
+}
+
+.client-balance-empty strong {
+  color: #101927;
+  font-size: 15px;
+}
+
+.client-balance-empty p {
+  margin: 5px 0 0;
+  font-size: 12px;
+}
+
+.client-balance-modal {
+  width: min(760px, calc(100vw - 32px));
+}
+
+.client-balance-modal form {
+  margin-top: 18px;
+}
+
+.client-balance-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 13px;
+}
+
+.client-balance-form-grid > label:not(.client-balance-checkbox) {
+  display: grid;
+  gap: 6px;
+  color: #34455b;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.client-balance-form-grid label.wide {
+  grid-column: 1 / -1;
+}
+
+.client-balance-modal input {
+  height: 43px;
+  padding: 0 11px;
+}
+
+.client-balance-modal textarea {
+  min-height: 78px;
+  padding: 10px 11px;
+  resize: vertical;
+}
+
+.client-balance-modal input:focus,
+.client-balance-modal textarea:focus {
+  border-color: #ff7f18;
+  box-shadow: 0 0 0 3px rgba(255, 127, 24, .11);
+}
+
+.client-balance-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 40px;
+  padding: 0 11px;
+  border: 1px solid #f1c9a9;
+  border-radius: 9px;
+  background: #fff8f1;
+  color: #59351a;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.client-balance-checkbox input {
+  width: 17px;
+  height: 17px;
+  accent-color: #ff7f18;
+}
+
+.client-balances-no-customer {
+  min-height: 300px;
+  border: 1px solid #ffbb82;
+  border-radius: 10px;
+  background: #fff;
+}
+
+@media (max-width: 1500px) {
+  .client-balance-summary {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .client-balance-filters {
+    grid-template-columns: minmax(240px, 2fr) repeat(4, minmax(145px, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .client-balance-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .client-balance-toolbar > label {
+    min-width: 0;
+  }
+
+  .client-balance-actions {
+    justify-content: flex-start;
+  }
+
+  .client-balance-summary,
+  .client-balance-filters {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 600px) {
+  .client-balance-summary,
+  .client-balance-filters,
+  .client-balance-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .client-balance-form-grid label.wide {
+    grid-column: auto;
+  }
+
+  .client-balance-actions button {
+    flex: 1 1 145px;
+  }
+
+  .client-balance-view-tabs {
+    overflow-x: auto;
+  }
+}
+
+/* Compact ledger layout: keeps the complete workspace inside the available viewport. */
+.client-balances,
+.client-balance-ledger,
+.client-balance-table-wrap {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.client-balance-toolbar {
+  display: grid;
+  grid-template-columns: minmax(230px, 290px) minmax(0, 1fr);
+  align-items: stretch;
+  gap: 14px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.client-balance-toolbar > label {
+  align-content: center;
+  min-width: 0;
+}
+
+.client-balance-actions {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(145px, 1fr));
+  gap: 10px;
+  min-width: 0;
+}
+
+.client-balance-actions button {
+  justify-content: flex-start;
+  gap: 10px;
+  min-width: 0;
+  min-height: 62px;
+  padding: 8px 11px;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  color: #102033;
+  text-align: left;
+  transition: transform .16s ease, box-shadow .16s ease;
+}
+
+.client-balance-actions button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, .12);
+}
+
+.client-balance-actions button.charge {
+  border-color: #ff9a47;
+  background: linear-gradient(135deg, #fff3e8 0%, #ffe1c5 100%);
+}
+
+.client-balance-actions button.payment {
+  border-color: #60d6aa;
+  background: linear-gradient(135deg, #eafff6 0%, #d1f8e8 100%);
+}
+
+.client-balance-actions button.adjustment {
+  border-color: #9eb4ff;
+  background: linear-gradient(135deg, #f1f4ff 0%, #dfe6ff 100%);
+}
+
+.client-balance-actions button.export {
+  border-color: #9eb4c9;
+  background: linear-gradient(135deg, #f4f8fb 0%, #e5edf5 100%);
+}
+
+.client-balance-action-icon {
+  display: grid;
+  flex: 0 0 39px;
+  width: 39px;
+  height: 39px;
+  place-items: center;
+  border-radius: 9px;
+  color: #fff;
+}
+
+.client-balance-actions .charge .client-balance-action-icon {
+  background: linear-gradient(145deg, #ff8a22, #f35c00);
+  box-shadow: 0 5px 12px rgba(243, 92, 0, .25);
+}
+
+.client-balance-actions .payment .client-balance-action-icon {
+  background: linear-gradient(145deg, #13b77e, #087854);
+  box-shadow: 0 5px 12px rgba(8, 120, 84, .22);
+}
+
+.client-balance-actions .adjustment .client-balance-action-icon {
+  background: linear-gradient(145deg, #6588ff, #394fc2);
+  box-shadow: 0 5px 12px rgba(57, 79, 194, .22);
+}
+
+.client-balance-actions .export .client-balance-action-icon {
+  background: linear-gradient(145deg, #385777, #182b41);
+  box-shadow: 0 5px 12px rgba(24, 43, 65, .22);
+}
+
+.client-balance-action-copy {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.client-balance-action-copy strong,
+.client-balance-action-copy small {
+  overflow: hidden;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.client-balance-action-copy strong {
+  font-size: 12px;
+}
+
+.client-balance-action-copy small {
+  color: #62738a;
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.client-balance-summary {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.client-balance-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+
+.client-balance-filters > label:not(.client-balance-search) {
+  flex: 0 1 140px;
+  min-width: 125px;
+}
+
+.client-balance-filters > .client-balance-select {
+  flex: 1 1 155px;
+  min-width: 140px;
+}
+
+.client-balance-filters > .client-balance-search {
+  flex: 2 1 290px;
+  min-width: 230px;
+}
+
+.client-balance-ledger,
+.client-balance-table-wrap {
+  overflow: hidden;
+}
+
+.client-balance-table-wrap table {
+  min-width: 0;
+  table-layout: fixed;
+}
+
+.client-balance-table-wrap th:nth-child(1) { width: 10%; }
+.client-balance-table-wrap th:nth-child(2) { width: 10%; }
+.client-balance-table-wrap th:nth-child(3) { width: 27%; }
+.client-balance-table-wrap th:nth-child(4),
+.client-balance-table-wrap th:nth-child(5),
+.client-balance-table-wrap th:nth-child(6) { width: 12%; }
+.client-balance-table-wrap th:nth-child(7) { width: 11%; }
+.client-balance-table-wrap th:nth-child(8) { width: 6%; }
+
+.client-balance-table-wrap td {
+  overflow-wrap: anywhere;
+}
+
+.client-balance-table-wrap td:first-child,
+.client-balance-table-wrap td.money {
+  white-space: nowrap;
+}
+
+.client-balance-table-wrap td.description {
+  min-width: 0;
+}
+
+.client-balance-detail-button {
+  justify-content: center;
+  min-width: 0;
+  padding: 0 7px;
+}
+
+.client-balance-detail-row td {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+@media (max-width: 1500px) {
+  .client-balance-toolbar {
+    grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
+  }
+
+  .client-balance-actions {
+    grid-template-columns: repeat(2, minmax(160px, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .client-balance-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .client-balance-actions {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .client-balance-table-wrap th:nth-child(1) { width: 14%; }
+  .client-balance-table-wrap th:nth-child(2) { width: 14%; }
+  .client-balance-table-wrap th:nth-child(3) { width: 28%; }
+  .client-balance-table-wrap th:nth-child(4),
+  .client-balance-table-wrap th:nth-child(5) { width: 14%; }
+  .client-balance-table-wrap th:nth-child(6) { width: 16%; }
+  .client-balance-table-wrap th:nth-child(7),
+  .client-balance-table-wrap td:nth-child(7) {
+    display: none;
+  }
+  .client-balance-table-wrap th:nth-child(8) { width: 8%; }
+
+  .client-balance-detail-row td {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 600px) {
+  .client-balance-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .client-balance-action-copy strong {
+    white-space: normal;
+  }
+
+  .client-balance-detail-row td {
+    grid-template-columns: 1fr;
+  }
+}
+
+.client-balance-date-range {
+  display: grid;
+  flex: 1.25 1 330px;
+  grid-template-columns: repeat(2, minmax(140px, 1fr));
+  gap: 8px;
+  min-width: 300px;
+}
+
+.client-balance-date-range > label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.client-balance-date-picker {
+  width: 100%;
+}
+
+.client-balance-date-picker > button {
+  min-height: 42px;
+  border-color: rgba(255, 138, 31, .42);
+  background: #fff;
+  color: #172235;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.client-balance-date-picker > button:hover,
+.client-balance-date-picker > button:focus-visible,
+.client-balance-date-picker.open > button {
+  border-color: #ff821b;
+  outline: 2px solid rgba(255, 130, 27, .16);
+  background: #fff8f1;
+}
+
+.client-balance-date-picker > button.placeholder {
+  color: #718095;
+}
+
+.client-balance-date-picker > button svg {
+  color: #f56b00;
+}
+
+.client-balance-calendar {
+  z-index: 180;
+}
+
+@media (max-width: 760px) {
+  .client-balance-date-range {
+    flex-basis: 100%;
+    min-width: 0;
+  }
+}
+
+@media (max-width: 460px) {
+  .client-balance-date-range {
+    grid-template-columns: 1fr;
+  }
+}
+
+.client-balance-summary {
+  grid-template-columns: repeat(7, minmax(140px, 1fr));
+}
+
+.client-balance-summary article.credit {
+  border-color: #55c99e;
+  background: linear-gradient(145deg, #effff8, #d9f8ea);
+}
+
+.client-balance-summary article.credit svg {
+  color: #07815c;
+}
+
+.client-balance-summary article.credit strong {
+  color: #086747;
+}
+
+.client-ledger-balance {
+  display: inline-flex;
+  align-items: center;
+  min-height: 27px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: #edf1f6;
+  color: #27384d;
+  font-size: 11px;
+  font-weight: 950;
+  white-space: nowrap;
+}
+
+.client-ledger-balance.credit {
+  background: #d7f7e9;
+  color: #087454;
+}
+
+.client-ledger-balance.due {
+  background: #ffe5cd;
+  color: #a64200;
+}
+
+@media (max-width: 1500px) {
+  .client-balance-summary {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.client-balance-summary {
+  grid-template-columns: minmax(210px, .85fr) minmax(210px, .85fr) minmax(560px, 2.5fr);
+  align-items: stretch;
+  gap: 12px;
+}
+
+.client-balance-summary > article.featured {
+  min-height: 128px;
+  padding: 17px;
+  border-width: 2px;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, .06);
+}
+
+.client-balance-summary > article.featured strong {
+  margin-top: 15px;
+  font-size: clamp(24px, 1.7vw, 31px);
+}
+
+.client-balance-secondary-kpis {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(105px, 1fr));
+  gap: 8px;
+  min-width: 0;
+  padding-left: 15px;
+}
+
+.client-balance-secondary-kpis::before {
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  left: 0;
+  width: 3px;
+  border-radius: 999px;
+  background: linear-gradient(#ff9b49, #ff6500);
+  content: '';
+}
+
+.client-balance-secondary-kpis article {
+  min-width: 0;
+  min-height: 0;
+  padding: 11px;
+  border: 1px solid #d5dde7;
+  border-radius: 9px;
+  background: #f7f9fc;
+}
+
+.client-balance-secondary-kpis article > span {
+  gap: 5px;
+  font-size: 9px;
+  line-height: 1.25;
+}
+
+.client-balance-secondary-kpis article strong {
+  overflow: hidden;
+  margin-top: 10px;
+  font-size: clamp(15px, 1.15vw, 20px);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.client-balance-secondary-kpis article small {
+  overflow: hidden;
+  margin-top: 6px;
+  font-size: 9px;
+  line-height: 1.25;
+}
+
+.client-balance-detail-row td {
+  display: table-cell;
+  max-width: none;
+  padding: 14px;
+  background: #f2f6fa;
+}
+
+.client-balance-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 9px;
+  width: 100%;
+}
+
+.client-balance-detail-grid > span {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  min-width: 0;
+  min-height: 58px;
+  padding: 10px 12px;
+  border: 1px solid #d8e0e9;
+  border-radius: 8px;
+  background: #fff;
+  color: #26384d;
+  font-size: 11px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.client-balance-detail-grid > span.wide {
+  grid-column: 1 / -1;
+  min-height: 52px;
+}
+
+.client-balance-detail-grid b {
+  color: #d85800;
+  font-size: 9px;
+  letter-spacing: .055em;
+  text-transform: uppercase;
+}
+
+@media (max-width: 1300px) {
+  .client-balance-summary {
+    grid-template-columns: repeat(2, minmax(200px, 1fr));
+  }
+
+  .client-balance-secondary-kpis {
+    grid-column: 1 / -1;
+    padding-top: 13px;
+    padding-left: 0;
+  }
+
+  .client-balance-secondary-kpis::before {
+    top: 0;
+    right: 0;
+    bottom: auto;
+    width: auto;
+    height: 3px;
+  }
+}
+
+@media (max-width: 820px) {
+  .client-balance-secondary-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .client-balance-detail-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .client-balance-summary,
+  .client-balance-secondary-kpis,
+  .client-balance-detail-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.client-balance-account-dropdown {
+  width: 100%;
+}
+
+.client-balance-account-dropdown > button {
+  min-height: 44px;
+  border-color: rgba(255, 127, 24, .48);
+  background: #fff;
+  color: #111b29;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.client-balance-account-dropdown > button:hover,
+.client-balance-account-dropdown > button:focus-visible,
+.client-balance-account-dropdown.open > button {
+  border-color: #ff7f18;
+  outline: 2px solid rgba(255, 127, 24, .16);
+  background: #fff8f1;
+}
+
+.client-balance-account-menu {
+  z-index: 240;
+}
+
+.client-balance-account-menu button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.client-balance-account-menu button small {
+  color: #7a8798;
+  font-size: 9px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.client-balance-modal .client-balance-date-picker > button,
+.client-balance-modal .client-balance-form-dropdown > button {
+  min-height: 43px;
+  border: 1px solid #cbd5e1;
+  border-radius: 9px;
+  background: #f7f9fc;
+  color: #101927;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.client-balance-modal .client-balance-date-picker > button:hover,
+.client-balance-modal .client-balance-date-picker > button:focus-visible,
+.client-balance-modal .client-balance-date-picker.open > button,
+.client-balance-modal .client-balance-form-dropdown > button:hover,
+.client-balance-modal .client-balance-form-dropdown > button:focus-visible,
+.client-balance-modal .client-balance-form-dropdown.open > button {
+  border-color: #ff7f18;
+  outline: 2px solid rgba(255, 127, 24, .14);
+  background: #fff;
+}
+
+.client-balance-form-dropdown-menu {
+  z-index: 260;
+}
+
+.client-balance-modal .client-balance-checkbox {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 66px;
+  box-sizing: border-box;
+  padding: 10px 13px;
+  border: 1px solid #f0c9aa;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #fffaf5, #fff3e8);
+  cursor: pointer;
+  transition: border-color .16s ease, background .16s ease, box-shadow .16s ease;
+}
+
+.client-balance-modal .client-balance-checkbox:hover,
+.client-balance-modal .client-balance-checkbox.checked {
+  border-color: #ff821b;
+  background: #fff0e1;
+  box-shadow: 0 0 0 3px rgba(255, 130, 27, .09);
+}
+
+.client-balance-modal .client-balance-checkbox input[type="checkbox"] {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.client-balance-checkbox-control {
+  display: grid;
+  flex: 0 0 25px;
+  width: 25px;
+  height: 25px;
+  place-items: center;
+  border: 2px solid #f08a3c;
+  border-radius: 7px;
+  background: #fff;
+  color: transparent;
+  transition: background .16s ease, color .16s ease, transform .16s ease;
+}
+
+.client-balance-checkbox.checked .client-balance-checkbox-control {
+  background: #ff7f18;
+  color: #101927;
+  transform: scale(1.04);
+}
+
+.client-balance-checkbox-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.client-balance-checkbox-copy strong {
+  color: #26384d;
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.client-balance-checkbox-copy small {
+  color: #6b7788;
+  font-size: 10px;
+  font-weight: 750;
+  line-height: 1.3;
+}
+
+.client-balance-modal .client-balance-amount-input {
+  color: #0b1522;
+  font-variant-numeric: tabular-nums;
+  font-weight: 900;
+  letter-spacing: .015em;
+  text-align: right;
+}

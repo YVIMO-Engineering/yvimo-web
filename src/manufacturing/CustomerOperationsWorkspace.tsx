@@ -19,6 +19,7 @@ import {
   Search,
   Trash2,
   UserRound,
+  WalletCards,
   Wrench,
   X,
 } from 'lucide-react';
@@ -28,6 +29,7 @@ import {
   type GooglePlacesAddressMatch,
 } from '../lib/maps/googlePlacesAddressLookup';
 import { supabase } from '../lib/supabaseClient';
+import { ClientBalancesWorkspace } from './ClientBalancesWorkspace';
 
 export type ClientsContextTab =
   | 'customers'
@@ -263,9 +265,9 @@ const clientsPageContent: Record<ClientsContextTab, { eyebrow: string; title: st
     description: 'Follow equipment and material movements between your organization and each customer.',
   },
   balances: {
-    eyebrow: 'MES / CLIENTS',
-    title: 'Balances',
-    description: 'Review the current balance of customer assets, equipment, deliveries, and returns in one place.',
+    eyebrow: 'MES / CLIENT ACCOUNTS',
+    title: 'Client Balances',
+    description: 'Track operational charges, payments, adjustments, and invoice references for every customer.',
   },
   'docs-vouchers': {
     eyebrow: 'MES / CLIENTS',
@@ -503,7 +505,7 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
   const [assetForm, setAssetForm] = React.useState<CustomerAssetFormState>(emptyCustomerAssetForm);
   const [assetPhotos, setAssetPhotos] = React.useState<File[]>([]);
   const [assetDocuments, setAssetDocuments] = React.useState<File[]>([]);
-  const [loading, setLoading] = React.useState(activeTab === 'customers' || activeTab === 'assets-equipment');
+  const [loading, setLoading] = React.useState(activeTab === 'customers' || activeTab === 'assets-equipment' || activeTab === 'balances');
   const [saving, setSaving] = React.useState(false);
   const [errorMessage, setErrorMessage] = React.useState('');
   const [formMode, setFormMode] = React.useState<'create' | 'edit' | null>(null);
@@ -606,7 +608,7 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
   }, [organizationId]);
 
   React.useEffect(() => {
-    if (activeTab === 'customers' || activeTab === 'assets-equipment') void loadCustomers();
+    if (activeTab === 'customers' || activeTab === 'assets-equipment' || activeTab === 'balances') void loadCustomers();
   }, [activeTab, loadCustomers]);
 
   React.useEffect(() => {
@@ -1134,6 +1136,16 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
                       <div className="clients-card-footer">
                         <span><b>Payment terms</b>{customer.paymentTerms}</span>
                         <p><b>Notes</b>{customer.notes || 'No customer notes yet.'}</p>
+                        <button
+                          type="button"
+                          className="clients-card-balance-link"
+                          onClick={() => {
+                            sessionStorage.setItem('yvimo:mes:clients:balance-customer', customer.id);
+                            onNavigate('/workspace/manufacturing-ops/mes/clients/balances');
+                          }}
+                        >
+                          <WalletCards size={15} /> View Balance
+                        </button>
                       </div>
                     </article>
                   ))}
@@ -1311,6 +1323,23 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
               )}
             </>
           ) : null}
+        </div>
+      ) : null}
+
+      {activeTab === 'balances' ? (
+        <div className="clients-app-content">
+          <ClientBalancesWorkspace
+            organizationId={organizationId}
+            customers={customers.map((customer) => ({
+              id: customer.id,
+              customerName: customer.customerName,
+              legalName: customer.legalName,
+              status: customer.status,
+            }))}
+            loadingCustomers={loading}
+            customerError={errorMessage}
+            onRetryCustomers={() => void loadCustomers()}
+          />
         </div>
       ) : null}
 

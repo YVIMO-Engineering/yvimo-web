@@ -57,6 +57,7 @@ import { QualityOperationsWorkspace, type QualityContextTab } from './manufactur
 import { SupplierOperationsWorkspace, type SupplierContextTab } from './manufacturing/SupplierOperationsWorkspace';
 import { CustomerOperationsWorkspace, type ClientsContextTab } from './manufacturing/CustomerOperationsWorkspace';
 import './manufacturing/customerOperations.css';
+import './manufacturing/clientBalances.css';
 import './styles.css';
 import './manufacturing/customerModalControls.css';
 import './manufacturing/operatorTerminalDropdowns.css';
@@ -3424,14 +3425,15 @@ function LoggedDashboardPage({
     label: string;
     path: string;
     icon: React.ComponentType<{ size?: number }>;
+    disabled?: boolean;
   }> = [
     { value: 'customers', label: 'Customers', path: '/workspace/manufacturing-ops/mes/clients', icon: Users },
     { value: 'assets-equipment', label: 'Assets & Equipment', path: '/workspace/manufacturing-ops/mes/clients/assets-equipment', icon: Wrench },
-    { value: 'deliveries-returns', label: 'Deliveries & Returns', path: '/workspace/manufacturing-ops/mes/clients/deliveries-returns', icon: Truck },
+    { value: 'deliveries-returns', label: 'Deliveries & Returns', path: '/workspace/manufacturing-ops/mes/clients/deliveries-returns', icon: Truck, disabled: true },
     { value: 'balances', label: 'Balances', path: '/workspace/manufacturing-ops/mes/clients/balances', icon: Calculator },
-    { value: 'docs-vouchers', label: 'Docs & Vouchers', path: '/workspace/manufacturing-ops/mes/clients/docs-vouchers', icon: FileText },
+    { value: 'docs-vouchers', label: 'Docs & Vouchers', path: '/workspace/manufacturing-ops/mes/clients/docs-vouchers', icon: FileText, disabled: true },
   ];
-  const activeClientsContextTab = clientsContextTabs.find((tab) => activePath === tab.path)?.value ?? 'customers';
+  const activeClientsContextTab = clientsContextTabs.find((tab) => activePath === tab.path && !tab.disabled)?.value ?? 'customers';
   const activeManufacturingOrganizationId = manufacturingOrganization
     && !manufacturingOrganization.id.startsWith('local-')
     && !manufacturingOrganization.id.startsWith('joined-')
@@ -4256,8 +4258,12 @@ function LoggedDashboardPage({
                 <button
                   type="button"
                   key={tab.value}
-                  className={activeClientsContextTab === tab.value ? 'active' : ''}
-                  onClick={() => onNavigate(tab.path)}
+                  className={[activeClientsContextTab === tab.value ? 'active' : '', tab.disabled ? 'disabled' : ''].filter(Boolean).join(' ')}
+                  disabled={tab.disabled}
+                  aria-disabled={tab.disabled}
+                  onClick={() => {
+                    if (!tab.disabled) onNavigate(tab.path);
+                  }}
                 >
                   <Icon size={18} />
                   <span>{tab.label}</span>
