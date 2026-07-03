@@ -473,3 +473,9 @@
     flex: 1 0 auto;
   }
 }
+
+.production-orders-table .status-waiting-inspection {
+  border-color: #f5b942;
+  background: #fff5d9;
+  color: #9a4b00;
+}

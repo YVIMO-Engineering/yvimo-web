@@ -202,20 +202,23 @@ export async function reportOperatorProduction(
     shift?: string;
     goodDelta?: number;
     scrapDelta?: number;
+    serialNumber: string;
+    traceability: Record<string, unknown>;
     reason?: string;
     comment?: string;
   },
   client: OperatorClient = supabase,
 ): Promise<ProductionOrder> {
-  const { data, error } = await client.rpc('mes_operator_report_production', {
+  const { data, error } = await client.rpc('mes_operator_report_serialized_production', {
     p_order_id: input.orderId,
     p_organization_id: input.organizationId,
     p_station_code: input.stationCode,
-    p_good_delta: input.goodDelta ?? 0,
-    p_scrap_delta: input.scrapDelta ?? 0,
+    p_serial_number: input.serialNumber,
+    p_result: input.scrapDelta ? 'scrap' : 'good',
     p_reason: input.reason ?? null,
     p_comment: input.comment ?? null,
     p_shift: input.shift ?? null,
+    p_traceability: input.traceability,
   });
 
   if (error) throw error;

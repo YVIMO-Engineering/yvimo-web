@@ -25,7 +25,6 @@ import {
   fetchOperatorScrapEvents,
   fetchOperatorTerminalSnapshot,
   reportOperatorProduction,
-  saveOperatorTraceability,
   setOperatorTerminalState,
   switchOperatorActiveOrder,
   type OperatorScrapEvent,
@@ -203,6 +202,21 @@ function getTraceabilityDamageCodes(form: TraceabilityFormState, reportType: 'go
 
   if (reportType === 'scrap' && reason) codes.push(`scrap:${reason}`);
   return codes;
+}
+
+function suggestNextSerialNumber(serialNumber: string, partNumber: string, nextSequence: number) {
+  const trimmedSerial = serialNumber.trim();
+  const numericSuffix = trimmedSerial.match(/^(.*?)(\d+)$/);
+  if (numericSuffix) {
+    const nextNumber = String(Number(numericSuffix[2]) + 1).padStart(numericSuffix[2].length, '0');
+    return `${numericSuffix[1]}${nextNumber}`;
+  }
+  return `${partNumber}-SN-${String(Math.max(1, nextSequence)).padStart(4, '0')}`;
+}
+
+function getOperatorReportErrorMessage(error: unknown) {
+  const message = typeof error === 'object' && error && 'message' in error ? String(error.message) : '';
+  return message.includes('already assigned') ? message : 'Could not sync production report';
 }
 
 function ReasonModal({
@@ -549,30 +563,29 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId }: Operat
   const applyOrder = (order: ProductionOrder) => {
     setGoodQty(order.completedQuantity);
     setScrapQty(order.scrapQuantity);
-    setState(order.status === 'running' ? 'running' : order.status === 'paused' ? 'paused' : order.status === 'completed' ? 'completed' : 'not-started');
+    setState(order.status === 'running' ? 'running' : order.status === 'paused' ? 'paused' : ['waiting-inspection', 'completed'].includes(order.status) ? 'completed' : 'not-started');
   };
 
-  const saveTraceabilityForUnit = async (
+  const buildTraceabilityForUnit = (
     reportType: 'good' | 'scrap',
     order: ProductionOrder,
+    serialNumber: string,
     reason = '',
     comment = '',
   ) => {
-    const reportedSequence = Math.max(1, order.completedQuantity + order.scrapQuantity);
-    await saveOperatorTraceability({
-      orderId: order.id,
-      organizationId,
-      stationCode,
-      templateId,
-      partLabel: `Piece ${reportedSequence}`,
-      toolId: traceabilityForm.toolId.trim() || undefined,
-      serialNumber: traceabilityForm.serialNumber.trim() || undefined,
-      dimensionsUnit: dimensionUnit,
-      beforeNotch: parseTraceabilityNumber(traceabilityForm.beforeNotch),
-      beforeToothLength: parseTraceabilityNumber(traceabilityForm.beforeToothLength),
-      damageCodes: getTraceabilityDamageCodes(traceabilityForm, reportType, reason),
-      stockToRemove: parseTraceabilityNumber(traceabilityForm.stockToRemove),
-      afterToothLength: parseTraceabilityNumber(traceabilityForm.afterToothLength),
+    const reportedSequence = Math.max(1, order.completedQuantity + order.scrapQuantity + 1);
+    return {
+      template_id: templateId,
+      part_label: `Piece ${reportedSequence}`,
+      tool_id: traceabilityForm.toolId.trim() || null,
+      serial_number: serialNumber,
+      dimensions_unit: dimensionUnit,
+      before_notch: parseTraceabilityNumber(traceabilityForm.beforeNotch),
+      before_tooth_length: parseTraceabilityNumber(traceabilityForm.beforeToothLength),
+      damage_codes: getTraceabilityDamageCodes(traceabilityForm, reportType, reason),
+      damage_image_url: null,
+      stock_to_remove: parseTraceabilityNumber(traceabilityForm.stockToRemove),
+      after_tooth_length: parseTraceabilityNumber(traceabilityForm.afterToothLength),
       payload: {
         report_type: reportType,
         piece_sequence: reportedSequence,
@@ -591,7 +604,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId }: Operat
         operator: stationOperator,
         shift: selectedShift,
       },
-    });
+    };
   };
 
   const localScrapEvents = React.useMemo<OperatorScrapEvent[]>(() => events
@@ -637,17 +650,18 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId }: Operat
   const syncSnapshotOrder = (order: ProductionOrder) => {
     setSnapshot((current) => {
       if (!current) return current;
-      const activeOrders = current.activeOrders.some((candidate) => candidate.id === order.id)
-        ? current.activeOrders.map((candidate) => candidate.id === order.id ? order : candidate)
-        : [order, ...current.activeOrders];
+      const remainsActive = ['released', 'running', 'paused'].includes(order.status);
+      const activeOrders = remainsActive
+        ? current.activeOrders.some((candidate) => candidate.id === order.id)
+          ? current.activeOrders.map((candidate) => candidate.id === order.id ? order : candidate)
+          : [order, ...current.activeOrders]
+        : current.activeOrders.filter((candidate) => candidate.id !== order.id);
 
       return {
         ...current,
-        currentOrder: order,
+        currentOrder: remainsActive ? order : null,
         activeOrders,
-        queuedOrders: current.queuedOrders
-          .filter((candidate) => candidate.id !== order.id)
-          .map((candidate) => candidate.id === order.id ? order : candidate),
+        queuedOrders: activeOrders.filter((candidate) => candidate.id !== order.id),
       };
     });
   };
@@ -752,6 +766,10 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId }: Operat
 
     if (nextOrder) {
       applyOrder(nextOrder);
+      setTraceabilityForm((current) => ({
+        ...current,
+        serialNumber: `${nextOrder.partNumber}-SN-${String(nextOrder.completedQuantity + nextOrder.scrapQuantity + 1).padStart(4, '0')}`,
+      }));
       setTerminalMessage('');
       return;
     }
@@ -766,29 +784,35 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId }: Operat
   const reportGood = async () => {
     if (!currentOrder) return;
     if (!canReport || completedQty >= totalQty) return;
+    const serialNumber = traceabilityForm.serialNumber.trim();
+    if (!serialNumber) {
+      setTerminalMessage('Enter a serial number before reporting this piece.');
+      showToast('Enter a serial number before reporting this piece');
+      return;
+    }
     if (!hasSupabaseOrder) {
       setGoodQty((quantity) => Math.min(totalQty - scrapQty, quantity + 1));
       setEvents((current) => [{ type: 'good', timestamp: formatToastTime() }, ...current].slice(0, 8));
+      setTraceField('serialNumber', suggestNextSerialNumber(serialNumber, currentOrder.partNumber, completedQty + 2));
       showToast('Good part reported');
       return;
     }
 
     setSyncPending(true);
     try {
-      const order = await reportOperatorProduction({ orderId: currentOrder.id, organizationId, stationCode, shift: selectedShift, goodDelta: 1 });
+      const order = await reportOperatorProduction({ orderId: currentOrder.id, organizationId, stationCode, shift: selectedShift, goodDelta: 1, serialNumber, traceability: buildTraceabilityForUnit('good', currentOrder, serialNumber) });
       applyOrder(order);
       syncSnapshotOrder(order);
+      setTerminalMessage('');
       setEvents((current) => [{ type: 'good', timestamp: formatToastTime() }, ...current].slice(0, 8));
-      try {
-        await saveTraceabilityForUnit('good', order);
-        showToast('Good part and traceability saved');
-      } catch (traceabilityError) {
-        console.error('Unable to save good traceability', traceabilityError);
-        showToast('Good part synced; traceability failed');
-      }
+      showToast('Good part and traceability saved');
+
+      setTraceField('serialNumber', suggestNextSerialNumber(serialNumber, order.partNumber, order.completedQuantity + order.scrapQuantity + 1));
     } catch (error) {
       console.error('Unable to report good production', error);
-      showToast('Could not sync good part');
+      const message = getOperatorReportErrorMessage(error);
+      setTerminalMessage(message);
+      showToast(message);
     } finally {
       setSyncPending(false);
     }
@@ -800,6 +824,12 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId }: Operat
       return;
     }
     if (modal === 'scrap') {
+      const serialNumber = traceabilityForm.serialNumber.trim();
+      if (!serialNumber) {
+        setTerminalMessage('Enter a serial number before reporting this piece.');
+        showToast('Enter a serial number before reporting this piece');
+        return;
+      }
       if (!hasSupabaseOrder) {
         const nextScrapTotal = Math.min(totalQty - goodQty, scrapQty + 1);
         setScrapQty((quantity) => Math.min(totalQty - goodQty, quantity + 1));
@@ -813,13 +843,15 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId }: Operat
           orderNumber: currentOrder.orderNumber,
           reportedTotal: goodQty + nextScrapTotal,
         }, ...current].slice(0, 8));
+        setTraceField('serialNumber', suggestNextSerialNumber(serialNumber, currentOrder.partNumber, completedQty + 2));
         showToast('Scrap reported');
       } else {
         setSyncPending(true);
         try {
-          const order = await reportOperatorProduction({ orderId: currentOrder.id, organizationId, stationCode, shift: selectedShift, scrapDelta: 1, reason, comment });
+          const order = await reportOperatorProduction({ orderId: currentOrder.id, organizationId, stationCode, shift: selectedShift, scrapDelta: 1, serialNumber, traceability: buildTraceabilityForUnit('scrap', currentOrder, serialNumber, reason, comment), reason, comment });
           applyOrder(order);
           syncSnapshotOrder(order);
+          setTerminalMessage('');
           setEvents((current) => [{
             type: 'scrap',
             timestamp: new Date().toISOString(),
@@ -830,16 +862,15 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId }: Operat
             orderNumber: order.orderNumber,
             reportedTotal: order.completedQuantity + order.scrapQuantity,
           }, ...current].slice(0, 8));
-          try {
-            await saveTraceabilityForUnit('scrap', order, reason, comment);
-            showToast('Scrap and traceability saved');
-          } catch (traceabilityError) {
-            console.error('Unable to save scrap traceability', traceabilityError);
-            showToast('Scrap synced; traceability failed');
-          }
+          showToast('Scrap and traceability saved');
+
+          setTraceField('serialNumber', suggestNextSerialNumber(serialNumber, order.partNumber, order.completedQuantity + order.scrapQuantity + 1));
         } catch (error) {
           console.error('Unable to report scrap', error);
-          showToast('Could not sync scrap');
+          const message = getOperatorReportErrorMessage(error);
+          setTerminalMessage(message);
+          showToast(message);
+          return;
         } finally {
           setSyncPending(false);
         }
@@ -884,15 +915,18 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId }: Operat
           const order = await setOperatorTerminalState({ orderId: currentOrder.id, organizationId, stationCode, shift: selectedShift, state: 'completed', reason, comment });
           applyOrder(order);
           syncSnapshotOrder(order);
+          setState('completed');
+          showToast(order.status === 'waiting-inspection' ? 'Manufacturing completed; waiting for Quality inspection' : 'Operation completed');
         } catch (error) {
           console.error('Unable to complete operation', error);
           showToast('Could not sync completion');
         } finally {
           setSyncPending(false);
         }
+      } else {
+        setState('completed');
+        showToast('Operation completed');
       }
-      setState('completed');
-      showToast('Operation completed');
     }
     if (modal === 'undo') {
       const lastEvent = events[0];
@@ -1185,7 +1219,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId }: Operat
                 <strong>{activePartSequence.toLocaleString()}</strong>
               </div>
               <label>Tool ID<input value={traceabilityForm.toolId} onChange={(event) => setTraceField('toolId', event.target.value)} /></label>
-              <label>Serial Number<input value={traceabilityForm.serialNumber} onChange={(event) => setTraceField('serialNumber', event.target.value)} /></label>
+              <label>Serial Number<input required value={traceabilityForm.serialNumber} onChange={(event) => setTraceField('serialNumber', event.target.value)} /></label>
               <div className="operator-terminal-unit-switch" role="group" aria-label="Dimensions unit">
                 <span>Dimensions</span>
                 <div>

@@ -1,4 +1,4 @@
-export type ProductionOrderStatus = 'planned' | 'released' | 'running' | 'paused' | 'completed' | 'cancelled';
+export type ProductionOrderStatus = 'planned' | 'released' | 'running' | 'paused' | 'waiting-inspection' | 'completed' | 'cancelled';
 
 export type ProductionOrderPriority = 'low' | 'normal' | 'high' | 'expedite';
 

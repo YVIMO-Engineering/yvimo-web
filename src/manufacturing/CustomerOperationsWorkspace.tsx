@@ -3,16 +3,23 @@ import { createPortal } from 'react-dom';
 import {
   ArrowLeft,
   Building2,
+  Camera,
   Check,
   ChevronDown,
+  Clock3,
+  ExternalLink,
   FileText,
+  History,
   Mail,
   MapPin,
+  Package,
   Pencil,
   Phone,
   Plus,
+  Search,
   Trash2,
   UserRound,
+  Wrench,
   X,
 } from 'lucide-react';
 import {
@@ -30,6 +37,7 @@ export type ClientsContextTab =
   | 'docs-vouchers';
 
 type CustomerStatus = 'active' | 'inactive';
+type AssetStatus = 'available' | 'in-custody' | 'in-service' | 'awaiting-return' | 'delivered' | 'maintenance' | 'inspection' | 'retired';
 type PaymentTermsMode = 'Net 30' | 'Net 60' | '50/50' | 'Immediate' | 'Custom';
 
 type CustomerDropdownOption<T extends string> = {
@@ -91,6 +99,72 @@ type CustomerFormState = {
   status: CustomerStatus;
 };
 
+type CustomerAssetRecord = {
+  id: string;
+  customerId: string;
+  sourceType: 'manual' | 'production-order';
+  sourceProductionOrderId: string | null;
+  lastProductionOrderId: string | null;
+  assetType: string;
+  serialNumber: string;
+  partNumber: string;
+  description: string;
+  manufacturer: string;
+  familyCategory: string;
+  currentLocation: string;
+  custodianName: string;
+  custodianRole: string;
+  status: AssetStatus;
+  estimatedLifePercent: number | null;
+  lastInspectionAt: string | null;
+  lastServiceAt: string | null;
+  serviceCount: number;
+  internalNotes: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type CustomerAssetService = {
+  id: string;
+  assetId: string;
+  productionOrderId: string | null;
+  sourceType: 'manual' | 'production-order';
+  serviceType: string;
+  result: 'completed' | 'ok' | 'approach' | 'nok' | 'scrap';
+  serviceDate: string;
+  remainingLifePercent: number | null;
+  notes: string;
+  orderNumber: string;
+};
+
+type CustomerAssetAttachment = {
+  id: string;
+  assetId: string;
+  attachmentType: 'photo' | 'document';
+  storageBucket: string;
+  fileName: string;
+  filePath: string;
+  fileType: string;
+  createdAt: string;
+};
+
+type CustomerAssetFormState = {
+  customerId: string;
+  assetType: string;
+  serialNumber: string;
+  partNumber: string;
+  description: string;
+  manufacturer: string;
+  familyCategory: string;
+  currentLocation: string;
+  custodianName: string;
+  custodianRole: string;
+  status: AssetStatus;
+  estimatedLifePercent: string;
+  lastInspectionAt: string;
+  internalNotes: string;
+};
+
 type CustomerOperationsWorkspaceProps = {
   onNavigate: (path: string) => void;
   activeTab: ClientsContextTab;
@@ -110,9 +184,37 @@ const emptyCustomerForm: CustomerFormState = {
   status: 'active',
 };
 
+const emptyCustomerAssetForm: CustomerAssetFormState = {
+  customerId: '',
+  assetType: '',
+  serialNumber: '',
+  partNumber: '',
+  description: '',
+  manufacturer: '',
+  familyCategory: '',
+  currentLocation: 'YVIMO',
+  custodianName: '',
+  custodianRole: '',
+  status: 'in-custody',
+  estimatedLifePercent: '',
+  lastInspectionAt: '',
+  internalNotes: '',
+};
+
 const customerStatusOptions: Array<CustomerDropdownOption<CustomerStatus>> = [
   { value: 'active', label: 'Active' },
   { value: 'inactive', label: 'Inactive' },
+];
+
+const assetStatusOptions: Array<CustomerDropdownOption<AssetStatus>> = [
+  { value: 'available', label: 'Available' },
+  { value: 'in-custody', label: 'In custody' },
+  { value: 'in-service', label: 'In service' },
+  { value: 'awaiting-return', label: 'Awaiting return' },
+  { value: 'delivered', label: 'Delivered' },
+  { value: 'maintenance', label: 'Maintenance' },
+  { value: 'inspection', label: 'Inspection' },
+  { value: 'retired', label: 'Retired' },
 ];
 
 const paymentTermsOptions: Array<CustomerDropdownOption<PaymentTermsMode>> = [
@@ -304,10 +406,104 @@ function customerToForm(customer: CustomerRecord): CustomerFormState {
   };
 }
 
+type CustomerAssetRow = {
+  id: string;
+  customer_id: string;
+  source_type: 'manual' | 'production-order';
+  source_production_order_id: string | null;
+  last_production_order_id: string | null;
+  asset_type: string;
+  serial_number: string;
+  part_number: string | null;
+  description: string;
+  manufacturer: string | null;
+  family_category: string | null;
+  current_location: string | null;
+  custodian_name: string | null;
+  custodian_role: string | null;
+  status: AssetStatus;
+  estimated_life_percent: number | null;
+  last_inspection_at: string | null;
+  last_service_at: string | null;
+  service_count: number;
+  internal_notes: string;
+  created_at: string;
+  updated_at: string;
+};
+
+type CustomerAssetServiceRow = {
+  id: string;
+  asset_id: string;
+  production_order_id: string | null;
+  source_type: 'manual' | 'production-order';
+  service_type: string;
+  result: CustomerAssetService['result'];
+  service_date: string;
+  remaining_life_percent: number | null;
+  notes: string;
+  production_order: { order_number: string } | Array<{ order_number: string }> | null;
+};
+
+type CustomerAssetAttachmentRow = {
+  id: string;
+  asset_id: string;
+  attachment_type: 'photo' | 'document';
+  storage_bucket: string;
+  file_name: string;
+  file_path: string;
+  file_type: string;
+  created_at: string;
+};
+
+function formatAssetDate(value: string | null) {
+  if (!value) return 'Not recorded';
+  return new Intl.DateTimeFormat('en-US', { month: 'short', day: '2-digit', year: 'numeric' }).format(new Date(value));
+}
+
+function mapAssetRow(row: CustomerAssetRow): CustomerAssetRecord {
+  return {
+    id: row.id,
+    customerId: row.customer_id,
+    sourceType: row.source_type,
+    sourceProductionOrderId: row.source_production_order_id,
+    lastProductionOrderId: row.last_production_order_id,
+    assetType: row.asset_type,
+    serialNumber: row.serial_number,
+    partNumber: row.part_number ?? '',
+    description: row.description,
+    manufacturer: row.manufacturer ?? '',
+    familyCategory: row.family_category ?? '',
+    currentLocation: row.current_location ?? '',
+    custodianName: row.custodian_name ?? '',
+    custodianRole: row.custodian_role ?? '',
+    status: row.status,
+    estimatedLifePercent: row.estimated_life_percent,
+    lastInspectionAt: row.last_inspection_at,
+    lastServiceAt: row.last_service_at,
+    serviceCount: row.service_count,
+    internalNotes: row.internal_notes,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
 export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizationId }: CustomerOperationsWorkspaceProps) {
   const page = clientsPageContent[activeTab];
   const [customers, setCustomers] = React.useState<CustomerRecord[]>([]);
-  const [loading, setLoading] = React.useState(activeTab === 'customers');
+  const [assetCustomerFilter, setAssetCustomerFilter] = React.useState('all');
+  const [assetSearch, setAssetSearch] = React.useState('');
+  const [assets, setAssets] = React.useState<CustomerAssetRecord[]>([]);
+  const [assetServices, setAssetServices] = React.useState<CustomerAssetService[]>([]);
+  const [assetAttachments, setAssetAttachments] = React.useState<CustomerAssetAttachment[]>([]);
+  const [selectedAssetId, setSelectedAssetId] = React.useState<string | null>(null);
+  const [assetLoading, setAssetLoading] = React.useState(false);
+  const [assetError, setAssetError] = React.useState('');
+  const [assetFormOpen, setAssetFormOpen] = React.useState(false);
+  const [assetEditingId, setAssetEditingId] = React.useState<string | null>(null);
+  const [assetForm, setAssetForm] = React.useState<CustomerAssetFormState>(emptyCustomerAssetForm);
+  const [assetPhotos, setAssetPhotos] = React.useState<File[]>([]);
+  const [assetDocuments, setAssetDocuments] = React.useState<File[]>([]);
+  const [loading, setLoading] = React.useState(activeTab === 'customers' || activeTab === 'assets-equipment');
   const [saving, setSaving] = React.useState(false);
   const [errorMessage, setErrorMessage] = React.useState('');
   const [formMode, setFormMode] = React.useState<'create' | 'edit' | null>(null);
@@ -345,20 +541,90 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
     setLoading(false);
   }, [organizationId]);
 
+  const loadAssets = React.useCallback(async () => {
+    if (!organizationId) return;
+    setAssetLoading(true);
+    setAssetError('');
+
+    const [assetResponse, serviceResponse, attachmentResponse] = await Promise.all([
+      supabase
+        .from('mes_customer_assets')
+        .select('*')
+        .eq('organization_id', organizationId)
+        .order('updated_at', { ascending: false }),
+      supabase
+        .from('mes_customer_asset_service_events')
+        .select('*, production_order:mes_production_orders(order_number)')
+        .eq('organization_id', organizationId)
+        .order('service_date', { ascending: false }),
+      supabase
+        .from('mes_customer_asset_attachments')
+        .select('*')
+        .eq('organization_id', organizationId)
+        .order('created_at', { ascending: false }),
+    ]);
+
+    const firstError = assetResponse.error || serviceResponse.error || attachmentResponse.error;
+    if (firstError) {
+      setAssetError(firstError.message);
+      setAssets([]);
+      setAssetServices([]);
+      setAssetAttachments([]);
+    } else {
+      const nextAssets = ((assetResponse.data ?? []) as CustomerAssetRow[]).map(mapAssetRow);
+      setAssets(nextAssets);
+      setAssetServices(((serviceResponse.data ?? []) as CustomerAssetServiceRow[]).map((row) => {
+        const order = Array.isArray(row.production_order) ? row.production_order[0] : row.production_order;
+        return {
+          id: row.id,
+          assetId: row.asset_id,
+          productionOrderId: row.production_order_id,
+          sourceType: row.source_type,
+          serviceType: row.service_type,
+          result: row.result,
+          serviceDate: row.service_date,
+          remainingLifePercent: row.remaining_life_percent,
+          notes: row.notes,
+          orderNumber: order?.order_number ?? '',
+        };
+      }));
+      setAssetAttachments(((attachmentResponse.data ?? []) as CustomerAssetAttachmentRow[]).map((row) => ({
+        id: row.id,
+        assetId: row.asset_id,
+        attachmentType: row.attachment_type,
+        storageBucket: row.storage_bucket,
+        fileName: row.file_name,
+        filePath: row.file_path,
+        fileType: row.file_type,
+        createdAt: row.created_at,
+      })));
+      setSelectedAssetId((current) => current && nextAssets.some((asset) => asset.id === current)
+        ? current
+        : nextAssets[0]?.id ?? null);
+    }
+    setAssetLoading(false);
+  }, [organizationId]);
+
   React.useEffect(() => {
-    if (activeTab === 'customers') void loadCustomers();
+    if (activeTab === 'customers' || activeTab === 'assets-equipment') void loadCustomers();
   }, [activeTab, loadCustomers]);
 
   React.useEffect(() => {
-    if (!formMode && !customerToDelete) return undefined;
+    if (activeTab === 'assets-equipment') void loadAssets();
+  }, [activeTab, loadAssets]);
+
+  React.useEffect(() => {
+    if (!formMode && !customerToDelete && !assetFormOpen) return undefined;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || saving) return;
       setFormMode(null);
       setCustomerToDelete(null);
+      setAssetFormOpen(false);
+      setAssetEditingId(null);
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [formMode, customerToDelete, saving]);
+  }, [formMode, customerToDelete, assetFormOpen, saving]);
 
   const updateAddressSuggestionPosition = React.useCallback(() => {
     const control = addressLookupControlRef.current;
@@ -503,6 +769,8 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
     if (saving) return;
     setFormMode(null);
     setCustomerToDelete(null);
+    setAssetFormOpen(false);
+    setAssetEditingId(null);
   };
 
   const saveCustomer = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -574,6 +842,196 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
     setSaving(false);
   };
 
+  const openCreateAsset = () => {
+    setAssetEditingId(null);
+    const preferredCustomer = assetCustomerFilter !== 'all'
+      ? assetCustomerFilter
+      : customers.find((customer) => customer.status === 'active')?.id ?? customers[0]?.id ?? '';
+    setAssetForm({ ...emptyCustomerAssetForm, customerId: preferredCustomer });
+    setAssetPhotos([]);
+    setAssetDocuments([]);
+    setAssetError('');
+    setAssetFormOpen(true);
+  };
+
+  const openEditAsset = (asset: CustomerAssetRecord) => {
+    setAssetEditingId(asset.id);
+    setAssetForm({
+      customerId: asset.customerId,
+      assetType: asset.assetType,
+      serialNumber: asset.serialNumber,
+      partNumber: asset.partNumber,
+      description: asset.description,
+      manufacturer: asset.manufacturer,
+      familyCategory: asset.familyCategory,
+      currentLocation: asset.currentLocation,
+      custodianName: asset.custodianName,
+      custodianRole: asset.custodianRole,
+      status: asset.status,
+      estimatedLifePercent: asset.estimatedLifePercent === null ? '' : String(asset.estimatedLifePercent),
+      lastInspectionAt: asset.lastInspectionAt?.slice(0, 10) ?? '',
+      internalNotes: asset.internalNotes,
+    });
+    setAssetPhotos([]);
+    setAssetDocuments([]);
+    setAssetError('');
+    setAssetFormOpen(true);
+  };
+
+  const uploadAssetFiles = async (
+    assetId: string,
+    customerId: string,
+    files: File[],
+    attachmentType: CustomerAssetAttachment['attachmentType'],
+  ) => {
+    const uploadedRows = [];
+    for (const [index, file] of files.entries()) {
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '-');
+      const filePath = `${organizationId}/${customerId}/${assetId}/${Date.now()}-${index}-${safeName}`;
+      const { error: uploadError } = await supabase.storage
+        .from('mes-customer-assets')
+        .upload(filePath, file, { contentType: file.type, upsert: false });
+      if (uploadError) throw uploadError;
+      uploadedRows.push({
+        organization_id: organizationId,
+        asset_id: assetId,
+        attachment_type: attachmentType,
+        storage_bucket: 'mes-customer-assets',
+        file_name: file.name,
+        file_path: filePath,
+        file_type: file.type || 'application/octet-stream',
+      });
+    }
+    if (uploadedRows.length) {
+      const { error: attachmentError } = await supabase.from('mes_customer_asset_attachments').insert(uploadedRows);
+      if (attachmentError) throw attachmentError;
+    }
+  };
+
+  const saveAsset = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!organizationId || saving || !assetForm.customerId) return;
+    setSaving(true);
+    setAssetError('');
+
+    const lifePercent = assetForm.estimatedLifePercent.trim() === ''
+      ? null
+      : Number(assetForm.estimatedLifePercent);
+    const assetPayload = {
+      organization_id: organizationId,
+      customer_id: assetForm.customerId,
+      asset_type: assetForm.assetType.trim(),
+      serial_number: assetForm.serialNumber.trim(),
+      part_number: assetForm.partNumber.trim() || null,
+      description: assetForm.description.trim(),
+      manufacturer: assetForm.manufacturer.trim() || null,
+      family_category: assetForm.familyCategory.trim() || null,
+      current_location: assetForm.currentLocation.trim() || null,
+      custodian_name: assetForm.custodianName.trim() || null,
+      custodian_role: assetForm.custodianRole.trim() || null,
+      status: assetForm.status,
+      estimated_life_percent: lifePercent,
+      last_inspection_at: assetForm.lastInspectionAt || null,
+      internal_notes: assetForm.internalNotes.trim(),
+    };
+    const request = assetEditingId
+      ? supabase
+        .from('mes_customer_assets')
+        .update(assetPayload)
+        .eq('id', assetEditingId)
+        .eq('organization_id', organizationId)
+      : supabase
+        .from('mes_customer_assets')
+        .insert({ ...assetPayload, source_type: 'manual' });
+    const { data, error } = await request.select('*').single();
+
+    if (error || !data) {
+      setAssetError(error?.code === '23505'
+        ? 'This serial number is already registered for the selected client.'
+        : error?.message || 'The asset could not be created.');
+      setSaving(false);
+      return;
+    }
+
+    try {
+      const savedAsset = mapAssetRow(data as CustomerAssetRow);
+      await uploadAssetFiles(savedAsset.id, savedAsset.customerId, assetPhotos, 'photo');
+      await uploadAssetFiles(savedAsset.id, savedAsset.customerId, assetDocuments, 'document');
+      setAssetFormOpen(false);
+      setAssetEditingId(null);
+      setSelectedAssetId(savedAsset.id);
+      await loadAssets();
+    } catch (uploadError) {
+      const uploadMessage = uploadError instanceof Error ? uploadError.message : 'The asset was saved, but some files could not be uploaded.';
+      setAssetFormOpen(false);
+      setAssetEditingId(null);
+      await loadAssets();
+      setAssetError(uploadMessage);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openAssetAttachment = async (attachment: CustomerAssetAttachment) => {
+    setAssetError('');
+    const { data, error } = await supabase.storage
+      .from(attachment.storageBucket)
+      .createSignedUrl(attachment.filePath, 60 * 10);
+    if (error || !data?.signedUrl) {
+      setAssetError(error?.message || 'This file could not be opened.');
+      return;
+    }
+    window.open(data.signedUrl, '_blank', 'noopener,noreferrer');
+  };
+
+  const customerFilterOptions = React.useMemo<Array<CustomerDropdownOption<string>>>(() => [
+    { value: 'all', label: 'All clients' },
+    ...customers.map((customer) => ({
+      value: customer.id,
+      label: customer.status === 'inactive' ? `${customer.customerName} (Inactive)` : customer.customerName,
+    })),
+  ], [customers]);
+
+  React.useEffect(() => {
+    if (assetCustomerFilter !== 'all' && !customers.some((customer) => customer.id === assetCustomerFilter)) {
+      setAssetCustomerFilter('all');
+    }
+  }, [assetCustomerFilter, customers]);
+
+  const assetCustomerOptions = React.useMemo<Array<CustomerDropdownOption<string>>>(() => customers.map((customer) => ({
+    value: customer.id,
+    label: customer.status === 'inactive' ? `${customer.customerName} (Inactive)` : customer.customerName,
+  })), [customers]);
+
+  const filteredAssets = React.useMemo(() => {
+    const query = assetSearch.trim().toLowerCase();
+    return assets.filter((asset) => {
+      if (assetCustomerFilter !== 'all' && asset.customerId !== assetCustomerFilter) return false;
+      if (!query) return true;
+      const customer = customers.find((item) => item.id === asset.customerId);
+      return [asset.serialNumber, asset.partNumber, asset.assetType, asset.description, asset.manufacturer, customer?.customerName]
+        .some((value) => value?.toLowerCase().includes(query));
+    });
+  }, [assetCustomerFilter, assetSearch, assets, customers]);
+
+  React.useEffect(() => {
+    if (selectedAssetId && filteredAssets.some((asset) => asset.id === selectedAssetId)) return;
+    setSelectedAssetId(filteredAssets[0]?.id ?? null);
+  }, [filteredAssets, selectedAssetId]);
+
+  const selectedAsset = filteredAssets.find((asset) => asset.id === selectedAssetId) ?? null;
+  const selectedAssetCustomer = selectedAsset
+    ? customers.find((customer) => customer.id === selectedAsset.customerId) ?? null
+    : null;
+  const selectedAssetServices = selectedAsset
+    ? assetServices.filter((service) => service.assetId === selectedAsset.id)
+    : [];
+  const selectedAssetAttachments = selectedAsset
+    ? assetAttachments.filter((attachment) => attachment.assetId === selectedAsset.id)
+    : [];
+  const assetsInCustody = filteredAssets.filter((asset) => ['in-custody', 'in-service', 'maintenance', 'inspection'].includes(asset.status)).length;
+  const assetsWithLowLife = filteredAssets.filter((asset) => asset.estimatedLifePercent !== null && asset.estimatedLifePercent <= 35).length;
+
   const activeCustomers = customers.filter((customer) => customer.status === 'active').length;
   const addressSuggestionMenu = (showAddressSuggestions || addressSuggestionsLoading)
     && (addressSuggestions.length > 0 || addressSuggestionsLoading)
@@ -616,6 +1074,12 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
             <button type="button" onClick={openCreateCustomer}>
               <Plus size={16} />
               Add New Customer
+            </button>
+          ) : null}
+          {activeTab === 'assets-equipment' ? (
+            <button type="button" onClick={openCreateAsset} disabled={!customers.length}>
+              <Plus size={16} />
+              Add Asset
             </button>
           ) : null}
         </div>
@@ -684,6 +1148,263 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
               )}
             </section>
           ) : null}
+        </div>
+      ) : null}
+
+      {activeTab === 'assets-equipment' ? (
+        <div className="clients-app-content clients-assets-content">
+          {loading || assetLoading ? <div className="clients-feedback">Loading customer assets...</div> : null}
+          {errorMessage || assetError ? (
+            <div className="clients-feedback error" role="alert">
+              <span>{errorMessage || assetError}</span>
+              <button type="button" onClick={() => { void loadCustomers(); void loadAssets(); }}>Retry</button>
+            </div>
+          ) : null}
+          {!loading && !assetLoading ? (
+            <>
+              <section className="clients-assets-filter-bar" aria-label="Assets and equipment filters">
+                <div className="clients-assets-filter-field">
+                  <span>Client</span>
+                  <CustomerDropdown
+                    id="assets-equipment-client"
+                    value={assetCustomerFilter}
+                    options={customerFilterOptions}
+                    onChange={setAssetCustomerFilter}
+                  />
+                </div>
+                <label className="clients-assets-search">
+                  <span>Search assets</span>
+                  <div><Search size={16} /><input value={assetSearch} onChange={(event) => setAssetSearch(event.target.value)} placeholder="Serial, part, type, manufacturer" /></div>
+                </label>
+              </section>
+
+              <section className="clients-assets-kpis" aria-label="Asset summary">
+                <div><Package size={18} /><span>Total Assets<strong>{filteredAssets.length}</strong></span></div>
+                <div><Building2 size={18} /><span>Clients Represented<strong>{new Set(filteredAssets.map((asset) => asset.customerId)).size}</strong></span></div>
+                <div><MapPin size={18} /><span>In YVIMO Custody<strong>{assetsInCustody}</strong></span></div>
+                <div className={assetsWithLowLife ? 'warning' : ''}><Clock3 size={18} /><span>Low Estimated Life<strong>{assetsWithLowLife}</strong></span></div>
+              </section>
+
+              {!customers.length ? (
+                <div className="clients-empty-state">
+                  <span><Building2 size={26} /></span>
+                  <strong>Create a client first</strong>
+                  <p>Every asset must have an owner before its custody and service history can be recorded.</p>
+                </div>
+              ) : filteredAssets.length ? (
+                <section className="clients-assets-workspace">
+                  <div className="clients-assets-registry">
+                    <div className="clients-assets-section-heading">
+                      <span><Package size={16} /> Asset Registry</span>
+                      <strong>{filteredAssets.length} items</strong>
+                    </div>
+                    <div className="clients-assets-list" role="listbox" aria-label="Customer assets">
+                      {filteredAssets.map((asset) => {
+                        const customer = customers.find((item) => item.id === asset.customerId);
+                        return (
+                          <button
+                            type="button"
+                            className={asset.id === selectedAssetId ? 'selected' : ''}
+                            aria-selected={asset.id === selectedAssetId}
+                            key={asset.id}
+                            onClick={() => setSelectedAssetId(asset.id)}
+                          >
+                            <span className="clients-asset-list-icon"><Package size={18} /></span>
+                            <span className="clients-asset-list-name">
+                              <strong>{asset.assetType}</strong>
+                              <b>{asset.serialNumber}</b>
+                            </span>
+                            <span><small>Client</small>{customer?.customerName ?? 'Unknown client'}</span>
+                            <span><small>Part Number</small>{asset.partNumber || 'Not specified'}</span>
+                            <span><small>Services</small>{asset.serviceCount}</span>
+                            <em className={`clients-asset-status ${asset.status}`}>{assetStatusOptions.find((option) => option.value === asset.status)?.label}</em>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {selectedAsset ? (
+                    <article className="clients-asset-detail">
+                      <header>
+                        <span className="clients-asset-detail-mark"><Package size={23} /></span>
+                        <div>
+                          <span>{selectedAsset.sourceType === 'production-order' ? 'Generated from Production Order' : 'Manually Registered Asset'}</span>
+                          <h3>{selectedAsset.assetType}</h3>
+                          <strong>{selectedAsset.serialNumber}</strong>
+                        </div>
+                        <div className="clients-asset-detail-actions">
+                          <em className={`clients-asset-status ${selectedAsset.status}`}>{assetStatusOptions.find((option) => option.value === selectedAsset.status)?.label}</em>
+                          <button type="button" onClick={() => openEditAsset(selectedAsset)}><Pencil size={14} /> Edit Asset</button>
+                        </div>
+                      </header>
+
+                      <div className="clients-asset-identity-grid">
+                        <span><small>Owner</small><b>{selectedAssetCustomer?.customerName ?? 'Unknown client'}</b></span>
+                        <span><small>Part Number</small><b>{selectedAsset.partNumber || 'Not specified'}</b></span>
+                        <span><small>Manufacturer</small><b>{selectedAsset.manufacturer || 'Not specified'}</b></span>
+                        <span><small>Family / Category</small><b>{selectedAsset.familyCategory || 'Not specified'}</b></span>
+                        <span><small>Current Location</small><b>{selectedAsset.currentLocation || 'Not recorded'}</b></span>
+                        <span><small>Responsible / Role</small><b>{selectedAsset.custodianName || 'Unassigned'}{selectedAsset.custodianRole ? ` · ${selectedAsset.custodianRole}` : ''}</b></span>
+                      </div>
+
+                      <div className="clients-asset-lifecycle">
+                        <div>
+                          <span>Estimated Useful Life<strong>{selectedAsset.estimatedLifePercent === null ? 'Not estimated' : `${selectedAsset.estimatedLifePercent}%`}</strong></span>
+                          <div><i style={{ width: `${selectedAsset.estimatedLifePercent ?? 0}%` }} /></div>
+                        </div>
+                        <span><small>Last Service</small><b>{formatAssetDate(selectedAsset.lastServiceAt)}</b></span>
+                        <span><small>Last Inspection</small><b>{formatAssetDate(selectedAsset.lastInspectionAt)}</b></span>
+                        <span><small>Total Services</small><b>{selectedAsset.serviceCount}</b></span>
+                      </div>
+
+                      {selectedAsset.description || selectedAsset.internalNotes ? (
+                        <div className="clients-asset-notes">
+                          {selectedAsset.description ? <p><b>Description</b>{selectedAsset.description}</p> : null}
+                          {selectedAsset.internalNotes ? <p><b>Internal Notes</b>{selectedAsset.internalNotes}</p> : null}
+                        </div>
+                      ) : null}
+
+                      <div className="clients-asset-detail-columns">
+                        <section className="clients-asset-evidence">
+                          <div className="clients-assets-section-heading"><span><FileText size={16} /> Evidence</span><strong>{selectedAssetAttachments.length} files</strong></div>
+                          {selectedAssetAttachments.length ? selectedAssetAttachments.map((attachment) => (
+                            <button type="button" key={attachment.id} onClick={() => void openAssetAttachment(attachment)}>
+                              <span>{attachment.attachmentType === 'photo' ? <Camera size={17} /> : <FileText size={17} />}</span>
+                              <b>{attachment.fileName}</b>
+                              <small>{formatAssetDate(attachment.createdAt)}</small>
+                              <ExternalLink size={15} />
+                            </button>
+                          )) : <p className="clients-assets-inline-empty">No photos or documents attached.</p>}
+                        </section>
+
+                        <section className="clients-asset-history">
+                          <div className="clients-assets-section-heading"><span><History size={16} /> Service History</span><strong>{selectedAssetServices.length} events</strong></div>
+                          {selectedAssetServices.length ? (
+                            <div className="clients-asset-timeline">
+                              {selectedAssetServices.map((service) => (
+                                <article key={service.id}>
+                                  <span><Wrench size={15} /></span>
+                                  <div>
+                                    <strong>{service.serviceType}</strong>
+                                    <small>{formatAssetDate(service.serviceDate)}{service.orderNumber ? ` · ${service.orderNumber}` : ''}</small>
+                                    {service.notes ? <p>{service.notes}</p> : null}
+                                  </div>
+                                  <em className={`clients-service-result ${service.result}`}>{service.result}</em>
+                                  {service.remainingLifePercent !== null ? <b>{service.remainingLifePercent}% life</b> : null}
+                                </article>
+                              ))}
+                            </div>
+                          ) : <p className="clients-assets-inline-empty">No service events recorded yet.</p>}
+                        </section>
+                      </div>
+                    </article>
+                  ) : null}
+                </section>
+              ) : (
+                <div className="clients-empty-state">
+                  <span><Package size={26} /></span>
+                  <strong>No assets match this view</strong>
+                  <p>Register an existing customer asset manually, or complete a Production Order to generate its manufactured assets automatically.</p>
+                  <button type="button" onClick={openCreateAsset}><Plus size={16} /> Add Asset</button>
+                </div>
+              )}
+            </>
+          ) : null}
+        </div>
+      ) : null}
+
+      {assetFormOpen ? (
+        <div className="supplier-modal-backdrop" role="presentation" onMouseDown={(event) => {
+          if (event.target === event.currentTarget) closeDialog();
+        }}>
+          <div className="supplier-modal clients-asset-modal" role="dialog" aria-modal="true" aria-labelledby="asset-dialog-title">
+            <button className="supplier-modal-close" type="button" onClick={closeDialog} aria-label="Close dialog" disabled={saving}>
+              <X size={18} />
+            </button>
+            <form onSubmit={saveAsset}>
+              <div className="supplier-modal-header clients-asset-modal-header">
+                <span>Customer Asset</span>
+                <strong id="asset-dialog-title">{assetEditingId ? 'Edit Asset' : 'Register Existing Asset'}</strong>
+                <p>{assetEditingId ? 'Update its custody, condition, and identity without changing its service history.' : 'Add an asset already owned by the client. Future completed Production Orders with this serial will extend its service history.'}</p>
+              </div>
+              <div className="supplier-form-grid clients-asset-form-grid">
+                <label>
+                  Owner Client
+                  <CustomerDropdown id="asset-owner-client" value={assetForm.customerId} options={assetCustomerOptions} onChange={(customerId) => setAssetForm((current) => ({ ...current, customerId }))} />
+                </label>
+                <label>
+                  Status
+                  <CustomerDropdown id="asset-status" value={assetForm.status} options={assetStatusOptions} onChange={(status) => setAssetForm((current) => ({ ...current, status }))} />
+                </label>
+                <label>
+                  Asset Type
+                  <input required autoFocus value={assetForm.assetType} onChange={(event) => setAssetForm((current) => ({ ...current, assetType: event.target.value }))} placeholder="Hob, fixture, machine, tooling..." />
+                </label>
+                <label>
+                  Serial Number
+                  <input required value={assetForm.serialNumber} onChange={(event) => setAssetForm((current) => ({ ...current, serialNumber: event.target.value }))} />
+                </label>
+                <label>
+                  Part Number <em>Optional</em>
+                  <input value={assetForm.partNumber} onChange={(event) => setAssetForm((current) => ({ ...current, partNumber: event.target.value }))} />
+                </label>
+                <label>
+                  Manufacturer <em>Optional</em>
+                  <input value={assetForm.manufacturer} onChange={(event) => setAssetForm((current) => ({ ...current, manufacturer: event.target.value }))} />
+                </label>
+                <label>
+                  Family / Category <em>Optional</em>
+                  <input value={assetForm.familyCategory} onChange={(event) => setAssetForm((current) => ({ ...current, familyCategory: event.target.value }))} />
+                </label>
+                <label>
+                  Current Location <em>Optional</em>
+                  <input value={assetForm.currentLocation} onChange={(event) => setAssetForm((current) => ({ ...current, currentLocation: event.target.value }))} />
+                </label>
+                <label>
+                  Custodian / Responsible <em>Optional</em>
+                  <input value={assetForm.custodianName} onChange={(event) => setAssetForm((current) => ({ ...current, custodianName: event.target.value }))} />
+                </label>
+                <label>
+                  Position / Role <em>Optional</em>
+                  <input value={assetForm.custodianRole} onChange={(event) => setAssetForm((current) => ({ ...current, custodianRole: event.target.value }))} />
+                </label>
+                <label>
+                  Estimated Useful Life % <em>Optional</em>
+                  <input type="number" min="0" max="100" step="0.1" value={assetForm.estimatedLifePercent} onChange={(event) => setAssetForm((current) => ({ ...current, estimatedLifePercent: event.target.value }))} />
+                </label>
+                <label>
+                  Last Inspection <em>Optional</em>
+                  <input type="date" value={assetForm.lastInspectionAt} onChange={(event) => setAssetForm((current) => ({ ...current, lastInspectionAt: event.target.value }))} />
+                </label>
+                <label className="supplier-form-wide">
+                  Description
+                  <textarea required value={assetForm.description} onChange={(event) => setAssetForm((current) => ({ ...current, description: event.target.value }))} placeholder="Identify the asset and its operational purpose." />
+                </label>
+                <label className="clients-asset-file-field">
+                  <span><Camera size={15} /> Photos <em>Optional</em></span>
+                  <input type="file" accept="image/jpeg,image/png,image/webp,image/heic" multiple onChange={(event) => setAssetPhotos(Array.from(event.target.files ?? []))} />
+                  <small>{assetPhotos.length ? `${assetPhotos.length} photos selected` : 'JPG, PNG, WEBP or HEIC'}</small>
+                </label>
+                <label className="clients-asset-file-field">
+                  <span><FileText size={15} /> Documents <em>Optional</em></span>
+                  <input type="file" accept="application/pdf" multiple onChange={(event) => setAssetDocuments(Array.from(event.target.files ?? []))} />
+                  <small>{assetDocuments.length ? `${assetDocuments.length} documents selected` : 'PDF files up to 50 MB'}</small>
+                </label>
+                <label className="supplier-form-wide">
+                  Internal Notes <em>Optional</em>
+                  <textarea value={assetForm.internalNotes} onChange={(event) => setAssetForm((current) => ({ ...current, internalNotes: event.target.value }))} />
+                </label>
+              </div>
+              {assetError ? <div className="clients-modal-error" role="alert">{assetError}</div> : null}
+              <div className="supplier-modal-actions">
+                <button type="button" onClick={closeDialog} disabled={saving}>Cancel</button>
+                <button type="submit" disabled={saving || !assetForm.customerId}>
+                  {assetEditingId ? <Pencil size={16} /> : <Plus size={16} />} {saving ? 'Saving...' : assetEditingId ? 'Save Asset' : 'Register Asset'}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       ) : null}
 

@@ -1,6 +1,6 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { Activity, AlertTriangle, ArrowLeft, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleHelp, CircleX, Database, Eye, Factory, Frown, FileText, ImagePlus, Maximize2, Meh, Minimize2, Minus, Plus, RadioTower, Search, Smile, Timer } from 'lucide-react';
+import { Activity, AlertTriangle, ArrowLeft, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleHelp, CircleX, Database, Eye, Factory, Frown, FileText, ImagePlus, Maximize2, Meh, Minimize2, Minus, Plus, RadioTower, Ruler, Search, Smile, Timer } from 'lucide-react';
 import { GoogleWorkCentersMap } from '../components/maps/GoogleWorkCentersMap';
 import { resolveGooglePlacesAddressMatch, searchGooglePlacesAddressMatches, type GooglePlacesAddressMatch } from '../lib/maps/googlePlacesAddressLookup';
 import { supabase } from '../lib/supabaseClient';
@@ -350,7 +350,7 @@ export function MesStatusBadge({ value, tone = 'status' }: StatusBadgeProps) {
   return <span className={`mes-status-badge ${tone}-${value}`}>{formatLabel(value)}</span>;
 }
 
-const productionOrderStatuses: ProductionOrderStatus[] = ['planned', 'released', 'running', 'paused', 'completed', 'cancelled'];
+const productionOrderStatuses: ProductionOrderStatus[] = ['planned', 'released', 'running', 'paused', 'waiting-inspection', 'completed', 'cancelled'];
 const productionOrderPriorities: ProductionOrderPriority[] = ['low', 'normal', 'high', 'expedite'];
 const plannedShiftOptions = [
   { value: 'shift_1', label: 'Shift 1' },
@@ -1149,7 +1149,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
     ].join(' ').toLowerCase();
     const matchesSearch = haystack.includes(searchTerm.trim().toLowerCase());
     const matchesView = orderView === 'all'
-      || (orderView === 'in-progress' && ['released', 'running', 'paused'].includes(order.status))
+      || (orderView === 'in-progress' && ['released', 'running', 'paused', 'waiting-inspection'].includes(order.status))
       || (orderView === 'completed' && order.status === 'completed');
     const selectedFilterCustomer = customerOptions.find((customer) => customer.id === clientFilter);
     const matchesClient = clientFilter === 'all'
@@ -1177,7 +1177,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
   const pageCount = Math.max(1, Math.ceil(visibleOrders.length / pageSize));
   const currentPage = Math.min(page, pageCount);
   const paginatedOrders = visibleOrders.slice((currentPage - 1) * pageSize, currentPage * pageSize);
-  const currentOrders = orders.filter((order) => ['released', 'running', 'paused'].includes(order.status)).length;
+  const currentOrders = orders.filter((order) => ['released', 'running', 'paused', 'waiting-inspection'].includes(order.status)).length;
   const kpiOrders = orders.filter((order) => {
     const activityDate = toLocalIsoDate(order.updatedAt ?? order.createdAt ?? order.dueDate);
     return (!kpiDateRange.from || activityDate >= kpiDateRange.from) && (!kpiDateRange.to || activityDate <= kpiDateRange.to);
@@ -1375,7 +1375,9 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
           updatedOrder = {
             ...order,
             completedQuantity: nextCompleted,
-            status: nextCompleted >= order.plannedQuantity ? 'completed' : order.status,
+            status: nextCompleted >= order.plannedQuantity
+              ? (order.qualityChecksEnabled ? 'waiting-inspection' : 'completed')
+              : order.status,
             updatedAt: activityTimestamp,
           };
           return updatedOrder;
@@ -1386,7 +1388,9 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
         }
         const nextStatus = action === 'start' && ['released', 'paused'].includes(order.status)
           ? (shouldStartSingleOperationOrder(order, currentOrders) ? 'running' : 'released')
-          : actionStatus(order.status, action);
+          : action === 'complete' && order.qualityChecksEnabled
+            ? 'waiting-inspection'
+            : actionStatus(order.status, action);
         updatedOrder = { ...order, status: nextStatus, updatedAt: activityTimestamp };
         return updatedOrder;
       }),
@@ -5151,7 +5155,7 @@ const traceabilityPageSizeOptions = [
   { value: '50', label: '50' },
   { value: '100', label: '100' },
 ];
-const traceabilityStatusOptions: ProductionOrderStatus[] = ['planned', 'released', 'running', 'paused', 'completed', 'cancelled'];
+const traceabilityStatusOptions: ProductionOrderStatus[] = ['planned', 'released', 'running', 'paused', 'waiting-inspection', 'completed', 'cancelled'];
 const traceabilityFiltersStorageKey = 'yvimo-mes-traceability-filters';
 
 type TraceabilityFilters = {
@@ -5227,14 +5231,40 @@ function formatTraceabilityStatus(status: ProductionOrderStatus | '') {
   return status ? formatLabel(status) : 'Unknown';
 }
 
-type TraceabilityEventTone = 'info' | 'success' | 'danger' | 'warning' | 'quality';
+type TraceabilityEventTone =
+  | 'job-started'
+  | 'job-resumed'
+  | 'job-paused'
+  | 'downtime'
+  | 'scrap'
+  | 'waiting-inspection'
+  | 'order-completed'
+  | 'quality-inspection'
+  | 'adjustment';
 
 function getTraceabilityEventTone(eventType: string): TraceabilityEventTone {
-  if (eventType === 'job-paused') return 'info';
-  if (eventType === 'job-started' || eventType === 'job-resumed' || eventType === 'operation-completed') return 'success';
-  if (eventType === 'downtime-started' || eventType === 'production-scrap') return 'danger';
-  if (eventType === 'quality-inspection-saved') return 'quality';
-  return 'warning';
+  if (eventType === 'job-started') return 'job-started';
+  if (eventType === 'job-resumed') return 'job-resumed';
+  if (eventType === 'job-paused') return 'job-paused';
+  if (eventType === 'downtime-started') return 'downtime';
+  if (eventType === 'production-scrap') return 'scrap';
+  if (eventType === 'manufacturing-completed') return 'waiting-inspection';
+  if (eventType === 'operation-completed') return 'order-completed';
+  if (eventType === 'quality-inspection-saved') return 'quality-inspection';
+  return 'adjustment';
+}
+
+function renderTraceabilityEventIcon(eventType: string) {
+  const iconProps = { size: 19, strokeWidth: 2.6 };
+  if (eventType === 'job-started') return <Activity {...iconProps} />;
+  if (eventType === 'job-resumed') return <RadioTower {...iconProps} />;
+  if (eventType === 'job-paused') return <Timer {...iconProps} />;
+  if (eventType === 'downtime-started') return <AlertTriangle {...iconProps} />;
+  if (eventType === 'production-scrap') return <CircleX {...iconProps} />;
+  if (eventType === 'manufacturing-completed') return <CalendarDays {...iconProps} />;
+  if (eventType === 'operation-completed') return <CheckCircle2 {...iconProps} />;
+  if (eventType === 'quality-inspection-saved') return <Eye {...iconProps} />;
+  return <CircleHelp {...iconProps} />;
 }
 
 function getTraceabilityEventLabel(eventType: string) {
@@ -5244,6 +5274,7 @@ function getTraceabilityEventLabel(eventType: string) {
     'job-paused': 'Job Paused',
     'downtime-started': 'Downtime Started',
     'production-scrap': '+1 Scrap',
+    'manufacturing-completed': 'Waiting Inspection',
     'operation-completed': 'Order Completed',
     'quality-inspection-saved': 'Quality Inspection Saved',
     adjustment: 'Adjustment',
@@ -5259,6 +5290,7 @@ function getTraceabilityEventSummary(event: TraceabilityOperatorEventRow) {
   if (event.event_type === 'job-paused') return 'Production was paused by the operator';
   if (event.event_type === 'job-started') return 'Production was started from the Operator Terminal';
   if (event.event_type === 'job-resumed') return 'Production was resumed by the operator';
+  if (event.event_type === 'manufacturing-completed') return 'Manufacturing is complete and the order is waiting for Quality inspection';
   if (event.event_type === 'operation-completed') return 'The production order was marked complete';
   if (event.event_type === 'quality-inspection-saved') {
     const serialNumber = event.payload && typeof event.payload.serial_number === 'string' ? event.payload.serial_number : '';
@@ -5445,7 +5477,7 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
           )
         `)
         .eq('organization_id', organizationId)
-        .in('event_type', ['production-scrap', 'downtime-started', 'job-paused', 'job-started', 'job-resumed', 'operation-completed', 'adjustment', 'quality-inspection-saved'])
+        .in('event_type', ['production-scrap', 'downtime-started', 'job-paused', 'job-started', 'job-resumed', 'manufacturing-completed', 'operation-completed', 'adjustment', 'quality-inspection-saved'])
         .order('created_at', { ascending: false })
         .limit(300),
     ]);
@@ -5533,7 +5565,7 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
         filter: `organization_id=eq.${organizationId}`,
       }, (payload) => {
         const newEvent = payload.new as Partial<{ id: string; event_type: string }>;
-        if (newEvent.event_type && !['production-scrap', 'downtime-started', 'job-paused', 'job-started', 'job-resumed', 'operation-completed', 'adjustment'].includes(newEvent.event_type)) return;
+        if (newEvent.event_type && !['production-scrap', 'downtime-started', 'job-paused', 'job-started', 'job-resumed', 'manufacturing-completed', 'operation-completed', 'adjustment', 'quality-inspection-saved'].includes(newEvent.event_type)) return;
         const eventId = typeof newEvent.id === 'string' ? newEvent.id : '';
         if (eventId) markCaptureAsNew(`event-${eventId}`);
         void loadTraceability(true);
@@ -5620,7 +5652,7 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
       && (!orderSearch || order.orderNumber.toLowerCase().includes(orderSearch))
       && (!partSearch || order.partNumber.toLowerCase().includes(partSearch) || order.partName.toLowerCase().includes(partSearch));
   }).slice(0, 6);
-  const activeStatuses: ProductionOrderStatus[] = ['released', 'running', 'paused'];
+  const activeStatuses: ProductionOrderStatus[] = ['released', 'running', 'paused', 'waiting-inspection'];
   const contextOrderIds = new Set(orders.filter((order) => {
     const orderSearch = filters.orderSearch.trim().toLowerCase();
     const partSearch = filters.partSearch.trim().toLowerCase();
@@ -5920,7 +5952,7 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
                 className={['mes-event-row traceability-event-row', `event-tone-${item.tone}`, newCaptureIds.has(item.id) ? 'new-capture' : ''].filter(Boolean).join(' ')}
                 key={item.id}
               >
-                <span className="mes-event-marker"><Activity size={16} /></span>
+                <span className="mes-event-marker">{renderTraceabilityEventIcon(event.event_type)}</span>
                 <div>
                   <div className="mes-event-heading traceability-event-heading">
                     <div className="traceability-event-title">
@@ -5979,7 +6011,7 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
               className={['mes-event-row traceability-capture-row', newCaptureIds.has(item.id) ? 'new-capture' : ''].filter(Boolean).join(' ')}
               key={item.id}
             >
-              <span className="mes-event-marker"><Database size={16} /></span>
+              <span className="mes-event-marker"><Ruler size={19} strokeWidth={2.6} /></span>
               <div>
                 <div className="mes-event-heading traceability-capture-heading">
                   <div className="traceability-capture-title-grid">
