@@ -15447,8 +15447,62 @@ body.work-center-map-expanded .logged-workspace {
 }
 
 .traceability-toolbar-actions {
-  align-items: center;
+  align-items: flex-end;
   justify-content: flex-end;
+}
+
+.traceability-record-type-filters {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.traceability-record-type-filters label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  border: 1px solid #d5dde7;
+  border-radius: 8px;
+  padding: 0 9px;
+  background: #f8fafc;
+  color: #344456;
+  font-size: 0.72rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.traceability-record-type-filters input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: #ff8a1f;
+}
+
+.traceability-record-type-filters label:last-child input {
+  accent-color: #7c3aed;
+}
+
+.traceability-client-filter {
+  display: grid;
+  gap: 3px;
+  width: 180px;
+  color: #566577;
+  font-size: 0.62rem;
+  font-weight: 950;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.traceability-client-filter .mes-order-dropdown {
+  width: 100%;
+}
+
+.traceability-client-filter .mes-order-dropdown > button {
+  min-height: 34px;
+  padding: 0 9px;
+  background: #ffffff;
+  color: #07111c;
 }
 
 .traceability-page-size-control {

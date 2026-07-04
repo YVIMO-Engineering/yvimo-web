@@ -25,6 +25,10 @@
   font-size: 0.74rem;
 }
 
+.production-orders-client-filter .mes-order-dropdown > button > span {
+  color: inherit;
+}
+
 .production-order-work-center-card {
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr);

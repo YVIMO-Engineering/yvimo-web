@@ -38,6 +38,26 @@ type OperatorTerminalProps = {
 
 type TerminalState = 'not-started' | 'running' | 'paused' | 'down' | 'completed';
 type TerminalModal = 'scrap' | 'pause' | 'downtime' | 'complete' | 'undo' | 'queue' | 'scrap-events' | 'switch-order' | null;
+const getActiveOrderStorageKey = (organizationId: string) => `yvimo-operator-terminal-active-order:${organizationId}`;
+
+function loadActiveOrderId(organizationId: string) {
+  if (typeof window === 'undefined') return '';
+  try {
+    return window.localStorage.getItem(getActiveOrderStorageKey(organizationId)) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+function persistActiveOrderId(organizationId: string, orderId: string) {
+  if (typeof window === 'undefined' || !orderId) return;
+  try {
+    window.localStorage.setItem(getActiveOrderStorageKey(organizationId), orderId);
+  } catch {
+    // The server-side running order remains the fallback when storage is unavailable.
+  }
+}
+
 type ReportEvent = {
   type: 'good' | 'scrap';
   timestamp: string;
@@ -457,6 +477,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId }: Operat
   const [syncPending, setSyncPending] = React.useState(false);
   const [selectedWorkCenterCode, setSelectedWorkCenterCode] = React.useState('');
   const [selectedStationCode, setSelectedStationCode] = React.useState('');
+  const [selectedOrderId, setSelectedOrderId] = React.useState('');
   const [dimensionUnit, setDimensionUnit] = React.useState<'in' | 'mm'>('in');
   const [templateId, setTemplateId] = React.useState('sharpening');
   const [traceabilityForm, setTraceabilityForm] = React.useState<TraceabilityFormState>(initialTraceabilityForm);
@@ -499,7 +520,8 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId }: Operat
   const stationOrders = snapshot
     ? snapshot.activeOrders.filter((order) => order.assignedStation === stationCode && order.assignedWorkCenter === workCenterCode)
     : [fallbackCurrentOrder];
-  const currentOrder = stationOrders.find((order) => order.status === 'running')
+  const currentOrder = stationOrders.find((order) => order.id === selectedOrderId)
+    ?? stationOrders.find((order) => order.status === 'running')
     ?? stationOrders.find((order) => order.status === 'paused')
     ?? stationOrders.find((order) => order.status === 'released')
     ?? stationOrders.find((order) => order.status === 'completed')
@@ -696,11 +718,22 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId }: Operat
       try {
         const nextSnapshot = await fetchOperatorTerminalSnapshot(organizationId);
         if (!active) return;
-        setSnapshot(nextSnapshot);
+        const storedOrderId = loadActiveOrderId(organizationId);
+        const restoredOrder = nextSnapshot.activeOrders.find((order) => order.id === storedOrderId)
+          ?? nextSnapshot.currentOrder;
+        const restoredSnapshot = restoredOrder
+          ? {
+              ...nextSnapshot,
+              currentOrder: restoredOrder,
+              queuedOrders: nextSnapshot.activeOrders.filter((order) => order.id !== restoredOrder.id),
+            }
+          : nextSnapshot;
+        setSnapshot(restoredSnapshot);
         setTerminalMessage(nextSnapshot.activeOrders.length ? '' : 'No single-operation production orders are assigned yet.');
-        setSelectedWorkCenterCode(nextSnapshot.workCenter?.code ?? nextSnapshot.workCenterOptions[0]?.code ?? '');
-        setSelectedStationCode(nextSnapshot.station?.code ?? nextSnapshot.currentOrder?.assignedStation ?? '');
-        if (nextSnapshot.currentOrder) applyOrder(nextSnapshot.currentOrder);
+        setSelectedOrderId(restoredOrder?.id ?? '');
+        setSelectedWorkCenterCode(restoredOrder?.assignedWorkCenter ?? nextSnapshot.workCenter?.code ?? nextSnapshot.workCenterOptions[0]?.code ?? '');
+        setSelectedStationCode(restoredOrder?.assignedStation ?? nextSnapshot.station?.code ?? '');
+        if (restoredOrder) applyOrder(restoredOrder);
       } catch (error) {
         console.error('Unable to load Operator Terminal snapshot', error);
         if (!active) return;
@@ -714,6 +747,16 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId }: Operat
       active = false;
     };
   }, [organizationId]);
+
+  React.useEffect(() => {
+    if (!selectedOrderId) return;
+    persistActiveOrderId(organizationId, selectedOrderId);
+  }, [organizationId, selectedOrderId]);
+
+  React.useEffect(() => {
+    if (!snapshot || !currentOrder || currentOrder.id === selectedOrderId) return;
+    setSelectedOrderId(currentOrder.id);
+  }, [currentOrder?.id, selectedOrderId, snapshot]);
 
   React.useEffect(() => {
     let active = true;
@@ -960,6 +1003,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId }: Operat
   const switchActiveOrder = async (order: ProductionOrder) => {
     if (order.id === currentOrder?.id || switchOrderLoading) return;
     if (!snapshot) {
+      setSelectedOrderId(order.id);
       applyOrder(order);
       syncSwitchedOrder({ ...order, status: 'running' });
       setEvents([]);
@@ -980,6 +1024,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId }: Operat
       });
       setSelectedWorkCenterCode(order.assignedWorkCenter);
       setSelectedStationCode(targetStationCode);
+      setSelectedOrderId(nextOrder.id);
       applyOrder(nextOrder);
       syncSwitchedOrder(nextOrder);
       setEvents([]);

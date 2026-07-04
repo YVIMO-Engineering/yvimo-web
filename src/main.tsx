@@ -5781,7 +5781,8 @@ function App() {
       .eq('id', authSession.user.id);
 
     if (profileUpdateError) {
-      console.warn('[auth] profile avatar update warning', profileUpdateError);
+      console.error('[auth] profile avatar update error', profileUpdateError);
+      return { ok: false, message: 'Profile picture was saved to your account, but could not be shared with your organization.' };
     }
 
     setAuthUser((currentUser) => currentUser ? { ...currentUser, avatarUrl } : currentUser);

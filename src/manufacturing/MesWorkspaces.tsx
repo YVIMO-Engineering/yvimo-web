@@ -227,6 +227,8 @@ type TraceabilityOrderOption = {
   orderNumber: string;
   partNumber: string;
   partName: string;
+  customerId: string;
+  clientName: string;
   assignedWorkCenter: string;
   assignedStation: string;
   status: ProductionOrderStatus;
@@ -237,10 +239,16 @@ type TraceabilityOrderRow = {
   order_number: string;
   part_number: string;
   part_name: string;
+  customer_id: string | null;
+  client_name: string | null;
   assigned_work_center: string;
   assigned_station: string | null;
   status: ProductionOrderStatus;
 };
+
+function getTraceabilityClientKey(order: Pick<TraceabilityOrderOption, 'customerId' | 'clientName'>) {
+  return order.customerId || (order.clientName ? `name:${order.clientName}` : '');
+}
 
 type TraceabilityWorkCenterOption = {
   id: string;
@@ -5163,11 +5171,15 @@ type TraceabilityFilters = {
   partSearch: string;
   serialSearch: string;
   toolSearch: string;
+  client: string;
   workCenter: string;
   station: string;
   dateFrom: string;
   dateTo: string;
   shifts: string[];
+  showEvents: boolean;
+  showManufacturing: boolean;
+  showQuality: boolean;
 };
 
 function getDefaultTraceabilityFilters(): TraceabilityFilters {
@@ -5177,11 +5189,15 @@ function getDefaultTraceabilityFilters(): TraceabilityFilters {
     partSearch: '',
     serialSearch: '',
     toolSearch: '',
+    client: '',
     workCenter: '',
     station: '',
     dateFrom: today,
     dateTo: today,
     shifts: [],
+    showEvents: true,
+    showManufacturing: true,
+    showQuality: true,
   };
 }
 
@@ -5196,6 +5212,10 @@ function loadTraceabilityFilters(): TraceabilityFilters {
     return {
       ...defaultFilters,
       ...parsedFilters,
+      client: typeof parsedFilters.client === 'string' ? parsedFilters.client : '',
+      showEvents: parsedFilters.showEvents !== false,
+      showManufacturing: parsedFilters.showManufacturing !== false,
+      showQuality: parsedFilters.showQuality !== false,
       shifts: Array.isArray(parsedFilters.shifts) ? parsedFilters.shifts.filter((shift) => traceabilityShiftOptions.includes(shift)) : [],
       dateFrom: typeof parsedFilters.dateFrom === 'string' && parsedFilters.dateFrom ? parsedFilters.dateFrom : defaultFilters.dateFrom,
       dateTo: typeof parsedFilters.dateTo === 'string' && parsedFilters.dateTo ? parsedFilters.dateTo : defaultFilters.dateTo,
@@ -5212,11 +5232,15 @@ function getClearedTraceabilityFilters(): TraceabilityFilters {
     partSearch: '',
     serialSearch: '',
     toolSearch: '',
+    client: '',
     workCenter: '',
     station: '',
     dateFrom: '',
     dateTo: '',
     shifts: [],
+    showEvents: true,
+    showManufacturing: true,
+    showQuality: true,
   };
 }
 
@@ -5360,6 +5384,7 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
   const [newCaptureIds, setNewCaptureIds] = React.useState<Set<string>>(() => new Set());
   const [operatorEvents, setOperatorEvents] = React.useState<TraceabilityOperatorEventRow[]>([]);
   const [orders, setOrders] = React.useState<TraceabilityOrderOption[]>([]);
+  const [clients, setClients] = React.useState<ProductionOrderCustomerOptionRow[]>([]);
   const [workCenters, setWorkCenters] = React.useState<TraceabilityWorkCenterOption[]>([]);
   const [stations, setStations] = React.useState<TraceabilityStationOption[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -5404,6 +5429,7 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
       { data: workCentersData, error: workCentersError },
       { data: stationsData, error: stationsError },
       { data: eventsData, error: eventsError },
+      { data: clientsData, error: clientsError },
     ] = await Promise.all([
       supabase
         .from('mes_operator_terminal_traceability')
@@ -5440,7 +5466,7 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
         .limit(200),
       supabase
         .from('mes_production_orders')
-        .select('id, order_number, part_number, part_name, assigned_work_center, assigned_station, status')
+        .select('id, order_number, part_number, part_name, customer_id, client_name, assigned_work_center, assigned_station, status')
         .eq('organization_id', organizationId)
         .order('order_number', { ascending: true }),
       supabase
@@ -5480,15 +5506,21 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
         .in('event_type', ['production-scrap', 'downtime-started', 'job-paused', 'job-started', 'job-resumed', 'manufacturing-completed', 'operation-completed', 'adjustment', 'quality-inspection-saved'])
         .order('created_at', { ascending: false })
         .limit(300),
+      supabase
+        .from('mes_customers')
+        .select('id, customer_name, legal_name, status')
+        .eq('organization_id', organizationId)
+        .order('customer_name', { ascending: true }),
     ]);
 
-    const loadError = capturesError ?? ordersError ?? workCentersError ?? stationsError ?? eventsError;
+    const loadError = capturesError ?? ordersError ?? workCentersError ?? stationsError ?? eventsError ?? clientsError;
     if (loadError) {
       console.error('Unable to load MES traceability data', loadError);
       setErrorMessage('Unable to load traceability data from Supabase.');
       setCaptures([]);
       setOperatorEvents([]);
       setOrders([]);
+      setClients([]);
       setWorkCenters([]);
       setStations([]);
     } else {
@@ -5508,10 +5540,13 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
         orderNumber: order.order_number,
         partNumber: order.part_number,
         partName: order.part_name,
+        customerId: order.customer_id ?? '',
+        clientName: order.client_name ?? '',
         assignedWorkCenter: order.assigned_work_center,
         assignedStation: order.assigned_station ?? '',
         status: order.status,
       })));
+      setClients((clientsData ?? []) as ProductionOrderCustomerOptionRow[]);
       setWorkCenters(workCenterRows);
       setStations(((stationsData ?? []) as Array<{ id: string; work_center_id: string; code: string; name: string }>).map((station) => ({
         id: station.id,
@@ -5597,7 +5632,30 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
     setTraceabilityPage(1);
   }, [filters, traceabilityPageSize]);
 
+  const clientNamesByKey = new Map<string, string>();
+  clients.forEach((client) => clientNamesByKey.set(
+    client.id,
+    client.status === 'inactive' ? `${client.customer_name} (Inactive)` : client.customer_name,
+  ));
+  orders.forEach((order) => {
+    const clientKey = getTraceabilityClientKey(order);
+    if (clientKey && order.clientName && !clientNamesByKey.has(clientKey)) clientNamesByKey.set(clientKey, order.clientName);
+  });
+  const clientDropdownOptions: MesOrderDropdownOption[] = [
+    { value: '', label: 'All Clients' },
+    ...Array.from(clientNamesByKey.entries())
+      .sort((firstClient, secondClient) => firstClient[1].localeCompare(secondClient[1]))
+      .map(([value, label]) => ({ value, label })),
+  ];
+  const selectedClientName = clients.find((client) => client.id === filters.client)?.customer_name.trim().toLowerCase() ?? '';
+  const matchesClientFilter = (order: TraceabilityOrderOption) => !filters.client
+    || getTraceabilityClientKey(order) === filters.client
+    || Boolean(selectedClientName && !order.customerId && order.clientName.trim().toLowerCase() === selectedClientName);
+  const matchingClientOrderIds = new Set(orders
+    .filter(matchesClientFilter)
+    .map((order) => order.id));
   const filteredCaptures = captures.filter((capture) => {
+    if (!filters.showManufacturing) return false;
     const captureDate = toLocalIsoDate(capture.timestamp);
     const orderSearch = filters.orderSearch.trim().toLowerCase();
     const partSearch = filters.partSearch.trim().toLowerCase();
@@ -5607,6 +5665,7 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
       && (!partSearch || capture.partNumber.toLowerCase().includes(partSearch) || capture.partName.toLowerCase().includes(partSearch) || capture.partLabel.toLowerCase().includes(partSearch))
       && (!serialSearch || capture.serialNumber.toLowerCase().includes(serialSearch))
       && (!toolSearch || capture.toolId.toLowerCase().includes(toolSearch))
+      && (!filters.client || matchingClientOrderIds.has(capture.productionOrderId))
       && (!filters.workCenter || capture.workCenter === filters.workCenter)
       && (!filters.station || capture.station === filters.station)
       && (!filters.dateFrom || captureDate >= filters.dateFrom)
@@ -5614,7 +5673,7 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
       && (filters.shifts.length === 0 || filters.shifts.includes(capture.shift));
   });
 
-  const setFilter = (key: Exclude<keyof typeof filters, 'shifts'>, value: string) => {
+  const setFilter = (key: Exclude<keyof typeof filters, 'shifts' | 'showEvents' | 'showManufacturing' | 'showQuality'>, value: string) => {
     setFilters((currentFilters) => ({ ...currentFilters, [key]: value }));
   };
 
@@ -5648,6 +5707,7 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
     const orderSearch = filters.orderSearch.trim().toLowerCase();
     const partSearch = filters.partSearch.trim().toLowerCase();
     return (!filters.workCenter || order.assignedWorkCenter === filters.workCenter)
+      && matchesClientFilter(order)
       && (!filters.station || order.assignedStation === filters.station)
       && (!orderSearch || order.orderNumber.toLowerCase().includes(orderSearch))
       && (!partSearch || order.partNumber.toLowerCase().includes(partSearch) || order.partName.toLowerCase().includes(partSearch));
@@ -5657,6 +5717,7 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
     const orderSearch = filters.orderSearch.trim().toLowerCase();
     const partSearch = filters.partSearch.trim().toLowerCase();
     return (!filters.workCenter || order.assignedWorkCenter === filters.workCenter)
+      && matchesClientFilter(order)
       && (!filters.station || order.assignedStation === filters.station)
       && (!orderSearch || order.orderNumber.toLowerCase().includes(orderSearch))
       && (!partSearch || order.partNumber.toLowerCase().includes(partSearch) || order.partName.toLowerCase().includes(partSearch));
@@ -5664,6 +5725,8 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
   const filteredOperatorEvents = operatorEvents.filter((event) => {
     const orderSearch = filters.orderSearch.trim().toLowerCase();
     const partSearch = filters.partSearch.trim().toLowerCase();
+    const isQualityEvent = event.event_type === 'quality-inspection-saved';
+    const matchesRecordCategory = isQualityEvent ? filters.showQuality : filters.showEvents;
     const measurementOnlyFilterActive = Boolean(filters.serialSearch.trim() || filters.toolSearch.trim() || filters.shifts.length > 0);
     const eventDate = toLocalIsoDate(event.created_at);
     const eventOrder = event.mes_production_orders;
@@ -5675,7 +5738,9 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
         eventOrder.part_number.toLowerCase().includes(partSearch)
         || eventOrder.part_name.toLowerCase().includes(partSearch)
       ));
-    return (!filters.workCenter || event.work_center_code === filters.workCenter)
+    return matchesRecordCategory
+      && (!filters.client || Boolean(event.production_order_id && matchingClientOrderIds.has(event.production_order_id)))
+      && (!filters.workCenter || event.work_center_code === filters.workCenter)
       && (!filters.station || event.station_code === filters.station)
       && !measurementOnlyFilterActive
       && matchesOrderSearch
@@ -5883,6 +5948,21 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
           {renderTraceabilityPaginationControls()}
         </div>
         <div className="traceability-toolbar-actions">
+          <div className="traceability-record-type-filters" aria-label="Traceability record types">
+            <label><input type="checkbox" checked={filters.showEvents} onChange={() => setFilters((current) => ({ ...current, showEvents: !current.showEvents }))} /><span>Events</span></label>
+            <label><input type="checkbox" checked={filters.showManufacturing} onChange={() => setFilters((current) => ({ ...current, showManufacturing: !current.showManufacturing }))} /><span>Manufacturing</span></label>
+            <label><input type="checkbox" checked={filters.showQuality} onChange={() => setFilters((current) => ({ ...current, showQuality: !current.showQuality }))} /><span>Quality</span></label>
+          </div>
+          <label className="traceability-client-filter">
+            <span>Client</span>
+            <MesOrderDropdown
+              id="traceability-client-filter"
+              value={filters.client}
+              options={clientDropdownOptions}
+              placeholder="All Clients"
+              onChange={(value) => setFilter('client', value)}
+            />
+          </label>
           <button type="button" onClick={() => setFilters(getClearedTraceabilityFilters())}>Clear Filters</button>
           <button type="button" onClick={() => onNavigate('/workspace/manufacturing-ops/mes/operator-terminal')}>Open Terminal</button>
         </div>
