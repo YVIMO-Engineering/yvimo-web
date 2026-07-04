@@ -28,6 +28,7 @@ import {
   searchGooglePlacesAddressMatches,
   type GooglePlacesAddressMatch,
 } from '../lib/maps/googlePlacesAddressLookup';
+import { SUPPORTED_CURRENCIES, type SupportedCurrency } from '../lib/exchangeRates';
 import { supabase } from '../lib/supabaseClient';
 import { ClientBalancesWorkspace } from './ClientBalancesWorkspace';
 
@@ -65,6 +66,7 @@ type CustomerRecord = {
   phone: string;
   address: string;
   paymentTerms: string;
+  baseCurrency: SupportedCurrency;
   notes: string;
   status: CustomerStatus;
   createdAt: string;
@@ -82,6 +84,7 @@ type CustomerRow = {
   phone: string;
   address: string;
   payment_terms: string;
+  base_currency: SupportedCurrency;
   notes: string;
   status: CustomerStatus;
   created_at: string;
@@ -97,6 +100,7 @@ type CustomerFormState = {
   phone: string;
   address: string;
   paymentTerms: string;
+  baseCurrency: SupportedCurrency;
   notes: string;
   status: CustomerStatus;
 };
@@ -182,6 +186,7 @@ const emptyCustomerForm: CustomerFormState = {
   phone: '',
   address: '',
   paymentTerms: 'Net 30',
+  baseCurrency: 'MXN',
   notes: '',
   status: 'active',
 };
@@ -207,6 +212,11 @@ const customerStatusOptions: Array<CustomerDropdownOption<CustomerStatus>> = [
   { value: 'active', label: 'Active' },
   { value: 'inactive', label: 'Inactive' },
 ];
+
+const currencyOptions: Array<CustomerDropdownOption<SupportedCurrency>> = SUPPORTED_CURRENCIES.map((currency) => ({
+  value: currency,
+  label: currency,
+}));
 
 const assetStatusOptions: Array<CustomerDropdownOption<AssetStatus>> = [
   { value: 'available', label: 'Available' },
@@ -242,6 +252,7 @@ const customerSelectColumns = [
   'phone',
   'address',
   'payment_terms',
+  'base_currency',
   'notes',
   'status',
   'created_at',
@@ -386,6 +397,7 @@ function mapCustomerRow(row: CustomerRow): CustomerRecord {
     phone: row.phone,
     address: row.address,
     paymentTerms: row.payment_terms,
+    baseCurrency: row.base_currency,
     notes: row.notes,
     status: row.status,
     createdAt: row.created_at,
@@ -403,6 +415,7 @@ function customerToForm(customer: CustomerRecord): CustomerFormState {
     phone: customer.phone,
     address: customer.address,
     paymentTerms: customer.paymentTerms,
+    baseCurrency: customer.baseCurrency,
     notes: customer.notes,
     status: customer.status,
   };
@@ -791,6 +804,7 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
       phone: customerForm.phone.trim(),
       address: customerForm.address.trim(),
       payment_terms: customerForm.paymentTerms.trim(),
+      base_currency: customerForm.baseCurrency,
       notes: customerForm.notes.trim(),
       status: customerForm.status,
     };
@@ -1061,7 +1075,7 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
   return (
     <section className="mes-workspace-panel clients-operations-workspace">
       {addressSuggestionMenu}
-      <div className="mes-screen-header">
+      <div className={`mes-screen-header${activeTab === 'balances' ? ' client-balances-screen-header' : ''}`}>
         <button className="academy-back-button engineering-back-button mes-workspace-back" type="button" onClick={() => onNavigate('/workspace/manufacturing-ops/mes')}>
           <ArrowLeft size={17} />
           MES Applications
@@ -1071,7 +1085,10 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
           <h2>{page.title}</h2>
           <p>{page.description}</p>
         </div>
-        <div className="clients-header-actions">
+        <div
+          className={`clients-header-actions${activeTab === 'balances' ? ' client-balances-header-currency' : ''}`}
+          id={activeTab === 'balances' ? 'client-balances-currency-portal' : undefined}
+        >
           {activeTab === 'customers' ? (
             <button type="button" onClick={openCreateCustomer}>
               <Plus size={16} />
@@ -1334,6 +1351,7 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
               id: customer.id,
               customerName: customer.customerName,
               legalName: customer.legalName,
+              baseCurrency: customer.baseCurrency,
               status: customer.status,
             }))}
             loadingCustomers={loading}
@@ -1515,6 +1533,20 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
                       placeholder="Enter custom terms"
                     />
                   ) : null}
+                </label>
+                <label>
+                  Base Currency
+                  {formMode === 'create' ? (
+                    <CustomerDropdown
+                      id="customer-base-currency"
+                      value={customerForm.baseCurrency}
+                      options={currencyOptions}
+                      onChange={(baseCurrency) => setCustomerForm((current) => ({ ...current, baseCurrency }))}
+                    />
+                  ) : (
+                    <input value={customerForm.baseCurrency} disabled aria-label="Base currency cannot be changed" />
+                  )}
+                  <small className="customer-base-currency-note">Official account currency; fixed after customer creation.</small>
                 </label>
                 <div className="clients-form-field">
                   <span>Contact Name</span>

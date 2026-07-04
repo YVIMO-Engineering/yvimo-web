@@ -12,6 +12,8 @@ import {
   CircleDollarSign,
   Download,
   FileCheck2,
+  Globe2,
+  Info,
   Plus,
   ReceiptText,
   Search,
@@ -19,12 +21,21 @@ import {
   WalletCards,
   X,
 } from 'lucide-react';
+import {
+  SUPPORTED_CURRENCIES,
+  convertCurrency,
+  formatCurrency,
+  getExchangeRates,
+  type ExchangeRatesResult,
+  type SupportedCurrency,
+} from '../lib/exchangeRates';
 import { supabase } from '../lib/supabaseClient';
 
 export type BalanceCustomer = {
   id: string;
   customerName: string;
   legalName: string;
+  baseCurrency: SupportedCurrency;
   status: 'active' | 'inactive';
 };
 
@@ -34,17 +45,33 @@ type BalanceAccount = {
   total_charges: number;
   total_payments: number;
   uninvoiced_balance: number;
+  currency: SupportedCurrency;
 };
 
 type MovementType = 'charge' | 'payment' | 'credit' | 'adjustment';
 type BalanceView = 'statement' | 'open' | 'payments' | 'invoices';
 type MovementFormMode = 'charge' | 'payment' | 'adjustment';
+type AdjustmentDirection = 'increase' | 'decrease';
+type AdjustmentType =
+  | 'opening_balance'
+  | 'billing_correction'
+  | 'late_fee'
+  | 'credit_reversal'
+  | 'tax_fee_adjustment'
+  | 'other_increase'
+  | 'customer_credit'
+  | 'discount'
+  | 'credit_note'
+  | 'write_off'
+  | 'refund_applied'
+  | 'other_decrease';
 
 type BalanceMovement = {
   id: string;
   movement_date: string;
   movement_type: MovementType;
-  adjustment_direction: 'increase' | 'decrease' | null;
+  adjustment_direction: AdjustmentDirection | string | null;
+  adjustment_type: AdjustmentType | string | null;
   category: string | null;
   description: string;
   amount: number;
@@ -63,6 +90,7 @@ type BalanceMovement = {
   status: string;
   notes: string;
   created_at: string;
+  updated_at: string;
 };
 
 type MovementForm = {
@@ -78,7 +106,8 @@ type MovementForm = {
   billingName: string;
   invoiceUuid: string;
   status: string;
-  direction: 'increase' | 'decrease';
+  direction: AdjustmentDirection;
+  adjustmentType: AdjustmentType | '';
   notes: string;
 };
 
@@ -113,6 +142,83 @@ const movementLabels: Record<MovementType, string> = {
   credit: 'Credit',
   adjustment: 'Adjustment',
 };
+
+const adjustmentTypeOptions: Record<AdjustmentDirection, Array<{ value: AdjustmentType; label: string }>> = {
+  increase: [
+    { value: 'opening_balance', label: 'Opening balance' },
+    { value: 'billing_correction', label: 'Billing correction' },
+    { value: 'late_fee', label: 'Late fee / penalty' },
+    { value: 'credit_reversal', label: 'Reversal of credit' },
+    { value: 'tax_fee_adjustment', label: 'Tax / fee adjustment' },
+    { value: 'other_increase', label: 'Other increase' },
+  ],
+  decrease: [
+    { value: 'customer_credit', label: 'Customer credit' },
+    { value: 'discount', label: 'Discount / courtesy adjustment' },
+    { value: 'credit_note', label: 'Credit note' },
+    { value: 'write_off', label: 'Write-off / bad debt' },
+    { value: 'billing_correction', label: 'Billing correction' },
+    { value: 'refund_applied', label: 'Refund applied' },
+    { value: 'other_decrease', label: 'Other decrease' },
+  ],
+};
+
+const adjustmentBadgeLabels: Partial<Record<AdjustmentType, string>> = {
+  opening_balance: 'OPENING BALANCE',
+  billing_correction: 'BILLING CORRECTION',
+  late_fee: 'LATE FEE',
+  credit_reversal: 'CREDIT REVERSAL',
+  tax_fee_adjustment: 'TAX/FEE ADJUSTMENT',
+  customer_credit: 'CUSTOMER CREDIT',
+  discount: 'DISCOUNT',
+  credit_note: 'CREDIT NOTE',
+  write_off: 'WRITE-OFF',
+  refund_applied: 'REFUND APPLIED',
+  other_increase: 'ADJUSTMENT +',
+  other_decrease: 'ADJUSTMENT -',
+};
+
+function getAdjustmentTypeOptions(direction: AdjustmentDirection) {
+  return adjustmentTypeOptions[direction];
+}
+
+function getAdjustmentTypeLabel(adjustmentType: string | null, direction: string | null) {
+  if (adjustmentType && adjustmentBadgeLabels[adjustmentType as AdjustmentType]) {
+    return adjustmentBadgeLabels[adjustmentType as AdjustmentType] as string;
+  }
+  if (direction === 'increase') return 'ADJUSTMENT +';
+  if (direction === 'decrease') return 'ADJUSTMENT -';
+  return 'ADJUSTMENT';
+}
+
+function getAdjustmentTypeOptionLabel(adjustmentType: string | null, direction: string | null) {
+  if (direction === 'increase' || direction === 'decrease') {
+    return getAdjustmentTypeOptions(direction)
+      .find((option) => option.value === adjustmentType)?.label ?? getAdjustmentTypeLabel(adjustmentType, direction);
+  }
+  return getAdjustmentTypeLabel(adjustmentType, direction);
+}
+
+function getMovementBadgeLabel(movement: BalanceMovement) {
+  return movement.movement_type === 'adjustment'
+    ? getAdjustmentTypeLabel(movement.adjustment_type, movement.adjustment_direction)
+    : movementLabels[movement.movement_type];
+}
+
+function doesMovementAffectBalance(movement: BalanceMovement) {
+  return movement.movement_type !== 'adjustment' || movement.status === 'confirmed';
+}
+
+function calculateCustomerCredit(movements: BalanceMovement[]) {
+  // MVP: a future allocation flow can subtract credits applied to invoices.
+  return movements.reduce((total, movement) => {
+    const createsCredit = movement.movement_type === 'adjustment'
+      && movement.adjustment_direction === 'decrease'
+      && ['customer_credit', 'credit_note'].includes(movement.adjustment_type ?? '')
+      && doesMovementAffectBalance(movement);
+    return createsCredit ? total + Number(movement.amount) : total;
+  }, 0);
+}
 
 const paymentMethodLabels: Record<string, string> = {
   bank_transfer: 'Bank Transfer',
@@ -149,14 +255,10 @@ const initialForm = (customer?: BalanceCustomer): MovementForm => ({
   invoiceUuid: '',
   status: 'open',
   direction: 'increase',
+  adjustmentType: '',
   notes: '',
 });
 
-const moneyFormatter = new Intl.NumberFormat('en-US', {
-  style: 'currency',
-  currency: 'MXN',
-  minimumFractionDigits: 2,
-});
 function parseMoneyInput(value: string) {
   const parsed = Number(value.replace(/,/g, ''));
   return Number.isFinite(parsed) ? parsed : 0;
@@ -187,19 +289,19 @@ function formatMoneyOnBlur(value: string) {
 }
 
 
-function money(value: number | string | null | undefined) {
-  return moneyFormatter.format(Number(value ?? 0));
-}
-
-function ledgerBalanceLabel(value: number | string | null | undefined) {
-  const balance = Number(value ?? 0);
-  return balance < 0 ? `${money(Math.abs(balance))} credit` : money(balance);
-}
 
 function dateLabel(value: string) {
   if (!value) return '—';
   return new Intl.DateTimeFormat('en-US', { month: 'short', day: '2-digit', year: 'numeric' })
     .format(new Date(`${value.slice(0, 10)}T12:00:00`));
+}
+
+function dateTimeLabel(value: string) {
+  if (!value) return 'Not available';
+  return new Intl.DateTimeFormat('en-US', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(new Date(value));
 }
 
 function SelectField({
@@ -481,11 +583,13 @@ function BalanceFormDropdown({
   value,
   options,
   onChange,
+  placeholder = 'Select option',
 }: {
   id: string;
   value: string;
   options: Array<{ value: string; label: string }>;
   onChange: (value: string) => void;
+  placeholder?: string;
 }) {
   const [open, setOpen] = React.useState(false);
   const [position, setPosition] = React.useState<ClientAccountMenuPosition | null>(null);
@@ -564,7 +668,7 @@ function BalanceFormDropdown({
   return (
     <div className={`mes-order-dropdown client-balance-form-dropdown${open ? ' open' : ''}`} ref={triggerRef}>
       <button type="button" aria-haspopup="listbox" aria-expanded={open} aria-controls={`${id}-listbox`} onClick={() => setOpen((current) => !current)}>
-        <span>{selectedOption?.label ?? 'Select option'}</span>
+        <span>{selectedOption?.label ?? placeholder}</span>
         <ChevronDown size={16} />
       </button>
       {menu}
@@ -597,8 +701,13 @@ export function ClientBalancesWorkspace({
   const [saving, setSaving] = React.useState(false);
   const [formError, setFormError] = React.useState('');
   const [expandedMovementId, setExpandedMovementId] = React.useState<string | null>(null);
+  const [currencyPortalTarget, setCurrencyPortalTarget] = React.useState<HTMLElement | null>(null);
+  const [displayCurrency, setDisplayCurrency] = React.useState<SupportedCurrency>('MXN');
+  const [exchangeRates, setExchangeRates] = React.useState<ExchangeRatesResult | null>(null);
+  const [exchangeRateWarning, setExchangeRateWarning] = React.useState('');
 
   const selectedCustomer = customers.find((customer) => customer.id === customerId) ?? null;
+  const baseCurrency = selectedCustomer?.baseCurrency ?? account?.currency ?? 'MXN';
 
   React.useEffect(() => {
     if (customerId && customers.some((customer) => customer.id === customerId)) return;
@@ -609,6 +718,43 @@ export function ClientBalancesWorkspace({
   React.useEffect(() => {
     if (customerId) sessionStorage.setItem(customerSelectionKey, customerId);
   }, [customerId]);
+
+  React.useLayoutEffect(() => {
+    setCurrencyPortalTarget(document.getElementById('client-balances-currency-portal'));
+  }, []);
+
+  React.useEffect(() => {
+    if (!selectedCustomer) return;
+    const preferenceKey = `yvimo.clientBalances.displayCurrency:${selectedCustomer.id}`;
+    const savedCurrency = window.localStorage.getItem(preferenceKey) as SupportedCurrency | null;
+    setDisplayCurrency(savedCurrency && SUPPORTED_CURRENCIES.includes(savedCurrency)
+      ? savedCurrency
+      : selectedCustomer.baseCurrency);
+  }, [selectedCustomer?.baseCurrency, selectedCustomer?.id]);
+
+  React.useEffect(() => {
+    if (!selectedCustomer) {
+      setExchangeRates(null);
+      setExchangeRateWarning('');
+      return undefined;
+    }
+
+    let active = true;
+    setExchangeRates(null);
+    setExchangeRateWarning('');
+    void getExchangeRates(baseCurrency, [...SUPPORTED_CURRENCIES])
+      .then((result) => {
+        if (active) setExchangeRates(result);
+      })
+      .catch(() => {
+        if (!active) return;
+        setExchangeRateWarning('Exchange rates are currently unavailable. Showing official base currency amounts.');
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [baseCurrency, selectedCustomer?.id]);
 
   const loadLedger = React.useCallback(async () => {
     if (!organizationId || !customerId) {
@@ -622,10 +768,10 @@ export function ClientBalancesWorkspace({
     const [accountResponse, movementResponse] = await Promise.all([
       supabase
         .from('mes_client_balance_accounts')
-        .select('id, current_balance, total_charges, total_payments, uninvoiced_balance')
+        .select('id, current_balance, total_charges, total_payments, uninvoiced_balance, currency')
         .eq('organization_id', organizationId)
         .eq('customer_id', customerId)
-        .eq('currency', 'MXN')
+        .eq('currency', selectedCustomer?.baseCurrency ?? 'MXN')
         .maybeSingle(),
       supabase
         .from('mes_client_balance_movements')
@@ -646,7 +792,7 @@ export function ClientBalancesWorkspace({
       setMovements((movementResponse.data ?? []) as BalanceMovement[]);
     }
     setLoadingLedger(false);
-  }, [customerId, organizationId]);
+  }, [customerId, organizationId, selectedCustomer?.baseCurrency]);
 
   React.useEffect(() => {
     void loadLedger();
@@ -674,8 +820,20 @@ export function ClientBalancesWorkspace({
     event.preventDefault();
     if (!formMode || !selectedCustomer) return;
     const amount = parseMoneyInput(form.amount);
+    if (!form.date) {
+      setFormError('Select a movement date.');
+      return;
+    }
     if (!Number.isFinite(amount) || amount <= 0) {
       setFormError('Enter an amount greater than zero.');
+      return;
+    }
+    if (!form.status) {
+      setFormError('Select a status.');
+      return;
+    }
+    if (formMode === 'adjustment' && (!form.direction || !form.adjustmentType)) {
+      setFormError('Select a direction and adjustment type.');
       return;
     }
 
@@ -683,7 +841,9 @@ export function ClientBalancesWorkspace({
     setFormError('');
     const movementType = formMode === 'adjustment' ? 'adjustment' : formMode;
     const description = form.description.trim()
-      || (formMode === 'adjustment' ? `${form.direction === 'increase' ? 'Increase' : 'Decrease'} adjustment` : '');
+      || (formMode === 'adjustment'
+        ? getAdjustmentTypeOptionLabel(form.adjustmentType, form.direction)
+        : '');
     const { error } = await supabase.rpc('mes_add_client_balance_movement', {
       p_organization_id: organizationId,
       p_customer_id: selectedCustomer.id,
@@ -693,8 +853,9 @@ export function ClientBalancesWorkspace({
       p_amount: amount,
       p_category: formMode === 'charge' ? form.category : null,
       p_adjustment_direction: formMode === 'adjustment' ? form.direction : null,
+      p_adjustment_type: formMode === 'adjustment' ? form.adjustmentType : null,
       p_payment_method: formMode !== 'adjustment' ? form.paymentMethod : null,
-      p_payment_reference: formMode === 'payment' ? form.paymentReference.trim() || null : null,
+      p_payment_reference: formMode !== 'charge' ? form.paymentReference.trim() || null : null,
       p_delivery_note_number: formMode === 'charge' ? form.deliveryNote.trim() || null : null,
       p_invoice_required: formMode === 'charge' && form.invoiceRequired,
       p_invoice_status: formMode === 'charge' ? form.invoiceStatus : 'not_required',
@@ -718,7 +879,7 @@ export function ClientBalancesWorkspace({
     return movements.filter((movement) => {
       if (view === 'open' && !(movement.movement_type === 'charge' && ['open', 'partially_paid', 'disputed'].includes(movement.status))) return false;
       if (view === 'payments' && movement.movement_type !== 'payment') return false;
-      if (view === 'invoices' && !movement.invoice_required && !movement.invoice_uuid) return false;
+      if (view === 'invoices' && movement.movement_type !== 'adjustment' && !movement.invoice_required && !movement.invoice_uuid) return false;
       if (fromDate && movement.movement_date < fromDate) return false;
       if (toDate && movement.movement_date > toDate) return false;
       if (typeFilter !== 'all' && movement.movement_type !== typeFilter) return false;
@@ -728,6 +889,7 @@ export function ClientBalancesWorkspace({
       if (!query) return true;
       return [
         movement.description,
+        movement.adjustment_type,
         movement.category,
         movement.payment_reference,
         movement.delivery_note_number,
@@ -743,26 +905,110 @@ export function ClientBalancesWorkspace({
   const lastPayment = movements.find((movement) => movement.movement_type === 'payment' && movement.status === 'confirmed');
   const currentBalance = Number(account?.current_balance ?? 0);
   const amountDue = Math.max(currentBalance, 0);
-  const customerCredit = Math.abs(Math.min(currentBalance, 0));
+  const customerCredit = calculateCustomerCredit(movements);
+  const adjustmentFormIncomplete = formMode === 'adjustment'
+    && (!form.date || parseMoneyInput(form.amount) <= 0 || !form.direction
+      || !form.adjustmentType || !form.status);
+
+  const selectedExchangeRate = displayCurrency === baseCurrency
+    ? 1
+    : exchangeRates?.rates[displayCurrency];
+  const showingConvertedAmounts = displayCurrency !== baseCurrency && Boolean(selectedExchangeRate);
+  const effectiveDisplayCurrency = showingConvertedAmounts ? displayCurrency : baseCurrency;
+
+  const renderCurrencyAmount = (
+    value: number | string | null | undefined,
+    options: { balance?: boolean } = {},
+  ) => {
+    if (value === null || value === undefined || !Number.isFinite(Number(value))) return '?';
+    const officialAmount = Number(value);
+    const isCreditBalance = Boolean(options.balance && officialAmount < 0);
+    const officialMagnitude = isCreditBalance ? Math.abs(officialAmount) : officialAmount;
+    const displayedAmount = showingConvertedAmounts
+      ? convertCurrency(officialMagnitude, baseCurrency, displayCurrency, selectedExchangeRate)
+      : officialMagnitude;
+    const suffix = isCreditBalance ? ' credit' : '';
+
+    return (
+      <span className="client-currency-amount">
+        <span>{formatCurrency(displayedAmount, effectiveDisplayCurrency)}{suffix}</span>
+        {showingConvertedAmounts ? (
+          <small className="client-currency-original">Original: {formatCurrency(officialMagnitude, baseCurrency)}{suffix}</small>
+        ) : null}
+      </span>
+    );
+  };
+
+  const handleDisplayCurrencyChange = (currency: SupportedCurrency) => {
+    setDisplayCurrency(currency);
+    if (selectedCustomer) {
+      window.localStorage.setItem(`yvimo.clientBalances.displayCurrency:${selectedCustomer.id}`, currency);
+    }
+  };
+
+  const currencySelector = selectedCustomer && currencyPortalTarget
+    ? createPortal(
+      <section className="client-balance-currency-panel" aria-label="Display currency">
+        <div className="client-balance-currency-control">
+          <span className="client-balance-currency-icon"><Globe2 size={18} /></span>
+          <div>
+            <strong>Display Currency</strong>
+            <small title="Visualization only. Official account currency is defined when the customer is created.">
+              Visualization only
+            </small>
+          </div>
+          <select aria-label="Display currency" value={displayCurrency} onChange={(event) => handleDisplayCurrencyChange(event.target.value as SupportedCurrency)}>
+            {SUPPORTED_CURRENCIES.map((currency) => <option value={currency} key={currency}>{currency}</option>)}
+          </select>
+        </div>
+        <div className={`client-balance-currency-message${exchangeRateWarning ? ' warning' : ''}`}>
+          <Info size={14} />
+          <span>
+            <span title={`Official account base currency: ${baseCurrency}. Converted amounts are shown for visualization only and do not modify official balances.`}>
+              Official base: <b>{baseCurrency}</b> - Conversions do not modify balances.
+            </span>
+            {exchangeRateWarning ? (
+              <small title={exchangeRateWarning}>Rates unavailable - Showing {baseCurrency}</small>
+            ) : exchangeRates ? (
+              <small>Frankfurter - {exchangeRates.fromCache ? 'Cached' : 'Updated'} {dateLabel(exchangeRates.date)}</small>
+            ) : null}
+          </span>
+        </div>
+      </section>,
+      currencyPortalTarget,
+    )
+    : null;
 
   const exportStatement = () => {
     if (!selectedCustomer) return;
     const headers = [
-      'Date', 'Movement Type', 'Category', 'Description', 'Charge', 'Payment', 'Previous Balance',
-      'New Balance', 'Payment Method', 'Reference', 'Delivery Note', 'Invoice Status', 'Billing Name',
+      'Date', 'Movement', 'Adjustment Type', 'Category', 'Description', 'Reference',
+      'Charge', 'Payment / Credit', 'Previous Balance', 'Balance', 'Payment Method',
+      'Currency', 'Display Currency', 'Display Charge', 'Display Payment / Credit', 'Display Balance',
+      'Exchange Rate', 'Exchange Rate Date', 'Delivery Note', 'Invoice Status', 'Billing Name',
       'Invoice UUID', 'Status', 'Notes',
     ];
     const rows = filteredMovements.map((movement) => [
       movement.movement_date,
-      movementLabels[movement.movement_type],
+      getMovementBadgeLabel(movement),
+      movement.movement_type === 'adjustment'
+        ? getAdjustmentTypeOptionLabel(movement.adjustment_type, movement.adjustment_direction)
+        : '',
       movement.category ? categoryLabels[movement.category] ?? movement.category : '',
       movement.description,
+      movement.payment_reference ?? '',
       movement.charge_amount,
       movement.payment_amount,
       movement.previous_balance,
       movement.new_balance,
+      movement.currency || baseCurrency,
+      showingConvertedAmounts ? displayCurrency : '',
+      showingConvertedAmounts ? convertCurrency(Number(movement.charge_amount), baseCurrency, displayCurrency, selectedExchangeRate) : '',
+      showingConvertedAmounts ? convertCurrency(Number(movement.payment_amount), baseCurrency, displayCurrency, selectedExchangeRate) : '',
+      showingConvertedAmounts ? convertCurrency(Number(movement.new_balance), baseCurrency, displayCurrency, selectedExchangeRate) : '',
+      showingConvertedAmounts ? selectedExchangeRate : '',
+      showingConvertedAmounts ? exchangeRates?.date ?? '' : '',
       movement.payment_method ? paymentMethodLabels[movement.payment_method] ?? movement.payment_method : '',
-      movement.payment_reference ?? '',
       movement.delivery_note_number ?? '',
       invoiceStatusLabels[movement.invoice_status] ?? movement.invoice_status,
       movement.billing_name ?? '',
@@ -805,6 +1051,7 @@ export function ClientBalancesWorkspace({
 
   return (
     <div className="client-balances">
+      {currencySelector}
       <section className="client-balance-toolbar">
         <label>
           <span>Client Account</span>
@@ -852,12 +1099,12 @@ export function ClientBalancesWorkspace({
       <section className="client-balance-summary" aria-label="Client balance summary">
         <article className={`featured ${amountDue > 0 ? 'primary due' : ''}`}>
           <span><WalletCards size={19} /> {currentBalance === 0 ? 'Current Balance' : 'Amount Due'}</span>
-          <strong>{money(amountDue)}</strong>
+          <strong>{renderCurrencyAmount(amountDue)}</strong>
           <small>{currentBalance > 0 ? 'Customer owes this amount' : currentBalance === 0 ? 'Account settled' : 'No outstanding amount'}</small>
         </article>
         <article className={`featured ${customerCredit > 0 ? 'credit' : ''}`}>
           <span><Banknote size={19} /> Customer Credit</span>
-          <strong>{money(customerCredit)}</strong>
+          <strong>{renderCurrencyAmount(customerCredit)}</strong>
           <small>{customerCredit > 0
             ? 'Credit available from advance payment or overpayment'
             : 'No customer credit available'}</small>
@@ -865,28 +1112,28 @@ export function ClientBalancesWorkspace({
         <div className="client-balance-secondary-kpis">
           <article>
             <span><ArrowUpRight size={16} /> Total Charges</span>
-            <strong>{money(account?.total_charges)}</strong>
+            <strong>{renderCurrencyAmount(account?.total_charges ?? 0)}</strong>
             <small>All registered charges</small>
           </article>
           <article>
             <span><ArrowDownLeft size={16} /> Total Payments</span>
-            <strong>{money(account?.total_payments)}</strong>
+            <strong>{renderCurrencyAmount(account?.total_payments ?? 0)}</strong>
             <small>Confirmed and registered</small>
           </article>
           <article className={Number(account?.uninvoiced_balance ?? 0) > 0 ? 'warning' : ''}>
             <span><ReceiptText size={16} /> Uninvoiced Balance</span>
-            <strong>{money(account?.uninvoiced_balance)}</strong>
+            <strong>{renderCurrencyAmount(account?.uninvoiced_balance ?? 0)}</strong>
             <small>Charges pending invoice</small>
           </article>
           <article>
             <span><CalendarDays size={16} /> Last Payment</span>
-            <strong>{lastPayment ? money(lastPayment.payment_amount) : '—'}</strong>
+            <strong>{lastPayment ? renderCurrencyAmount(lastPayment.payment_amount) : '—'}</strong>
             <small>{lastPayment ? dateLabel(lastPayment.movement_date) : 'No payments yet'}</small>
           </article>
           <article className={openCharges.length ? 'warning' : ''}>
             <span><FileCheck2 size={16} /> Open Charges</span>
             <strong>{openCharges.length}</strong>
-            <small>{money(openCharges.reduce((sum, movement) => sum + Number(movement.charge_amount), 0))} registered</small>
+            <small>{renderCurrencyAmount(openCharges.reduce((sum, movement) => sum + Number(movement.charge_amount), 0))} registered</small>
           </article>
         </div>
       </section>
@@ -939,6 +1186,9 @@ export function ClientBalancesWorkspace({
             <option value="partially_paid">Partially Paid</option>
             <option value="paid">Paid</option>
             <option value="confirmed">Confirmed</option>
+            <option value="draft">Draft</option>
+            <option value="pending_approval">Pending Approval</option>
+            <option value="void">Void</option>
             <option value="pending_confirmation">Pending Confirmation</option>
             <option value="disputed">Disputed</option>
             <option value="cancelled">Cancelled</option>
@@ -978,13 +1228,13 @@ export function ClientBalancesWorkspace({
                   <React.Fragment key={movement.id}>
                     <tr>
                       <td>{dateLabel(movement.movement_date)}</td>
-                      <td><span className={`client-movement-pill ${movement.movement_type}`}>{movementLabels[movement.movement_type]}</span></td>
+                      <td><span className={['client-movement-pill', movement.movement_type, movement.adjustment_direction].filter(Boolean).join(' ')}>{getMovementBadgeLabel(movement)}</span></td>
                       <td className="description">{movement.description}</td>
-                      <td className="money charge">{movement.charge_amount ? money(movement.charge_amount) : '—'}</td>
-                      <td className="money payment">{movement.payment_amount ? money(movement.payment_amount) : '—'}</td>
+                      <td className="money charge">{movement.charge_amount ? renderCurrencyAmount(movement.charge_amount) : '—'}</td>
+                      <td className="money payment">{movement.payment_amount ? renderCurrencyAmount(movement.payment_amount) : '—'}</td>
                       <td className="money strong">
                         <span className={`client-ledger-balance ${Number(movement.new_balance) < 0 ? 'credit' : Number(movement.new_balance) > 0 ? 'due' : 'settled'}`}>
-                          {ledgerBalanceLabel(movement.new_balance)}
+                          {renderCurrencyAmount(movement.new_balance, { balance: true })}
                         </span>
                       </td>
                       <td><span className={`client-movement-status ${movement.status}`}>{movement.status.replaceAll('_', ' ')}</span></td>
@@ -996,10 +1246,18 @@ export function ClientBalancesWorkspace({
                       <tr className="client-balance-detail-row">
                         <td colSpan={8}>
                           <div className="client-balance-detail-grid">
+                            <span><b>Movement Type</b>{movementLabels[movement.movement_type]}</span>
+                            <span><b>Direction</b>{movement.movement_type === 'adjustment' ? movement.adjustment_direction?.replaceAll('_', ' ') : 'Not applicable'}</span>
+                            <span><b>Adjustment Type</b>{movement.movement_type === 'adjustment' ? getAdjustmentTypeOptionLabel(movement.adjustment_type, movement.adjustment_direction) : 'Not applicable'}</span>
+                            <span><b>Date</b>{dateLabel(movement.movement_date)}</span>
+                            <span><b>Amount</b>{renderCurrencyAmount(movement.amount)}</span>
+                            <span><b>Status</b>{movement.status.replaceAll('_', ' ')}</span>
+                            <span><b>Reference</b>{movement.payment_reference || 'Not provided'}</span>
+                            <span><b>Created At</b>{dateTimeLabel(movement.created_at)}</span>
+                            <span><b>Updated At</b>{dateTimeLabel(movement.updated_at)}</span>
                             <span><b>Category</b>{movement.category ? categoryLabels[movement.category] ?? movement.category : '—'}</span>
-                            <span><b>Previous Balance</b>{ledgerBalanceLabel(movement.previous_balance)}</span>
+                            <span><b>Previous Balance</b>{renderCurrencyAmount(movement.previous_balance, { balance: true })}</span>
                             <span><b>Payment Method</b>{movement.payment_method ? paymentMethodLabels[movement.payment_method] ?? movement.payment_method : '—'}</span>
-                            <span><b>Reference</b>{movement.payment_reference || '—'}</span>
                             <span><b>Delivery Note</b>{movement.delivery_note_number || '—'}</span>
                             <span><b>Invoice Status</b><em className={`client-invoice-pill ${movement.invoice_status}`}>{invoiceStatusLabels[movement.invoice_status] ?? movement.invoice_status}</em></span>
                             <span><b>Billing Name</b>{movement.billing_name || '—'}</span>
@@ -1044,7 +1302,7 @@ export function ClientBalancesWorkspace({
                   />
                 </label>
                 <label>
-                  Amount (MXN)
+                  Amount ({baseCurrency})
                   <input
                     className="client-balance-amount-input"
                     required
@@ -1136,15 +1394,32 @@ export function ClientBalancesWorkspace({
                       id="client-balance-adjustment-direction"
                       value={form.direction}
                       options={[{ value: 'increase', label: 'Increase balance' }, { value: 'decrease', label: 'Decrease balance' }]}
-                      onChange={(direction) => setForm((current) => ({ ...current, direction: direction as 'increase' | 'decrease' }))}
+                      onChange={(direction) => setForm((current) => ({
+                        ...current,
+                        direction: direction as AdjustmentDirection,
+                        adjustmentType: '',
+                      }))}
+                    /></label>
+                    <label>Adjustment Type<BalanceFormDropdown
+                      id="client-balance-adjustment-type"
+                      value={form.adjustmentType}
+                      options={getAdjustmentTypeOptions(form.direction)}
+                      onChange={(adjustmentType) => setForm((current) => ({ ...current, adjustmentType: adjustmentType as AdjustmentType }))}
+                      placeholder="Select adjustment type"
                     /></label>
                     <label>Status<BalanceFormDropdown
                       id="client-balance-adjustment-status"
                       value={form.status}
-                      options={[{ value: 'confirmed', label: 'Confirmed' }]}
+                      options={[
+                        { value: 'draft', label: 'Draft' },
+                        { value: 'pending_approval', label: 'Pending approval' },
+                        { value: 'confirmed', label: 'Confirmed' },
+                        { value: 'void', label: 'Void' },
+                      ]}
                       onChange={(status) => setForm((current) => ({ ...current, status }))}
                     /></label>
-                    <label className="wide">Reason<input required value={form.description} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} placeholder="Reason for adjustment" /></label>
+                    <label>Reference<input value={form.paymentReference} onChange={(event) => setForm((current) => ({ ...current, paymentReference: event.target.value }))} placeholder="Optional reference" /></label>
+                    <label className="wide">Description<input value={form.description} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} placeholder="Optional additional detail" /></label>
                   </>
                 ) : null}
 
@@ -1153,7 +1428,7 @@ export function ClientBalancesWorkspace({
               {formError ? <div className="clients-modal-error" role="alert">{formError}</div> : null}
               <div className="supplier-modal-actions">
                 <button type="button" onClick={() => setFormMode(null)} disabled={saving}>Cancel</button>
-                <button type="submit" disabled={saving}><Plus size={16} /> {saving ? 'Saving...' : 'Save Movement'}</button>
+                <button type="submit" disabled={saving || adjustmentFormIncomplete}><Plus size={16} /> {saving ? 'Saving...' : 'Save Movement'}</button>
               </div>
             </form>
           </div>
