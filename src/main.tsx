@@ -3442,8 +3442,8 @@ function LoggedDashboardPage({
   const manufacturingOrganizationRequiredPanel = (
     <section className="mes-workspace-panel">
       <div className="mes-screen-header">
-        <button className="mes-workspace-back" type="button" onClick={() => onNavigate('/workspace/manufacturing-ops')}>
-          <ArrowLeft size={17} /> Back to Manufacturing Ops
+        <button className="academy-back-button engineering-back-button mes-workspace-back" type="button" onClick={() => onNavigate('/dashboard')}>
+          <ArrowLeft size={17} /> Go Back to Workspace
         </button>
         <div className="mes-workspace-heading">
           <span className="eyebrow">Organization required</span>
@@ -3451,8 +3451,8 @@ function LoggedDashboardPage({
           <p>Production Orders, Work Centers, Operator Terminal, and Traceability are shared by organization. Create one or join with an invite code before entering this workspace.</p>
         </div>
       </div>
-      <div className="manufacturing-organization-card">
-        <button className="manufacturing-organization-trigger" type="button" onClick={() => setManufacturingOrganizationDialogOpen(true)}>
+      <div className="manufacturing-organization-card manufacturing-organization-required-card">
+        <button className="manufacturing-organization-trigger manufacturing-organization-required-trigger" type="button" onClick={() => setManufacturingOrganizationDialogOpen(true)}>
           <span className="manufacturing-organization-icon">
             {manufacturingOrganization?.logoUrl ? <img src={manufacturingOrganization.logoUrl} alt="" aria-hidden="true" /> : <Building2 size={19} />}
           </span>
@@ -4534,6 +4534,7 @@ function LoggedDashboardPage({
           </div>
         ) : isManufacturingOpsPage ? (
           <div className="engineering-tools-page manufacturing-ops-page">
+            {activeMesWorkspace ? manufacturingOrganizationDialog : null}
             {activeMesWorkspace ? (
               activeMesWorkspace
             ) : (

@@ -3267,6 +3267,23 @@ body.work-center-map-expanded .logged-workspace {
   white-space: nowrap;
 }
 
+.manufacturing-organization-required-card {
+  display: block;
+  width: min(100%, 520px);
+  margin: 8px auto 6px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.manufacturing-organization-required-trigger {
+  width: 100%;
+  min-height: 80px;
+  margin: 0;
+  transform: none;
+}
+
 .manufacturing-organization-dialog-backdrop {
   position: fixed;
   inset: 0;
@@ -4322,7 +4339,8 @@ body.work-center-map-expanded .logged-workspace {
   color: #17202a;
 }
 
-.mes-workspace-back {
+.mes-workspace-back,
+.mes-workspace-back.academy-back-button {
   justify-self: start;
   position: static;
   transform: none;
