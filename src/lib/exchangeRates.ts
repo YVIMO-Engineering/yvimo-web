@@ -13,7 +13,7 @@ export type ExchangeRatesResult = {
 
 type CachedExchangeRates = Omit<ExchangeRatesResult, 'fromCache' | 'stale'>;
 
-const FRANKFURTER_URL = 'https://api.frankfurter.app/latest';
+const FRANKFURTER_URL = 'https://api.frankfurter.dev/v1/latest';
 const CACHE_DURATION_MS = 12 * 60 * 60 * 1000;
 
 function cacheKey(baseCurrency: SupportedCurrency, targetCurrencies: SupportedCurrency[]) {
@@ -68,7 +68,7 @@ export async function getExchangeRates(
   }
 
   try {
-    const params = new URLSearchParams({ from: baseCurrency, to: targets.join(',') });
+    const params = new URLSearchParams({ base: baseCurrency, symbols: targets.join(',') });
     const response = await fetch(`${FRANKFURTER_URL}?${params.toString()}`);
     if (!response.ok) throw new Error(`Exchange-rate request failed with ${response.status}.`);
     const payload = await response.json() as { date?: string; rates?: Record<string, number> };

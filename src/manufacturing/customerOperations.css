@@ -433,7 +433,7 @@
 }
 
 .clients-operations-workspace .client-balances-screen-header {
-  grid-template-columns: 180px minmax(0, 1fr) 420px;
+  grid-template-columns: 180px minmax(0, 1fr) 320px;
 }
 
 .client-balances-header-currency {
