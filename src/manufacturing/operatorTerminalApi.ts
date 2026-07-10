@@ -53,6 +53,30 @@ type OperatorTerminalEventRow = {
   created_at: string;
 };
 
+type ProductionSerialRow = {
+  id: string;
+  production_order_id: string;
+  piece_sequence: number;
+  tool_id: string | null;
+  serial_number: string;
+  result: 'good' | 'scrap' | null;
+  ready_for_quality: boolean;
+  traceability_id: string | null;
+  reported_at: string | null;
+};
+
+export type OperatorProductionSerial = {
+  id: string;
+  productionOrderId: string;
+  pieceSequence: number;
+  toolId: string;
+  serialNumber: string;
+  result: 'good' | 'scrap' | null;
+  readyForQuality: boolean;
+  traceabilityId: string;
+  reportedAt: string;
+};
+
 export type OperatorScrapEvent = {
   id: string;
   timestamp: string;
@@ -64,6 +88,20 @@ export type OperatorScrapEvent = {
   orderNumber: string;
   reportedTotal: number | null;
 };
+
+function mapProductionSerialRow(row: ProductionSerialRow): OperatorProductionSerial {
+  return {
+    id: row.id,
+    productionOrderId: row.production_order_id,
+    pieceSequence: row.piece_sequence,
+    toolId: row.tool_id ?? '',
+    serialNumber: row.serial_number,
+    result: row.result,
+    readyForQuality: row.ready_for_quality,
+    traceabilityId: row.traceability_id ?? '',
+    reportedAt: row.reported_at ?? '',
+  };
+}
 
 export type OperatorTerminalSnapshot = {
   currentOrder: ProductionOrder | null;
@@ -259,6 +297,24 @@ export async function fetchOperatorScrapEvents(
       reportedTotal: typeof payload.reported_total === 'number' ? payload.reported_total : null,
     };
   });
+}
+
+export async function fetchOperatorProductionSerials(
+  input: {
+    orderId: string;
+    organizationId: string;
+  },
+  client: OperatorClient = supabase,
+): Promise<OperatorProductionSerial[]> {
+  const { data, error } = await client
+    .from('mes_production_serials')
+    .select('id, production_order_id, piece_sequence, tool_id, serial_number, result, ready_for_quality, traceability_id, reported_at')
+    .eq('organization_id', input.organizationId)
+    .eq('production_order_id', input.orderId)
+    .order('piece_sequence', { ascending: true });
+
+  if (error) throw error;
+  return ((data ?? []) as ProductionSerialRow[]).map(mapProductionSerialRow);
 }
 
 export async function setOperatorTerminalState(

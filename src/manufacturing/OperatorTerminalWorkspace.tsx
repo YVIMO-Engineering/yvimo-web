@@ -23,11 +23,13 @@ import { JobQueueModal, type JobQueueSummary } from './MesWorkspaces';
 import type { ProductionOrder } from './mesTypes';
 import {
   fetchOperatorScrapEvents,
+  fetchOperatorProductionSerials,
   fetchOperatorTerminalSnapshot,
   reportOperatorProduction,
   setOperatorTerminalState,
   switchOperatorActiveOrder,
   type OperatorScrapEvent,
+  type OperatorProductionSerial,
   type OperatorTerminalSnapshot,
 } from './operatorTerminalApi';
 
@@ -37,7 +39,7 @@ type OperatorTerminalProps = {
 };
 
 type TerminalState = 'not-started' | 'running' | 'paused' | 'down' | 'completed';
-type TerminalModal = 'scrap' | 'pause' | 'downtime' | 'complete' | 'undo' | 'queue' | 'scrap-events' | 'switch-order' | null;
+type TerminalModal = 'scrap' | 'pause' | 'downtime' | 'complete' | 'undo' | 'queue' | 'scrap-events' | 'switch-order' | 'part-picker' | null;
 const getActiveOrderStorageKey = (organizationId: string) => `yvimo-operator-terminal-active-order:${organizationId}`;
 
 function loadActiveOrderId(organizationId: string) {
@@ -246,7 +248,7 @@ function ReasonModal({
   onClose,
   onSubmit,
 }: {
-  modal: Exclude<TerminalModal, 'queue' | 'scrap-events' | 'switch-order' | null>;
+  modal: Exclude<TerminalModal, 'queue' | 'scrap-events' | 'switch-order' | 'part-picker' | null>;
   goodQty: number;
   scrapQty: number;
   onClose: () => void;
@@ -391,6 +393,74 @@ function ScrapEventsModal({
   );
 }
 
+function PartPickerModal({
+  order,
+  serials,
+  activePieceSequence,
+  loading,
+  onClose,
+  onSelect,
+}: {
+  order: ProductionOrder | null;
+  serials: OperatorProductionSerial[];
+  activePieceSequence: number;
+  loading: boolean;
+  onClose: () => void;
+  onSelect: (serial: OperatorProductionSerial) => void;
+}) {
+  const [query, setQuery] = React.useState('');
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredSerials = normalizedQuery
+    ? serials.filter((serial) => [
+      String(serial.pieceSequence),
+      serial.toolId,
+      serial.serialNumber,
+      serial.result ?? 'available',
+    ].some((value) => value.toLowerCase().includes(normalizedQuery)))
+    : serials;
+
+  return (
+    <div className="quality-order-modal-backdrop" role="presentation">
+      <section className="quality-order-modal operator-terminal-part-picker-modal" role="dialog" aria-modal="true" aria-labelledby="operator-terminal-part-picker-title">
+        <div className="quality-order-modal-heading">
+          <span><ClipboardCheck size={22} /></span>
+          <div><p className="eyebrow">{order?.orderNumber ?? 'Operator Terminal'}</p><h3 id="operator-terminal-part-picker-title">Select Part</h3></div>
+          <button type="button" aria-label="Close" onClick={onClose}><X size={18} /></button>
+        </div>
+        <p className="quality-order-modal-copy">{order ? `${order.partName} / ${order.partNumber}` : 'Select a planned piece for this operation.'}</p>
+        <label className="quality-serial-search quality-order-search">
+          <Search size={17} />
+          <input autoFocus type="search" value={query} placeholder="Search part, tool, serial, or status" onChange={(event) => setQuery(event.target.value)} />
+        </label>
+        <div className="operator-terminal-part-picker-header" aria-hidden="true">
+          <span>Part</span><span>Tool ID</span><span>Serial Number</span><span>Status</span>
+        </div>
+        <div className="operator-terminal-part-picker-list">
+          {loading ? <div className="operator-terminal-part-picker-empty">Loading pieces...</div> : null}
+          {!loading && filteredSerials.map((serial) => {
+            const reported = Boolean(serial.result);
+            return (
+              <button
+                className={serial.pieceSequence === activePieceSequence ? 'active' : ''}
+                type="button"
+                key={serial.id}
+                disabled={reported}
+                onClick={() => onSelect(serial)}
+              >
+                <strong>{serial.pieceSequence}</strong>
+                <span>{serial.toolId || '-'}</span>
+                <span>{serial.serialNumber}</span>
+                <em className={reported ? `reported ${serial.result}` : 'available'}>{reported ? serial.result : 'available'}</em>
+              </button>
+            );
+          })}
+          {!loading && !filteredSerials.length ? <div className="operator-terminal-part-picker-empty">No assigned pieces found for this Production Order.</div> : null}
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function SwitchOrderModal({
   orders,
   currentOrderId,
@@ -475,6 +545,9 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId }: Operat
   const [snapshot, setSnapshot] = React.useState<OperatorTerminalSnapshot | null>(null);
   const [terminalMessage, setTerminalMessage] = React.useState('');
   const [syncPending, setSyncPending] = React.useState(false);
+  const [productionSerials, setProductionSerials] = React.useState<OperatorProductionSerial[]>([]);
+  const [productionSerialsLoading, setProductionSerialsLoading] = React.useState(false);
+  const [selectedProductionSerialId, setSelectedProductionSerialId] = React.useState('');
   const [selectedWorkCenterCode, setSelectedWorkCenterCode] = React.useState('');
   const [selectedStationCode, setSelectedStationCode] = React.useState('');
   const [selectedOrderId, setSelectedOrderId] = React.useState('');
@@ -534,7 +607,9 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId }: Operat
   const totalQty = currentOrder?.plannedQuantity ?? 0;
   const completedQty = hasAssignedOrder ? goodQty + scrapQty : 0;
   const remainingQty = Math.max(0, totalQty - completedQty);
-  const activePartSequence = totalQty > 0 ? Math.min(totalQty, completedQty + 1) : 0;
+  const nextUnreportedProductionSerial = productionSerials.find((serial) => !serial.result) ?? null;
+  const selectedProductionSerial = productionSerials.find((serial) => serial.id === selectedProductionSerialId) ?? null;
+  const activePartSequence = selectedProductionSerial?.pieceSequence ?? nextUnreportedProductionSerial?.pieceSequence ?? (totalQty > 0 ? Math.min(totalQty, completedQty + 1) : 0);
   const isQuantityComplete = hasAssignedOrder && completedQty >= totalQty;
   const canReport = hasAssignedOrder && state === 'running';
   const isOrderPaused = hasAssignedOrder && state === 'paused';
@@ -595,7 +670,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId }: Operat
     reason = '',
     comment = '',
   ) => {
-    const reportedSequence = Math.max(1, order.completedQuantity + order.scrapQuantity + 1);
+    const reportedSequence = selectedProductionSerial?.pieceSequence ?? Math.max(1, order.completedQuantity + order.scrapQuantity + 1);
     return {
       template_id: templateId,
       part_label: `Piece ${reportedSequence}`,
@@ -712,6 +787,17 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId }: Operat
     });
   };
 
+  const markSelectedProductionSerialReported = (result: 'good' | 'scrap') => {
+    const reportedSerialId = selectedProductionSerialId;
+    if (!reportedSerialId) return null;
+    const nextSerials = productionSerials.map((serial) => (
+      serial.id === reportedSerialId ? { ...serial, result, readyForQuality: true } : serial
+    ));
+    const nextAvailableSerial = nextSerials.find((serial) => !serial.result) ?? null;
+    setProductionSerials(nextSerials);
+    return nextAvailableSerial;
+  };
+
   React.useEffect(() => {
     let active = true;
     const loadSnapshot = async () => {
@@ -797,6 +883,50 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId }: Operat
     }));
   }, [currentOrder?.id, currentOrder?.customerId, currentOrder?.clientName, customerOptions]);
 
+  const applyProductionSerial = React.useCallback((serial: OperatorProductionSerial | null) => {
+    if (!serial) return;
+    setSelectedProductionSerialId(serial.id);
+    setTraceabilityForm((current) => ({
+      ...current,
+      toolId: serial.toolId,
+      serialNumber: serial.serialNumber,
+    }));
+  }, []);
+
+  React.useEffect(() => {
+    let active = true;
+    const loadProductionSerials = async () => {
+      if (!currentOrder || !hasSupabaseOrder) {
+        setProductionSerials([]);
+        setSelectedProductionSerialId('');
+        return;
+      }
+      setProductionSerialsLoading(true);
+      try {
+        const nextSerials = await fetchOperatorProductionSerials({ orderId: currentOrder.id, organizationId });
+        if (!active) return;
+        setProductionSerials(nextSerials);
+        const nextAvailableSerial = nextSerials.find((serial) => !serial.result) ?? null;
+        if (nextAvailableSerial) {
+          applyProductionSerial(nextAvailableSerial);
+        } else {
+          setSelectedProductionSerialId('');
+        }
+      } catch (error) {
+        console.error('Unable to load assigned production serials', error);
+        if (!active) return;
+        setProductionSerials([]);
+        setSelectedProductionSerialId('');
+      } finally {
+        if (active) setProductionSerialsLoading(false);
+      }
+    };
+    void loadProductionSerials();
+    return () => {
+      active = false;
+    };
+  }, [applyProductionSerial, currentOrder?.id, hasSupabaseOrder, organizationId]);
+
   React.useEffect(() => {
     if (!snapshot) return;
     const stationActiveOrders = snapshot.activeOrders.filter((order) => (
@@ -809,10 +939,12 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId }: Operat
 
     if (nextOrder) {
       applyOrder(nextOrder);
-      setTraceabilityForm((current) => ({
-        ...current,
-        serialNumber: `${nextOrder.partNumber}-SN-${String(nextOrder.completedQuantity + nextOrder.scrapQuantity + 1).padStart(4, '0')}`,
-      }));
+      if (!productionSerials.some((serial) => !serial.result)) {
+        setTraceabilityForm((current) => ({
+          ...current,
+          serialNumber: `${nextOrder.partNumber}-SN-${String(nextOrder.completedQuantity + nextOrder.scrapQuantity + 1).padStart(4, '0')}`,
+        }));
+      }
       setTerminalMessage('');
       return;
     }
@@ -822,7 +954,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId }: Operat
     setState('not-started');
     setEvents([]);
     setTerminalMessage('');
-  }, [currentOrder?.id, stationCode, workCenterCode]);
+  }, [currentOrder?.id, productionSerials, stationCode, workCenterCode]);
 
   const reportGood = async () => {
     if (!currentOrder) return;
@@ -850,7 +982,12 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId }: Operat
       setEvents((current) => [{ type: 'good', timestamp: formatToastTime() }, ...current].slice(0, 8));
       showToast('Good part and traceability saved');
 
-      setTraceField('serialNumber', suggestNextSerialNumber(serialNumber, order.partNumber, order.completedQuantity + order.scrapQuantity + 1));
+      const nextAvailableSerial = markSelectedProductionSerialReported('good');
+      if (nextAvailableSerial) {
+        applyProductionSerial(nextAvailableSerial);
+      } else {
+        setTraceField('serialNumber', suggestNextSerialNumber(serialNumber, order.partNumber, order.completedQuantity + order.scrapQuantity + 1));
+      }
     } catch (error) {
       console.error('Unable to report good production', error);
       const message = getOperatorReportErrorMessage(error);
@@ -907,7 +1044,12 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId }: Operat
           }, ...current].slice(0, 8));
           showToast('Scrap and traceability saved');
 
-          setTraceField('serialNumber', suggestNextSerialNumber(serialNumber, order.partNumber, order.completedQuantity + order.scrapQuantity + 1));
+          const nextAvailableSerial = markSelectedProductionSerialReported('scrap');
+          if (nextAvailableSerial) {
+            applyProductionSerial(nextAvailableSerial);
+          } else {
+            setTraceField('serialNumber', suggestNextSerialNumber(serialNumber, order.partNumber, order.completedQuantity + order.scrapQuantity + 1));
+          }
         } catch (error) {
           console.error('Unable to report scrap', error);
           const message = getOperatorReportErrorMessage(error);
@@ -1259,10 +1401,14 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId }: Operat
             </div>
             {hasAssignedOrder ? (
             <div className="operator-terminal-form-grid">
-              <div className="operator-terminal-part-reference">
+              <button
+                className="operator-terminal-part-reference operator-terminal-part-reference-button"
+                type="button"
+                onClick={() => setModal('part-picker')}
+              >
                 <span>Part</span>
                 <strong>{activePartSequence.toLocaleString()}</strong>
-              </div>
+              </button>
               <label>Tool ID<input value={traceabilityForm.toolId} onChange={(event) => setTraceField('toolId', event.target.value)} /></label>
               <label>Serial Number<input required value={traceabilityForm.serialNumber} onChange={(event) => setTraceField('serialNumber', event.target.value)} /></label>
               <div className="operator-terminal-unit-switch" role="group" aria-label="Dimensions unit">
@@ -1312,7 +1458,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId }: Operat
       </div>
 
       {toast ? <div className="operator-terminal-toast" role="status">{toast}</div> : null}
-      {modal && modal !== 'queue' && modal !== 'scrap-events' && modal !== 'switch-order' ? <ReasonModal modal={modal} goodQty={goodQty} scrapQty={scrapQty} onClose={() => setModal(null)} onSubmit={submitModal} /> : null}
+      {modal && modal !== 'queue' && modal !== 'scrap-events' && modal !== 'switch-order' && modal !== 'part-picker' ? <ReasonModal modal={modal} goodQty={goodQty} scrapQty={scrapQty} onClose={() => setModal(null)} onSubmit={submitModal} /> : null}
       {modal === 'queue' ? <JobQueueModal summary={jobQueueSummary} onClose={() => setModal(null)} /> : null}
       {modal === 'scrap-events' ? (
         <ScrapEventsModal
@@ -1329,6 +1475,19 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId }: Operat
           loading={switchOrderLoading}
           onClose={() => setModal(null)}
           onSelect={(order) => void switchActiveOrder(order)}
+        />
+      ) : null}
+      {modal === 'part-picker' ? (
+        <PartPickerModal
+          order={currentOrder}
+          serials={productionSerials}
+          activePieceSequence={activePartSequence}
+          loading={productionSerialsLoading}
+          onClose={() => setModal(null)}
+          onSelect={(serial) => {
+            applyProductionSerial(serial);
+            setModal(null);
+          }}
         />
       ) : null}
     </section>

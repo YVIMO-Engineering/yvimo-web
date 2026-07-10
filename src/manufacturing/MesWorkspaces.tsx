@@ -96,6 +96,22 @@ type ProductionOrderFormState = {
   qualityMeasurementUnit: QualityMeasurementUnit;
 };
 
+type ProductionOrderPartNameOption = '' | 'hobs' | 'shaper' | 'shaver' | 'skiving' | 'other';
+
+type ProductionSerialAssignmentDraft = {
+  pieceSequence: number;
+  toolId: string;
+  serialNumber: string;
+};
+
+const productionOrderPartNameOptions: Array<{ value: ProductionOrderPartNameOption; label: string; pieceType?: QualityPieceType }> = [
+  { value: 'hobs', label: 'Hobs', pieceType: 'hobs' },
+  { value: 'shaper', label: 'Shaper', pieceType: 'shaper' },
+  { value: 'shaver', label: 'Shaver', pieceType: 'shavers' },
+  { value: 'skiving', label: 'Skiving', pieceType: 'skiving' },
+  { value: 'other', label: 'Other' },
+];
+
 type ProductionOrderRow = {
   id: string;
   order_number: string;
@@ -140,6 +156,17 @@ type ProductionOrderCustomerOptionRow = {
   customer_name: string;
   legal_name: string;
   status: 'active' | 'inactive';
+};
+
+type ProductionSerialInsertRow = {
+  organization_id: string;
+  production_order_id: string;
+  piece_sequence: number;
+  tool_id: string;
+  serial_number: string;
+  result: null;
+  ready_for_quality: false;
+  reported_at: null;
 };
 
 type TraceabilityCaptureRow = {
@@ -610,14 +637,20 @@ function MesOrderDropdown({ id, value, options, placeholder = 'Select option', d
     const viewportPadding = 16;
     const availableBelow = window.innerHeight - rect.bottom - viewportPadding;
     const availableAbove = rect.top - viewportPadding;
-    const desiredMenuHeight = Math.min(220, Math.max(44, (options.length * 36) + 12));
-    const openUp = placement === 'auto' && availableBelow < desiredMenuHeight && availableAbove > availableBelow;
-    const maxHeight = Math.max(44, Math.min(desiredMenuHeight, openUp ? availableAbove - 6 : availableBelow - 6));
+    const desiredMenuHeight = Math.min(280, Math.max(88, (options.length * 38) + 12));
+    const minimumUsefulHeight = Math.min(desiredMenuHeight, 140);
+    const openUp = availableBelow < minimumUsefulHeight && availableAbove > availableBelow
+      ? true
+      : placement === 'auto' && availableBelow < desiredMenuHeight && availableAbove > availableBelow;
+    const availableHeight = Math.max(52, openUp ? availableAbove - 6 : availableBelow - 6);
+    const maxHeight = Math.max(88, Math.min(desiredMenuHeight, availableHeight));
+    const menuWidth = Math.min(rect.width, window.innerWidth - (viewportPadding * 2));
+    const menuLeft = Math.max(viewportPadding, Math.min(rect.left, window.innerWidth - menuWidth - viewportPadding));
 
     setMenuPosition({
       top: openUp ? Math.max(viewportPadding, rect.top - maxHeight - 6) : rect.bottom + 6,
-      left: rect.left,
-      width: rect.width,
+      left: menuLeft,
+      width: menuWidth,
       maxHeight,
     });
   }, [disabled, options.length, placement]);
@@ -818,6 +851,36 @@ function formStateToProductionOrder(formState: ProductionOrderFormState, id?: st
     qualityCheckLimits: formState.qualityChecksEnabled ? formState.qualityCheckLimits : {},
     qualityMeasurementUnit: formState.qualityMeasurementUnit,
   };
+}
+
+function createSerialAssignmentDrafts(quantity: number, currentDrafts: ProductionSerialAssignmentDraft[] = []) {
+  const nextQuantity = Math.max(0, Math.floor(quantity));
+  return Array.from({ length: nextQuantity }, (_, index) => {
+    const pieceSequence = index + 1;
+    const currentDraft = currentDrafts.find((draft) => draft.pieceSequence === pieceSequence);
+    return currentDraft ?? { pieceSequence, toolId: '', serialNumber: '' };
+  });
+}
+
+function validateSerialAssignmentDrafts(drafts: ProductionSerialAssignmentDraft[]) {
+  if (drafts.some((draft) => !draft.toolId.trim() || !draft.serialNumber.trim())) {
+    return 'Complete every Tool ID and Serial Number before saving assigned pieces.';
+  }
+  const serials = drafts.map((draft) => draft.serialNumber.trim().toLowerCase());
+  if (new Set(serials).size !== serials.length) {
+    return 'Serial Numbers must be unique within this Production Order.';
+  }
+  return '';
+}
+
+function getPartNameOptionValue(partName: string): ProductionOrderPartNameOption {
+  const normalizedPartName = partName.trim().toLowerCase();
+  if (!normalizedPartName) return '';
+  const standardOption = productionOrderPartNameOptions.find((option) => (
+    option.value !== 'other'
+    && option.label.toLowerCase() === normalizedPartName
+  ));
+  return standardOption?.value ?? 'other';
 }
 
 function getProductionOrderStationLabel(stationOptionsByWorkCenter: Record<string, MesOrderDropdownOption[]>, workCenterCode: string, stationCode: string) {
@@ -1113,6 +1176,10 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
   const [page, setPage] = React.useState(restoredViewState.page);
   const [formMode, setFormMode] = React.useState<'create' | 'edit' | null>(null);
   const [formState, setFormState] = React.useState<ProductionOrderFormState>(() => toFormState());
+  const [partNameOption, setPartNameOption] = React.useState<ProductionOrderPartNameOption>('');
+  const [assignSerialsEnabled, setAssignSerialsEnabled] = React.useState(false);
+  const [serialAssignmentDrafts, setSerialAssignmentDrafts] = React.useState<ProductionSerialAssignmentDraft[]>([]);
+  const [serialAssignmentModalOpen, setSerialAssignmentModalOpen] = React.useState(false);
   const [tableMessage, setTableMessage] = React.useState<string | null>('Loading production orders...');
   const [ordersLoaded, setOrdersLoaded] = React.useState(false);
   const [savingOrder, setSavingOrder] = React.useState(false);
@@ -1411,6 +1478,10 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
   const openCreateOrderForm = () => {
     setOrderFormError('');
     setFormState(toFormState());
+    setPartNameOption('');
+    setAssignSerialsEnabled(false);
+    setSerialAssignmentDrafts([]);
+    setSerialAssignmentModalOpen(false);
     setFormMode('create');
   };
 
@@ -1426,6 +1497,10 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
       customerId: linkedCustomer?.id ?? selectedOrder.customerId ?? '',
       clientName: linkedCustomer?.customer_name ?? selectedOrder.clientName ?? '',
     });
+    setPartNameOption(getPartNameOptionValue(selectedOrder.partName));
+    setAssignSerialsEnabled(false);
+    setSerialAssignmentDrafts([]);
+    setSerialAssignmentModalOpen(false);
     setFormMode('edit');
   };
 
@@ -1433,7 +1508,55 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
     setFormMode(null);
     setSavingOrder(false);
     setOrderFormError('');
+    setPartNameOption('');
+    setAssignSerialsEnabled(false);
+    setSerialAssignmentDrafts([]);
+    setSerialAssignmentModalOpen(false);
   };
+
+  const setProductionOrderPartNameOption = (nextOptionValue: ProductionOrderPartNameOption) => {
+    setPartNameOption(nextOptionValue);
+    const selectedPartNameOption = productionOrderPartNameOptions.find((option) => option.value === nextOptionValue);
+    if (!selectedPartNameOption) {
+      setFormState((current) => ({ ...current, partName: '' }));
+      return;
+    }
+    if (selectedPartNameOption.value === 'other') {
+      setFormState((current) => ({
+        ...current,
+        partName: getPartNameOptionValue(current.partName) === 'other' ? current.partName : '',
+      }));
+      return;
+    }
+    setFormState((current) => ({
+      ...current,
+      partName: selectedPartNameOption.label,
+      pieceType: selectedPartNameOption.pieceType ?? current.pieceType,
+    }));
+  };
+
+  const setSerialAssignmentField = (pieceSequence: number, field: 'toolId' | 'serialNumber', value: string) => {
+    setSerialAssignmentDrafts((currentDrafts) => createSerialAssignmentDrafts(Number(formState.plannedQuantity) || 0, currentDrafts)
+      .map((draft) => draft.pieceSequence === pieceSequence ? { ...draft, [field]: value } : draft));
+  };
+
+  const toggleSerialAssignments = () => {
+    setAssignSerialsEnabled((enabled) => {
+      const nextEnabled = !enabled;
+      if (nextEnabled) {
+        setSerialAssignmentDrafts((currentDrafts) => createSerialAssignmentDrafts(Number(formState.plannedQuantity) || 0, currentDrafts));
+        setSerialAssignmentModalOpen(true);
+      } else {
+        setSerialAssignmentModalOpen(false);
+      }
+      return nextEnabled;
+    });
+  };
+
+  React.useEffect(() => {
+    if (!assignSerialsEnabled) return;
+    setSerialAssignmentDrafts((currentDrafts) => createSerialAssignmentDrafts(Number(formState.plannedQuantity) || 0, currentDrafts));
+  }, [assignSerialsEnabled, formState.plannedQuantity]);
 
   const saveOrderForm = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -1445,6 +1568,19 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
     if (formState.manufacturingType === 'single-operation' && !formState.assignedStation.trim()) {
       setOrderFormError('Select a Station for this Single Operation order.');
       return;
+    }
+    const normalizedSerialDrafts = createSerialAssignmentDrafts(Number(formState.plannedQuantity) || 0, serialAssignmentDrafts);
+    if (assignSerialsEnabled) {
+      if (!normalizedSerialDrafts.length) {
+        setOrderFormError('Set a Planned Quantity greater than zero before assigning Tool IDs and Serial Numbers.');
+        return;
+      }
+      const serialAssignmentError = validateSerialAssignmentDrafts(normalizedSerialDrafts);
+      if (serialAssignmentError) {
+        setOrderFormError(serialAssignmentError);
+        setSerialAssignmentModalOpen(true);
+        return;
+      }
     }
     const orderFromForm = {
       ...formStateToProductionOrder(formState, formMode === 'edit' ? selectedOrder?.id : undefined),
@@ -1508,6 +1644,23 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
             .abortSignal(controller.signal);
           if (error) throw error;
           const nextOrder = mapProductionOrderRow(data as ProductionOrderRow);
+          if (assignSerialsEnabled) {
+            const serialRows: ProductionSerialInsertRow[] = normalizedSerialDrafts.map((draft) => ({
+              organization_id: organizationId,
+              production_order_id: nextOrder.id,
+              piece_sequence: draft.pieceSequence,
+              tool_id: draft.toolId.trim(),
+              serial_number: draft.serialNumber.trim(),
+              result: null,
+              ready_for_quality: false,
+              reported_at: null,
+            }));
+            const { error: serialsError } = await supabase
+              .from('mes_production_serials')
+              .insert(serialRows)
+              .abortSignal(controller.signal);
+            if (serialsError) throw serialsError;
+          }
           setTableMessage(null);
           setOrders((currentOrders) => [nextOrder, ...currentOrders]);
           setSelectedOrderNumber(nextOrder.orderNumber);
@@ -1833,14 +1986,55 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
                 Part number
                 <input value={formState.partNumber} onChange={(event) => setFormState((current) => ({ ...current, partNumber: event.target.value }))} required />
               </label>
-              <label>
+              <label className={partNameOption === 'other' ? 'production-order-part-name-field with-custom-part-name' : 'production-order-part-name-field'}>
                 Part name
-                <input value={formState.partName} onChange={(event) => setFormState((current) => ({ ...current, partName: event.target.value }))} required />
+                <MesOrderDropdown
+                  id="production-order-part-name"
+                  value={partNameOption}
+                  options={productionOrderPartNameOptions.map((option) => ({ value: option.value, label: option.label }))}
+                  placeholder="Select part type"
+                  onChange={(value) => setProductionOrderPartNameOption(value as ProductionOrderPartNameOption)}
+                />
+                {partNameOption === 'other' ? (
+                  <input
+                    className="production-order-custom-part-name"
+                    value={formState.partName}
+                    onChange={(event) => setFormState((current) => ({ ...current, partName: event.target.value }))}
+                    placeholder="Enter custom part name"
+                    required
+                  />
+                ) : null}
               </label>
               <label>
                 Planned quantity
                 <input type="number" min="0" value={formState.plannedQuantity} onChange={(event) => setFormState((current) => ({ ...current, plannedQuantity: event.target.value }))} required />
               </label>
+              {formMode === 'create' ? (
+                <fieldset className="production-order-serial-assignment mes-order-form-wide">
+                  <div className="production-order-quality-heading">
+                    <div>
+                      <span className="production-order-quality-title">Assign Tool IDs and Serial Numbers</span>
+                      <small>Preload each planned piece so Operator Terminal can pick from the available list.</small>
+                    </div>
+                    <button
+                      className={assignSerialsEnabled ? 'active' : ''}
+                      type="button"
+                      role="switch"
+                      aria-checked={assignSerialsEnabled}
+                      onClick={toggleSerialAssignments}
+                    >
+                      <span>{assignSerialsEnabled ? 'Enabled' : 'Disabled'}</span>
+                      <i aria-hidden="true" />
+                    </button>
+                  </div>
+                  {assignSerialsEnabled ? (
+                    <div className="production-order-serial-summary">
+                      <span>{serialAssignmentDrafts.filter((draft) => draft.toolId.trim() && draft.serialNumber.trim()).length} of {serialAssignmentDrafts.length} pieces assigned</span>
+                      <button type="button" onClick={() => setSerialAssignmentModalOpen(true)}>Edit assignments</button>
+                    </div>
+                  ) : null}
+                </fieldset>
+              ) : null}
               <label>
                 Completed quantity
                 <input type="number" min="0" value={formState.completedQuantity} onChange={(event) => setFormState((current) => ({ ...current, completedQuantity: event.target.value }))} required />
@@ -2053,8 +2247,49 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
           </section>
         </div>
       ) : null}
+      {formMode === 'create' && serialAssignmentModalOpen ? (
+        <div className="mes-modal-backdrop production-order-serial-backdrop" role="presentation">
+          <section className="mes-order-modal production-order-serial-modal" role="dialog" aria-modal="true" aria-labelledby="production-order-serial-title">
+            <div className="production-order-serial-modal-heading">
+              <div>
+                <p className="eyebrow">Production Order</p>
+                <h3 id="production-order-serial-title">Assign Tool IDs and Serial Numbers</h3>
+              </div>
+              <button type="button" aria-label="Close assignments" onClick={() => setSerialAssignmentModalOpen(false)}><CircleX size={18} /></button>
+            </div>
+            <div className="production-order-serial-table-wrap">
+              <table className="production-order-serial-table">
+                <thead>
+                  <tr>
+                    <th>Part</th>
+                    <th>Tool ID</th>
+                    <th>Serial Number</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {serialAssignmentDrafts.map((draft) => (
+                    <tr key={draft.pieceSequence}>
+                      <td>{draft.pieceSequence}</td>
+                      <td>
+                        <input value={draft.toolId} onChange={(event) => setSerialAssignmentField(draft.pieceSequence, 'toolId', event.target.value)} placeholder={`TOOL-${String(draft.pieceSequence).padStart(4, '0')}`} />
+                      </td>
+                      <td>
+                        <input value={draft.serialNumber} onChange={(event) => setSerialAssignmentField(draft.pieceSequence, 'serialNumber', event.target.value)} placeholder={`${formState.partNumber || 'PART'}-SN-${String(draft.pieceSequence).padStart(4, '0')}`} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {!serialAssignmentDrafts.length ? <div className="production-order-serial-empty">Set a Planned Quantity greater than zero to assign pieces.</div> : null}
+            </div>
+            <div className="mes-order-form-actions">
+              <button type="button" onClick={() => setSerialAssignmentModalOpen(false)}>Done</button>
+            </div>
+          </section>
+        </div>
+      ) : null}
       {confirmation ? (
-        <div className="mes-modal-backdrop" role="presentation">
+        <div className="mes-modal-backdrop production-order-confirm-backdrop" role="presentation">
           <section
             className={['mes-confirm-modal', confirmation.tone === 'danger' ? 'danger' : ''].filter(Boolean).join(' ')}
             role="dialog"

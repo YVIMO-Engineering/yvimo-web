@@ -328,9 +328,9 @@ type QualityProductionSerialRecord = {
   production_order_id: string;
   serial_number: string;
   piece_sequence: number;
-  result: 'good' | 'scrap';
+  result: 'good' | 'scrap' | null;
   ready_for_quality: boolean;
-  reported_at: string;
+  reported_at: string | null;
 };
 
 const qualityDocumentsBucket = 'mes-quality-inspection-documents';
@@ -1917,7 +1917,7 @@ export function QualityOperationsWorkspace({ onNavigate, activeTab, organization
   const dashboardMeasurements = React.useMemo(() => measurementRecords.filter((measurement) => isQualityDateInRange(measurement.measured_at, dashboardDateRange)), [dashboardDateRange, measurementRecords]);
   const dashboardDocuments = React.useMemo(() => inspectionDocuments.filter((document) => isQualityDateOnOrBefore(document.uploaded_at, dashboardDateRange.to)), [dashboardDateRange.to, inspectionDocuments]);
   const dashboardInspectedSerials = React.useMemo(() => serialInspectionRecords.filter((record) => isQualityDateOnOrBefore(record.inspected_at, dashboardDateRange.to)), [dashboardDateRange.to, serialInspectionRecords]);
-  const dashboardProductionSerials = React.useMemo(() => productionSerialRecords.filter((record) => isQualityDateOnOrBefore(record.reported_at, dashboardDateRange.to)), [dashboardDateRange.to, productionSerialRecords]);
+  const dashboardProductionSerials = React.useMemo(() => productionSerialRecords.filter((record) => record.reported_at && isQualityDateOnOrBefore(record.reported_at, dashboardDateRange.to)), [dashboardDateRange.to, productionSerialRecords]);
   const isInspectionsPage = activeTab === 'inspections';
   const pendingInspectionOrders = React.useMemo(() => qualityEnabledOrders.filter((order) => getPendingQualityOrderSerials(order, serialInspectionRecords, productionSerialRecords).length > 0), [qualityEnabledOrders, serialInspectionRecords, productionSerialRecords]);
   const isCertificatesPage = activeTab === 'certificates-docs';

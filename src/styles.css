@@ -8756,7 +8756,8 @@ body.work-center-map-expanded .logged-workspace {
 .production-order-form-backdrop {
   align-items: start;
   justify-items: center;
-  padding: 132px 16px 16px;
+  z-index: 240;
+  padding: 112px 18px 18px 96px;
 }
 
 .mes-order-modal {
@@ -8775,10 +8776,11 @@ body.work-center-map-expanded .logged-workspace {
 
 .production-order-form-backdrop .mes-order-modal {
   gap: 14px;
-  width: min(100%, 1320px);
-  max-height: calc(100vh - 148px);
+  width: min(100%, 1120px);
+  max-height: calc(100vh - 130px);
   overflow-y: auto;
-  padding: 18px 20px;
+  overscroll-behavior: contain;
+  padding: 18px;
 }
 
 .mes-order-modal h3 {
@@ -8793,7 +8795,7 @@ body.work-center-map-expanded .logged-workspace {
 }
 
 .production-order-form-backdrop .mes-order-form {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px 14px;
 }
 
@@ -9188,7 +9190,7 @@ body.work-center-map-expanded .logged-workspace {
 
 .mes-order-dropdown-menu {
   position: fixed;
-  z-index: 220;
+  z-index: 340;
   display: grid;
   overflow-y: auto;
   border: 1px solid rgba(255, 138, 31, 0.34);
@@ -10011,6 +10013,10 @@ body.work-center-map-expanded .logged-workspace {
   background: #ffffff;
   color: #07111c;
   box-shadow: 0 28px 70px rgba(0, 0, 0, 0.34);
+}
+
+.production-order-confirm-backdrop {
+  z-index: 380;
 }
 
 .mes-confirm-mark {
@@ -12724,6 +12730,19 @@ body.work-center-map-expanded .logged-workspace {
   line-height: 1;
 }
 
+.operator-terminal-part-reference-button {
+  width: 100%;
+  cursor: pointer;
+}
+
+.operator-terminal-part-reference-button:hover,
+.operator-terminal-part-reference-button:focus-visible {
+  border-color: #ff8a1f;
+  background: #fff7ed;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(255, 138, 31, 0.12);
+}
+
 .operator-terminal-unit-switch {
   display: grid;
   grid-column: span 3;
@@ -12899,6 +12918,101 @@ body.work-center-map-expanded .logged-workspace {
 
 .operator-terminal-switch-order-modal {
   width: min(94vw, 760px);
+}
+
+.operator-terminal-part-picker-modal {
+  width: min(94vw, 820px);
+}
+
+.operator-terminal-part-picker-header,
+.operator-terminal-part-picker-list button {
+  display: grid;
+  grid-template-columns: 74px minmax(130px, 1fr) minmax(170px, 1.2fr) 110px;
+  align-items: center;
+  gap: 10px;
+}
+
+.operator-terminal-part-picker-header {
+  min-height: 34px;
+  border-bottom: 1px solid #e2e8f0;
+  color: #526175;
+  font-size: 0.68rem;
+  font-weight: 950;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.operator-terminal-part-picker-list {
+  display: grid;
+  max-height: 420px;
+  overflow: auto;
+  border: 1px solid #d8e0e8;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.operator-terminal-part-picker-list button {
+  min-height: 58px;
+  border: 0;
+  border-bottom: 1px solid #e2e8f0;
+  padding: 0 12px;
+  background: #ffffff;
+  color: #17202a;
+  cursor: pointer;
+  text-align: left;
+}
+
+.operator-terminal-part-picker-list button:hover:not(:disabled),
+.operator-terminal-part-picker-list button:focus-visible,
+.operator-terminal-part-picker-list button.active {
+  background: #fff7ed;
+  outline: none;
+}
+
+.operator-terminal-part-picker-list button:disabled {
+  cursor: not-allowed;
+  opacity: 0.56;
+}
+
+.operator-terminal-part-picker-list strong {
+  color: #07111c;
+  font-size: 1.05rem;
+  font-weight: 950;
+}
+
+.operator-terminal-part-picker-list span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.operator-terminal-part-picker-list em {
+  justify-self: start;
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: #dcfce7;
+  color: #047857;
+  font-size: 0.68rem;
+  font-style: normal;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.operator-terminal-part-picker-list em.reported {
+  background: #e2e8f0;
+  color: #526175;
+}
+
+.operator-terminal-part-picker-list em.scrap {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.operator-terminal-part-picker-empty {
+  padding: 18px;
+  color: #526175;
+  font-weight: 850;
+  text-align: center;
 }
 
 .operator-terminal-modal-heading {
@@ -16454,11 +16568,12 @@ body.work-center-map-expanded .logged-workspace {
 
 @media (max-width: 900px) {
   .production-order-form-backdrop {
-    padding: 96px 12px 12px;
+    padding: 86px 12px 12px 88px;
   }
 
   .production-order-form-backdrop .mes-order-modal {
-    max-height: calc(100vh - 108px);
+    width: min(100%, 860px);
+    max-height: calc(100vh - 98px);
   }
 
   .production-order-form-backdrop .mes-order-form {
@@ -16575,6 +16690,19 @@ body.work-center-map-expanded .logged-workspace {
   }
 
   .mes-order-form {
+    grid-template-columns: 1fr;
+  }
+
+  .production-order-form-backdrop {
+    padding: 78px 10px 10px;
+  }
+
+  .production-order-form-backdrop .mes-order-modal {
+    max-height: calc(100vh - 88px);
+    padding: 14px;
+  }
+
+  .production-order-form-backdrop .mes-order-form {
     grid-template-columns: 1fr;
   }
 
