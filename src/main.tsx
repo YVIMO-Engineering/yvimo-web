@@ -2252,6 +2252,7 @@ function LoggedDashboardPage({
   onUpdateAvatar,
   activePath,
   t,
+  languageCode,
 }: {
   user: AppUser;
   onSignOut: () => void;
@@ -2259,6 +2260,7 @@ function LoggedDashboardPage({
   onUpdateAvatar: (file: File) => Promise<AvatarUploadResult>;
   activePath: string;
   t: Translator;
+  languageCode: LanguageCode;
 }) {
   const [billingPeriod, setBillingPeriod] = React.useState<BillingPeriod>('monthly');
   const [checkoutMessage, setCheckoutMessage] = React.useState<string | null>(null);
@@ -3476,7 +3478,7 @@ function LoggedDashboardPage({
       return <WorkCentersWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} />;
     }
     if (isOperatorTerminalPage) {
-      return <OperatorTerminalWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} />;
+      return <OperatorTerminalWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} languageCode={languageCode} t={t} />;
     }
     if (activePath === '/workspace/manufacturing-ops/mes/traceability') {
       return <TraceabilityWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} />;
@@ -6085,6 +6087,7 @@ function App() {
               onUpdateAvatar={handleUpdateAvatar}
               activePath={currentPath}
               t={t}
+              languageCode={language}
             />
           ) : (
             <DashboardLoadingPage t={t} />

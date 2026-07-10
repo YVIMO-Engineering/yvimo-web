@@ -36,11 +36,186 @@ import {
 type OperatorTerminalProps = {
   onNavigate: (path: string) => void;
   organizationId: string;
+  languageCode?: string;
+  t?: (text: string) => string;
 };
 
 type TerminalState = 'not-started' | 'running' | 'paused' | 'down' | 'completed';
 type TerminalModal = 'scrap' | 'pause' | 'downtime' | 'complete' | 'undo' | 'queue' | 'scrap-events' | 'switch-order' | 'part-picker' | null;
 const getActiveOrderStorageKey = (organizationId: string) => `yvimo-operator-terminal-active-order:${organizationId}`;
+const defaultOperatorT = (text: string) => text;
+const operatorTerminalSpanish: Record<string, string> = {
+  'Operator Terminal': 'Terminal de operador',
+  'MES Applications': 'Aplicaciones MES',
+  'Production count': 'Conteo de producción',
+  'Reported': 'Reportadas',
+  'of': 'de',
+  'left': 'restantes',
+  'Scrap': 'Scrap',
+  'Open scrap events': 'Abrir eventos de scrap',
+  'Work Center': 'Centro de trabajo',
+  'Station': 'Estación',
+  'Operator': 'Operador',
+  'Shift': 'Turno',
+  '1st': '1er',
+  '2nd': '2do',
+  '3rd': '3er',
+  'Now Running': 'Corriendo ahora',
+  'Order Number': 'Número de orden',
+  'Part Name': 'Nombre de pieza',
+  'Part Number': 'Número de parte',
+  'Due Date': 'Fecha vencimiento',
+  'No Production Order assigned to this station': 'No hay orden de producción asignada a esta estación',
+  'Operator actions': 'Acciones del operador',
+  'Complete Operation': 'Completar operación',
+  'Final counts reached': 'Conteos finales alcanzados',
+  '+1 Good': '+1 Buena',
+  'Fast production report': 'Reporte rápido de producción',
+  '+1 Scrap': '+1 Scrap',
+  'Requires reason': 'Requiere motivo',
+  'Production Order is in downtime': 'La orden está en paro',
+  'Production Order has not started': 'La orden no ha iniciado',
+  'Production Order is paused': 'La orden está pausada',
+  'Press Resume once the issue is cleared to continue reporting production.': 'Presiona Reanudar cuando el problema esté resuelto para seguir reportando producción.',
+  'Press Start Job to begin reporting production.': 'Presiona Iniciar trabajo para comenzar a reportar producción.',
+  'Press Resume to continue reporting production.': 'Presiona Reanudar para continuar reportando producción.',
+  'Undo Last': 'Deshacer último',
+  'Pause': 'Pausar',
+  'Resume': 'Reanudar',
+  'Start Job': 'Iniciar trabajo',
+  'Report Downtime': 'Reportar paro',
+  'Job Queue': 'Cola de trabajo',
+  'Part Traceability': 'Trazabilidad de pieza',
+  'Sharpening capture': 'Captura de afilado',
+  'Job metadata': 'Datos del trabajo',
+  'Client': 'Cliente',
+  'Select customer': 'Seleccionar cliente',
+  'Template': 'Plantilla',
+  'Sharpening Data': 'Datos de afilado',
+  'Inspection Data': 'Datos de inspección',
+  'Part': 'Pieza',
+  'Tool ID': 'Tool ID',
+  'Serial Number': 'Número de serie',
+  'Dimensions': 'Dimensiones',
+  'Dimensions unit': 'Unidad de dimensiones',
+  'Inches': 'Pulgadas',
+  'Millimeters': 'Milímetros',
+  'Before Sharpening': 'Antes de afilar',
+  'Notch': 'Muesca',
+  'Tooth Length': 'Longitud de diente',
+  'Tooth Damage': 'Daño de diente',
+  'Damage Photo': 'Foto de daño',
+  'Stock to Remove': 'Material a remover',
+  'After Sharpening': 'Después de afilar',
+  'Part traceability disabled': 'Trazabilidad de pieza deshabilitada',
+  'Capture will be enabled when this station has an assigned Production Order.': 'La captura se habilitará cuando esta estación tenga una orden de producción asignada.',
+  'Shipper': 'Shipper',
+  'Reception': 'Recepción',
+  'Report Scrap': 'Reportar scrap',
+  'Scrap Reason': 'Motivo de scrap',
+  'Pause Job': 'Pausar trabajo',
+  'Pause Reason': 'Motivo de pausa',
+  'Downtime Reason': 'Motivo de paro',
+  'Complete Review': 'Revisión de cierre',
+  'Completion Review': 'Revisión de cierre',
+  'Undo Last Report': 'Deshacer último reporte',
+  'Adjustment Reason': 'Motivo de ajuste',
+  'Good Qty': 'Cantidad buena',
+  'Scrap Qty': 'Cantidad scrap',
+  'Total Reported': 'Total reportado',
+  'Comment': 'Comentario',
+  'Optional note for the event log': 'Nota opcional para el registro de eventos',
+  'Attach Photo': 'Adjuntar foto',
+  'Cancel': 'Cancelar',
+  'Close': 'Cerrar',
+  'Scrap Events': 'Eventos de scrap',
+  'Order': 'Orden',
+  'Loading scrap events...': 'Cargando eventos de scrap...',
+  'No scrap events reported for this Production Order yet.': 'Aún no hay eventos de scrap reportados para esta orden.',
+  'Select Part': 'Seleccionar pieza',
+  'Select a planned piece for this operation.': 'Selecciona una pieza planeada para esta operación.',
+  'Search part, tool, serial, or status': 'Buscar pieza, tool, serie o estado',
+  'Status': 'Estado',
+  'Loading pieces...': 'Cargando piezas...',
+  'No assigned pieces found for this Production Order.': 'No se encontraron piezas asignadas para esta orden.',
+  'available': 'disponible',
+  'good': 'buena',
+  'scrap': 'scrap',
+  'Change Active Order': 'Cambiar orden activa',
+  'Select any non-completed Production Order to make it the active running job for this station.': 'Selecciona una orden no completada para hacerla el trabajo activo de esta estación.',
+  'Search order, part, or client': 'Buscar orden, pieza o cliente',
+  'Work Order / Part': 'Orden / Pieza',
+  'Manufacturing Status': 'Estado de manufactura',
+  'Manufacturing Progress': 'Progreso de manufactura',
+  'Manufactured': 'Fabricado',
+  'Unassigned': 'Sin asignar',
+  'Select': 'Seleccionar',
+  'Inactive': 'Inactivo',
+  'No non-completed work orders found': 'No se encontraron órdenes sin completar',
+  'released': 'liberada',
+  'running': 'corriendo',
+  'paused': 'pausada',
+  'No single-operation production orders are assigned yet.': 'Aún no hay órdenes de operación única asignadas.',
+  'Operator Terminal backend is not available yet. Showing demo terminal data.': 'El backend de Terminal de operador aún no está disponible. Mostrando datos demo.',
+  'No active customers configured in Clients.': 'No hay clientes activos configurados en Clientes.',
+  'Enter a serial number before reporting this piece.': 'Ingresa un número de serie antes de reportar esta pieza.',
+  'Enter a serial number before reporting this piece': 'Ingresa un número de serie antes de reportar esta pieza',
+  'Good part reported': 'Pieza buena reportada',
+  'Good part and traceability saved': 'Pieza buena y trazabilidad guardadas',
+  'Could not sync production report': 'No se pudo sincronizar el reporte de producción',
+  'Scrap reported': 'Scrap reportado',
+  'Scrap and traceability saved': 'Scrap y trazabilidad guardados',
+  'Could not load scrap events': 'No se pudieron cargar los eventos de scrap',
+  'Could not sync pause': 'No se pudo sincronizar la pausa',
+  'Job paused': 'Trabajo pausado',
+  'Could not sync downtime': 'No se pudo sincronizar el paro',
+  'Downtime reported': 'Paro reportado',
+  'Manufacturing completed; waiting for Quality inspection': 'Manufactura completada; esperando inspección de calidad',
+  'Operation completed': 'Operación completada',
+  'Could not sync completion': 'No se pudo sincronizar el cierre',
+  'Last report adjusted': 'Último reporte ajustado',
+  'Job resumed': 'Trabajo reanudado',
+  'Job started': 'Trabajo iniciado',
+  'Could not sync job state': 'No se pudo sincronizar el estado del trabajo',
+  'Active order changed': 'Orden activa cambiada',
+  'Could not change active order': 'No se pudo cambiar la orden activa',
+  'Tooth damage': 'Daño de diente',
+  'Out of tolerance': 'Fuera de tolerancia',
+  'Surface defect': 'Defecto superficial',
+  'Wrong tool': 'Tool incorrecto',
+  'Setup issue': 'Problema de setup',
+  'Machine issue': 'Problema de máquina',
+  'Material issue': 'Problema de material',
+  'Other': 'Otro',
+  'Break': 'Descanso',
+  'Shift change': 'Cambio de turno',
+  'Waiting for material': 'Esperando material',
+  'Waiting for setup': 'Esperando setup',
+  'Waiting for quality': 'Esperando calidad',
+  'Waiting for maintenance': 'Esperando mantenimiento',
+  'Tooling issue': 'Problema de herramental',
+  'Machine fault': 'Falla de máquina',
+  'Maintenance required': 'Mantenimiento requerido',
+  'Tool broken': 'Tool roto',
+  'Sensor issue': 'Problema de sensor',
+  'Controls issue': 'Problema de controles',
+  'Quality hold': 'Retención de calidad',
+  'No material': 'Sin material',
+  'No operator': 'Sin operador',
+  'Confirm final counts': 'Confirmar conteos finales',
+  'Needs supervisor review': 'Requiere revisión de supervisor',
+  'Wrong button pressed': 'Botón incorrecto presionado',
+  'Duplicate entry': 'Entrada duplicada',
+  'Supervisor adjustment': 'Ajuste de supervisor',
+};
+
+function createOperatorTranslator(languageCode = 'en', baseT: (text: string) => string = defaultOperatorT) {
+  return (text: string) => {
+    const baseTranslation = baseT(text);
+    if (languageCode === 'es') return operatorTerminalSpanish[text] ?? baseTranslation;
+    return baseTranslation;
+  };
+}
 
 function loadActiveOrderId(organizationId: string) {
   if (typeof window === 'undefined') return '';
@@ -245,12 +420,14 @@ function ReasonModal({
   modal,
   goodQty,
   scrapQty,
+  t,
   onClose,
   onSubmit,
 }: {
   modal: Exclude<TerminalModal, 'queue' | 'scrap-events' | 'switch-order' | 'part-picker' | null>;
   goodQty: number;
   scrapQty: number;
+  t: (text: string) => string;
   onClose: () => void;
   onSubmit: (reason: string, comment: string) => void;
 }) {
@@ -300,37 +477,37 @@ function ReasonModal({
         <div className="operator-terminal-modal-heading">
           <span>{config.icon}</span>
           <div>
-            <p className="eyebrow">Operator Terminal</p>
-            <h3 id="operator-terminal-modal-title">{config.title}</h3>
+            <p className="eyebrow">{t('Operator Terminal')}</p>
+            <h3 id="operator-terminal-modal-title">{t(config.title)}</h3>
           </div>
-          <button type="button" aria-label="Close" onClick={onClose}><X size={18} /></button>
+          <button type="button" aria-label={t('Close')} onClick={onClose}><X size={18} /></button>
         </div>
         {modal === 'complete' ? (
           <div className="operator-terminal-complete-summary">
-            <article><span>Good Qty</span><strong>{goodQty}</strong></article>
-            <article><span>Scrap Qty</span><strong>{scrapQty}</strong></article>
-            <article><span>Total Reported</span><strong>{goodQty + scrapQty}</strong></article>
+            <article><span>{t('Good Qty')}</span><strong>{goodQty}</strong></article>
+            <article><span>{t('Scrap Qty')}</span><strong>{scrapQty}</strong></article>
+            <article><span>{t('Total Reported')}</span><strong>{goodQty + scrapQty}</strong></article>
           </div>
         ) : null}
         <label>
-          {config.label}
+          {t(config.label)}
           <select value={reason} onChange={(event) => setReason(event.target.value)} required>
-            {config.options.map((option) => <option key={option} value={option}>{option}</option>)}
+            {config.options.map((option) => <option key={option} value={option}>{t(option)}</option>)}
           </select>
         </label>
         <label>
-          Comment
-          <textarea value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Optional note for the event log" />
+          {t('Comment')}
+          <textarea value={comment} onChange={(event) => setComment(event.target.value)} placeholder={t('Optional note for the event log')} />
         </label>
         {modal === 'scrap' ? (
           <button className="operator-terminal-attach" type="button">
             <ImagePlus size={18} />
-            Attach Photo
+            {t('Attach Photo')}
           </button>
         ) : null}
         <div className="operator-terminal-modal-actions">
-          <button type="button" onClick={onClose}>Cancel</button>
-          <button type="button" onClick={() => onSubmit(reason, comment)}>{config.action}</button>
+          <button type="button" onClick={onClose}>{t('Cancel')}</button>
+          <button type="button" onClick={() => onSubmit(reason, comment)}>{t(config.action)}</button>
         </div>
       </section>
     </div>
@@ -341,11 +518,13 @@ function ScrapEventsModal({
   events,
   loading,
   order,
+  t,
   onClose,
 }: {
   events: OperatorScrapEvent[];
   loading: boolean;
   order: ProductionOrder | null;
+  t: (text: string) => string;
   onClose: () => void;
 }) {
   return (
@@ -354,18 +533,18 @@ function ScrapEventsModal({
         <div className="operator-terminal-modal-heading">
           <span><AlertTriangle size={22} /></span>
           <div>
-            <p className="eyebrow">Operator Terminal</p>
-            <h3 id="operator-terminal-scrap-events-title">Scrap Events</h3>
+            <p className="eyebrow">{t('Operator Terminal')}</p>
+            <h3 id="operator-terminal-scrap-events-title">{t('Scrap Events')}</h3>
           </div>
-          <button type="button" aria-label="Close" onClick={onClose}><X size={18} /></button>
+          <button type="button" aria-label={t('Close')} onClick={onClose}><X size={18} /></button>
         </div>
         <div className="operator-terminal-scrap-events-summary">
-          <article><span>Order</span><strong>{order?.orderNumber ?? 'Unassigned'}</strong></article>
-          <article><span>Part</span><strong>{order?.partName ?? '-'}</strong></article>
-          <article><span>Scrap Events</span><strong>{events.length}</strong></article>
+          <article><span>{t('Order')}</span><strong>{order?.orderNumber ?? t('Unassigned')}</strong></article>
+          <article><span>{t('Part')}</span><strong>{order?.partName ?? '-'}</strong></article>
+          <article><span>{t('Scrap Events')}</span><strong>{events.length}</strong></article>
         </div>
         {loading ? (
-          <div className="operator-terminal-scrap-events-empty">Loading scrap events...</div>
+          <div className="operator-terminal-scrap-events-empty">{t('Loading scrap events...')}</div>
         ) : events.length ? (
           <div className="operator-terminal-scrap-events-list">
             {events.map((event) => (
@@ -375,7 +554,7 @@ function ScrapEventsModal({
                   <span>{event.reason}</span>
                 </div>
                 <div>
-                  <span>Comment</span>
+                  <span>{t('Comment')}</span>
                   <strong>{event.comment || '-'}</strong>
                 </div>
                 <b>{event.quantity.toLocaleString()}</b>
@@ -383,10 +562,10 @@ function ScrapEventsModal({
             ))}
           </div>
         ) : (
-          <div className="operator-terminal-scrap-events-empty">No scrap events reported for this Production Order yet.</div>
+          <div className="operator-terminal-scrap-events-empty">{t('No scrap events reported for this Production Order yet.')}</div>
         )}
         <div className="operator-terminal-modal-actions">
-          <button type="button" onClick={onClose}>Close</button>
+          <button type="button" onClick={onClose}>{t('Close')}</button>
         </div>
       </section>
     </div>
@@ -398,6 +577,7 @@ function PartPickerModal({
   serials,
   activePieceSequence,
   loading,
+  t,
   onClose,
   onSelect,
 }: {
@@ -405,6 +585,7 @@ function PartPickerModal({
   serials: OperatorProductionSerial[];
   activePieceSequence: number;
   loading: boolean;
+  t: (text: string) => string;
   onClose: () => void;
   onSelect: (serial: OperatorProductionSerial) => void;
 }) {
@@ -424,19 +605,19 @@ function PartPickerModal({
       <section className="quality-order-modal operator-terminal-part-picker-modal" role="dialog" aria-modal="true" aria-labelledby="operator-terminal-part-picker-title">
         <div className="quality-order-modal-heading">
           <span><ClipboardCheck size={22} /></span>
-          <div><p className="eyebrow">{order?.orderNumber ?? 'Operator Terminal'}</p><h3 id="operator-terminal-part-picker-title">Select Part</h3></div>
-          <button type="button" aria-label="Close" onClick={onClose}><X size={18} /></button>
+          <div><p className="eyebrow">{order?.orderNumber ?? t('Operator Terminal')}</p><h3 id="operator-terminal-part-picker-title">{t('Select Part')}</h3></div>
+          <button type="button" aria-label={t('Close')} onClick={onClose}><X size={18} /></button>
         </div>
-        <p className="quality-order-modal-copy">{order ? `${order.partName} / ${order.partNumber}` : 'Select a planned piece for this operation.'}</p>
+        <p className="quality-order-modal-copy">{order ? `${order.partName} / ${order.partNumber}` : t('Select a planned piece for this operation.')}</p>
         <label className="quality-serial-search quality-order-search">
           <Search size={17} />
-          <input autoFocus type="search" value={query} placeholder="Search part, tool, serial, or status" onChange={(event) => setQuery(event.target.value)} />
+          <input autoFocus type="search" value={query} placeholder={t('Search part, tool, serial, or status')} onChange={(event) => setQuery(event.target.value)} />
         </label>
         <div className="operator-terminal-part-picker-header" aria-hidden="true">
-          <span>Part</span><span>Tool ID</span><span>Serial Number</span><span>Status</span>
+          <span>{t('Part')}</span><span>{t('Tool ID')}</span><span>{t('Serial Number')}</span><span>{t('Status')}</span>
         </div>
         <div className="operator-terminal-part-picker-list">
-          {loading ? <div className="operator-terminal-part-picker-empty">Loading pieces...</div> : null}
+          {loading ? <div className="operator-terminal-part-picker-empty">{t('Loading pieces...')}</div> : null}
           {!loading && filteredSerials.map((serial) => {
             const reported = Boolean(serial.result);
             return (
@@ -450,11 +631,11 @@ function PartPickerModal({
                 <strong>{serial.pieceSequence}</strong>
                 <span>{serial.toolId || '-'}</span>
                 <span>{serial.serialNumber}</span>
-                <em className={reported ? `reported ${serial.result}` : 'available'}>{reported ? serial.result : 'available'}</em>
+                <em className={reported ? `reported ${serial.result}` : 'available'}>{t(reported ? serial.result ?? '' : 'available')}</em>
               </button>
             );
           })}
-          {!loading && !filteredSerials.length ? <div className="operator-terminal-part-picker-empty">No assigned pieces found for this Production Order.</div> : null}
+          {!loading && !filteredSerials.length ? <div className="operator-terminal-part-picker-empty">{t('No assigned pieces found for this Production Order.')}</div> : null}
         </div>
       </section>
     </div>
@@ -465,12 +646,14 @@ function SwitchOrderModal({
   orders,
   currentOrderId,
   loading,
+  t,
   onClose,
   onSelect,
 }: {
   orders: ProductionOrder[];
   currentOrderId: string | null;
   loading: boolean;
+  t: (text: string) => string;
   onClose: () => void;
   onSelect: (order: ProductionOrder) => void;
 }) {
@@ -491,16 +674,16 @@ function SwitchOrderModal({
       <section className="quality-order-modal operator-terminal-switch-order-modal" role="dialog" aria-modal="true" aria-labelledby="operator-terminal-switch-order-title">
         <div className="quality-order-modal-heading">
           <span><ClipboardCheck size={22} /></span>
-          <div><p className="eyebrow">Operator Terminal</p><h3 id="operator-terminal-switch-order-title">Change Active Order</h3></div>
-          <button type="button" aria-label="Close" onClick={onClose}><X size={18} /></button>
+          <div><p className="eyebrow">{t('Operator Terminal')}</p><h3 id="operator-terminal-switch-order-title">{t('Change Active Order')}</h3></div>
+          <button type="button" aria-label={t('Close')} onClick={onClose}><X size={18} /></button>
         </div>
-        <p className="quality-order-modal-copy">Select any non-completed Production Order to make it the active running job for this station.</p>
+        <p className="quality-order-modal-copy">{t('Select any non-completed Production Order to make it the active running job for this station.')}</p>
         <label className="quality-serial-search quality-order-search">
           <Search size={17} />
-          <input autoFocus type="search" value={query} placeholder="Search order, part, or client" onChange={(event) => setQuery(event.target.value)} />
+          <input autoFocus type="search" value={query} placeholder={t('Search order, part, or client')} onChange={(event) => setQuery(event.target.value)} />
         </label>
         <div className="quality-order-switch-header" aria-hidden="true">
-          <span>Work Order / Part</span><span>Manufacturing Status</span><span>Manufacturing Progress</span>
+          <span>{t('Work Order / Part')}</span><span>{t('Manufacturing Status')}</span><span>{t('Manufacturing Progress')}</span>
         </div>
         <div className="quality-order-switch-list operator-terminal-order-picker-list">
           {filteredOrders.map((order) => (
@@ -515,24 +698,25 @@ function SwitchOrderModal({
                 <strong>{order.orderNumber}</strong>
                 <span>{order.partName} / {order.partNumber}</span>
               </div>
-              <em className={`quality-picker-status quality-picker-status-${order.status}`}>{order.status}</em>
+              <em className={`quality-picker-status quality-picker-status-${order.status}`}>{t(order.status)}</em>
               <b>
-                <span>Manufactured</span>
-                {order.completedQuantity.toLocaleString()} of {order.plannedQuantity.toLocaleString()}
+                <span>{t('Manufactured')}</span>
+                {order.completedQuantity.toLocaleString()} {t('of')} {order.plannedQuantity.toLocaleString()}
               </b>
             </button>
           ))}
-          {!filteredOrders.length ? <p>No non-completed work orders found</p> : null}
+          {!filteredOrders.length ? <p>{t('No non-completed work orders found')}</p> : null}
         </div>
         <div className="quality-order-modal-actions">
-          <button type="button" onClick={onClose}>Cancel</button>
+          <button type="button" onClick={onClose}>{t('Cancel')}</button>
         </div>
       </section>
     </div>
   );
 }
 
-export function OperatorTerminalWorkspace({ onNavigate, organizationId }: OperatorTerminalProps) {
+export function OperatorTerminalWorkspace({ onNavigate, organizationId, languageCode = 'en', t: baseT = defaultOperatorT }: OperatorTerminalProps) {
+  const t = React.useMemo(() => createOperatorTranslator(languageCode, baseT), [baseT, languageCode]);
   const [state, setState] = React.useState<TerminalState>('not-started');
   const [goodQty, setGoodQty] = React.useState(0);
   const [scrapQty, setScrapQty] = React.useState(0);
@@ -620,7 +804,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId }: Operat
     .filter((customer) => customer.status === 'active' || customer.id === traceabilityForm.customerId)
     .map((customer) => ({
       value: customer.id,
-      label: customer.status === 'inactive' ? `${customer.customer_name} (Inactive)` : customer.customer_name,
+      label: customer.status === 'inactive' ? `${customer.customer_name} (${t('Inactive')})` : customer.customer_name,
     }));
   const jobQueueSummary: JobQueueSummary = {
     machine: {
@@ -1181,35 +1365,35 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId }: Operat
   };
 
   return (
-    <section className="operator-terminal-page" aria-label="Operator Terminal">
+    <section className="operator-terminal-page" aria-label={t('Operator Terminal')}>
       <div className="operator-terminal-layout">
         <aside className="operator-terminal-context">
           <button className="operator-terminal-back-button" type="button" onClick={() => onNavigate('/workspace/manufacturing-ops/mes')}>
             <ArrowLeft size={16} />
-            MES Applications
+            {t('MES Applications')}
           </button>
-          <article className="operator-terminal-side-count" aria-label="Production count">
-            <span>Reported</span>
+          <article className="operator-terminal-side-count" aria-label={t('Production count')}>
+            <span>{t('Reported')}</span>
             <div>
               <strong>{completedQty}</strong>
-              <em>of <b>{totalQty}</b></em>
+              <em>{t('of')} <b>{totalQty}</b></em>
             </div>
-            <small>{remainingQty} left</small>
+            <small>{remainingQty} {t('left')}</small>
           </article>
           <button
             className="operator-terminal-scrap-count"
             type="button"
-            aria-label="Open scrap events"
+            aria-label={t('Open scrap events')}
             disabled={!hasAssignedOrder || scrapQty <= 0}
             onClick={() => void openScrapEvents()}
           >
-            <span>Scrap</span>
+            <span>{t('Scrap')}</span>
             <strong>{scrapQty}</strong>
           </button>
           <article className="operator-terminal-context-card operator-terminal-selector-card">
-            <span>Work Center</span>
+            <span>{t('Work Center')}</span>
             <OperatorTerminalDropdown
-              ariaLabel="Work Center"
+              ariaLabel={t('Work Center')}
               value={workCenterCode}
               options={workCenterOptions.map((workCenter) => ({ value: workCenter.code, label: workCenter.name }))}
               onChange={(nextWorkCenterCode) => {
@@ -1220,9 +1404,9 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId }: Operat
             />
           </article>
           <article className="operator-terminal-station-card">
-            <span>Station</span>
+            <span>{t('Station')}</span>
             <OperatorTerminalDropdown
-              ariaLabel="Station"
+              ariaLabel={t('Station')}
               value={stationCode}
               options={stationOptions.map((station) => ({ value: station.code, label: station.name }))}
               onChange={setSelectedStationCode}
@@ -1231,9 +1415,9 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId }: Operat
               {stationImageUrl ? <img src={stationImageUrl} alt="" /> : <SquareTerminal size={42} />}
             </div>
             <dl>
-              <div><dt>Operator</dt><dd>{stationOperator}</dd></div>
+              <div><dt>{t('Operator')}</dt><dd>{stationOperator}</dd></div>
               <div className="operator-terminal-shift-control">
-                <dt>Shift</dt>
+                <dt>{t('Shift')}</dt>
                 <dd>
                   {(['1st', '2nd', '3rd'] as const).map((shift) => (
                     <button
@@ -1242,7 +1426,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId }: Operat
                       key={shift}
                       onClick={() => setSelectedShift(shift)}
                     >
-                      {shift}
+                      {t(shift)}
                     </button>
                   ))}
                 </dd>
@@ -1252,11 +1436,11 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId }: Operat
         </aside>
 
         <main className="operator-terminal-main">
-          {terminalMessage ? <div className="operator-terminal-sync-message">{terminalMessage}</div> : null}
+          {terminalMessage ? <div className="operator-terminal-sync-message">{t(terminalMessage)}</div> : null}
           <section className="operator-terminal-now-card">
             <div className="operator-terminal-section-title">
               <ActivityPulse />
-              <h3>Now Running</h3>
+              <h3>{t('Now Running')}</h3>
             </div>
             <div className="operator-terminal-now-content">
               {currentOrder ? (
@@ -1266,57 +1450,57 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId }: Operat
                     type="button"
                     onClick={() => setModal('switch-order')}
                   >
-                    <span>Order Number</span>
+                    <span>{t('Order Number')}</span>
                     <strong>{currentOrder.orderNumber}</strong>
                   </button>
-                  <article><span>Part Name</span><strong>{currentOrder.partName}</strong></article>
-                  <article><span>Part Number</span><strong>{currentOrder.partNumber}</strong></article>
-                  <article><span>Due Date</span><strong>{currentOrder.dueDate}</strong></article>
+                  <article><span>{t('Part Name')}</span><strong>{currentOrder.partName}</strong></article>
+                  <article><span>{t('Part Number')}</span><strong>{currentOrder.partNumber}</strong></article>
+                  <article><span>{t('Due Date')}</span><strong>{currentOrder.dueDate}</strong></article>
                 </div>
               ) : (
                 <div className="operator-terminal-empty-job" role="status">
-                  <strong>No Production Order assigned to this station</strong>
+                  <strong>{t('No Production Order assigned to this station')}</strong>
                 </div>
               )}
             </div>
           </section>
 
-          <section className="operator-terminal-actions" aria-label="Operator actions">
+          <section className="operator-terminal-actions" aria-label={t('Operator actions')}>
             <div className={`operator-terminal-report-actions ${isQuantityComplete ? 'complete-ready' : ''}`}>
               {isQuantityComplete ? (
                 <button className="operator-action complete-large" type="button" disabled={!hasAssignedOrder || state === 'completed' || syncPending} onClick={() => setModal('complete')}>
                   <ClipboardCheck size={38} />
-                  <strong>Complete Operation</strong>
-                  <span>Final counts reached</span>
+                  <strong>{t('Complete Operation')}</strong>
+                  <span>{t('Final counts reached')}</span>
                 </button>
               ) : (
                 <div className="operator-terminal-report-buttons">
                   <button className="operator-action good" type="button" disabled={!hasAssignedOrder || syncPending || !canReport || completedQty >= totalQty} onClick={reportGood}>
                     <Check size={34} />
-                    <strong>+1 Good</strong>
-                    <span>Fast production report</span>
+                    <strong>{t('+1 Good')}</strong>
+                    <span>{t('Fast production report')}</span>
                   </button>
                   <button className="operator-action scrap" type="button" disabled={!hasAssignedOrder || syncPending || !canReport || completedQty >= totalQty} onClick={() => setModal('scrap')}>
                     <AlertTriangle size={34} />
-                    <strong>+1 Scrap</strong>
-                    <span>Requires reason</span>
+                    <strong>{t('+1 Scrap')}</strong>
+                    <span>{t('Requires reason')}</span>
                   </button>
                   {isOrderPaused || isOrderDown || isOrderNotStarted ? (
                     <div className={`operator-terminal-hold-overlay ${isOrderDown ? 'downtime' : isOrderNotStarted ? 'not-started' : 'paused'}`} role="status">
                       {isOrderDown ? <Wrench size={28} /> : isOrderNotStarted ? <Play size={28} /> : <Pause size={28} />}
                       <strong>
                         {isOrderDown
-                          ? 'Production Order is in downtime'
+                          ? t('Production Order is in downtime')
                           : isOrderNotStarted
-                            ? 'Production Order has not started'
-                            : 'Production Order is paused'}
+                            ? t('Production Order has not started')
+                            : t('Production Order is paused')}
                       </strong>
                       <span>
                         {isOrderDown
-                          ? 'Press Resume once the issue is cleared to continue reporting production.'
+                          ? t('Press Resume once the issue is cleared to continue reporting production.')
                           : isOrderNotStarted
-                            ? 'Press Start Job to begin reporting production.'
-                          : 'Press Resume to continue reporting production.'}
+                            ? t('Press Start Job to begin reporting production.')
+                            : t('Press Resume to continue reporting production.')}
                       </span>
                     </div>
                   ) : null}
@@ -1324,7 +1508,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId }: Operat
               )}
               <button className="operator-terminal-undo" type="button" disabled={!hasAssignedOrder || syncPending || !events.length} onClick={() => setModal('undo')}>
                 <RotateCcw size={17} />
-                Undo Last
+                {t('Undo Last')}
               </button>
             </div>
             <div className="operator-terminal-run-actions">
@@ -1341,15 +1525,15 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId }: Operat
                 }}
               >
                 {state === 'running' ? <Pause size={22} /> : <Play size={22} />}
-                {state === 'running' ? 'Pause' : startLabel}
+                {state === 'running' ? t('Pause') : t(startLabel)}
               </button>
               <button className="operator-control downtime" type="button" disabled={!hasAssignedOrder || syncPending || state === 'completed' || isQuantityComplete} onClick={() => setModal('downtime')}>
                 <AlertTriangle size={22} />
-                Report Downtime
+                {t('Report Downtime')}
               </button>
               <button className="operator-control queue" type="button" disabled={!hasAssignedOrder || syncPending} onClick={() => setModal('queue')}>
                 <Timer size={22} />
-                Job Queue
+                {t('Job Queue')}
               </button>
             </div>
           </section>
@@ -1357,17 +1541,17 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId }: Operat
           <section className={`operator-terminal-traceability ${!hasAssignedOrder ? 'disabled' : ''}`}>
             <div className="operator-terminal-trace-heading">
               <div>
-                <p className="eyebrow">Part Traceability</p>
-                <h3>Sharpening capture</h3>
+                <p className="eyebrow">{t('Part Traceability')}</p>
+                <h3>{t('Sharpening capture')}</h3>
               </div>
-              {hasAssignedOrder ? <div className="operator-terminal-trace-meta" aria-label="Job metadata">
+              {hasAssignedOrder ? <div className="operator-terminal-trace-meta" aria-label={t('Job metadata')}>
                 <label>
-                  Client
+                  {t('Client')}
                   <OperatorTerminalDropdown
-                    ariaLabel="Client"
+                    ariaLabel={t('Client')}
                     value={traceabilityForm.customerId}
                     options={traceabilityCustomerOptions}
-                    placeholder={customerOptionsMessage || 'Select customer'}
+                    placeholder={customerOptionsMessage ? t(customerOptionsMessage) : t('Select customer')}
                     disabled={!traceabilityCustomerOptions.length}
                     onChange={(customerId) => {
                       const customer = customerOptions.find((option) => option.id === customerId);
@@ -1381,18 +1565,18 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId }: Operat
                 </label>
                 {dataCards.map((card) => (
                   <label key={card.label}>
-                    {card.label}
+                    {t(card.label)}
                     <input value={traceabilityForm[card.key]} onChange={(event) => setTraceField(card.key, event.target.value)} />
                   </label>
                 ))}
                 <label>
-                  Template
+                  {t('Template')}
                   <OperatorTerminalDropdown
-                    ariaLabel="Template"
+                    ariaLabel={t('Template')}
                     value={templateId}
                     options={[
-                      { value: 'sharpening', label: 'Sharpening Data' },
-                      { value: 'inspection', label: 'Inspection Data' },
+                      { value: 'sharpening', label: t('Sharpening Data') },
+                      { value: 'inspection', label: t('Inspection Data') },
                     ]}
                     onChange={setTemplateId}
                   />
@@ -1406,25 +1590,25 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId }: Operat
                 type="button"
                 onClick={() => setModal('part-picker')}
               >
-                <span>Part</span>
+                <span>{t('Part')}</span>
                 <strong>{activePartSequence.toLocaleString()}</strong>
               </button>
-              <label>Tool ID<input value={traceabilityForm.toolId} onChange={(event) => setTraceField('toolId', event.target.value)} /></label>
-              <label>Serial Number<input required value={traceabilityForm.serialNumber} onChange={(event) => setTraceField('serialNumber', event.target.value)} /></label>
-              <div className="operator-terminal-unit-switch" role="group" aria-label="Dimensions unit">
-                <span>Dimensions</span>
+              <label>{t('Tool ID')}<input value={traceabilityForm.toolId} onChange={(event) => setTraceField('toolId', event.target.value)} /></label>
+              <label>{t('Serial Number')}<input required value={traceabilityForm.serialNumber} onChange={(event) => setTraceField('serialNumber', event.target.value)} /></label>
+              <div className="operator-terminal-unit-switch" role="group" aria-label={t('Dimensions unit')}>
+                <span>{t('Dimensions')}</span>
                 <div>
-                  <button className={dimensionUnit === 'in' ? 'active' : ''} type="button" onClick={() => setDimensionUnit('in')}>Inches</button>
-                  <button className={dimensionUnit === 'mm' ? 'active' : ''} type="button" onClick={() => setDimensionUnit('mm')}>Millimeters</button>
+                  <button className={dimensionUnit === 'in' ? 'active' : ''} type="button" onClick={() => setDimensionUnit('in')}>{t('Inches')}</button>
+                  <button className={dimensionUnit === 'mm' ? 'active' : ''} type="button" onClick={() => setDimensionUnit('mm')}>{t('Millimeters')}</button>
                 </div>
               </div>
               <fieldset>
-                <legend>Before Sharpening</legend>
-                <label>Notch<span className="operator-terminal-measure-field"><input placeholder="0.000" inputMode="decimal" value={traceabilityForm.beforeNotch} onChange={(event) => setTraceField('beforeNotch', event.target.value)} /><em>{dimensionUnit}</em></span></label>
-                <label>Tooth Length<span className="operator-terminal-measure-field"><input placeholder="0.000" inputMode="decimal" value={traceabilityForm.beforeToothLength} onChange={(event) => setTraceField('beforeToothLength', event.target.value)} /><em>{dimensionUnit}</em></span></label>
+                <legend>{t('Before Sharpening')}</legend>
+                <label>{t('Notch')}<span className="operator-terminal-measure-field"><input placeholder="0.000" inputMode="decimal" value={traceabilityForm.beforeNotch} onChange={(event) => setTraceField('beforeNotch', event.target.value)} /><em>{dimensionUnit}</em></span></label>
+                <label>{t('Tooth Length')}<span className="operator-terminal-measure-field"><input placeholder="0.000" inputMode="decimal" value={traceabilityForm.beforeToothLength} onChange={(event) => setTraceField('beforeToothLength', event.target.value)} /><em>{dimensionUnit}</em></span></label>
               </fieldset>
               <fieldset>
-                <legend>Tooth Damage</legend>
+                <legend>{t('Tooth Damage')}</legend>
                 <div className="operator-terminal-damage-capture">
                   <div className="operator-terminal-damage-options">
                     <label>A<input placeholder="0" inputMode="numeric" value={traceabilityForm.damageA} onChange={(event) => setTraceField('damageA', event.target.value)} /></label>
@@ -1433,38 +1617,39 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId }: Operat
                   </div>
                   <button type="button" className="operator-terminal-photo">
                     <Camera size={22} />
-                    Damage Photo
+                    {t('Damage Photo')}
                   </button>
                 </div>
               </fieldset>
               <fieldset>
-                <legend>Sharpening Data</legend>
-                <label>Stock to Remove<span className="operator-terminal-measure-field"><input placeholder="0.000" inputMode="decimal" value={traceabilityForm.stockToRemove} onChange={(event) => setTraceField('stockToRemove', event.target.value)} /><em>{dimensionUnit}</em></span></label>
+                <legend>{t('Sharpening Data')}</legend>
+                <label>{t('Stock to Remove')}<span className="operator-terminal-measure-field"><input placeholder="0.000" inputMode="decimal" value={traceabilityForm.stockToRemove} onChange={(event) => setTraceField('stockToRemove', event.target.value)} /><em>{dimensionUnit}</em></span></label>
               </fieldset>
               <fieldset>
-                <legend>After Sharpening</legend>
-                <label>Tooth Length<span className="operator-terminal-measure-field"><input placeholder="0.000" inputMode="decimal" value={traceabilityForm.afterToothLength} onChange={(event) => setTraceField('afterToothLength', event.target.value)} /><em>{dimensionUnit}</em></span></label>
+                <legend>{t('After Sharpening')}</legend>
+                <label>{t('Tooth Length')}<span className="operator-terminal-measure-field"><input placeholder="0.000" inputMode="decimal" value={traceabilityForm.afterToothLength} onChange={(event) => setTraceField('afterToothLength', event.target.value)} /><em>{dimensionUnit}</em></span></label>
               </fieldset>
             </div>
             ) : (
               <div className="operator-terminal-trace-disabled">
                 <ClipboardCheck size={30} />
-                <strong>Part traceability disabled</strong>
-                <span>Capture will be enabled when this station has an assigned Production Order.</span>
+                <strong>{t('Part traceability disabled')}</strong>
+                <span>{t('Capture will be enabled when this station has an assigned Production Order.')}</span>
               </div>
             )}
           </section>
         </main>
       </div>
 
-      {toast ? <div className="operator-terminal-toast" role="status">{toast}</div> : null}
-      {modal && modal !== 'queue' && modal !== 'scrap-events' && modal !== 'switch-order' && modal !== 'part-picker' ? <ReasonModal modal={modal} goodQty={goodQty} scrapQty={scrapQty} onClose={() => setModal(null)} onSubmit={submitModal} /> : null}
+      {toast ? <div className="operator-terminal-toast" role="status">{t(toast)}</div> : null}
+      {modal && modal !== 'queue' && modal !== 'scrap-events' && modal !== 'switch-order' && modal !== 'part-picker' ? <ReasonModal modal={modal} goodQty={goodQty} scrapQty={scrapQty} t={t} onClose={() => setModal(null)} onSubmit={submitModal} /> : null}
       {modal === 'queue' ? <JobQueueModal summary={jobQueueSummary} onClose={() => setModal(null)} /> : null}
       {modal === 'scrap-events' ? (
         <ScrapEventsModal
           events={scrapEventsLoading ? [] : scrapEvents.length ? scrapEvents : localScrapEvents}
           loading={scrapEventsLoading}
           order={currentOrder}
+          t={t}
           onClose={() => setModal(null)}
         />
       ) : null}
@@ -1473,6 +1658,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId }: Operat
           orders={(snapshot?.activeOrders ?? stationOrders).filter((order) => ['released', 'running', 'paused'].includes(order.status))}
           currentOrderId={currentOrder?.id ?? null}
           loading={switchOrderLoading}
+          t={t}
           onClose={() => setModal(null)}
           onSelect={(order) => void switchActiveOrder(order)}
         />
@@ -1483,6 +1669,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId }: Operat
           serials={productionSerials}
           activePieceSequence={activePartSequence}
           loading={productionSerialsLoading}
+          t={t}
           onClose={() => setModal(null)}
           onSelect={(serial) => {
             applyProductionSerial(serial);
