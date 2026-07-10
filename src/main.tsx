@@ -3825,7 +3825,7 @@ function LoggedDashboardPage({
   const manufacturingOrganizationDialog = manufacturingOrganizationDialogOpen ? (
     <div className="manufacturing-organization-dialog-backdrop" role="presentation" onMouseDown={() => setManufacturingOrganizationDialogOpen(false)}>
       <section
-        className="manufacturing-organization-dialog"
+        className={['manufacturing-organization-dialog', manufacturingOrganizationMode === 'members' ? 'members-open' : ''].filter(Boolean).join(' ')}
         role="dialog"
         aria-modal="true"
         aria-labelledby="manufacturing-organization-dialog-title"

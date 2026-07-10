@@ -3000,8 +3000,14 @@ body.work-center-map-expanded .logged-workspace {
   align-items: end;
   gap: 10px;
   min-width: 0;
+  min-height: 0;
   border-top: 1px solid rgba(18, 29, 41, 0.08);
   padding-top: 16px;
+}
+
+.manufacturing-organization-dialog.members-open .manufacturing-organization-manage {
+  align-items: stretch;
+  overflow: hidden;
 }
 
 .manufacturing-organization-manage label {
@@ -3017,6 +3023,7 @@ body.work-center-map-expanded .logged-workspace {
   flex: 1 1 100%;
   gap: 12px;
   min-width: 0;
+  min-height: 0;
 }
 
 .manufacturing-organization-members-heading {
@@ -3037,6 +3044,10 @@ body.work-center-map-expanded .logged-workspace {
 .manufacturing-organization-member-list {
   display: grid;
   gap: 8px;
+  max-height: min(44vh, 390px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 4px;
 }
 
 .manufacturing-organization-member-row {
@@ -3311,10 +3322,17 @@ body.work-center-map-expanded .logged-workspace {
   box-shadow: 0 28px 80px rgba(0, 0, 0, 0.28);
 }
 
+.manufacturing-organization-dialog.members-open {
+  align-items: start;
+  max-height: min(78vh, 720px);
+  overflow: hidden;
+}
+
 .manufacturing-organization-zone {
   display: grid;
   gap: 14px;
   min-width: 0;
+  min-height: 0;
   border: 1px solid rgba(18, 29, 41, 0.1);
   border-radius: 8px;
   padding: 14px;
@@ -3323,6 +3341,15 @@ body.work-center-map-expanded .logged-workspace {
 
 .manufacturing-organization-details-zone {
   padding-right: 48px;
+}
+
+.manufacturing-organization-dialog.members-open .manufacturing-organization-details-zone {
+  max-height: min(78vh, 720px);
+  overflow: hidden;
+}
+
+.manufacturing-organization-dialog.members-open .manufacturing-organization-invite-zone {
+  align-self: start;
 }
 
 .manufacturing-organization-invite-zone {
@@ -13937,6 +13964,11 @@ body.work-center-map-expanded .logged-workspace {
   padding-bottom: 13px;
 }
 
+.selected-station-card .work-center-selected-header {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+}
+
 .work-center-selected-header > div {
   display: grid;
   gap: 5px;
@@ -13956,6 +13988,46 @@ body.work-center-map-expanded .logged-workspace {
   font-weight: 900;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+.station-edit-inline-button,
+.station-card-edit-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 122, 0, 0.38);
+  border-radius: 8px;
+  background: #fff7ed;
+  color: #9a4a00;
+  font-weight: 900;
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease, color 160ms ease, transform 160ms ease;
+}
+
+.station-edit-inline-button {
+  min-height: 34px;
+  gap: 7px;
+  padding: 0 11px;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.station-card-edit-button {
+  min-height: 30px;
+  gap: 6px;
+  padding: 0 9px;
+  font-size: 0.72rem;
+}
+
+.station-edit-inline-button:hover,
+.station-card-edit-button:hover,
+.station-edit-inline-button:focus-visible,
+.station-card-edit-button:focus-visible {
+  border-color: #ff7a00;
+  background: #ff7a00;
+  color: #07111c;
+  outline: none;
+  transform: translateY(-1px);
 }
 
 .work-center-selected-card strong {
@@ -15015,6 +15087,15 @@ body.work-center-map-expanded .logged-workspace {
 }
 
 .station-card-title > div {
+  min-width: 0;
+}
+
+.station-card-title-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 8px;
   min-width: 0;
 }
 
@@ -16458,6 +16539,14 @@ body.work-center-map-expanded .logged-workspace {
     overflow-y: auto;
   }
 
+  .manufacturing-organization-dialog.members-open {
+    overflow-y: auto;
+  }
+
+  .manufacturing-organization-dialog.members-open .manufacturing-organization-member-list {
+    max-height: min(38vh, 320px);
+  }
+
   .manufacturing-organization-roles {
     margin-right: 0;
   }
@@ -16586,6 +16675,14 @@ body.work-center-map-expanded .logged-workspace {
 }
 
 @media (max-width: 760px) {
+  .selected-station-card .work-center-selected-header {
+    grid-template-columns: 1fr;
+  }
+
+  .station-edit-inline-button {
+    width: 100%;
+  }
+
   .manufacturing-organization-trigger {
     width: 100%;
   }
@@ -16596,6 +16693,10 @@ body.work-center-map-expanded .logged-workspace {
 
   .manufacturing-organization-dialog {
     padding: 12px;
+  }
+
+  .manufacturing-organization-dialog.members-open .manufacturing-organization-member-list {
+    max-height: min(34vh, 260px);
   }
 
   .manufacturing-organization-details-zone {

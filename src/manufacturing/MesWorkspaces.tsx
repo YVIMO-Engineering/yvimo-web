@@ -1,6 +1,6 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { Activity, AlertTriangle, ArrowLeft, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleHelp, CircleX, Database, Eye, Factory, Frown, FileText, ImagePlus, Maximize2, Meh, Minimize2, Minus, Plus, RadioTower, Ruler, Search, Smile, Timer } from 'lucide-react';
+import { Activity, AlertTriangle, ArrowLeft, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleHelp, CircleX, Database, Eye, Factory, Frown, FileText, ImagePlus, Maximize2, Meh, Minimize2, Minus, Pencil, Plus, RadioTower, Ruler, Search, Smile, Timer } from 'lucide-react';
 import { GoogleWorkCentersMap } from '../components/maps/GoogleWorkCentersMap';
 import { resolveGooglePlacesAddressMatch, searchGooglePlacesAddressMatches, type GooglePlacesAddressMatch } from '../lib/maps/googlePlacesAddressLookup';
 import { supabase } from '../lib/supabaseClient';
@@ -3211,6 +3211,23 @@ function createStationFormState(workCenterId: string): StationFormState {
   };
 }
 
+function stationToFormState(station: WorkCenterStation): StationFormState {
+  return {
+    workCenterId: station.workCenterId,
+    name: station.name,
+    code: station.code,
+    type: station.type,
+    operator: station.operator,
+    capability: station.capabilities[0] ?? station.processStep,
+    newCapabilityName: '',
+    newCapabilityColor: station.capabilityColor ?? capabilityColorOptions[0],
+  };
+}
+
+function revokePreviewObjectUrl(url: string) {
+  if (url.startsWith('blob:')) URL.revokeObjectURL(url);
+}
+
 function normalizeHexColor(color: string) {
   return /^#[0-9a-f]{6}$/i.test(color) ? color : capabilityColorOptions[0];
 }
@@ -3680,6 +3697,7 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
   const [openKpiHelp, setOpenKpiHelp] = React.useState<WorkCenterKpiHelpKey | null>(null);
   const [activeWorkCenterKpiFilter, setActiveWorkCenterKpiFilter] = React.useState<WorkCenterKpiFilter | null>(null);
   const [activeStationKpiFilter, setActiveStationKpiFilter] = React.useState<StationKpiFilter | null>(null);
+  const [editingStationId, setEditingStationId] = React.useState<string | null>(null);
   const [formState, setFormState] = React.useState<WorkCenterFormState>(() => createWorkCenterFormState());
   const [stationFormState, setStationFormState] = React.useState<StationFormState>(() => createStationFormState(''));
   const [stationImageFile, setStationImageFile] = React.useState<File | null>(null);
@@ -3929,12 +3947,42 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
   const openAddStationForm = () => {
     if (!selectedWorkCenter) return;
     setStationFormState(createStationFormState(selectedWorkCenter.id));
+    setEditingStationId(null);
     setStationImageFile(null);
-    setStationImagePreviewUrl('');
+    setStationImagePreviewUrl((currentPreviewUrl) => {
+      revokePreviewObjectUrl(currentPreviewUrl);
+      return '';
+    });
     setStationImageUploadError('');
     setStationImageUploading(false);
     setShowCapabilityColorPicker(false);
     setShowStationForm(true);
+  };
+
+  const openEditStationForm = (station: WorkCenterStation) => {
+    setStationFormState(stationToFormState(station));
+    setEditingStationId(station.id);
+    setStationImageFile(null);
+    setStationImagePreviewUrl((currentPreviewUrl) => {
+      revokePreviewObjectUrl(currentPreviewUrl);
+      return station.imageUrl ?? '';
+    });
+    setStationImageUploadError('');
+    setStationImageUploading(false);
+    setShowCapabilityColorPicker(false);
+    setShowStationForm(true);
+  };
+
+  const closeStationForm = () => {
+    setShowCapabilityColorPicker(false);
+    setEditingStationId(null);
+    setStationImageFile(null);
+    setStationImageUploadError('');
+    setStationImagePreviewUrl((currentPreviewUrl) => {
+      revokePreviewObjectUrl(currentPreviewUrl);
+      return '';
+    });
+    setShowStationForm(false);
   };
 
   const selectStationImageFile = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -3952,8 +4000,11 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
     }
     setStationImageFile(file);
     setStationImagePreviewUrl((currentPreviewUrl) => {
-      if (currentPreviewUrl) URL.revokeObjectURL(currentPreviewUrl);
-      return file ? URL.createObjectURL(file) : '';
+      revokePreviewObjectUrl(currentPreviewUrl);
+      if (file) return URL.createObjectURL(file);
+      if (!editingStationId) return '';
+      const existingStation = allWorkCenterStations.find((station) => station.id === editingStationId);
+      return existingStation?.imageUrl ?? '';
     });
   };
 
@@ -3961,8 +4012,10 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
     setStationImageFile(null);
     setStationImageUploadError('');
     setStationImagePreviewUrl((currentPreviewUrl) => {
-      if (currentPreviewUrl) URL.revokeObjectURL(currentPreviewUrl);
-      return '';
+      revokePreviewObjectUrl(currentPreviewUrl);
+      if (!editingStationId) return '';
+      const existingStation = allWorkCenterStations.find((station) => station.id === editingStationId);
+      return existingStation?.imageUrl ?? '';
     });
   };
 
@@ -3998,8 +4051,9 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
       }));
     }
 
-    const stationId = crypto.randomUUID();
-    let imageUrl = '';
+    const existingStation = editingStationId ? allWorkCenterStations.find((station) => station.id === editingStationId) ?? null : null;
+    const stationId = existingStation?.id ?? crypto.randomUUID();
+    let imageUrl = existingStation?.imageUrl ?? '';
     if (stationImageFile) {
       setStationImageUploading(true);
       setStationImageUploadError('');
@@ -4019,25 +4073,33 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
       name: stationFormState.name.trim(),
       type: stationFormState.type,
       imageUrl: imageUrl || undefined,
-      capabilityColor: stationFormState.capability === registerNewCapabilityValue ? stationFormState.newCapabilityColor : undefined,
-      status: 'idle',
-      currentJob: null,
+      capabilityColor: stationFormState.capability === registerNewCapabilityValue ? stationFormState.newCapabilityColor : existingStation?.capabilityColor,
+      status: existingStation?.status ?? 'idle',
+      currentJob: existingStation?.currentJob ?? null,
       operator: stationFormState.operator,
       processStep: selectedCapability,
-      queueCount: 0,
-      wipCount: 0,
-      utilization: 0,
-      dueRisk: 'low',
-      maintenanceStatus: 'Healthy',
+      queueCount: existingStation?.queueCount ?? 0,
+      wipCount: existingStation?.wipCount ?? 0,
+      utilization: existingStation?.utilization ?? 0,
+      dueRisk: existingStation?.dueRisk ?? 'low',
+      maintenanceStatus: existingStation?.maintenanceStatus ?? 'Healthy',
       capabilities: [selectedCapability],
-      lastEvent: 'No recent activity',
+      lastEvent: existingStation?.lastEvent ?? 'No recent activity',
     };
 
-    const { data: stationRow, error: stationError } = await supabase
-      .from('mes_work_center_stations')
-      .insert(toStationPayload(nextStation, organizationId))
-      .select('*')
-      .single();
+    const { data: stationRow, error: stationError } = existingStation
+      ? await supabase
+        .from('mes_work_center_stations')
+        .update(toStationPayload(nextStation, organizationId))
+        .eq('id', stationId)
+        .eq('organization_id', organizationId)
+        .select('*')
+        .single()
+      : await supabase
+        .from('mes_work_center_stations')
+        .insert(toStationPayload(nextStation, organizationId))
+        .select('*')
+        .single();
 
     if (stationError) {
       setStationImageUploadError(stationError.message);
@@ -4046,14 +4108,18 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
     }
 
     const savedStation = mapWorkCenterStationRow(stationRow as MesWorkCenterStationRow);
-    setWorkCenters((currentWorkCenters) => currentWorkCenters.map((workCenter) => (
-      workCenter.id === targetWorkCenter.id ? { ...workCenter, stations: [...workCenter.stations, savedStation] } : workCenter
-    )));
-    selectWorkCenter(targetWorkCenter.id);
+    setWorkCenters((currentWorkCenters) => currentWorkCenters.map((workCenter) => {
+      const stationsWithoutEdited = workCenter.stations.filter((station) => station.id !== savedStation.id);
+      return workCenter.id === targetWorkCenter.id
+        ? { ...workCenter, stations: [...stationsWithoutEdited, savedStation] }
+        : { ...workCenter, stations: stationsWithoutEdited };
+    }));
+    setSelectedWorkCenterId(targetWorkCenter.id);
     setSelectedStationId(savedStation.id);
+    setEditingStationId(null);
     setStationImageFile(null);
     setStationImagePreviewUrl((currentPreviewUrl) => {
-      if (currentPreviewUrl) URL.revokeObjectURL(currentPreviewUrl);
+      revokePreviewObjectUrl(currentPreviewUrl);
       return '';
     });
     setStationImageUploading(false);
@@ -4109,7 +4175,7 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
   }, [showAddForm, showStationForm, showDetailModal, jobQueueSummary, workCenterConfirmation]);
 
   React.useEffect(() => () => {
-    if (stationImagePreviewUrl) URL.revokeObjectURL(stationImagePreviewUrl);
+    revokePreviewObjectUrl(stationImagePreviewUrl);
   }, [stationImagePreviewUrl]);
 
   const renderCapabilityPill = (capability: string) => {
@@ -4724,6 +4790,10 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
                   <em>{selectedStation.code} / {selectedStation.processStep}</em>
                   <small>{selectedStation.type} / Operator: {selectedStation.operator}</small>
                 </div>
+                <button className="station-edit-inline-button" type="button" onClick={() => openEditStationForm(selectedStation)}>
+                  <Pencil size={14} />
+                  Edit Station
+                </button>
               </div>
               {renderStationVisual(selectedStation, 'selected-station-visual station-card-visual')}
               <dl className="work-center-detail-list">
@@ -5068,7 +5138,22 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
                           <h4>{station.name}</h4>
                           <span>{station.code}</span>
                         </div>
-                        <span className={`station-status-pill station-status-${station.status}`}>{formatLabel(station.status)}</span>
+                        <div className="station-card-title-actions">
+                          <span className={`station-status-pill station-status-${station.status}`}>{formatLabel(station.status)}</span>
+                          <button
+                            className="station-card-edit-button"
+                            type="button"
+                            aria-label={`Edit ${station.name}`}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              openEditStationForm(station);
+                            }}
+                            onKeyDown={(event) => event.stopPropagation()}
+                          >
+                            <Pencil size={14} />
+                            Edit
+                          </button>
+                        </div>
                       </div>
                     </div>
                     <dl>
@@ -5149,7 +5234,7 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
           <section className="mes-order-modal work-center-form-modal station-form-modal" role="dialog" aria-modal="true" aria-labelledby="station-form-title">
             <div>
               <p className="eyebrow">Station</p>
-              <h3 id="station-form-title">Add Station</h3>
+              <h3 id="station-form-title">{editingStationId ? 'Edit Station' : 'Add Station'}</h3>
             </div>
             <form className="mes-order-form" onSubmit={saveStationForm}>
               <label className="mes-order-form-wide">
@@ -5198,7 +5283,7 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
                   <div className="station-image-upload-actions">
                     <label>
                       <ImagePlus size={16} />
-                      <span>{stationImageFile ? 'Change Photo' : 'Upload Photo'}</span>
+                      <span>{stationImageFile || stationImagePreviewUrl ? 'Change Photo' : 'Upload Photo'}</span>
                       <input key={stationImageFile ? stationImageFile.name : 'empty'} type="file" accept="image/*" onChange={selectStationImageFile} />
                     </label>
                     {stationImageFile ? <button type="button" onClick={clearStationImageFile}>Remove</button> : null}
@@ -5263,8 +5348,8 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
                 </div>
               ) : null}
               <div className="mes-order-form-actions">
-                <button type="button" onClick={() => { setShowCapabilityColorPicker(false); clearStationImageFile(); setShowStationForm(false); }} disabled={stationImageUploading}>Cancel</button>
-                <button type="submit" disabled={stationImageUploading}>{stationImageUploading ? 'Uploading...' : 'Save Station'}</button>
+                <button type="button" onClick={closeStationForm} disabled={stationImageUploading}>Cancel</button>
+                <button type="submit" disabled={stationImageUploading}>{stationImageUploading ? 'Uploading...' : editingStationId ? 'Save Changes' : 'Save Station'}</button>
               </div>
             </form>
           </section>
