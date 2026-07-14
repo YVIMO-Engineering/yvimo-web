@@ -103,9 +103,17 @@ const operatorTerminalSpanish: Record<string, string> = {
   'Millimeters': 'Milímetros',
   'Before Sharpening': 'Antes de afilar',
   'Notch': 'Muesca',
+  'Height': 'Altura',
   'Tooth Length': 'Longitud de diente',
   'Tooth Damage': 'Daño de diente',
   'Damage Photo': 'Foto de daño',
+  'Part Photo': 'Foto de pieza',
+  'No. Afilado': 'No. Afilado',
+  'Sharpening No.': 'No. de afilado',
+  'Diameter': 'Diámetro',
+  'Span': 'Span',
+  'Teeth': 'Dientes',
+  'Damage': 'Daño',
   'Stock to Remove': 'Material a remover',
   'After Sharpening': 'Después de afilar',
   'Part traceability disabled': 'Trazabilidad de pieza deshabilitada',
@@ -254,6 +262,7 @@ type TraceabilityFormState = {
   reception: string;
   toolId: string;
   serialNumber: string;
+  beforeHeight: string;
   beforeNotch: string;
   beforeToothLength: string;
   damageA: string;
@@ -261,7 +270,14 @@ type TraceabilityFormState = {
   damageC: string;
   stockToRemove: string;
   afterToothLength: string;
+  shaverSharpeningNumber: string;
+  shaverDiameter: string;
+  shaverSpan: string;
+  shaverTeeth: string;
+  shaverDamage: boolean;
 };
+
+type TraceabilityTextField = Exclude<keyof TraceabilityFormState, 'shaverDamage'>;
 
 type OperatorCustomerOption = {
   id: string;
@@ -345,11 +361,6 @@ const fallbackCurrentOrder: ProductionOrder = {
   assignedStation: 'CNC-01',
 };
 
-const dataCards = [
-  { key: 'shipper', label: 'Shipper', value: 'SHIP-000245' },
-  { key: 'reception', label: 'Reception', value: 'REC-000884' },
-] as const;
-
 const initialTraceabilityForm: TraceabilityFormState = {
   customerId: '',
   client: '',
@@ -357,6 +368,7 @@ const initialTraceabilityForm: TraceabilityFormState = {
   reception: 'REC-000884',
   toolId: 'TOOL-1034',
   serialNumber: 'SN-928441',
+  beforeHeight: '',
   beforeNotch: '',
   beforeToothLength: '',
   damageA: '',
@@ -364,6 +376,11 @@ const initialTraceabilityForm: TraceabilityFormState = {
   damageC: '',
   stockToRemove: '',
   afterToothLength: '',
+  shaverSharpeningNumber: '',
+  shaverDiameter: '',
+  shaverSpan: '',
+  shaverTeeth: '',
+  shaverDamage: false,
 };
 
 function formatToastTime() {
@@ -400,6 +417,53 @@ function getTraceabilityDamageCodes(form: TraceabilityFormState, reportType: 'go
 
   if (reportType === 'scrap' && reason) codes.push(`scrap:${reason}`);
   return codes;
+}
+
+type OperatorTraceabilityTemplate = {
+  id: 'hobs' | 'shapers' | 'shavers';
+  beforeFields: Array<{
+    key: Extract<TraceabilityTextField, 'beforeHeight' | 'beforeNotch' | 'beforeToothLength'>;
+    label: string;
+  }>;
+  showToothDamage: boolean;
+  photoLabel: string;
+  afterToothLabel: string;
+};
+
+const hobsTraceabilityTemplate: OperatorTraceabilityTemplate = {
+  id: 'hobs',
+  beforeFields: [
+    { key: 'beforeNotch', label: 'Notch' },
+    { key: 'beforeToothLength', label: 'Tooth Length' },
+  ],
+  showToothDamage: true,
+  photoLabel: 'Damage Photo',
+  afterToothLabel: 'Tooth Length',
+};
+
+const shapersTraceabilityTemplate: OperatorTraceabilityTemplate = {
+  id: 'shapers',
+  beforeFields: [
+    { key: 'beforeHeight', label: 'Height' },
+  ],
+  showToothDamage: false,
+  photoLabel: 'Part Photo',
+  afterToothLabel: 'Height',
+};
+
+const shaversTraceabilityTemplate: OperatorTraceabilityTemplate = {
+  id: 'shavers',
+  beforeFields: [],
+  showToothDamage: false,
+  photoLabel: 'Part Photo',
+  afterToothLabel: 'After Sharpening',
+};
+
+function getTraceabilityTemplateForPart(partName = '') {
+  const normalizedPartName = partName.trim().toLowerCase();
+  if (/\b(shaver|shavers)\b/.test(normalizedPartName)) return shaversTraceabilityTemplate;
+  if (/\b(shaper|tallador|talladores)\b/.test(normalizedPartName)) return shapersTraceabilityTemplate;
+  return hobsTraceabilityTemplate;
 }
 
 function suggestNextSerialNumber(serialNumber: string, partNumber: string, nextSequence: number) {
@@ -737,10 +801,9 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
   const [selectedStationCode, setSelectedStationCode] = React.useState('');
   const [selectedOrderId, setSelectedOrderId] = React.useState('');
   const [dimensionUnit, setDimensionUnit] = React.useState<'in' | 'mm'>('in');
-  const [templateId, setTemplateId] = React.useState('sharpening');
+  const templateId = 'sharpening';
   const [traceabilityForm, setTraceabilityForm] = React.useState<TraceabilityFormState>(initialTraceabilityForm);
   const [customerOptions, setCustomerOptions] = React.useState<OperatorCustomerOption[]>([]);
-  const [customerOptionsMessage, setCustomerOptionsMessage] = React.useState('');
   const [selectedShift, setSelectedShift] = React.useState<'1st' | '2nd' | '3rd'>('1st');
   const baseSnapshotOrder = snapshot?.currentOrder ?? fallbackCurrentOrder;
   const baseWorkCenterCode = snapshot?.workCenter?.code ?? baseSnapshotOrder.assignedWorkCenter;
@@ -801,12 +864,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
   const isOrderDown = hasAssignedOrder && state === 'down';
   const isOrderNotStarted = hasAssignedOrder && state === 'not-started';
   const startLabel = state === 'paused' || state === 'down' ? 'Resume' : 'Start Job';
-  const traceabilityCustomerOptions = customerOptions
-    .filter((customer) => customer.status === 'active' || customer.id === traceabilityForm.customerId)
-    .map((customer) => ({
-      value: customer.id,
-      label: customer.status === 'inactive' ? `${customer.customer_name} (${t('Inactive')})` : customer.customer_name,
-    }));
+  const traceabilityTemplate = React.useMemo(() => getTraceabilityTemplateForPart(currentOrder?.partName), [currentOrder?.partName]);
   const jobQueueSummary: JobQueueSummary = {
     machine: {
       workCenterCode,
@@ -838,7 +896,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
     window.setTimeout(() => setToast(''), 2200);
   };
 
-  const setTraceField = (field: keyof TraceabilityFormState, value: string) => {
+  const setTraceField = (field: TraceabilityTextField, value: string) => {
     setTraceabilityForm((current) => ({ ...current, [field]: value }));
   };
 
@@ -856,25 +914,43 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
     comment = '',
   ) => {
     const reportedSequence = selectedProductionSerial?.pieceSequence ?? Math.max(1, order.completedQuantity + order.scrapQuantity + 1);
+    const isShaperTemplate = traceabilityTemplate.id === 'shapers';
+    const isShaverTemplate = traceabilityTemplate.id === 'shavers';
+    const templateDamageCodes = isShaverTemplate
+      ? [
+          ...(traceabilityForm.shaverDamage ? ['damage:yes'] : []),
+          ...(reportType === 'scrap' && reason ? [`scrap:${reason}`] : []),
+        ]
+      : isShaperTemplate
+        ? (reportType === 'scrap' && reason ? [`scrap:${reason}`] : [])
+        : getTraceabilityDamageCodes(traceabilityForm, reportType, reason);
     return {
-      template_id: templateId,
+      template_id: isShaverTemplate ? 'shaver-sharpening' : isShaperTemplate ? 'shaper-sharpening' : templateId,
       part_label: `Piece ${reportedSequence}`,
       tool_id: traceabilityForm.toolId.trim() || null,
       serial_number: serialNumber,
       dimensions_unit: dimensionUnit,
-      before_notch: parseTraceabilityNumber(traceabilityForm.beforeNotch),
-      before_tooth_length: parseTraceabilityNumber(traceabilityForm.beforeToothLength),
-      damage_codes: getTraceabilityDamageCodes(traceabilityForm, reportType, reason),
+      before_notch: isShaperTemplate || isShaverTemplate ? null : parseTraceabilityNumber(traceabilityForm.beforeNotch),
+      before_tooth_length: isShaperTemplate || isShaverTemplate ? null : parseTraceabilityNumber(traceabilityForm.beforeToothLength),
+      damage_codes: templateDamageCodes,
       damage_image_url: null,
-      stock_to_remove: parseTraceabilityNumber(traceabilityForm.stockToRemove),
-      after_tooth_length: parseTraceabilityNumber(traceabilityForm.afterToothLength),
+      stock_to_remove: isShaverTemplate ? null : parseTraceabilityNumber(traceabilityForm.stockToRemove),
+      after_tooth_length: isShaperTemplate || isShaverTemplate ? null : parseTraceabilityNumber(traceabilityForm.afterToothLength),
       payload: {
         report_type: reportType,
+        traceability_template: traceabilityTemplate.id,
         piece_sequence: reportedSequence,
         order_status: order.status,
         order_number: order.orderNumber,
         part_number: order.partNumber,
         part_name: order.partName,
+        before_height: isShaperTemplate ? parseTraceabilityNumber(traceabilityForm.beforeHeight) : null,
+        after_height: isShaperTemplate ? parseTraceabilityNumber(traceabilityForm.afterToothLength) : null,
+        shaver_sharpening_number: isShaverTemplate ? traceabilityForm.shaverSharpeningNumber.trim() || null : null,
+        shaver_diameter: isShaverTemplate ? parseTraceabilityNumber(traceabilityForm.shaverDiameter) : null,
+        shaver_span: isShaverTemplate ? parseTraceabilityNumber(traceabilityForm.shaverSpan) : null,
+        shaver_teeth: isShaverTemplate ? parseTraceabilityNumber(traceabilityForm.shaverTeeth) : null,
+        shaver_damage: isShaverTemplate ? traceabilityForm.shaverDamage : null,
         reason: reason || null,
         comment: comment || null,
         customer_id: traceabilityForm.customerId || null,
@@ -1030,14 +1106,10 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
       .order('customer_name', { ascending: true });
     if (error) {
       setCustomerOptions([]);
-      setCustomerOptionsMessage(error.message);
       return;
     }
     const nextCustomers = (data ?? []) as OperatorCustomerOption[];
     setCustomerOptions(nextCustomers);
-    setCustomerOptionsMessage(nextCustomers.some((customer) => customer.status === 'active')
-      ? ''
-      : 'No active customers configured in Clients.');
   }, [organizationId]);
 
   React.useEffect(() => {
@@ -1473,7 +1545,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
                     <strong>{currentOrder.orderNumber}</strong>
                   </button>
                   <article><span>{t('Part Name')}</span><strong>{currentOrder.partName}</strong></article>
-                  <article><span>{t('Part Number')}</span><strong>{currentOrder.partNumber}</strong></article>
+                  <article><span>{t('Client')}</span><strong>{currentOrder.clientName || '-'}</strong></article>
                   <article><span>{t('Due Date')}</span><strong>{currentOrder.dueDate}</strong></article>
                 </div>
               ) : (
@@ -1563,44 +1635,6 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
                 <p className="eyebrow">{t('Part Traceability')}</p>
                 <h3>{t('Sharpening capture')}</h3>
               </div>
-              {hasAssignedOrder ? <div className="operator-terminal-trace-meta" aria-label={t('Job metadata')}>
-                <label>
-                  {t('Client')}
-                  <OperatorTerminalDropdown
-                    ariaLabel={t('Client')}
-                    value={traceabilityForm.customerId}
-                    options={traceabilityCustomerOptions}
-                    placeholder={customerOptionsMessage ? t(customerOptionsMessage) : t('Select customer')}
-                    disabled={!traceabilityCustomerOptions.length}
-                    onChange={(customerId) => {
-                      const customer = customerOptions.find((option) => option.id === customerId);
-                      setTraceabilityForm((current) => ({
-                        ...current,
-                        customerId,
-                        client: customer?.customer_name ?? '',
-                      }));
-                    }}
-                  />
-                </label>
-                {dataCards.map((card) => (
-                  <label key={card.label}>
-                    {t(card.label)}
-                    <input value={traceabilityForm[card.key]} onChange={(event) => setTraceField(card.key, event.target.value)} />
-                  </label>
-                ))}
-                <label>
-                  {t('Template')}
-                  <OperatorTerminalDropdown
-                    ariaLabel={t('Template')}
-                    value={templateId}
-                    options={[
-                      { value: 'sharpening', label: t('Sharpening Data') },
-                      { value: 'inspection', label: t('Inspection Data') },
-                    ]}
-                    onChange={setTemplateId}
-                  />
-                </label>
-              </div> : null}
             </div>
             {hasAssignedOrder ? (
             <div className="operator-terminal-form-grid">
@@ -1621,32 +1655,66 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
                   <button className={dimensionUnit === 'mm' ? 'active' : ''} type="button" onClick={() => setDimensionUnit('mm')}>{t('Millimeters')}</button>
                 </div>
               </div>
-              <fieldset>
-                <legend>{t('Before Sharpening')}</legend>
-                <label>{t('Notch')}<span className="operator-terminal-measure-field"><input placeholder="0.000" inputMode="decimal" value={traceabilityForm.beforeNotch} onChange={(event) => setTraceField('beforeNotch', event.target.value)} /><em>{dimensionUnit}</em></span></label>
-                <label>{t('Tooth Length')}<span className="operator-terminal-measure-field"><input placeholder="0.000" inputMode="decimal" value={traceabilityForm.beforeToothLength} onChange={(event) => setTraceField('beforeToothLength', event.target.value)} /><em>{dimensionUnit}</em></span></label>
-              </fieldset>
-              <fieldset>
-                <legend>{t('Tooth Damage')}</legend>
-                <div className="operator-terminal-damage-capture">
-                  <div className="operator-terminal-damage-options">
-                    <label>A<input placeholder="0" inputMode="numeric" value={traceabilityForm.damageA} onChange={(event) => setTraceField('damageA', event.target.value)} /></label>
-                    <label>B<input placeholder="0" inputMode="numeric" value={traceabilityForm.damageB} onChange={(event) => setTraceField('damageB', event.target.value)} /></label>
-                    <label>C<input placeholder="0" inputMode="numeric" value={traceabilityForm.damageC} onChange={(event) => setTraceField('damageC', event.target.value)} /></label>
+              {traceabilityTemplate.id !== 'shavers' ? (
+                <fieldset>
+                  <legend>{t('Before Sharpening')}</legend>
+                  {traceabilityTemplate.beforeFields.map((field) => (
+                    <label key={field.key}>
+                      {t(field.label)}
+                      <span className="operator-terminal-measure-field">
+                        <input placeholder="0.000" inputMode="decimal" value={traceabilityForm[field.key]} onChange={(event) => setTraceField(field.key, event.target.value)} />
+                        <em>{dimensionUnit}</em>
+                      </span>
+                    </label>
+                  ))}
+                </fieldset>
+              ) : null}
+              {traceabilityTemplate.showToothDamage ? (
+                <fieldset>
+                  <legend>{t('Tooth Damage')}</legend>
+                  <div className="operator-terminal-damage-capture">
+                    <div className="operator-terminal-damage-options">
+                      <label>A<input placeholder="0" inputMode="numeric" value={traceabilityForm.damageA} onChange={(event) => setTraceField('damageA', event.target.value)} /></label>
+                      <label>B<input placeholder="0" inputMode="numeric" value={traceabilityForm.damageB} onChange={(event) => setTraceField('damageB', event.target.value)} /></label>
+                      <label>C<input placeholder="0" inputMode="numeric" value={traceabilityForm.damageC} onChange={(event) => setTraceField('damageC', event.target.value)} /></label>
+                    </div>
+                    <button type="button" className="operator-terminal-photo">
+                      <Camera size={22} />
+                      {t(traceabilityTemplate.photoLabel)}
+                    </button>
                   </div>
+                </fieldset>
+              ) : (
+                <fieldset className="operator-terminal-part-photo-fieldset">
+                  <legend>{t('Part Photo')}</legend>
                   <button type="button" className="operator-terminal-photo">
                     <Camera size={22} />
-                    {t('Damage Photo')}
+                    {t(traceabilityTemplate.photoLabel)}
                   </button>
-                </div>
-              </fieldset>
-              <fieldset>
-                <legend>{t('Sharpening Data')}</legend>
-                <label>{t('Stock to Remove')}<span className="operator-terminal-measure-field"><input placeholder="0.000" inputMode="decimal" value={traceabilityForm.stockToRemove} onChange={(event) => setTraceField('stockToRemove', event.target.value)} /><em>{dimensionUnit}</em></span></label>
-              </fieldset>
+                </fieldset>
+              )}
+              {traceabilityTemplate.id !== 'shavers' ? (
+                <fieldset>
+                  <legend>{t('Sharpening Data')}</legend>
+                  <label>{t('Stock to Remove')}<span className="operator-terminal-measure-field"><input placeholder="0.000" inputMode="decimal" value={traceabilityForm.stockToRemove} onChange={(event) => setTraceField('stockToRemove', event.target.value)} /><em>{dimensionUnit}</em></span></label>
+                </fieldset>
+              ) : null}
               <fieldset>
                 <legend>{t('After Sharpening')}</legend>
-                <label>{t('Tooth Length')}<span className="operator-terminal-measure-field"><input placeholder="0.000" inputMode="decimal" value={traceabilityForm.afterToothLength} onChange={(event) => setTraceField('afterToothLength', event.target.value)} /><em>{dimensionUnit}</em></span></label>
+                {traceabilityTemplate.id === 'shavers' ? (
+                  <div className="operator-terminal-shaver-after-grid">
+                    <label>{t('No. Afilado')}<input placeholder="05" inputMode="numeric" value={traceabilityForm.shaverSharpeningNumber} onChange={(event) => setTraceField('shaverSharpeningNumber', event.target.value)} /></label>
+                    <label>{t('Diameter')}<span className="operator-terminal-measure-field"><input placeholder="0.000" inputMode="decimal" value={traceabilityForm.shaverDiameter} onChange={(event) => setTraceField('shaverDiameter', event.target.value)} /><em>{dimensionUnit}</em></span></label>
+                    <label>{t('Span')}<span className="operator-terminal-measure-field"><input placeholder="0.000" inputMode="decimal" value={traceabilityForm.shaverSpan} onChange={(event) => setTraceField('shaverSpan', event.target.value)} /><em>{dimensionUnit}</em></span></label>
+                    <label>{t('Teeth')}<input placeholder="0" inputMode="numeric" value={traceabilityForm.shaverTeeth} onChange={(event) => setTraceField('shaverTeeth', event.target.value)} /></label>
+                    <label className="operator-terminal-shaver-damage-check">
+                      <input type="checkbox" checked={traceabilityForm.shaverDamage} onChange={(event) => setTraceabilityForm((current) => ({ ...current, shaverDamage: event.target.checked }))} />
+                      <span>{t('Damage')}</span>
+                    </label>
+                  </div>
+                ) : (
+                  <label>{t(traceabilityTemplate.afterToothLabel)}<span className="operator-terminal-measure-field"><input placeholder="0.000" inputMode="decimal" value={traceabilityForm.afterToothLength} onChange={(event) => setTraceField('afterToothLength', event.target.value)} /><em>{dimensionUnit}</em></span></label>
+                )}
               </fieldset>
             </div>
             ) : (

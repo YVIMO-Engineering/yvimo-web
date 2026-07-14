@@ -192,6 +192,8 @@ type TraceabilityCaptureRow = {
     order_number: string;
     part_number: string;
     part_name: string;
+    customer_id?: string | null;
+    client_name?: string | null;
     planned_quantity: number;
     completed_quantity: number;
     scrap_quantity: number;
@@ -206,6 +208,7 @@ type TraceabilityCapture = {
   productionOrder: string;
   partNumber: string;
   partName: string;
+  clientName: string;
   workCenter: string;
   station: string;
   stationName: string;
@@ -220,6 +223,13 @@ type TraceabilityCapture = {
   damageImageUrl: string;
   stockToRemove: number | null;
   afterToothLength: number | null;
+  beforeHeight: number | null;
+  afterHeight: number | null;
+  shaverSharpeningNumber: string;
+  shaverDiameter: number | null;
+  shaverSpan: number | null;
+  shaverTeeth: number | null;
+  shaverDamage: boolean | null;
   orderStatus: ProductionOrderStatus | '';
   statusAtCapture: ProductionOrderStatus | '';
   pieceSequence: number | null;
@@ -243,6 +253,8 @@ type TraceabilityOperatorEventRow = {
     order_number: string;
     part_number: string;
     part_name: string;
+    customer_id?: string | null;
+    client_name?: string | null;
     planned_quantity: number;
     completed_quantity: number;
     scrap_quantity: number;
@@ -5477,6 +5489,16 @@ function toTraceabilityNumber(value: unknown): number | null {
   return Number.isFinite(nextValue) ? nextValue : null;
 }
 
+function getTraceabilityPayloadString(payload: Record<string, unknown>, key: string) {
+  const value = payload[key];
+  return typeof value === 'string' ? value : '';
+}
+
+function getTraceabilityPayloadBoolean(payload: Record<string, unknown>, key: string): boolean | null {
+  const value = payload[key];
+  return typeof value === 'boolean' ? value : null;
+}
+
 function mapTraceabilityCapture(row: TraceabilityCaptureRow): TraceabilityCapture {
   const order = row.mes_production_orders;
   const payload = row.payload ?? {};
@@ -5501,6 +5523,7 @@ function mapTraceabilityCapture(row: TraceabilityCaptureRow): TraceabilityCaptur
     productionOrder: order?.order_number ?? 'Unassigned order',
     partNumber: order?.part_number ?? '',
     partName: order?.part_name ?? row.part_label ?? 'Captured part',
+    clientName: order?.client_name ?? getTraceabilityPayloadString(payload, 'client'),
     workCenter: row.work_center_code,
     station: row.station_code,
     stationName,
@@ -5515,6 +5538,13 @@ function mapTraceabilityCapture(row: TraceabilityCaptureRow): TraceabilityCaptur
     damageImageUrl: row.damage_image_url ?? '',
     stockToRemove: toTraceabilityNumber(row.stock_to_remove),
     afterToothLength: toTraceabilityNumber(row.after_tooth_length),
+    beforeHeight: toTraceabilityNumber(payload.before_height),
+    afterHeight: toTraceabilityNumber(payload.after_height),
+    shaverSharpeningNumber: getTraceabilityPayloadString(payload, 'shaver_sharpening_number'),
+    shaverDiameter: toTraceabilityNumber(payload.shaver_diameter),
+    shaverSpan: toTraceabilityNumber(payload.shaver_span),
+    shaverTeeth: toTraceabilityNumber(payload.shaver_teeth),
+    shaverDamage: getTraceabilityPayloadBoolean(payload, 'shaver_damage'),
     orderStatus: order?.status ?? '',
     statusAtCapture,
     pieceSequence,
@@ -5621,6 +5651,44 @@ function getTraceabilityPayloadStatus(payload: Record<string, unknown>): Product
 function formatTraceabilityStatus(status: ProductionOrderStatus | '') {
   if (status === 'running') return 'In Progress';
   return status ? formatLabel(status) : 'Unknown';
+}
+
+type TraceabilityMeasureDisplay = {
+  label: string;
+  value: string;
+};
+
+function formatTraceabilityMeasurementValue(value: number | string | boolean | null | undefined, unit = '') {
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+  if (value === null || value === undefined || value === '') return 'N/A';
+  return `${value}${unit ? ` ${unit}` : ''}`;
+}
+
+function getTraceabilityMeasureDisplays(capture: TraceabilityCapture): TraceabilityMeasureDisplay[] {
+  const templateId = capture.templateId || '';
+  const unit = capture.dimensionsUnit;
+  if (templateId === 'shaver-sharpening' || templateId === 'shavers') {
+    return [
+      { label: 'No. Afilado', value: formatTraceabilityMeasurementValue(capture.shaverSharpeningNumber) },
+      { label: 'Diameter', value: formatTraceabilityMeasurementValue(capture.shaverDiameter, unit) },
+      { label: 'Span', value: formatTraceabilityMeasurementValue(capture.shaverSpan, unit) },
+      { label: 'Teeth', value: formatTraceabilityMeasurementValue(capture.shaverTeeth) },
+      { label: 'Damage', value: formatTraceabilityMeasurementValue(capture.shaverDamage) },
+    ];
+  }
+  if (templateId === 'shaper-sharpening' || templateId === 'shapers') {
+    return [
+      { label: 'Before height', value: formatTraceabilityMeasurementValue(capture.beforeHeight, unit) },
+      { label: 'Stock remove', value: formatTraceabilityMeasurementValue(capture.stockToRemove, unit) },
+      { label: 'After height', value: formatTraceabilityMeasurementValue(capture.afterHeight, unit) },
+    ];
+  }
+  return [
+    { label: 'Before notch', value: formatTraceabilityMeasurementValue(capture.beforeNotch, unit) },
+    { label: 'Before tooth', value: formatTraceabilityMeasurementValue(capture.beforeToothLength, unit) },
+    { label: 'Stock remove', value: formatTraceabilityMeasurementValue(capture.stockToRemove, unit) },
+    { label: 'After tooth', value: formatTraceabilityMeasurementValue(capture.afterToothLength, unit) },
+  ];
 }
 
 type TraceabilityEventTone =
@@ -5823,6 +5891,8 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
             order_number,
             part_number,
             part_name,
+            customer_id,
+            client_name,
             planned_quantity,
             completed_quantity,
             scrap_quantity,
@@ -5864,6 +5934,8 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
             order_number,
             part_number,
             part_name,
+            customer_id,
+            client_name,
             planned_quantity,
             completed_quantity,
             scrap_quantity,
@@ -6384,6 +6456,7 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
           if (item.kind === 'event') {
             const event = item.event;
             const order = event.mes_production_orders;
+            const eventClientName = order?.client_name ?? '';
             const eventLabel = getTraceabilityEventLabel(event.event_type);
             const payloadComment = event.payload && typeof event.payload.comment === 'string' ? event.payload.comment : '';
             const comment = event.comment || payloadComment;
@@ -6413,7 +6486,7 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
                   <div className="traceability-event-detail-grid">
                     <span><b>Order Number</b>{order?.order_number ?? 'Unassigned order'}</span>
                     <span><b>Part Name</b>{order?.part_name ?? 'N/A'}</span>
-                    <span><b>Part Number</b>{order?.part_number ?? 'N/A'}</span>
+                    <span><b>Client</b>{eventClientName || 'Unassigned client'}</span>
                     {event.event_type !== 'quality-inspection-saved' ? <span><b>Quantity</b>{event.quantity || 'N/A'}</span> : null}
                   </div>
                   <div className="mes-event-meta traceability-capture-meta">
@@ -6454,6 +6527,7 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
           }
 
           const capture = item.capture;
+          const measureDisplays = getTraceabilityMeasureDisplays(capture);
           return (
             <article
               className={['mes-event-row traceability-capture-row', newCaptureIds.has(item.id) ? 'new-capture' : ''].filter(Boolean).join(' ')}
@@ -6465,15 +6539,14 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
                   <div className="traceability-capture-title-grid">
                     <span><b>Record Type:</b> Measurement record</span>
                     <span><b>Order Number:</b> {capture.productionOrder}</span>
-                    <span><b>Part Number:</b> {capture.partNumber || 'N/A'}</span>
+                    <span><b>Client:</b> {capture.clientName || 'Unassigned client'}</span>
                     {renderTraceabilityCaptureTime(capture.timestamp, capture.shift)}
                   </div>
                 </div>
-                <div className="traceability-measure-grid">
-                  <span><b>Before notch</b>{capture.beforeNotch ?? 'N/A'} {capture.beforeNotch === null ? '' : capture.dimensionsUnit}</span>
-                  <span><b>Before tooth</b>{capture.beforeToothLength ?? 'N/A'} {capture.beforeToothLength === null ? '' : capture.dimensionsUnit}</span>
-                  <span><b>Stock remove</b>{capture.stockToRemove ?? 'N/A'} {capture.stockToRemove === null ? '' : capture.dimensionsUnit}</span>
-                  <span><b>After tooth</b>{capture.afterToothLength ?? 'N/A'} {capture.afterToothLength === null ? '' : capture.dimensionsUnit}</span>
+                <div className={['traceability-measure-grid', `template-${capture.templateId || 'default'}`].join(' ')}>
+                  {measureDisplays.map((measurement) => (
+                    <span key={measurement.label}><b>{measurement.label}</b>{measurement.value}</span>
+                  ))}
                 </div>
                 <div className="mes-event-meta traceability-capture-meta">
                   <span><Factory size={15} /><b>Work Center</b>{capture.workCenter || 'No work center'}</span>

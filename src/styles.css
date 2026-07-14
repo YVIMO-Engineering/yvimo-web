@@ -12722,7 +12722,7 @@ body.work-center-map-expanded .logged-workspace {
 
 .operator-terminal-trace-heading {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
   gap: 12px;
 }
@@ -12965,6 +12965,71 @@ body.work-center-map-expanded .logged-workspace {
   grid-template-columns: minmax(180px, 0.85fr) minmax(220px, 1.15fr);
   gap: 10px;
   align-items: stretch;
+}
+
+.operator-terminal-part-photo-fieldset {
+  align-content: stretch;
+}
+
+.operator-terminal-part-photo-fieldset .operator-terminal-photo {
+  min-height: 74px;
+}
+
+.operator-terminal-shaver-after-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+  align-items: stretch;
+}
+
+.operator-terminal-shaver-after-grid > label {
+  min-width: 0;
+}
+
+.operator-terminal-shaver-after-grid > label:nth-child(1),
+.operator-terminal-shaver-after-grid > label:nth-child(2),
+.operator-terminal-shaver-after-grid > label:nth-child(3) {
+  grid-column: span 2;
+}
+
+.operator-terminal-shaver-after-grid > label:nth-child(4),
+.operator-terminal-shaver-after-grid > label:nth-child(5) {
+  grid-column: span 3;
+}
+
+.operator-terminal-shaver-after-grid input {
+  min-height: 42px;
+}
+
+.operator-terminal-form-grid .operator-terminal-shaver-damage-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  min-height: 42px;
+  border: 1px solid rgba(83, 101, 120, 0.24);
+  border-radius: 8px;
+  padding: 0 12px;
+  background: #f8fafc;
+  color: #07111c;
+  cursor: pointer;
+  font-weight: 950;
+}
+
+.operator-terminal-form-grid .operator-terminal-shaver-damage-check input {
+  width: 18px;
+  height: 18px;
+  border: 1px solid rgba(83, 101, 120, 0.34);
+  border-radius: 4px;
+  padding: 0;
+  accent-color: #ff8a1f;
+}
+
+.operator-terminal-form-grid .operator-terminal-shaver-damage-check span {
+  color: #5f7184;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .operator-terminal-photo,
@@ -16287,7 +16352,7 @@ body.work-center-map-expanded .logged-workspace {
 
 .traceability-capture-title-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto auto;
   gap: 8px;
   width: 100%;
 }
@@ -16330,6 +16395,22 @@ body.work-center-map-expanded .logged-workspace {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
   margin: 6px 0 6px;
+}
+
+.traceability-measure-grid.template-shaver-sharpening,
+.traceability-measure-grid.template-shavers {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.traceability-measure-grid.template-shaver-sharpening span,
+.traceability-measure-grid.template-shavers span {
+  padding: 8px 9px;
+  font-size: 0.82rem;
+}
+
+.traceability-measure-grid.template-shaver-sharpening b,
+.traceability-measure-grid.template-shavers b {
+  font-size: 0.64rem;
 }
 
 .traceability-measure-grid span {
