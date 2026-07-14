@@ -771,6 +771,8 @@ function mapProductionOrderRow(row: ProductionOrderRow): ProductionOrder {
     qualityChecks: row.quality_checks ?? [],
     qualityCheckLimits: row.quality_check_limits ?? {},
     qualityMeasurementUnit: row.quality_measurement_unit ?? 'microns',
+    createdAt: row.created_at ?? undefined,
+    updatedAt: row.updated_at ?? undefined,
   };
 }
 
@@ -1167,6 +1169,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
   const [searchTerm, setSearchTerm] = React.useState(restoredViewState.searchTerm);
   const [orderView, setOrderView] = React.useState<'all' | 'in-progress' | 'completed'>(restoredViewState.orderView);
   const [sortByPriority, setSortByPriority] = React.useState(restoredViewState.sortByPriority);
+  const [orderDateColumn, setOrderDateColumn] = React.useState<'due' | 'created'>('due');
   const [clientFilter, setClientFilter] = React.useState(restoredViewState.clientFilter);
   const [kpiDateRange, setKpiDateRange] = React.useState<MesOrderDateRange>(() => getMesOrderQuickRange('today'));
   const [workCenterOptions, setWorkCenterOptions] = React.useState<MesOrderDropdownOption[]>([]);
@@ -1594,8 +1597,13 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
         return;
       }
     }
+    const shouldCompleteAfterQualityDisable = formMode === 'edit'
+      && selectedOrder?.status === 'waiting-inspection'
+      && selectedOrder.qualityChecksEnabled
+      && !formState.qualityChecksEnabled;
     const orderFromForm = {
       ...formStateToProductionOrder(formState, formMode === 'edit' ? selectedOrder?.id : undefined),
+      status: shouldCompleteAfterQualityDisable ? ('completed' as ProductionOrderStatus) : formState.status,
       createdAt: selectedOrder?.createdAt,
       updatedAt: new Date().toISOString(),
     };
@@ -1817,7 +1825,17 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
                   <th>Scrap</th>
                   <th>Status</th>
                   <th>Priority</th>
-                  <th>Due</th>
+                  <th className="production-orders-date-column-header">
+                    <button
+                      className="production-orders-date-column-toggle"
+                      type="button"
+                      aria-label={`Showing ${orderDateColumn === 'due' ? 'due date' : 'created date'}. Switch date column.`}
+                      onClick={() => setOrderDateColumn((current) => (current === 'due' ? 'created' : 'due'))}
+                    >
+                      <span>{orderDateColumn === 'due' ? 'Due' : 'Created'}</span>
+                      <CalendarDays size={13} />
+                    </button>
+                  </th>
                   <th>Client</th>
                 </tr>
               </thead>
@@ -1859,7 +1877,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
                       <td className="production-order-number-cell">{order.scrapQuantity.toLocaleString()}</td>
                       <td><MesStatusBadge value={order.status} /></td>
                       <td><MesStatusBadge value={order.priority} tone="priority" /></td>
-                      <td>{formatDate(order.dueDate)}</td>
+                      <td>{orderDateColumn === 'due' ? formatDate(order.dueDate) : order.createdAt ? formatDate(toLocalIsoDate(order.createdAt)) : '-'}</td>
                       <td><strong>{order.clientName?.trim() || 'Unassigned'}</strong></td>
                     </tr>
                   );
@@ -1915,6 +1933,13 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
               <div className="production-order-work-center-card">
                 <Factory size={17} />
                 <div><span>Work center</span><strong>{selectedOrder.assignedWorkCenter || 'Not assigned'}</strong></div>
+              </div>
+              <div className="production-order-created-card">
+                <CalendarDays size={17} />
+                <div>
+                  <span>Created</span>
+                  <time>{selectedOrder.createdAt ? formatDate(toLocalIsoDate(selectedOrder.createdAt)) : 'Not available'}</time>
+                </div>
               </div>
               <div className="production-order-progress">
                 <p>

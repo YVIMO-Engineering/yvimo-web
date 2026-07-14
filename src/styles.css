@@ -4678,6 +4678,42 @@ body.work-center-map-expanded .logged-workspace {
   height: 86px;
 }
 
+.production-orders-table thead th {
+  height: 48px;
+  padding-top: 0;
+  padding-bottom: 0;
+  line-height: 28px;
+  vertical-align: middle;
+}
+
+.production-orders-table .production-orders-date-column-header {
+  line-height: 1;
+}
+
+.production-orders-date-column-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
+  border: 1px solid #d8e0e8;
+  border-radius: 7px;
+  padding: 0 8px;
+  background: #ffffff;
+  color: #405162;
+  font: inherit;
+  font-weight: 950;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.production-orders-date-column-toggle:hover,
+.production-orders-date-column-toggle:focus-visible {
+  border-color: rgba(255, 138, 31, 0.55);
+  background: #fff7ed;
+  color: #c2410c;
+  outline: none;
+}
+
 .production-orders-table th:nth-child(3),
 .production-orders-table th:nth-child(4),
 .production-orders-table th:nth-child(5),
@@ -8679,6 +8715,48 @@ body.work-center-map-expanded .logged-workspace {
   font-style: normal;
   font-size: 1rem;
   font-weight: 700;
+}
+
+.production-order-created-card {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-height: 54px;
+  border: 1px solid #d8e0e8;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #f8fafc;
+}
+
+.production-order-created-card > svg {
+  width: 15px;
+  height: 15px;
+  color: #64748b;
+}
+
+.production-order-created-card div {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.production-orders-selection-card .production-order-created-card span {
+  color: #526175;
+  font-size: 0.62rem;
+  font-weight: 950;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.production-orders-selection-card .production-order-created-card time {
+  overflow: hidden;
+  color: #405162;
+  font-size: 0.78rem;
+  font-weight: 850;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .production-order-progress {
