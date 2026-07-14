@@ -4,6 +4,7 @@ import { Activity, AlertTriangle, ArrowLeft, CalendarDays, Check, CheckCircle2, 
 import { GoogleWorkCentersMap } from '../components/maps/GoogleWorkCentersMap';
 import { resolveGooglePlacesAddressMatch, searchGooglePlacesAddressMatches, type GooglePlacesAddressMatch } from '../lib/maps/googlePlacesAddressLookup';
 import { supabase } from '../lib/supabaseClient';
+import { useSupabaseRealtimeRefresh } from '../lib/useSupabaseRealtimeRefresh';
 import type { ProductionOrder, ProductionOrderManufacturingType, ProductionOrderPriority, ProductionOrderStatus, QualityCheckLimit, QualityMeasurementUnit, QualityPieceType, WorkCenterStatus } from './mesTypes';
 import { qualityInspectionsByPieceType, qualityPieceTypeLabels, qualityPieceTypes } from './qualityInspectionConfig';
 import './productionOrders.css';
@@ -1190,6 +1191,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
   const pendingScrollOrderNumberRef = React.useRef('');
   const skipNextPageResetRef = React.useRef(restoredViewState.page > 1);
   const restoredSelectedOrderNumberRef = React.useRef(restoredViewState.selectedOrderNumber);
+  const productionOrdersLoadRequestRef = React.useRef(0);
 
   const selectedOrder = orders.find((order) => order.orderNumber === selectedOrderNumber) ?? null;
   const selectedWorkCenterStationOptions = stationOptionsByWorkCenter[formState.assignedWorkCenter] ?? [];
@@ -1271,6 +1273,92 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
       : selectedOrderProgress >= 34
         ? 'mid'
         : 'low';
+  const productionOrdersRealtimeTables = React.useMemo(() => ([
+    { table: 'mes_production_orders', filter: `organization_id=eq.${organizationId}` },
+    { table: 'mes_work_centers', filter: `organization_id=eq.${organizationId}` },
+    { table: 'mes_work_center_stations', filter: `organization_id=eq.${organizationId}` },
+    { table: 'mes_customers', filter: `organization_id=eq.${organizationId}` },
+  ]), [organizationId]);
+
+  const loadProductionOrders = React.useCallback(async (silent = false) => {
+    const requestId = productionOrdersLoadRequestRef.current + 1;
+    productionOrdersLoadRequestRef.current = requestId;
+    if (!silent) setOrdersLoaded(false);
+    const [{ data, error }, { data: workCenterData, error: workCenterError }, { data: stationData, error: stationError }, { data: customerData, error: customerError }] = await Promise.all([
+      supabase
+        .from('mes_production_orders')
+        .select('*')
+        .eq('organization_id', organizationId)
+        .order('due_date', { ascending: true }),
+      supabase
+        .from('mes_work_centers')
+        .select('id, code, name')
+        .eq('organization_id', organizationId)
+        .order('name', { ascending: true }),
+      supabase
+        .from('mes_work_center_stations')
+        .select('work_center_id, code, name')
+        .eq('organization_id', organizationId)
+        .order('name', { ascending: true }),
+      supabase
+        .from('mes_customers')
+        .select('id, customer_name, legal_name, status')
+        .eq('organization_id', organizationId)
+        .order('customer_name', { ascending: true }),
+    ]);
+
+    if (requestId !== productionOrdersLoadRequestRef.current) return;
+    if (customerError) {
+      setCustomerOptions([]);
+      setCustomerOptionsMessage(customerError.message);
+    } else {
+      const nextCustomerOptions = (customerData ?? []) as ProductionOrderCustomerOptionRow[];
+      setCustomerOptions(nextCustomerOptions);
+      setCustomerOptionsMessage(nextCustomerOptions.some((customer) => customer.status === 'active')
+        ? ''
+        : 'No active customers configured yet. Add a customer from the Clients app.');
+    }
+    if (workCenterError || stationError) {
+      setWorkCenterOptions([]);
+      setStationOptionsByWorkCenter({});
+      setWorkCenterOptionsMessage(workCenterError?.message ?? stationError?.message ?? 'Unable to load Work Centers.');
+    } else {
+      const nextWorkCenterOptions = ((workCenterData ?? []) as ProductionOrderWorkCenterOptionRow[]).map((workCenter) => ({
+        value: workCenter.code,
+        label: `${workCenter.code} - ${workCenter.name}`,
+      }));
+      const workCenterCodeById = new Map(((workCenterData ?? []) as ProductionOrderWorkCenterOptionRow[]).map((workCenter) => [workCenter.id, workCenter.code]));
+      const nextStationOptionsByWorkCenter = ((stationData ?? []) as ProductionOrderStationOptionRow[]).reduce<Record<string, MesOrderDropdownOption[]>>((groups, station) => {
+        const workCenterCode = workCenterCodeById.get(station.work_center_id);
+        if (!workCenterCode) return groups;
+        groups[workCenterCode] = [...(groups[workCenterCode] ?? []), { value: station.code, label: `${station.code} - ${station.name}` }];
+        return groups;
+      }, {});
+      setWorkCenterOptions(nextWorkCenterOptions);
+      setStationOptionsByWorkCenter(nextStationOptionsByWorkCenter);
+      setWorkCenterOptionsMessage(nextWorkCenterOptions.length ? '' : 'No Work Centers configured yet.');
+    }
+    if (error) {
+      console.error('Unable to load MES production orders', error);
+      setOrders([]);
+      setSelectedOrderNumber('');
+      setTableMessage(unavailableProductionOrdersMessage);
+      setOrdersLoaded(true);
+      return;
+    }
+    const nextOrders = ((data ?? []) as ProductionOrderRow[]).map(mapProductionOrderRow);
+    setOrders(nextOrders);
+    setSelectedOrderNumber((currentOrderNumber) => {
+      const rememberedOrderNumber = restoredSelectedOrderNumberRef.current;
+      const preferredOrderNumber = rememberedOrderNumber || currentOrderNumber;
+      restoredSelectedOrderNumberRef.current = '';
+      return preferredOrderNumber && nextOrders.some((order) => order.orderNumber === preferredOrderNumber)
+        ? preferredOrderNumber
+        : nextOrders[0]?.orderNumber ?? '';
+    });
+    setTableMessage(nextOrders.length === 0 ? emptyProductionOrdersMessage : null);
+    setOrdersLoaded(true);
+  }, [organizationId]);
 
   React.useEffect(() => {
     if (!ordersLoaded) return;
@@ -1333,90 +1421,14 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
   }, [clientFilter, searchTerm, orderView]);
 
   React.useEffect(() => {
-    let active = true;
-    const loadProductionOrders = async () => {
-      setOrdersLoaded(false);
-      const [{ data, error }, { data: workCenterData, error: workCenterError }, { data: stationData, error: stationError }, { data: customerData, error: customerError }] = await Promise.all([
-        supabase
-          .from('mes_production_orders')
-          .select('*')
-          .eq('organization_id', organizationId)
-          .order('due_date', { ascending: true }),
-        supabase
-          .from('mes_work_centers')
-          .select('id, code, name')
-          .eq('organization_id', organizationId)
-          .order('name', { ascending: true }),
-        supabase
-          .from('mes_work_center_stations')
-          .select('work_center_id, code, name')
-          .eq('organization_id', organizationId)
-          .order('name', { ascending: true }),
-        supabase
-          .from('mes_customers')
-          .select('id, customer_name, legal_name, status')
-          .eq('organization_id', organizationId)
-          .order('customer_name', { ascending: true }),
-      ]);
-
-      if (!active) return;
-      if (customerError) {
-        setCustomerOptions([]);
-        setCustomerOptionsMessage(customerError.message);
-      } else {
-        const nextCustomerOptions = (customerData ?? []) as ProductionOrderCustomerOptionRow[];
-        setCustomerOptions(nextCustomerOptions);
-        setCustomerOptionsMessage(nextCustomerOptions.some((customer) => customer.status === 'active')
-          ? ''
-          : 'No active customers configured yet. Add a customer from the Clients app.');
-      }
-      if (workCenterError || stationError) {
-        setWorkCenterOptions([]);
-        setStationOptionsByWorkCenter({});
-        setWorkCenterOptionsMessage(workCenterError?.message ?? stationError?.message ?? 'Unable to load Work Centers.');
-      } else {
-        const nextWorkCenterOptions = ((workCenterData ?? []) as ProductionOrderWorkCenterOptionRow[]).map((workCenter) => ({
-          value: workCenter.code,
-          label: `${workCenter.code} - ${workCenter.name}`,
-        }));
-        const workCenterCodeById = new Map(((workCenterData ?? []) as ProductionOrderWorkCenterOptionRow[]).map((workCenter) => [workCenter.id, workCenter.code]));
-        const nextStationOptionsByWorkCenter = ((stationData ?? []) as ProductionOrderStationOptionRow[]).reduce<Record<string, MesOrderDropdownOption[]>>((groups, station) => {
-          const workCenterCode = workCenterCodeById.get(station.work_center_id);
-          if (!workCenterCode) return groups;
-          groups[workCenterCode] = [...(groups[workCenterCode] ?? []), { value: station.code, label: `${station.code} - ${station.name}` }];
-          return groups;
-        }, {});
-        setWorkCenterOptions(nextWorkCenterOptions);
-        setStationOptionsByWorkCenter(nextStationOptionsByWorkCenter);
-        setWorkCenterOptionsMessage(nextWorkCenterOptions.length ? '' : 'No Work Centers configured yet.');
-      }
-      if (error) {
-        console.error('Unable to load MES production orders', error);
-        setOrders([]);
-        setSelectedOrderNumber('');
-        setTableMessage(unavailableProductionOrdersMessage);
-        setOrdersLoaded(true);
-        return;
-      }
-      const nextOrders = ((data ?? []) as ProductionOrderRow[]).map(mapProductionOrderRow);
-      const rememberedOrderNumber = restoredSelectedOrderNumberRef.current;
-      const nextSelectedOrderNumber = rememberedOrderNumber
-        && nextOrders.some((order) => order.orderNumber === rememberedOrderNumber)
-        ? rememberedOrderNumber
-        : nextOrders[0]?.orderNumber ?? '';
-      restoredSelectedOrderNumberRef.current = '';
-      setOrders(nextOrders);
-      setSelectedOrderNumber(nextSelectedOrderNumber);
-      setTableMessage(nextOrders.length === 0 ? emptyProductionOrdersMessage : null);
-      setOrdersLoaded(true);
-    };
-
     void loadProductionOrders();
+  }, [loadProductionOrders]);
 
-    return () => {
-      active = false;
-    };
-  }, [organizationId]);
+  useSupabaseRealtimeRefresh({
+    channelName: `mes-production-orders-live:${organizationId}`,
+    tables: productionOrdersRealtimeTables,
+    onRefresh: () => loadProductionOrders(true),
+  });
 
   const persistOrder = async (order: ProductionOrder) => {
     const { error } = await supabase
@@ -3753,10 +3765,21 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
     setSelectedStationId((currentId) => (nextWorkCenters.some((workCenter) => workCenter.stations.some((station) => station.id === currentId)) ? currentId : ''));
     setWorkCentersLoading(false);
   }, [organizationId]);
+  const workCentersRealtimeTables = React.useMemo(() => ([
+    { table: 'mes_work_centers', filter: `organization_id=eq.${organizationId}` },
+    { table: 'mes_work_center_stations', filter: `organization_id=eq.${organizationId}` },
+    { table: 'mes_production_orders', filter: `organization_id=eq.${organizationId}` },
+  ]), [organizationId]);
 
   React.useEffect(() => {
     void loadWorkCenters();
   }, [loadWorkCenters]);
+
+  useSupabaseRealtimeRefresh({
+    channelName: `mes-work-centers-live:${organizationId}`,
+    tables: workCentersRealtimeTables,
+    onRefresh: loadWorkCenters,
+  });
 
   React.useEffect(() => {
     document.body.classList.toggle('work-center-map-expanded', workCenterMapExpanded);

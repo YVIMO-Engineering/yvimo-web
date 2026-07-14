@@ -24,6 +24,7 @@ import {
   X,
 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
+import { useSupabaseRealtimeRefresh } from '../lib/useSupabaseRealtimeRefresh';
 import { mockProductionOrders } from './mesMockData';
 import { qualityInspectionsByPieceType, qualityPieceTypes } from './qualityInspectionConfig';
 import type { ProductionOrder, ProductionOrderPriority, ProductionOrderStatus, QualityCheckLimit, QualityMeasurementUnit, QualityPieceType } from './mesTypes';
@@ -1656,6 +1657,65 @@ export function QualityOperationsWorkspace({ onNavigate, activeTab, organization
   const [specificationHighlightRequest, setSpecificationHighlightRequest] = React.useState<SpecificationHighlightRequest | null>(null);
   const [documentPreview, setDocumentPreview] = React.useState<QualityDocumentPreview | null>(null);
 
+  const qualityOrdersRealtimeTables = React.useMemo(() => ([
+    { table: 'mes_production_orders', filter: `organization_id=eq.${organizationId}` },
+  ]), [organizationId]);
+  const qualityRecordsRealtimeTables = React.useMemo(() => ([
+    { table: 'mes_quality_measurements', filter: `organization_id=eq.${organizationId}` },
+    { table: 'mes_quality_inspection_documents', filter: `organization_id=eq.${organizationId}` },
+    { table: 'mes_quality_serial_inspections', filter: `organization_id=eq.${organizationId}` },
+    { table: 'mes_production_serials', filter: `organization_id=eq.${organizationId}` },
+  ]), [organizationId]);
+
+  const loadInspectionOrders = React.useCallback(async () => {
+    selectionOrganizationRef.current = '';
+    const { data, error } = await supabase
+      .from('mes_production_orders')
+      .select('*')
+      .eq('organization_id', organizationId)
+      .order('due_date', { ascending: true });
+
+    if (error) {
+      console.error('Unable to load Production Orders for Quality', error);
+      return;
+    }
+
+    const loadedOrders = ((data ?? []) as QualityProductionOrderRow[]).map(mapQualityProductionOrder);
+    const nextOrders = loadedOrders.length ? loadedOrders : qualityDemoOrders;
+    const nextQualityOrders = nextOrders.filter(isQualityCheckEnabledOrder);
+    const savedSelection = readQualitySelection(organizationId);
+    setInspectionOrders(nextOrders);
+    setSelectedInspectionOrderId((currentOrderId) => {
+      const preferredOrderId = savedSelection?.orderId ?? currentOrderId;
+      return nextQualityOrders.find((order) => order.id === preferredOrderId)?.id ?? nextQualityOrders[0]?.id ?? '';
+    });
+    setSelectedInspectionSerial((currentSerial) => savedSelection?.serial ?? currentSerial);
+    selectionOrganizationRef.current = organizationId;
+  }, [organizationId]);
+
+  const loadQualityInspectionRecords = React.useCallback(async () => {
+    const [
+      { data: measurementsData, error: measurementsError },
+      { data: documentsData, error: documentsError },
+      { data: serialInspectionsData, error: serialInspectionsError },
+      { data: productionSerialsData, error: productionSerialsError },
+    ] = await Promise.all([
+      supabase.from('mes_quality_measurements').select('*').eq('organization_id', organizationId),
+      supabase.from('mes_quality_inspection_documents').select('*').eq('organization_id', organizationId),
+      supabase.from('mes_quality_serial_inspections').select('*').eq('organization_id', organizationId),
+      supabase.from('mes_production_serials').select('*').eq('organization_id', organizationId).order('piece_sequence', { ascending: true }),
+    ]);
+
+    if (measurementsError) console.error('Unable to load Quality measurements', measurementsError);
+    if (documentsError) console.error('Unable to load Quality inspection documents', documentsError);
+    if (serialInspectionsError) console.error('Unable to load Quality serial inspections', serialInspectionsError);
+    if (productionSerialsError) console.error('Unable to load manufactured serial numbers for Quality', productionSerialsError);
+    setMeasurementRecords((measurementsData ?? []) as QualityMeasurementRecord[]);
+    setInspectionDocuments((documentsData ?? []) as QualityInspectionDocument[]);
+    setSerialInspectionRecords((serialInspectionsData ?? []) as QualitySerialInspectionRecord[]);
+    setProductionSerialRecords((productionSerialsData ?? []) as QualityProductionSerialRecord[]);
+  }, [organizationId]);
+
 
   React.useEffect(() => {
     if (selectionOrganizationRef.current !== organizationId || !selectedInspectionOrderId) return;
@@ -1663,67 +1723,24 @@ export function QualityOperationsWorkspace({ onNavigate, activeTab, organization
   }, [organizationId, selectedInspectionOrderId, selectedInspectionSerial]);
 
   React.useEffect(() => {
-    let active = true;
-    selectionOrganizationRef.current = '';
-
-    const loadInspectionOrders = async () => {
-      const { data, error } = await supabase
-        .from('mes_production_orders')
-        .select('*')
-        .eq('organization_id', organizationId)
-        .order('due_date', { ascending: true });
-
-      if (!active || error) {
-        if (error) console.error('Unable to load Production Orders for Quality', error);
-        return;
-      }
-
-      const loadedOrders = ((data ?? []) as QualityProductionOrderRow[]).map(mapQualityProductionOrder);
-      const nextOrders = loadedOrders.length ? loadedOrders : qualityDemoOrders;
-      const nextQualityOrders = nextOrders.filter(isQualityCheckEnabledOrder);
-      const savedSelection = readQualitySelection(organizationId);
-      const nextOrder = nextQualityOrders.find((order) => order.id === savedSelection?.orderId) ?? nextQualityOrders[0];
-      const nextSerial = savedSelection?.serial ?? '';
-      selectionOrganizationRef.current = organizationId;
-      setInspectionOrders(nextOrders);
-      setSelectedInspectionOrderId(nextOrder?.id ?? '');
-      setSelectedInspectionSerial(nextSerial);
-    };
-
     void loadInspectionOrders();
-    return () => { active = false; };
-  }, [organizationId]);
+  }, [loadInspectionOrders]);
 
   React.useEffect(() => {
-    let active = true;
-
-    const loadQualityInspectionRecords = async () => {
-      const [
-        { data: measurementsData, error: measurementsError },
-        { data: documentsData, error: documentsError },
-        { data: serialInspectionsData, error: serialInspectionsError },
-        { data: productionSerialsData, error: productionSerialsError },
-      ] = await Promise.all([
-        supabase.from('mes_quality_measurements').select('*').eq('organization_id', organizationId),
-        supabase.from('mes_quality_inspection_documents').select('*').eq('organization_id', organizationId),
-        supabase.from('mes_quality_serial_inspections').select('*').eq('organization_id', organizationId),
-        supabase.from('mes_production_serials').select('*').eq('organization_id', organizationId).order('piece_sequence', { ascending: true }),
-      ]);
-
-      if (!active) return;
-      if (measurementsError) console.error('Unable to load Quality measurements', measurementsError);
-      if (documentsError) console.error('Unable to load Quality inspection documents', documentsError);
-      if (serialInspectionsError) console.error('Unable to load Quality serial inspections', serialInspectionsError);
-      if (productionSerialsError) console.error('Unable to load manufactured serial numbers for Quality', productionSerialsError);
-      setMeasurementRecords((measurementsData ?? []) as QualityMeasurementRecord[]);
-      setInspectionDocuments((documentsData ?? []) as QualityInspectionDocument[]);
-      setSerialInspectionRecords((serialInspectionsData ?? []) as QualitySerialInspectionRecord[]);
-      setProductionSerialRecords((productionSerialsData ?? []) as QualityProductionSerialRecord[]);
-    };
-
     void loadQualityInspectionRecords();
-    return () => { active = false; };
-  }, [organizationId]);
+  }, [loadQualityInspectionRecords]);
+
+  useSupabaseRealtimeRefresh({
+    channelName: `mes-quality-orders-live:${organizationId}`,
+    tables: qualityOrdersRealtimeTables,
+    onRefresh: loadInspectionOrders,
+  });
+
+  useSupabaseRealtimeRefresh({
+    channelName: `mes-quality-records-live:${organizationId}`,
+    tables: qualityRecordsRealtimeTables,
+    onRefresh: loadQualityInspectionRecords,
+  });
 
   const handleConfigureInspectionLimits = React.useCallback((inspectionName: string) => {
     setSpecificationHighlightRequest({ inspectionName, token: Date.now() });

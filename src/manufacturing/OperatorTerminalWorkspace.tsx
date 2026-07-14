@@ -19,6 +19,7 @@ import {
   X,
 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
+import { useSupabaseRealtimeRefresh } from '../lib/useSupabaseRealtimeRefresh';
 import { JobQueueModal, type JobQueueSummary } from './MesWorkspaces';
 import type { ProductionOrder } from './mesTypes';
 import {
@@ -841,11 +842,11 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
     setTraceabilityForm((current) => ({ ...current, [field]: value }));
   };
 
-  const applyOrder = (order: ProductionOrder) => {
+  const applyOrder = React.useCallback((order: ProductionOrder) => {
     setGoodQty(order.completedQuantity);
     setScrapQty(order.scrapQuantity);
     setState(order.status === 'running' ? 'running' : order.status === 'paused' ? 'paused' : ['waiting-inspection', 'completed'].includes(order.status) ? 'completed' : 'not-started');
-  };
+  }, []);
 
   const buildTraceabilityForUnit = (
     reportType: 'good' | 'scrap',
@@ -982,41 +983,72 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
     return nextAvailableSerial;
   };
 
-  React.useEffect(() => {
-    let active = true;
-    const loadSnapshot = async () => {
-      try {
-        const nextSnapshot = await fetchOperatorTerminalSnapshot(organizationId);
-        if (!active) return;
-        const storedOrderId = loadActiveOrderId(organizationId);
-        const restoredOrder = nextSnapshot.activeOrders.find((order) => order.id === storedOrderId)
-          ?? nextSnapshot.currentOrder;
-        const restoredSnapshot = restoredOrder
-          ? {
-              ...nextSnapshot,
-              currentOrder: restoredOrder,
-              queuedOrders: nextSnapshot.activeOrders.filter((order) => order.id !== restoredOrder.id),
-            }
-          : nextSnapshot;
-        setSnapshot(restoredSnapshot);
-        setTerminalMessage(nextSnapshot.activeOrders.length ? '' : 'No single-operation production orders are assigned yet.');
-        setSelectedOrderId(restoredOrder?.id ?? '');
-        setSelectedWorkCenterCode(restoredOrder?.assignedWorkCenter ?? nextSnapshot.workCenter?.code ?? nextSnapshot.workCenterOptions[0]?.code ?? '');
-        setSelectedStationCode(restoredOrder?.assignedStation ?? nextSnapshot.station?.code ?? '');
-        if (restoredOrder) applyOrder(restoredOrder);
-      } catch (error) {
-        console.error('Unable to load Operator Terminal snapshot', error);
-        if (!active) return;
-        setTerminalMessage('Operator Terminal backend is not available yet. Showing demo terminal data.');
-      }
-    };
+  const operatorSnapshotRealtimeTables = React.useMemo(() => ([
+    { table: 'mes_production_orders', filter: `organization_id=eq.${organizationId}` },
+    { table: 'mes_work_centers', filter: `organization_id=eq.${organizationId}` },
+    { table: 'mes_work_center_stations', filter: `organization_id=eq.${organizationId}` },
+    { table: 'mes_operator_terminal_events', filter: `organization_id=eq.${organizationId}` },
+  ]), [organizationId]);
+  const operatorCustomersRealtimeTables = React.useMemo(() => ([
+    { table: 'mes_customers', filter: `organization_id=eq.${organizationId}` },
+  ]), [organizationId]);
+  const operatorSerialsRealtimeTables = React.useMemo(() => ([
+    { table: 'mes_production_serials', filter: `organization_id=eq.${organizationId}` },
+    { table: 'mes_operator_terminal_traceability', filter: `organization_id=eq.${organizationId}` },
+  ]), [organizationId]);
 
-    void loadSnapshot();
+  const loadSnapshot = React.useCallback(async () => {
+    try {
+      const nextSnapshot = await fetchOperatorTerminalSnapshot(organizationId);
+      const storedOrderId = loadActiveOrderId(organizationId);
+      const restoredOrder = nextSnapshot.activeOrders.find((order) => order.id === storedOrderId)
+        ?? nextSnapshot.currentOrder;
+      const restoredSnapshot = restoredOrder
+        ? {
+            ...nextSnapshot,
+            currentOrder: restoredOrder,
+            queuedOrders: nextSnapshot.activeOrders.filter((order) => order.id !== restoredOrder.id),
+          }
+        : nextSnapshot;
+      setSnapshot(restoredSnapshot);
+      setTerminalMessage(nextSnapshot.activeOrders.length ? '' : 'No single-operation production orders are assigned yet.');
+      setSelectedOrderId(restoredOrder?.id ?? '');
+      setSelectedWorkCenterCode(restoredOrder?.assignedWorkCenter ?? nextSnapshot.workCenter?.code ?? nextSnapshot.workCenterOptions[0]?.code ?? '');
+      setSelectedStationCode(restoredOrder?.assignedStation ?? nextSnapshot.station?.code ?? '');
+      if (restoredOrder) applyOrder(restoredOrder);
+    } catch (error) {
+      console.error('Unable to load Operator Terminal snapshot', error);
+      setTerminalMessage('Operator Terminal backend is not available yet. Showing demo terminal data.');
+    }
+  }, [applyOrder, organizationId]);
 
-    return () => {
-      active = false;
-    };
+  const loadCustomers = React.useCallback(async () => {
+    const { data, error } = await supabase
+      .from('mes_customers')
+      .select('id, customer_name, status')
+      .eq('organization_id', organizationId)
+      .order('customer_name', { ascending: true });
+    if (error) {
+      setCustomerOptions([]);
+      setCustomerOptionsMessage(error.message);
+      return;
+    }
+    const nextCustomers = (data ?? []) as OperatorCustomerOption[];
+    setCustomerOptions(nextCustomers);
+    setCustomerOptionsMessage(nextCustomers.some((customer) => customer.status === 'active')
+      ? ''
+      : 'No active customers configured in Clients.');
   }, [organizationId]);
+
+  React.useEffect(() => {
+    void loadSnapshot();
+  }, [loadSnapshot]);
+
+  useSupabaseRealtimeRefresh({
+    channelName: `mes-operator-terminal-snapshot-live:${organizationId}`,
+    tables: operatorSnapshotRealtimeTables,
+    onRefresh: loadSnapshot,
+  });
 
   React.useEffect(() => {
     if (!selectedOrderId) return;
@@ -1029,30 +1061,14 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
   }, [currentOrder?.id, selectedOrderId, snapshot]);
 
   React.useEffect(() => {
-    let active = true;
-    const loadCustomers = async () => {
-      const { data, error } = await supabase
-        .from('mes_customers')
-        .select('id, customer_name, status')
-        .eq('organization_id', organizationId)
-        .order('customer_name', { ascending: true });
-      if (!active) return;
-      if (error) {
-        setCustomerOptions([]);
-        setCustomerOptionsMessage(error.message);
-        return;
-      }
-      const nextCustomers = (data ?? []) as OperatorCustomerOption[];
-      setCustomerOptions(nextCustomers);
-      setCustomerOptionsMessage(nextCustomers.some((customer) => customer.status === 'active')
-        ? ''
-        : 'No active customers configured in Clients.');
-    };
     void loadCustomers();
-    return () => {
-      active = false;
-    };
-  }, [organizationId]);
+  }, [loadCustomers]);
+
+  useSupabaseRealtimeRefresh({
+    channelName: `mes-operator-terminal-customers-live:${organizationId}`,
+    tables: operatorCustomersRealtimeTables,
+    onRefresh: loadCustomers,
+  });
 
   React.useEffect(() => {
     if (!currentOrder || !customerOptions.length) return;
@@ -1077,39 +1093,42 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
     }));
   }, []);
 
+  const loadProductionSerials = React.useCallback(async () => {
+    if (!currentOrder || !hasSupabaseOrder) {
+      setProductionSerials([]);
+      setSelectedProductionSerialId('');
+      return;
+    }
+    setProductionSerialsLoading(true);
+    try {
+      const nextSerials = await fetchOperatorProductionSerials({ orderId: currentOrder.id, organizationId });
+      setProductionSerials(nextSerials);
+      const selectedSerialStillAvailable = nextSerials.find((serial) => serial.id === selectedProductionSerialId && !serial.result);
+      const nextAvailableSerial = selectedSerialStillAvailable ?? nextSerials.find((serial) => !serial.result) ?? null;
+      if (nextAvailableSerial) {
+        applyProductionSerial(nextAvailableSerial);
+      } else {
+        setSelectedProductionSerialId('');
+      }
+    } catch (error) {
+      console.error('Unable to load assigned production serials', error);
+      setProductionSerials([]);
+      setSelectedProductionSerialId('');
+    } finally {
+      setProductionSerialsLoading(false);
+    }
+  }, [applyProductionSerial, currentOrder?.id, hasSupabaseOrder, organizationId, selectedProductionSerialId]);
+
   React.useEffect(() => {
-    let active = true;
-    const loadProductionSerials = async () => {
-      if (!currentOrder || !hasSupabaseOrder) {
-        setProductionSerials([]);
-        setSelectedProductionSerialId('');
-        return;
-      }
-      setProductionSerialsLoading(true);
-      try {
-        const nextSerials = await fetchOperatorProductionSerials({ orderId: currentOrder.id, organizationId });
-        if (!active) return;
-        setProductionSerials(nextSerials);
-        const nextAvailableSerial = nextSerials.find((serial) => !serial.result) ?? null;
-        if (nextAvailableSerial) {
-          applyProductionSerial(nextAvailableSerial);
-        } else {
-          setSelectedProductionSerialId('');
-        }
-      } catch (error) {
-        console.error('Unable to load assigned production serials', error);
-        if (!active) return;
-        setProductionSerials([]);
-        setSelectedProductionSerialId('');
-      } finally {
-        if (active) setProductionSerialsLoading(false);
-      }
-    };
     void loadProductionSerials();
-    return () => {
-      active = false;
-    };
-  }, [applyProductionSerial, currentOrder?.id, hasSupabaseOrder, organizationId]);
+  }, [loadProductionSerials]);
+
+  useSupabaseRealtimeRefresh({
+    channelName: `mes-operator-terminal-serials-live:${organizationId}`,
+    tables: operatorSerialsRealtimeTables,
+    onRefresh: loadProductionSerials,
+    enabled: Boolean(currentOrder && hasSupabaseOrder),
+  });
 
   React.useEffect(() => {
     if (!snapshot) return;
