@@ -25,12 +25,15 @@ import type { ProductionOrder } from './mesTypes';
 import {
   fetchOperatorScrapEvents,
   fetchOperatorProductionSerials,
+  fetchOperatorTraceabilityRecord,
+  correctOperatorMeasurement,
   fetchOperatorTerminalSnapshot,
   reportOperatorProduction,
   setOperatorTerminalState,
   switchOperatorActiveOrder,
   type OperatorScrapEvent,
   type OperatorProductionSerial,
+  type OperatorTraceabilityRecord,
   type OperatorTerminalSnapshot,
 } from './operatorTerminalApi';
 
@@ -142,6 +145,14 @@ const operatorTerminalSpanish: Record<string, string> = {
   'Loading scrap events...': 'Cargando eventos de scrap...',
   'No scrap events reported for this Production Order yet.': 'Aún no hay eventos de scrap reportados para esta orden.',
   'Select Part': 'Seleccionar pieza',
+  'Edit': 'Editar',
+  'Editing reported piece': 'Editando pieza reportada',
+  'Save Correction': 'Guardar corrección',
+  'Cancel Correction': 'Cancelar corrección',
+  'Measurement correction loaded': 'Corrección de medición cargada',
+  'Measurement correction saved': 'Corrección de medición guardada',
+  'Could not load measurement correction': 'No se pudo cargar la corrección de medición',
+  'Could not save measurement correction': 'No se pudo guardar la corrección de medición',
   'Select a planned piece for this operation.': 'Selecciona una pieza planeada para esta operación.',
   'Search part, tool, serial, or status': 'Buscar pieza, tool, serie o estado',
   'Status': 'Estado',
@@ -642,17 +653,21 @@ function PartPickerModal({
   serials,
   activePieceSequence,
   loading,
+  correctionLoading,
   t,
   onClose,
   onSelect,
+  onEdit,
 }: {
   order: ProductionOrder | null;
   serials: OperatorProductionSerial[];
   activePieceSequence: number;
   loading: boolean;
+  correctionLoading: boolean;
   t: (text: string) => string;
   onClose: () => void;
   onSelect: (serial: OperatorProductionSerial) => void;
+  onEdit: (serial: OperatorProductionSerial) => void;
 }) {
   const [query, setQuery] = React.useState('');
   const normalizedQuery = query.trim().toLowerCase();
@@ -679,25 +694,31 @@ function PartPickerModal({
           <input autoFocus type="search" value={query} placeholder={t('Search part, tool, serial, or status')} onChange={(event) => setQuery(event.target.value)} />
         </label>
         <div className="operator-terminal-part-picker-header" aria-hidden="true">
-          <span>{t('Part')}</span><span>{t('Tool ID')}</span><span>{t('Serial Number')}</span><span>{t('Status')}</span>
+          <span>{t('Part')}</span><span>{t('Tool ID')}</span><span>{t('Serial Number')}</span><span>{t('Status')}</span><span></span>
         </div>
         <div className="operator-terminal-part-picker-list">
           {loading ? <div className="operator-terminal-part-picker-empty">{t('Loading pieces...')}</div> : null}
           {!loading && filteredSerials.map((serial) => {
             const reported = Boolean(serial.result);
             return (
-              <button
-                className={serial.pieceSequence === activePieceSequence ? 'active' : ''}
-                type="button"
+              <article
+                className={['operator-terminal-part-picker-row', serial.pieceSequence === activePieceSequence ? 'active' : '', reported ? 'reported' : ''].filter(Boolean).join(' ')}
                 key={serial.id}
-                disabled={reported}
-                onClick={() => onSelect(serial)}
               >
                 <strong>{serial.pieceSequence}</strong>
                 <span>{serial.toolId || '-'}</span>
                 <span>{serial.serialNumber}</span>
                 <em className={reported ? `reported ${serial.result}` : 'available'}>{t(reported ? serial.result ?? '' : 'available')}</em>
-              </button>
+                {reported ? (
+                  <button className="operator-terminal-part-picker-edit" type="button" disabled={correctionLoading || !serial.traceabilityId} onClick={() => onEdit(serial)}>
+                    {t('Edit')}
+                  </button>
+                ) : (
+                  <button className="operator-terminal-part-picker-select" type="button" disabled={correctionLoading} onClick={() => onSelect(serial)}>
+                    {t('Select')}
+                  </button>
+                )}
+              </article>
             );
           })}
           {!loading && !filteredSerials.length ? <div className="operator-terminal-part-picker-empty">{t('No assigned pieces found for this Production Order.')}</div> : null}
@@ -797,6 +818,9 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
   const [productionSerials, setProductionSerials] = React.useState<OperatorProductionSerial[]>([]);
   const [productionSerialsLoading, setProductionSerialsLoading] = React.useState(false);
   const [selectedProductionSerialId, setSelectedProductionSerialId] = React.useState('');
+  const [correctionSerial, setCorrectionSerial] = React.useState<OperatorProductionSerial | null>(null);
+  const [correctionTraceability, setCorrectionTraceability] = React.useState<OperatorTraceabilityRecord | null>(null);
+  const [correctionLoading, setCorrectionLoading] = React.useState(false);
   const [selectedWorkCenterCode, setSelectedWorkCenterCode] = React.useState('');
   const [selectedStationCode, setSelectedStationCode] = React.useState('');
   const [selectedOrderId, setSelectedOrderId] = React.useState('');
@@ -1165,6 +1189,63 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
     }));
   }, []);
 
+  const applyTraceabilityRecordToForm = React.useCallback((record: OperatorTraceabilityRecord, serial: OperatorProductionSerial) => {
+    const payload = record.payload ?? {};
+    const payloadNumber = (key: string) => {
+      const value = payload[key];
+      return typeof value === 'number' && Number.isFinite(value) ? String(value) : '';
+    };
+    const payloadString = (key: string) => {
+      const value = payload[key];
+      return typeof value === 'string' ? value : '';
+    };
+    setSelectedProductionSerialId(serial.id);
+    setDimensionUnit(record.dimensionsUnit === 'mm' ? 'mm' : 'in');
+    setTraceabilityForm((current) => ({
+      ...current,
+      toolId: record.toolId || serial.toolId,
+      serialNumber: record.serialNumber || serial.serialNumber,
+      beforeHeight: payloadNumber('before_height'),
+      beforeNotch: record.beforeNotch === null ? '' : String(record.beforeNotch),
+      beforeToothLength: record.beforeToothLength === null ? '' : String(record.beforeToothLength),
+      damageA: '',
+      damageB: '',
+      damageC: '',
+      stockToRemove: record.stockToRemove === null ? '' : String(record.stockToRemove),
+      afterToothLength: record.afterToothLength === null ? payloadNumber('after_height') : String(record.afterToothLength),
+      shaverSharpeningNumber: payloadString('shaver_sharpening_number'),
+      shaverDiameter: payloadNumber('shaver_diameter'),
+      shaverSpan: payloadNumber('shaver_span'),
+      shaverTeeth: payloadNumber('shaver_teeth'),
+      shaverDamage: payload.shaver_damage === true,
+    }));
+  }, []);
+
+  const beginMeasurementCorrection = async (serial: OperatorProductionSerial) => {
+    if (!serial.traceabilityId || !currentOrder) return;
+    setCorrectionLoading(true);
+    try {
+      const record = await fetchOperatorTraceabilityRecord({ traceabilityId: serial.traceabilityId, organizationId });
+      setCorrectionSerial(serial);
+      setCorrectionTraceability(record);
+      applyTraceabilityRecordToForm(record, serial);
+      setModal(null);
+      showToast('Measurement correction loaded');
+    } catch (error) {
+      console.error('Unable to load measurement correction', error);
+      showToast('Could not load measurement correction');
+    } finally {
+      setCorrectionLoading(false);
+    }
+  };
+
+  const cancelMeasurementCorrection = () => {
+    setCorrectionSerial(null);
+    setCorrectionTraceability(null);
+    const nextAvailableSerial = productionSerials.find((serial) => !serial.result) ?? null;
+    if (nextAvailableSerial) applyProductionSerial(nextAvailableSerial);
+  };
+
   const loadProductionSerials = React.useCallback(async () => {
     if (!currentOrder || !hasSupabaseOrder) {
       setProductionSerials([]);
@@ -1175,6 +1256,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
     try {
       const nextSerials = await fetchOperatorProductionSerials({ orderId: currentOrder.id, organizationId });
       setProductionSerials(nextSerials);
+      if (correctionSerial) return;
       const selectedSerialStillAvailable = nextSerials.find((serial) => serial.id === selectedProductionSerialId && !serial.result);
       const nextAvailableSerial = selectedSerialStillAvailable ?? nextSerials.find((serial) => !serial.result) ?? null;
       if (nextAvailableSerial) {
@@ -1189,7 +1271,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
     } finally {
       setProductionSerialsLoading(false);
     }
-  }, [applyProductionSerial, currentOrder?.id, hasSupabaseOrder, organizationId, selectedProductionSerialId]);
+  }, [applyProductionSerial, correctionSerial, currentOrder?.id, hasSupabaseOrder, organizationId, selectedProductionSerialId]);
 
   React.useEffect(() => {
     void loadProductionSerials();
@@ -1268,6 +1350,50 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
       const message = getOperatorReportErrorMessage(error);
       setTerminalMessage(message);
       showToast(message);
+    } finally {
+      setSyncPending(false);
+    }
+  };
+
+  const saveMeasurementCorrection = async () => {
+    if (!currentOrder || !correctionSerial || !correctionTraceability || !hasSupabaseOrder) return;
+    const serialNumber = traceabilityForm.serialNumber.trim();
+    if (!serialNumber) {
+      setTerminalMessage('Enter a serial number before reporting this piece.');
+      showToast('Enter a serial number before reporting this piece');
+      return;
+    }
+    setSyncPending(true);
+    try {
+      const correctedTraceability = buildTraceabilityForUnit(correctionSerial.result === 'scrap' ? 'scrap' : 'good', currentOrder, serialNumber);
+      const previousScrapCodes = correctionTraceability.damageCodes.filter((code) => code.startsWith('scrap:'));
+      if (previousScrapCodes.length) {
+        correctedTraceability.damage_codes = Array.from(new Set([
+          ...(Array.isArray(correctedTraceability.damage_codes) ? correctedTraceability.damage_codes : []),
+          ...previousScrapCodes,
+        ]));
+      }
+      const updatedSerial = await correctOperatorMeasurement({
+        organizationId,
+        order: currentOrder,
+        serial: correctionSerial,
+        stationCode,
+        shift: selectedShift,
+        operator: stationOperator,
+        previousTraceability: correctionTraceability,
+        correctedTraceability,
+      });
+      setProductionSerials((currentSerials) => currentSerials.map((serial) => (
+        serial.id === updatedSerial.id ? updatedSerial : serial
+      )));
+      setCorrectionSerial(null);
+      setCorrectionTraceability(null);
+      setTerminalMessage('');
+      showToast('Measurement correction saved');
+      void loadProductionSerials();
+    } catch (error) {
+      console.error('Unable to save measurement correction', error);
+      showToast('Could not save measurement correction');
     } finally {
       setSyncPending(false);
     }
@@ -1637,6 +1763,16 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
               </div>
             </div>
             {hasAssignedOrder ? (
+            <>
+            {correctionSerial ? (
+              <div className="operator-terminal-correction-banner">
+                <div>
+                  <span>{t('Editing reported piece')}</span>
+                  <strong>Piece {correctionSerial.pieceSequence} / {correctionSerial.serialNumber}</strong>
+                </div>
+                <button type="button" onClick={cancelMeasurementCorrection}>{t('Cancel Correction')}</button>
+              </div>
+            ) : null}
             <div className="operator-terminal-form-grid">
               <button
                 className="operator-terminal-part-reference operator-terminal-part-reference-button"
@@ -1717,6 +1853,14 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
                 )}
               </fieldset>
             </div>
+            {correctionSerial ? (
+              <div className="operator-terminal-correction-actions">
+                <button type="button" disabled={syncPending} onClick={() => void saveMeasurementCorrection()}>
+                  {t('Save Correction')}
+                </button>
+              </div>
+            ) : null}
+            </>
             ) : (
               <div className="operator-terminal-trace-disabled">
                 <ClipboardCheck size={30} />
@@ -1756,12 +1900,16 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
           serials={productionSerials}
           activePieceSequence={activePartSequence}
           loading={productionSerialsLoading}
+          correctionLoading={correctionLoading}
           t={t}
           onClose={() => setModal(null)}
           onSelect={(serial) => {
             applyProductionSerial(serial);
+            setCorrectionSerial(null);
+            setCorrectionTraceability(null);
             setModal(null);
           }}
+          onEdit={(serial) => void beginMeasurementCorrection(serial)}
         />
       ) : null}
     </section>

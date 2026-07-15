@@ -65,6 +65,26 @@ type ProductionSerialRow = {
   reported_at: string | null;
 };
 
+type OperatorTraceabilityRecordRow = {
+  id: string;
+  production_order_id: string | null;
+  work_center_code: string;
+  station_code: string;
+  template_id: string;
+  part_label: string | null;
+  tool_id: string | null;
+  serial_number: string | null;
+  dimensions_unit: string;
+  before_notch: number | null;
+  before_tooth_length: number | null;
+  damage_codes: string[] | null;
+  damage_image_url: string | null;
+  stock_to_remove: number | null;
+  after_tooth_length: number | null;
+  payload: Record<string, unknown> | null;
+  created_at: string;
+};
+
 export type OperatorProductionSerial = {
   id: string;
   productionOrderId: string;
@@ -75,6 +95,26 @@ export type OperatorProductionSerial = {
   readyForQuality: boolean;
   traceabilityId: string;
   reportedAt: string;
+};
+
+export type OperatorTraceabilityRecord = {
+  id: string;
+  productionOrderId: string;
+  workCenterCode: string;
+  stationCode: string;
+  templateId: string;
+  partLabel: string;
+  toolId: string;
+  serialNumber: string;
+  dimensionsUnit: string;
+  beforeNotch: number | null;
+  beforeToothLength: number | null;
+  damageCodes: string[];
+  damageImageUrl: string;
+  stockToRemove: number | null;
+  afterToothLength: number | null;
+  payload: Record<string, unknown>;
+  createdAt: string;
 };
 
 export type OperatorScrapEvent = {
@@ -100,6 +140,28 @@ function mapProductionSerialRow(row: ProductionSerialRow): OperatorProductionSer
     readyForQuality: row.ready_for_quality,
     traceabilityId: row.traceability_id ?? '',
     reportedAt: row.reported_at ?? '',
+  };
+}
+
+function mapOperatorTraceabilityRecordRow(row: OperatorTraceabilityRecordRow): OperatorTraceabilityRecord {
+  return {
+    id: row.id,
+    productionOrderId: row.production_order_id ?? '',
+    workCenterCode: row.work_center_code,
+    stationCode: row.station_code,
+    templateId: row.template_id,
+    partLabel: row.part_label ?? '',
+    toolId: row.tool_id ?? '',
+    serialNumber: row.serial_number ?? '',
+    dimensionsUnit: row.dimensions_unit,
+    beforeNotch: row.before_notch,
+    beforeToothLength: row.before_tooth_length,
+    damageCodes: row.damage_codes ?? [],
+    damageImageUrl: row.damage_image_url ?? '',
+    stockToRemove: row.stock_to_remove,
+    afterToothLength: row.after_tooth_length,
+    payload: row.payload ?? {},
+    createdAt: row.created_at,
   };
 }
 
@@ -315,6 +377,127 @@ export async function fetchOperatorProductionSerials(
 
   if (error) throw error;
   return ((data ?? []) as ProductionSerialRow[]).map(mapProductionSerialRow);
+}
+
+export async function fetchOperatorTraceabilityRecord(
+  input: {
+    traceabilityId: string;
+    organizationId: string;
+  },
+  client: OperatorClient = supabase,
+): Promise<OperatorTraceabilityRecord> {
+  const { data, error } = await client
+    .from('mes_operator_terminal_traceability')
+    .select('id, production_order_id, work_center_code, station_code, template_id, part_label, tool_id, serial_number, dimensions_unit, before_notch, before_tooth_length, damage_codes, damage_image_url, stock_to_remove, after_tooth_length, payload, created_at')
+    .eq('id', input.traceabilityId)
+    .eq('organization_id', input.organizationId)
+    .single();
+
+  if (error) throw error;
+  return mapOperatorTraceabilityRecordRow(data as OperatorTraceabilityRecordRow);
+}
+
+export async function correctOperatorMeasurement(
+  input: {
+    organizationId: string;
+    order: Pick<ProductionOrder, 'id' | 'orderNumber' | 'partNumber' | 'partName' | 'assignedWorkCenter'>;
+    serial: OperatorProductionSerial;
+    stationCode: string;
+    shift?: string;
+    operator?: string;
+    previousTraceability: OperatorTraceabilityRecord;
+    correctedTraceability: Record<string, unknown>;
+  },
+  client: OperatorClient = supabase,
+): Promise<OperatorProductionSerial> {
+  const correctedPayload = (input.correctedTraceability.payload ?? {}) as Record<string, unknown>;
+  const correctedSerialNumber = typeof input.correctedTraceability.serial_number === 'string'
+    ? input.correctedTraceability.serial_number
+    : input.serial.serialNumber;
+  const correctedToolId = typeof input.correctedTraceability.tool_id === 'string'
+    ? input.correctedTraceability.tool_id
+    : null;
+
+  const { data: serialData, error: serialError } = await client
+    .from('mes_production_serials')
+    .update({
+      tool_id: correctedToolId,
+      serial_number: correctedSerialNumber,
+      traceability_id: input.previousTraceability.id,
+    })
+    .eq('id', input.serial.id)
+    .eq('organization_id', input.organizationId)
+    .select('id, production_order_id, piece_sequence, tool_id, serial_number, result, ready_for_quality, traceability_id, reported_at')
+    .single();
+
+  if (serialError) throw serialError;
+
+  const { error: traceabilityError } = await client
+    .from('mes_operator_terminal_traceability')
+    .update({
+      template_id: input.correctedTraceability.template_id,
+      part_label: input.correctedTraceability.part_label,
+      tool_id: correctedToolId,
+      serial_number: correctedSerialNumber,
+      dimensions_unit: input.correctedTraceability.dimensions_unit,
+      before_notch: input.correctedTraceability.before_notch,
+      before_tooth_length: input.correctedTraceability.before_tooth_length,
+      damage_codes: input.correctedTraceability.damage_codes,
+      damage_image_url: input.correctedTraceability.damage_image_url,
+      stock_to_remove: input.correctedTraceability.stock_to_remove,
+      after_tooth_length: input.correctedTraceability.after_tooth_length,
+      payload: {
+        ...correctedPayload,
+        corrected_at: new Date().toISOString(),
+        corrected_from_traceability_id: input.previousTraceability.id,
+      },
+    })
+    .eq('id', input.previousTraceability.id)
+    .eq('organization_id', input.organizationId);
+
+  if (traceabilityError) throw traceabilityError;
+
+  const previousSnapshot = {
+    template_id: input.previousTraceability.templateId,
+    part_label: input.previousTraceability.partLabel,
+    tool_id: input.previousTraceability.toolId,
+    serial_number: input.previousTraceability.serialNumber,
+    dimensions_unit: input.previousTraceability.dimensionsUnit,
+    before_notch: input.previousTraceability.beforeNotch,
+    before_tooth_length: input.previousTraceability.beforeToothLength,
+    damage_codes: input.previousTraceability.damageCodes,
+    stock_to_remove: input.previousTraceability.stockToRemove,
+    after_tooth_length: input.previousTraceability.afterToothLength,
+    payload: input.previousTraceability.payload,
+  };
+
+  const { error: eventError } = await client
+    .from('mes_operator_terminal_events')
+    .insert({
+      production_order_id: input.order.id,
+      organization_id: input.organizationId,
+      work_center_code: input.order.assignedWorkCenter,
+      station_code: input.stationCode,
+      event_type: 'measurement-corrected',
+      quantity: 0,
+      reason: 'Measurement correction',
+      comment: `Piece ${input.serial.pieceSequence} measurement corrected`,
+      payload: {
+        order_number: input.order.orderNumber,
+        part_number: input.order.partNumber,
+        part_name: input.order.partName,
+        piece_sequence: input.serial.pieceSequence,
+        serial_id: input.serial.id,
+        traceability_id: input.previousTraceability.id,
+        previous: previousSnapshot,
+        corrected: input.correctedTraceability,
+        operator: input.operator ?? null,
+        shift: input.shift ?? null,
+      },
+    });
+
+  if (eventError) throw eventError;
+  return mapProductionSerialRow(serialData as ProductionSerialRow);
 }
 
 export async function setOperatorTerminalState(

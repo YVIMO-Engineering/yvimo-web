@@ -12802,6 +12802,73 @@ body.work-center-map-expanded .logged-workspace {
   gap: 8px;
 }
 
+.operator-terminal-correction-banner,
+.operator-terminal-correction-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.operator-terminal-correction-banner {
+  border: 1px solid rgba(37, 99, 235, 0.24);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #eff6ff;
+  color: #17202a;
+}
+
+.operator-terminal-correction-banner div {
+  display: grid;
+  gap: 2px;
+}
+
+.operator-terminal-correction-banner span {
+  color: #1d4ed8;
+  font-size: 0.68rem;
+  font-weight: 950;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.operator-terminal-correction-banner strong {
+  font-size: 0.9rem;
+  font-weight: 950;
+}
+
+.operator-terminal-correction-banner button,
+.operator-terminal-correction-actions button {
+  min-height: 36px;
+  border-radius: 8px;
+  padding: 0 13px;
+  cursor: pointer;
+  font-weight: 950;
+}
+
+.operator-terminal-correction-banner button {
+  border: 1px solid rgba(83, 101, 120, 0.24);
+  background: #ffffff;
+  color: #526175;
+}
+
+.operator-terminal-correction-actions {
+  justify-content: flex-end;
+  margin-top: 8px;
+  margin-bottom: 0;
+}
+
+.operator-terminal-correction-actions button {
+  border: 1px solid rgba(37, 99, 235, 0.36);
+  background: #2563eb;
+  color: #ffffff;
+}
+
+.operator-terminal-correction-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
 .operator-terminal-form-grid > label {
   grid-column: span 4;
 }
@@ -13095,9 +13162,9 @@ body.work-center-map-expanded .logged-workspace {
 }
 
 .operator-terminal-part-picker-header,
-.operator-terminal-part-picker-list button {
+.operator-terminal-part-picker-row {
   display: grid;
-  grid-template-columns: 74px minmax(130px, 1fr) minmax(170px, 1.2fr) 110px;
+  grid-template-columns: 74px minmax(120px, 1fr) minmax(170px, 1.2fr) 100px 94px;
   align-items: center;
   gap: 10px;
 }
@@ -13121,27 +13188,23 @@ body.work-center-map-expanded .logged-workspace {
   background: #ffffff;
 }
 
-.operator-terminal-part-picker-list button {
+.operator-terminal-part-picker-row {
   min-height: 58px;
   border: 0;
   border-bottom: 1px solid #e2e8f0;
   padding: 0 12px;
   background: #ffffff;
   color: #17202a;
-  cursor: pointer;
   text-align: left;
 }
 
-.operator-terminal-part-picker-list button:hover:not(:disabled),
-.operator-terminal-part-picker-list button:focus-visible,
-.operator-terminal-part-picker-list button.active {
+.operator-terminal-part-picker-row.active {
   background: #fff7ed;
   outline: none;
 }
 
-.operator-terminal-part-picker-list button:disabled {
-  cursor: not-allowed;
-  opacity: 0.56;
+.operator-terminal-part-picker-row.reported {
+  color: #526175;
 }
 
 .operator-terminal-part-picker-list strong {
@@ -13176,6 +13239,41 @@ body.work-center-map-expanded .logged-workspace {
 .operator-terminal-part-picker-list em.scrap {
   background: #fee2e2;
   color: #dc2626;
+}
+
+.operator-terminal-part-picker-select,
+.operator-terminal-part-picker-edit {
+  justify-self: end;
+  min-height: 32px;
+  border: 1px solid rgba(37, 99, 235, 0.34);
+  border-radius: 8px;
+  padding: 0 12px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 950;
+}
+
+.operator-terminal-part-picker-edit {
+  border-color: rgba(255, 138, 31, 0.42);
+  background: #fff7ed;
+  color: #c2410c;
+}
+
+.operator-terminal-part-picker-select:hover:not(:disabled),
+.operator-terminal-part-picker-select:focus-visible,
+.operator-terminal-part-picker-edit:hover:not(:disabled),
+.operator-terminal-part-picker-edit:focus-visible {
+  transform: translateY(-1px);
+  outline: none;
+  box-shadow: 0 8px 18px rgba(7, 17, 28, 0.1);
+}
+
+.operator-terminal-part-picker-select:disabled,
+.operator-terminal-part-picker-edit:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
 }
 
 .operator-terminal-part-picker-empty {
@@ -28311,6 +28409,58 @@ body[data-screenshot-export="academy-track"] .academy-mobile-track-step button {
   display: grid;
   gap: 10px;
   margin-top: 10px;
+}
+
+.traceability-correction-comparison {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.traceability-correction-comparison section {
+  display: grid;
+  gap: 8px;
+  border: 1px solid color-mix(in srgb, var(--traceability-event-color) 22%, transparent);
+  border-radius: 8px;
+  padding: 10px;
+  background: #fbfdff;
+}
+
+.traceability-correction-comparison section > b {
+  color: var(--traceability-event-color);
+  font-size: 0.72rem;
+  font-weight: 950;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.traceability-correction-comparison section > div {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.traceability-correction-comparison span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  border: 1px solid rgba(83, 101, 120, 0.13);
+  border-radius: 7px;
+  padding: 7px 8px;
+  background: #ffffff;
+  color: #07111c;
+  font-size: 0.8rem;
+  font-weight: 900;
+  overflow-wrap: anywhere;
+}
+
+.traceability-correction-comparison small {
+  color: #5d6d7e;
+  font-size: 0.62rem;
+  font-weight: 950;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .traceability-quality-inspection-list {

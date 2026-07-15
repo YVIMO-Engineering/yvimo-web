@@ -5691,6 +5691,54 @@ function getTraceabilityMeasureDisplays(capture: TraceabilityCapture): Traceabil
   ];
 }
 
+function getTraceabilityRecordNumber(record: Record<string, unknown>, key: string): number | null {
+  return toTraceabilityNumber(record[key]);
+}
+
+function getTraceabilityRecordPayload(record: Record<string, unknown>) {
+  const payload = record.payload;
+  return payload && typeof payload === 'object' && !Array.isArray(payload) ? payload as Record<string, unknown> : {};
+}
+
+function getTraceabilityCorrectionDisplays(record: Record<string, unknown>): TraceabilityMeasureDisplay[] {
+  const payload = getTraceabilityRecordPayload(record);
+  const templateId = typeof record.template_id === 'string' ? record.template_id : typeof payload.traceability_template === 'string' ? payload.traceability_template : '';
+  const unit = typeof record.dimensions_unit === 'string' ? record.dimensions_unit : 'in';
+  if (templateId === 'shaver-sharpening' || templateId === 'shavers') {
+    return [
+      { label: 'No. Afilado', value: formatTraceabilityMeasurementValue(payload.shaver_sharpening_number as string | undefined) },
+      { label: 'Diameter', value: formatTraceabilityMeasurementValue(toTraceabilityNumber(payload.shaver_diameter), unit) },
+      { label: 'Span', value: formatTraceabilityMeasurementValue(toTraceabilityNumber(payload.shaver_span), unit) },
+      { label: 'Teeth', value: formatTraceabilityMeasurementValue(toTraceabilityNumber(payload.shaver_teeth)) },
+      { label: 'Damage', value: formatTraceabilityMeasurementValue(typeof payload.shaver_damage === 'boolean' ? payload.shaver_damage : null) },
+    ];
+  }
+  if (templateId === 'shaper-sharpening' || templateId === 'shapers') {
+    return [
+      { label: 'Before height', value: formatTraceabilityMeasurementValue(toTraceabilityNumber(payload.before_height), unit) },
+      { label: 'Stock remove', value: formatTraceabilityMeasurementValue(getTraceabilityRecordNumber(record, 'stock_to_remove'), unit) },
+      { label: 'After height', value: formatTraceabilityMeasurementValue(toTraceabilityNumber(payload.after_height), unit) },
+    ];
+  }
+  return [
+    { label: 'Before notch', value: formatTraceabilityMeasurementValue(getTraceabilityRecordNumber(record, 'before_notch'), unit) },
+    { label: 'Before tooth', value: formatTraceabilityMeasurementValue(getTraceabilityRecordNumber(record, 'before_tooth_length'), unit) },
+    { label: 'Stock remove', value: formatTraceabilityMeasurementValue(getTraceabilityRecordNumber(record, 'stock_to_remove'), unit) },
+    { label: 'After tooth', value: formatTraceabilityMeasurementValue(getTraceabilityRecordNumber(record, 'after_tooth_length'), unit) },
+  ];
+}
+
+function getTraceabilityCorrectionComparison(event: TraceabilityOperatorEventRow) {
+  const payload = event.payload ?? {};
+  const previous = payload.previous && typeof payload.previous === 'object' && !Array.isArray(payload.previous) ? payload.previous as Record<string, unknown> : null;
+  const corrected = payload.corrected && typeof payload.corrected === 'object' && !Array.isArray(payload.corrected) ? payload.corrected as Record<string, unknown> : null;
+  if (!previous || !corrected) return null;
+  return {
+    previous: getTraceabilityCorrectionDisplays(previous),
+    corrected: getTraceabilityCorrectionDisplays(corrected),
+  };
+}
+
 type TraceabilityEventTone =
   | 'job-started'
   | 'job-resumed'
@@ -5724,6 +5772,7 @@ function renderTraceabilityEventIcon(eventType: string) {
   if (eventType === 'manufacturing-completed') return <CalendarDays {...iconProps} />;
   if (eventType === 'operation-completed') return <CheckCircle2 {...iconProps} />;
   if (eventType === 'quality-inspection-saved') return <Eye {...iconProps} />;
+  if (eventType === 'measurement-corrected') return <Pencil {...iconProps} />;
   return <CircleHelp {...iconProps} />;
 }
 
@@ -5737,6 +5786,7 @@ function getTraceabilityEventLabel(eventType: string) {
     'manufacturing-completed': 'Waiting Inspection',
     'operation-completed': 'Order Completed',
     'quality-inspection-saved': 'Quality Inspection Saved',
+    'measurement-corrected': 'Measurement Corrected',
     adjustment: 'Adjustment',
   };
   return eventLabels[eventType] ?? formatTitleLabel(eventType);
@@ -5756,6 +5806,7 @@ function getTraceabilityEventSummary(event: TraceabilityOperatorEventRow) {
     const serialNumber = event.payload && typeof event.payload.serial_number === 'string' ? event.payload.serial_number : '';
     return serialNumber ? `Quality inspection completed for ${serialNumber}` : 'Quality inspection completed';
   }
+  if (event.event_type === 'measurement-corrected') return 'Measurement was corrected from the Operator Terminal';
   return 'Operator event captured';
 }
 
@@ -5943,7 +5994,7 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
           )
         `)
         .eq('organization_id', organizationId)
-        .in('event_type', ['production-scrap', 'downtime-started', 'job-paused', 'job-started', 'job-resumed', 'manufacturing-completed', 'operation-completed', 'adjustment', 'quality-inspection-saved'])
+        .in('event_type', ['production-scrap', 'downtime-started', 'job-paused', 'job-started', 'job-resumed', 'manufacturing-completed', 'operation-completed', 'adjustment', 'quality-inspection-saved', 'measurement-corrected'])
         .order('created_at', { ascending: false })
         .limit(300),
       supabase
@@ -6040,7 +6091,7 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
         filter: `organization_id=eq.${organizationId}`,
       }, (payload) => {
         const newEvent = payload.new as Partial<{ id: string; event_type: string }>;
-        if (newEvent.event_type && !['production-scrap', 'downtime-started', 'job-paused', 'job-started', 'job-resumed', 'manufacturing-completed', 'operation-completed', 'adjustment', 'quality-inspection-saved'].includes(newEvent.event_type)) return;
+        if (newEvent.event_type && !['production-scrap', 'downtime-started', 'job-paused', 'job-started', 'job-resumed', 'manufacturing-completed', 'operation-completed', 'adjustment', 'quality-inspection-saved', 'measurement-corrected'].includes(newEvent.event_type)) return;
         const eventId = typeof newEvent.id === 'string' ? newEvent.id : '';
         if (eventId) markCaptureAsNew(`event-${eventId}`);
         void loadTraceability(true);
@@ -6462,6 +6513,8 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
             const comment = event.comment || payloadComment;
             const qualityInspections = getTraceabilityQualityInspections(event);
             const qualityDocumentCount = getTraceabilityQualityDocumentCount(event);
+            const correctionComparison = event.event_type === 'measurement-corrected' ? getTraceabilityCorrectionComparison(event) : null;
+            const showEventQuantity = !['quality-inspection-saved', 'measurement-corrected'].includes(event.event_type);
             const qualityStatusConfig = {
               ok: { label: 'OK', icon: CheckCircle2 },
               approach: { label: 'Approach', icon: AlertTriangle },
@@ -6487,7 +6540,7 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
                     <span><b>Order Number</b>{order?.order_number ?? 'Unassigned order'}</span>
                     <span><b>Part Name</b>{order?.part_name ?? 'N/A'}</span>
                     <span><b>Client</b>{eventClientName || 'Unassigned client'}</span>
-                    {event.event_type !== 'quality-inspection-saved' ? <span><b>Quantity</b>{event.quantity || 'N/A'}</span> : null}
+                    {showEventQuantity ? <span><b>Quantity</b>{event.quantity || 'N/A'}</span> : null}
                   </div>
                   <div className="mes-event-meta traceability-capture-meta">
                     <span><Factory size={15} /><b>Work Center</b>{event.work_center_code || 'No work center'}</span>
@@ -6510,6 +6563,26 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
                           })}
                         </div>
                       ) : null}
+                    </div>
+                  ) : null}
+                  {correctionComparison ? (
+                    <div className="traceability-correction-comparison">
+                      <section>
+                        <b>Previous</b>
+                        <div>
+                          {correctionComparison.previous.map((measurement) => (
+                            <span key={measurement.label}><small>{measurement.label}</small>{measurement.value}</span>
+                          ))}
+                        </div>
+                      </section>
+                      <section>
+                        <b>Corrected</b>
+                        <div>
+                          {correctionComparison.corrected.map((measurement) => (
+                            <span key={measurement.label}><small>{measurement.label}</small>{measurement.value}</span>
+                          ))}
+                        </div>
+                      </section>
                     </div>
                   ) : null}
                   {comment ? (
