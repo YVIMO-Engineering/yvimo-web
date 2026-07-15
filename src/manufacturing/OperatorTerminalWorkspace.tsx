@@ -8,6 +8,7 @@ import {
   ChevronDown,
   ClipboardCheck,
   Clock3,
+  FileText,
   ImagePlus,
   Pause,
   Play,
@@ -20,7 +21,16 @@ import {
 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { useSupabaseRealtimeRefresh } from '../lib/useSupabaseRealtimeRefresh';
-import { JobQueueModal, type JobQueueSummary } from './MesWorkspaces';
+import {
+  getProductionOrderDetailPayloadNumber,
+  JobQueueModal,
+  ProductionOrderDetailsModal,
+  type JobQueueSummary,
+  type ProductionOrderDetailPiece,
+  type ProductionOrderDetailSerialRow,
+  type ProductionOrderDetailsState,
+  type ProductionOrderDetailTraceabilityRow,
+} from './MesWorkspaces';
 import type { ProductionOrder } from './mesTypes';
 import {
   fetchOperatorScrapEvents,
@@ -89,6 +99,7 @@ const operatorTerminalSpanish: Record<string, string> = {
   'Start Job': 'Iniciar trabajo',
   'Report Downtime': 'Reportar paro',
   'Job Queue': 'Cola de trabajo',
+  'Order Details': 'Detalles de orden',
   'Part Traceability': 'Trazabilidad de pieza',
   'Sharpening capture': 'Captura de afilado',
   'Job metadata': 'Datos del trabajo',
@@ -379,6 +390,37 @@ const initialTraceabilityForm: TraceabilityFormState = {
   reception: 'REC-000884',
   toolId: 'TOOL-1034',
   serialNumber: 'SN-928441',
+  beforeHeight: '',
+  beforeNotch: '',
+  beforeToothLength: '',
+  damageA: '',
+  damageB: '',
+  damageC: '',
+  stockToRemove: '',
+  afterToothLength: '',
+  shaverSharpeningNumber: '',
+  shaverDiameter: '',
+  shaverSpan: '',
+  shaverTeeth: '',
+  shaverDamage: false,
+};
+
+const clearedTraceabilityMeasurements: Pick<
+  TraceabilityFormState,
+  | 'beforeHeight'
+  | 'beforeNotch'
+  | 'beforeToothLength'
+  | 'damageA'
+  | 'damageB'
+  | 'damageC'
+  | 'stockToRemove'
+  | 'afterToothLength'
+  | 'shaverSharpeningNumber'
+  | 'shaverDiameter'
+  | 'shaverSpan'
+  | 'shaverTeeth'
+  | 'shaverDamage'
+> = {
   beforeHeight: '',
   beforeNotch: '',
   beforeToothLength: '',
@@ -812,6 +854,12 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
   const [scrapEvents, setScrapEvents] = React.useState<OperatorScrapEvent[]>([]);
   const [scrapEventsLoading, setScrapEventsLoading] = React.useState(false);
   const [switchOrderLoading, setSwitchOrderLoading] = React.useState(false);
+  const [orderDetailsOpen, setOrderDetailsOpen] = React.useState(false);
+  const [orderDetails, setOrderDetails] = React.useState<ProductionOrderDetailsState>({
+    loading: false,
+    error: '',
+    pieces: [],
+  });
   const [snapshot, setSnapshot] = React.useState<OperatorTerminalSnapshot | null>(null);
   const [terminalMessage, setTerminalMessage] = React.useState('');
   const [syncPending, setSyncPending] = React.useState(false);
@@ -924,6 +972,10 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
     setTraceabilityForm((current) => ({ ...current, [field]: value }));
   };
 
+  const clearTraceabilityMeasurements = () => {
+    setTraceabilityForm((current) => ({ ...current, ...clearedTraceabilityMeasurements }));
+  };
+
   const applyOrder = React.useCallback((order: ProductionOrder) => {
     setGoodQty(order.completedQuantity);
     setScrapQty(order.scrapQuantity);
@@ -1026,6 +1078,73 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
       showToast('Could not load scrap events');
     } finally {
       setScrapEventsLoading(false);
+    }
+  };
+
+  const openOrderDetails = async () => {
+    if (!currentOrder) return;
+    setOrderDetailsOpen(true);
+    setOrderDetails({ loading: true, error: '', pieces: [] });
+    try {
+      const [{ data: serialData, error: serialError }, { data: traceabilityData, error: traceabilityError }] = await Promise.all([
+        supabase
+          .from('mes_production_serials')
+          .select('id, production_order_id, piece_sequence, tool_id, serial_number, result, ready_for_quality, traceability_id, reported_at')
+          .eq('organization_id', organizationId)
+          .eq('production_order_id', currentOrder.id)
+          .order('piece_sequence', { ascending: true }),
+        supabase
+          .from('mes_operator_terminal_traceability')
+          .select('id, production_order_id, template_id, part_label, tool_id, serial_number, dimensions_unit, before_notch, before_tooth_length, damage_codes, stock_to_remove, after_tooth_length, payload, created_at')
+          .eq('organization_id', organizationId)
+          .eq('production_order_id', currentOrder.id)
+          .order('created_at', { ascending: false }),
+      ]);
+
+      if (serialError) throw serialError;
+      if (traceabilityError) throw traceabilityError;
+
+      const serialRows = (serialData ?? []) as ProductionOrderDetailSerialRow[];
+      const traceabilityRows = (traceabilityData ?? []) as ProductionOrderDetailTraceabilityRow[];
+      const traceabilityById = new Map(traceabilityRows.map((traceability) => [traceability.id, traceability]));
+      const traceabilityBySerial = new Map<string, ProductionOrderDetailTraceabilityRow>();
+      const traceabilityBySequence = new Map<number, ProductionOrderDetailTraceabilityRow>();
+      const serialBySequence = new Map(serialRows.map((serial) => [serial.piece_sequence, serial]));
+
+      traceabilityRows.forEach((traceability) => {
+        const serialNumber = traceability.serial_number?.trim().toLowerCase();
+        if (serialNumber && !traceabilityBySerial.has(serialNumber)) traceabilityBySerial.set(serialNumber, traceability);
+        const pieceSequence = getProductionOrderDetailPayloadNumber(traceability.payload, 'piece_sequence');
+        if (pieceSequence && !traceabilityBySequence.has(pieceSequence)) traceabilityBySequence.set(pieceSequence, traceability);
+      });
+
+      const lastKnownSequence = Math.max(
+        currentOrder.plannedQuantity,
+        ...serialRows.map((serial) => serial.piece_sequence),
+        ...Array.from(traceabilityBySequence.keys()),
+      );
+      const pieces: ProductionOrderDetailPiece[] = Array.from({ length: lastKnownSequence }, (_, index) => {
+        const pieceSequence = index + 1;
+        const serial = serialBySequence.get(pieceSequence) ?? null;
+        const serialKey = serial?.serial_number.trim().toLowerCase() ?? '';
+        const traceability = (serial?.traceability_id ? traceabilityById.get(serial.traceability_id) : null)
+          ?? (serialKey ? traceabilityBySerial.get(serialKey) : null)
+          ?? traceabilityBySequence.get(pieceSequence)
+          ?? null;
+        return {
+          pieceSequence,
+          toolId: serial?.tool_id ?? traceability?.tool_id ?? '',
+          serialNumber: serial?.serial_number || traceability?.serial_number || '',
+          status: serial?.result ?? (traceability ? 'good' : 'not-started'),
+          reportedAt: serial?.reported_at ?? traceability?.created_at ?? '',
+          traceability,
+        };
+      });
+
+      setOrderDetails({ loading: false, error: '', pieces });
+    } catch (error) {
+      console.error('Unable to load operator order details', error);
+      setOrderDetails({ loading: false, error: 'Unable to load order details.', pieces: [] });
     }
   };
 
@@ -1326,6 +1445,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
       setGoodQty((quantity) => Math.min(totalQty - scrapQty, quantity + 1));
       setEvents((current) => [{ type: 'good', timestamp: formatToastTime() }, ...current].slice(0, 8));
       setTraceField('serialNumber', suggestNextSerialNumber(serialNumber, currentOrder.partNumber, completedQty + 2));
+      clearTraceabilityMeasurements();
       showToast('Good part reported');
       return;
     }
@@ -1345,6 +1465,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
       } else {
         setTraceField('serialNumber', suggestNextSerialNumber(serialNumber, order.partNumber, order.completedQuantity + order.scrapQuantity + 1));
       }
+      clearTraceabilityMeasurements();
     } catch (error) {
       console.error('Unable to report good production', error);
       const message = getOperatorReportErrorMessage(error);
@@ -1425,6 +1546,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
           reportedTotal: goodQty + nextScrapTotal,
         }, ...current].slice(0, 8));
         setTraceField('serialNumber', suggestNextSerialNumber(serialNumber, currentOrder.partNumber, completedQty + 2));
+        clearTraceabilityMeasurements();
         showToast('Scrap reported');
       } else {
         setSyncPending(true);
@@ -1451,6 +1573,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
           } else {
             setTraceField('serialNumber', suggestNextSerialNumber(serialNumber, order.partNumber, order.completedQuantity + order.scrapQuantity + 1));
           }
+          clearTraceabilityMeasurements();
         } catch (error) {
           console.error('Unable to report scrap', error);
           const message = getOperatorReportErrorMessage(error);
@@ -1752,6 +1875,10 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
                 <Timer size={22} />
                 {t('Job Queue')}
               </button>
+              <button className="operator-control details" type="button" disabled={!hasAssignedOrder || syncPending} onClick={() => void openOrderDetails()}>
+                <FileText size={22} />
+                {t('Order Details')}
+              </button>
             </div>
           </section>
 
@@ -1875,6 +2002,13 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
       {toast ? <div className="operator-terminal-toast" role="status">{t(toast)}</div> : null}
       {modal && modal !== 'queue' && modal !== 'scrap-events' && modal !== 'switch-order' && modal !== 'part-picker' ? <ReasonModal modal={modal} goodQty={goodQty} scrapQty={scrapQty} t={t} onClose={() => setModal(null)} onSubmit={submitModal} /> : null}
       {modal === 'queue' ? <JobQueueModal summary={jobQueueSummary} onClose={() => setModal(null)} /> : null}
+      {orderDetailsOpen && currentOrder ? (
+        <ProductionOrderDetailsModal
+          order={currentOrder}
+          details={orderDetails}
+          onClose={() => setOrderDetailsOpen(false)}
+        />
+      ) : null}
       {modal === 'scrap-events' ? (
         <ScrapEventsModal
           events={scrapEventsLoading ? [] : scrapEvents.length ? scrapEvents : localScrapEvents}

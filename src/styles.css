@@ -12882,9 +12882,14 @@ body.work-center-map-expanded .logged-workspace {
 }
 
 .operator-control.queue {
-  grid-column: 1 / -1;
   min-height: 58px;
   background: #07111c;
+  color: #ffffff;
+}
+
+.operator-control.details {
+  min-height: 58px;
+  background: #0f3b8f;
   color: #ffffff;
 }
 

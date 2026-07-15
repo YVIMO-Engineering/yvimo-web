@@ -304,7 +304,7 @@ type TraceabilityStationOption = {
   name: string;
 };
 
-type ProductionOrderDetailSerialRow = {
+export type ProductionOrderDetailSerialRow = {
   id: string;
   production_order_id: string;
   piece_sequence: number;
@@ -316,7 +316,7 @@ type ProductionOrderDetailSerialRow = {
   reported_at: string | null;
 };
 
-type ProductionOrderDetailTraceabilityRow = {
+export type ProductionOrderDetailTraceabilityRow = {
   id: string;
   production_order_id: string | null;
   template_id: string;
@@ -333,7 +333,7 @@ type ProductionOrderDetailTraceabilityRow = {
   created_at: string;
 };
 
-type ProductionOrderDetailPiece = {
+export type ProductionOrderDetailPiece = {
   pieceSequence: number;
   toolId: string;
   serialNumber: string;
@@ -342,7 +342,7 @@ type ProductionOrderDetailPiece = {
   traceability: ProductionOrderDetailTraceabilityRow | null;
 };
 
-type ProductionOrderDetailsState = {
+export type ProductionOrderDetailsState = {
   loading: boolean;
   error: string;
   pieces: ProductionOrderDetailPiece[];
@@ -1218,7 +1218,7 @@ function getProductionOrderActions(status: ProductionOrderStatus): ProductionOrd
   return [traceabilityAction];
 }
 
-function getProductionOrderDetailPayloadNumber(payload: Record<string, unknown> | null, key: string) {
+export function getProductionOrderDetailPayloadNumber(payload: Record<string, unknown> | null, key: string) {
   if (!payload) return null;
   const value = payload[key];
   if (value === null || value === undefined || value === '') return null;
@@ -1226,18 +1226,18 @@ function getProductionOrderDetailPayloadNumber(payload: Record<string, unknown> 
   return Number.isFinite(numericValue) ? numericValue : null;
 }
 
-function getProductionOrderDetailPayloadString(payload: Record<string, unknown> | null, key: string) {
+export function getProductionOrderDetailPayloadString(payload: Record<string, unknown> | null, key: string) {
   const value = payload?.[key];
   return typeof value === 'string' ? value : '';
 }
 
-function formatProductionOrderDetailMeasurementValue(value: string | number | boolean | null | undefined, unit = '') {
+export function formatProductionOrderDetailMeasurementValue(value: string | number | boolean | null | undefined, unit = '') {
   if (typeof value === 'boolean') return value ? 'Yes' : 'No';
   if (value === null || value === undefined || value === '') return 'N/A';
   return `${value}${unit ? ` ${unit}` : ''}`;
 }
 
-function getProductionOrderDetailMeasurements(traceability: ProductionOrderDetailTraceabilityRow | null) {
+export function getProductionOrderDetailMeasurements(traceability: ProductionOrderDetailTraceabilityRow | null) {
   if (!traceability) return [];
   const payload = traceability.payload ?? {};
   const templateId = traceability.template_id || (typeof payload.traceability_template === 'string' ? payload.traceability_template : '');
@@ -1264,6 +1264,95 @@ function getProductionOrderDetailMeasurements(traceability: ProductionOrderDetai
     { label: 'Stock remove', value: formatProductionOrderDetailMeasurementValue(traceability.stock_to_remove, unit) },
     { label: 'After tooth', value: formatProductionOrderDetailMeasurementValue(traceability.after_tooth_length, unit) },
   ];
+}
+
+export function ProductionOrderDetailsModal({
+  order,
+  details,
+  onClose,
+}: {
+  order: ProductionOrder;
+  details: ProductionOrderDetailsState;
+  onClose: () => void;
+}) {
+  return (
+    <div className="mes-modal-backdrop production-order-details-backdrop" role="presentation">
+      <section className="production-order-details-modal" role="dialog" aria-modal="true" aria-labelledby="production-order-details-title">
+        <div className="production-order-details-header">
+          <div>
+            <p className="eyebrow">Production Order Details</p>
+            <h3 id="production-order-details-title">{order.orderNumber}</h3>
+            <span>{order.partNumber} / {order.partName} / {order.clientName?.trim() || 'Unassigned client'}</span>
+          </div>
+          <button type="button" aria-label="Close order details" onClick={onClose}>
+            <X size={18} />
+          </button>
+        </div>
+        <div className="production-order-details-summary">
+          <article><span>Status</span><strong>{formatTitleLabel(order.status)}</strong></article>
+          <article><span>Priority</span><strong>{formatTitleLabel(order.priority)}</strong></article>
+          <article><span>Planned</span><strong>{order.plannedQuantity.toLocaleString()}</strong></article>
+          <article><span>Completed</span><strong>{order.completedQuantity.toLocaleString()}</strong></article>
+          <article><span>Scrap</span><strong>{order.scrapQuantity.toLocaleString()}</strong></article>
+          <article><span>Work Center</span><strong>{order.assignedWorkCenter || 'Not assigned'}</strong></article>
+          <article><span>Station</span><strong>{order.assignedStation || 'Not assigned'}</strong></article>
+          <article><span>Due</span><strong>{formatDate(order.dueDate)}</strong></article>
+        </div>
+        <div className="production-order-details-table-wrap">
+          {details.loading ? (
+            <div className="production-order-details-empty">Loading order pieces...</div>
+          ) : details.error ? (
+            <div className="production-order-details-empty error">{details.error}</div>
+          ) : (
+            <table className="production-order-details-table">
+              <thead>
+                <tr>
+                  <th>Piece</th>
+                  <th>Status</th>
+                  <th>Serial</th>
+                  <th>Tool ID</th>
+                  <th>Measurements</th>
+                  <th>Reported</th>
+                </tr>
+              </thead>
+              <tbody>
+                {details.pieces.map((piece) => {
+                  const measurements = getProductionOrderDetailMeasurements(piece.traceability);
+                  return (
+                    <tr key={`${piece.pieceSequence}-${piece.serialNumber || 'pending'}`}>
+                      <td><strong>{piece.pieceSequence}</strong></td>
+                      <td><span className={`production-order-details-status ${piece.status}`}>{piece.status === 'not-started' ? 'Not started' : piece.status}</span></td>
+                      <td>{piece.serialNumber || '-'}</td>
+                      <td>{piece.toolId || '-'}</td>
+                      <td>
+                        {measurements.length ? (
+                          <div className="production-order-details-measures">
+                            {measurements.map((measurement) => (
+                              <span key={measurement.label}><b>{measurement.label}</b>{measurement.value}</span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="production-order-details-no-measurement">Not captured</span>
+                        )}
+                      </td>
+                      <td>{piece.reportedAt ? formatDate(toLocalIsoDate(piece.reportedAt)) : '-'}</td>
+                    </tr>
+                  );
+                })}
+                {!details.pieces.length ? (
+                  <tr>
+                    <td colSpan={6}>
+                      <div className="production-order-details-empty">No pieces found for this order.</div>
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </section>
+    </div>
+  );
 }
 
 export function ProductionOrdersWorkspace({ onNavigate, organizationId }: WorkspaceProps) {
@@ -2169,82 +2258,11 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
         </aside>
       </div>
       {orderDetailsOpen && selectedOrder ? (
-        <div className="mes-modal-backdrop production-order-details-backdrop" role="presentation">
-          <section className="production-order-details-modal" role="dialog" aria-modal="true" aria-labelledby="production-order-details-title">
-            <div className="production-order-details-header">
-              <div>
-                <p className="eyebrow">Production Order Details</p>
-                <h3 id="production-order-details-title">{selectedOrder.orderNumber}</h3>
-                <span>{selectedOrder.partNumber} / {selectedOrder.partName} / {selectedOrder.clientName?.trim() || 'Unassigned client'}</span>
-              </div>
-              <button type="button" aria-label="Close order details" onClick={() => setOrderDetailsOpen(false)}>
-                <X size={18} />
-              </button>
-            </div>
-            <div className="production-order-details-summary">
-              <article><span>Status</span><strong>{formatTitleLabel(selectedOrder.status)}</strong></article>
-              <article><span>Priority</span><strong>{formatTitleLabel(selectedOrder.priority)}</strong></article>
-              <article><span>Planned</span><strong>{selectedOrder.plannedQuantity.toLocaleString()}</strong></article>
-              <article><span>Completed</span><strong>{selectedOrder.completedQuantity.toLocaleString()}</strong></article>
-              <article><span>Scrap</span><strong>{selectedOrder.scrapQuantity.toLocaleString()}</strong></article>
-              <article><span>Work Center</span><strong>{selectedOrder.assignedWorkCenter || 'Not assigned'}</strong></article>
-              <article><span>Station</span><strong>{selectedOrder.assignedStation || 'Not assigned'}</strong></article>
-              <article><span>Due</span><strong>{formatDate(selectedOrder.dueDate)}</strong></article>
-            </div>
-            <div className="production-order-details-table-wrap">
-              {orderDetails.loading ? (
-                <div className="production-order-details-empty">Loading order pieces...</div>
-              ) : orderDetails.error ? (
-                <div className="production-order-details-empty error">{orderDetails.error}</div>
-              ) : (
-                <table className="production-order-details-table">
-                  <thead>
-                    <tr>
-                      <th>Piece</th>
-                      <th>Status</th>
-                      <th>Serial</th>
-                      <th>Tool ID</th>
-                      <th>Measurements</th>
-                      <th>Reported</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {orderDetails.pieces.map((piece) => {
-                      const measurements = getProductionOrderDetailMeasurements(piece.traceability);
-                      return (
-                        <tr key={`${piece.pieceSequence}-${piece.serialNumber || 'pending'}`}>
-                          <td><strong>{piece.pieceSequence}</strong></td>
-                          <td><span className={`production-order-details-status ${piece.status}`}>{piece.status === 'not-started' ? 'Not started' : piece.status}</span></td>
-                          <td>{piece.serialNumber || '-'}</td>
-                          <td>{piece.toolId || '-'}</td>
-                          <td>
-                            {measurements.length ? (
-                              <div className="production-order-details-measures">
-                                {measurements.map((measurement) => (
-                                  <span key={measurement.label}><b>{measurement.label}</b>{measurement.value}</span>
-                                ))}
-                              </div>
-                            ) : (
-                              <span className="production-order-details-no-measurement">Not captured</span>
-                            )}
-                          </td>
-                          <td>{piece.reportedAt ? formatDate(toLocalIsoDate(piece.reportedAt)) : '-'}</td>
-                        </tr>
-                      );
-                    })}
-                    {!orderDetails.pieces.length ? (
-                      <tr>
-                        <td colSpan={6}>
-                          <div className="production-order-details-empty">No pieces found for this order.</div>
-                        </td>
-                      </tr>
-                    ) : null}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          </section>
-        </div>
+        <ProductionOrderDetailsModal
+          order={selectedOrder}
+          details={orderDetails}
+          onClose={() => setOrderDetailsOpen(false)}
+        />
       ) : null}
       {formMode ? (
         <div className="mes-modal-backdrop production-order-form-backdrop" role="presentation">
