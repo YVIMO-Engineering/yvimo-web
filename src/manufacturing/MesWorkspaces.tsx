@@ -1,6 +1,6 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { Activity, AlertTriangle, ArrowLeft, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleHelp, CircleX, Database, Eye, Factory, Frown, FileText, ImagePlus, Maximize2, Meh, Minimize2, Minus, Pencil, Plus, RadioTower, Ruler, Search, Smile, Timer } from 'lucide-react';
+import { Activity, AlertTriangle, ArrowLeft, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleHelp, CircleX, Database, Eye, Factory, Frown, FileText, ImagePlus, Maximize2, Meh, Minimize2, Minus, Pencil, Plus, RadioTower, Ruler, Search, Smile, Timer, X } from 'lucide-react';
 import { GoogleWorkCentersMap } from '../components/maps/GoogleWorkCentersMap';
 import { resolveGooglePlacesAddressMatch, searchGooglePlacesAddressMatches, type GooglePlacesAddressMatch } from '../lib/maps/googlePlacesAddressLookup';
 import { supabase } from '../lib/supabaseClient';
@@ -302,6 +302,50 @@ type TraceabilityStationOption = {
   workCenterCode: string;
   code: string;
   name: string;
+};
+
+type ProductionOrderDetailSerialRow = {
+  id: string;
+  production_order_id: string;
+  piece_sequence: number;
+  tool_id: string | null;
+  serial_number: string;
+  result: 'good' | 'scrap' | null;
+  ready_for_quality: boolean;
+  traceability_id: string | null;
+  reported_at: string | null;
+};
+
+type ProductionOrderDetailTraceabilityRow = {
+  id: string;
+  production_order_id: string | null;
+  template_id: string;
+  part_label: string | null;
+  tool_id: string | null;
+  serial_number: string | null;
+  dimensions_unit: string;
+  before_notch: number | null;
+  before_tooth_length: number | null;
+  damage_codes: string[] | null;
+  stock_to_remove: number | null;
+  after_tooth_length: number | null;
+  payload: Record<string, unknown> | null;
+  created_at: string;
+};
+
+type ProductionOrderDetailPiece = {
+  pieceSequence: number;
+  toolId: string;
+  serialNumber: string;
+  status: 'not-started' | 'good' | 'scrap';
+  reportedAt: string;
+  traceability: ProductionOrderDetailTraceabilityRow | null;
+};
+
+type ProductionOrderDetailsState = {
+  loading: boolean;
+  error: string;
+  pieces: ProductionOrderDetailPiece[];
 };
 
 type ConfirmationState = {
@@ -1174,6 +1218,54 @@ function getProductionOrderActions(status: ProductionOrderStatus): ProductionOrd
   return [traceabilityAction];
 }
 
+function getProductionOrderDetailPayloadNumber(payload: Record<string, unknown> | null, key: string) {
+  if (!payload) return null;
+  const value = payload[key];
+  if (value === null || value === undefined || value === '') return null;
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) ? numericValue : null;
+}
+
+function getProductionOrderDetailPayloadString(payload: Record<string, unknown> | null, key: string) {
+  const value = payload?.[key];
+  return typeof value === 'string' ? value : '';
+}
+
+function formatProductionOrderDetailMeasurementValue(value: string | number | boolean | null | undefined, unit = '') {
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+  if (value === null || value === undefined || value === '') return 'N/A';
+  return `${value}${unit ? ` ${unit}` : ''}`;
+}
+
+function getProductionOrderDetailMeasurements(traceability: ProductionOrderDetailTraceabilityRow | null) {
+  if (!traceability) return [];
+  const payload = traceability.payload ?? {};
+  const templateId = traceability.template_id || (typeof payload.traceability_template === 'string' ? payload.traceability_template : '');
+  const unit = traceability.dimensions_unit || 'in';
+  if (templateId === 'shaver-sharpening' || templateId === 'shavers') {
+    return [
+      { label: 'No. Afilado', value: formatProductionOrderDetailMeasurementValue(getProductionOrderDetailPayloadString(payload, 'shaver_sharpening_number')) },
+      { label: 'Diameter', value: formatProductionOrderDetailMeasurementValue(getProductionOrderDetailPayloadNumber(payload, 'shaver_diameter'), unit) },
+      { label: 'Span', value: formatProductionOrderDetailMeasurementValue(getProductionOrderDetailPayloadNumber(payload, 'shaver_span'), unit) },
+      { label: 'Teeth', value: formatProductionOrderDetailMeasurementValue(getProductionOrderDetailPayloadNumber(payload, 'shaver_teeth')) },
+      { label: 'Damage', value: formatProductionOrderDetailMeasurementValue(typeof payload.shaver_damage === 'boolean' ? payload.shaver_damage : null) },
+    ];
+  }
+  if (templateId === 'shaper-sharpening' || templateId === 'shapers') {
+    return [
+      { label: 'Before height', value: formatProductionOrderDetailMeasurementValue(getProductionOrderDetailPayloadNumber(payload, 'before_height'), unit) },
+      { label: 'Stock remove', value: formatProductionOrderDetailMeasurementValue(traceability.stock_to_remove, unit) },
+      { label: 'After height', value: formatProductionOrderDetailMeasurementValue(getProductionOrderDetailPayloadNumber(payload, 'after_height'), unit) },
+    ];
+  }
+  return [
+    { label: 'Before notch', value: formatProductionOrderDetailMeasurementValue(traceability.before_notch, unit) },
+    { label: 'Before tooth', value: formatProductionOrderDetailMeasurementValue(traceability.before_tooth_length, unit) },
+    { label: 'Stock remove', value: formatProductionOrderDetailMeasurementValue(traceability.stock_to_remove, unit) },
+    { label: 'After tooth', value: formatProductionOrderDetailMeasurementValue(traceability.after_tooth_length, unit) },
+  ];
+}
+
 export function ProductionOrdersWorkspace({ onNavigate, organizationId }: WorkspaceProps) {
   const restoredViewState = React.useMemo(() => loadProductionOrdersViewState(organizationId), [organizationId]);
   const [orders, setOrders] = React.useState<ProductionOrder[]>([]);
@@ -1202,6 +1294,12 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
   const [orderFormError, setOrderFormError] = React.useState('');
   const [confirmation, setConfirmation] = React.useState<ConfirmationState | null>(null);
   const [jobQueueSummary, setJobQueueSummary] = React.useState<JobQueueSummary | null>(null);
+  const [orderDetailsOpen, setOrderDetailsOpen] = React.useState(false);
+  const [orderDetails, setOrderDetails] = React.useState<ProductionOrderDetailsState>({
+    loading: false,
+    error: '',
+    pieces: [],
+  });
   const orderRowRefs = React.useRef<Record<string, HTMLTableRowElement | null>>({});
   const pendingScrollOrderNumberRef = React.useRef('');
   const skipNextPageResetRef = React.useRef(restoredViewState.page > 1);
@@ -1733,6 +1831,73 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
     });
   };
 
+  const openOrderDetails = async () => {
+    if (!selectedOrder) return;
+    setOrderDetailsOpen(true);
+    setOrderDetails({ loading: true, error: '', pieces: [] });
+    try {
+      const [{ data: serialData, error: serialError }, { data: traceabilityData, error: traceabilityError }] = await Promise.all([
+        supabase
+          .from('mes_production_serials')
+          .select('id, production_order_id, piece_sequence, tool_id, serial_number, result, ready_for_quality, traceability_id, reported_at')
+          .eq('organization_id', organizationId)
+          .eq('production_order_id', selectedOrder.id)
+          .order('piece_sequence', { ascending: true }),
+        supabase
+          .from('mes_operator_terminal_traceability')
+          .select('id, production_order_id, template_id, part_label, tool_id, serial_number, dimensions_unit, before_notch, before_tooth_length, damage_codes, stock_to_remove, after_tooth_length, payload, created_at')
+          .eq('organization_id', organizationId)
+          .eq('production_order_id', selectedOrder.id)
+          .order('created_at', { ascending: false }),
+      ]);
+
+      if (serialError) throw serialError;
+      if (traceabilityError) throw traceabilityError;
+
+      const serialRows = (serialData ?? []) as ProductionOrderDetailSerialRow[];
+      const traceabilityRows = (traceabilityData ?? []) as ProductionOrderDetailTraceabilityRow[];
+      const traceabilityById = new Map(traceabilityRows.map((traceability) => [traceability.id, traceability]));
+      const traceabilityBySerial = new Map<string, ProductionOrderDetailTraceabilityRow>();
+      const traceabilityBySequence = new Map<number, ProductionOrderDetailTraceabilityRow>();
+      const serialBySequence = new Map(serialRows.map((serial) => [serial.piece_sequence, serial]));
+
+      traceabilityRows.forEach((traceability) => {
+        const serialNumber = traceability.serial_number?.trim().toLowerCase();
+        if (serialNumber && !traceabilityBySerial.has(serialNumber)) traceabilityBySerial.set(serialNumber, traceability);
+        const pieceSequence = getProductionOrderDetailPayloadNumber(traceability.payload, 'piece_sequence');
+        if (pieceSequence && !traceabilityBySequence.has(pieceSequence)) traceabilityBySequence.set(pieceSequence, traceability);
+      });
+
+      const lastKnownSequence = Math.max(
+        selectedOrder.plannedQuantity,
+        ...serialRows.map((serial) => serial.piece_sequence),
+        ...Array.from(traceabilityBySequence.keys()),
+      );
+      const pieces: ProductionOrderDetailPiece[] = Array.from({ length: lastKnownSequence }, (_, index) => {
+        const pieceSequence = index + 1;
+        const serial = serialBySequence.get(pieceSequence) ?? null;
+        const serialKey = serial?.serial_number.trim().toLowerCase() ?? '';
+        const traceability = (serial?.traceability_id ? traceabilityById.get(serial.traceability_id) : null)
+          ?? (serialKey ? traceabilityBySerial.get(serialKey) : null)
+          ?? traceabilityBySequence.get(pieceSequence)
+          ?? null;
+        return {
+          pieceSequence,
+          toolId: serial?.tool_id ?? traceability?.tool_id ?? '',
+          serialNumber: serial?.serial_number || traceability?.serial_number || '',
+          status: serial?.result ?? (traceability ? 'good' : 'not-started'),
+          reportedAt: serial?.reported_at ?? traceability?.created_at ?? '',
+          traceability,
+        };
+      });
+
+      setOrderDetails({ loading: false, error: '', pieces });
+    } catch (error) {
+      console.error('Unable to load production order details', error);
+      setOrderDetails({ loading: false, error: 'Unable to load order details.', pieces: [] });
+    }
+  };
+
   const confirmPendingAction = async () => {
     if (!confirmation) return;
     const pendingConfirmation = confirmation;
@@ -1741,7 +1906,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
   };
 
   React.useEffect(() => {
-    if (!formMode && !confirmation && !jobQueueSummary) return undefined;
+    if (!formMode && !confirmation && !jobQueueSummary && !orderDetailsOpen) return undefined;
     const previousBodyOverflow = document.body.style.overflow;
     const previousDocumentOverflow = document.documentElement.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -1750,7 +1915,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
       document.body.style.overflow = previousBodyOverflow;
       document.documentElement.style.overflow = previousDocumentOverflow;
     };
-  }, [formMode, confirmation, jobQueueSummary]);
+  }, [formMode, confirmation, jobQueueSummary, orderDetailsOpen]);
 
   return (
     <section className="mes-workspace-panel production-orders-workspace">
@@ -1925,6 +2090,9 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
         <aside className="production-orders-side-panel" aria-label="Production order controls">
           <div className="production-orders-side-heading"><span>Selected order</span><strong>Order controls</strong></div>
           <div className="production-orders-manage-actions">
+            <button className="production-orders-details-action" type="button" onClick={() => void openOrderDetails()} disabled={!selectedOrder}>
+              Order Details
+            </button>
             <button type="button" onClick={openEditOrderForm} disabled={!selectedOrder}>
               Edit
             </button>
@@ -2000,6 +2168,84 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
           )}
         </aside>
       </div>
+      {orderDetailsOpen && selectedOrder ? (
+        <div className="mes-modal-backdrop production-order-details-backdrop" role="presentation">
+          <section className="production-order-details-modal" role="dialog" aria-modal="true" aria-labelledby="production-order-details-title">
+            <div className="production-order-details-header">
+              <div>
+                <p className="eyebrow">Production Order Details</p>
+                <h3 id="production-order-details-title">{selectedOrder.orderNumber}</h3>
+                <span>{selectedOrder.partNumber} / {selectedOrder.partName} / {selectedOrder.clientName?.trim() || 'Unassigned client'}</span>
+              </div>
+              <button type="button" aria-label="Close order details" onClick={() => setOrderDetailsOpen(false)}>
+                <X size={18} />
+              </button>
+            </div>
+            <div className="production-order-details-summary">
+              <article><span>Status</span><strong>{formatTitleLabel(selectedOrder.status)}</strong></article>
+              <article><span>Priority</span><strong>{formatTitleLabel(selectedOrder.priority)}</strong></article>
+              <article><span>Planned</span><strong>{selectedOrder.plannedQuantity.toLocaleString()}</strong></article>
+              <article><span>Completed</span><strong>{selectedOrder.completedQuantity.toLocaleString()}</strong></article>
+              <article><span>Scrap</span><strong>{selectedOrder.scrapQuantity.toLocaleString()}</strong></article>
+              <article><span>Work Center</span><strong>{selectedOrder.assignedWorkCenter || 'Not assigned'}</strong></article>
+              <article><span>Station</span><strong>{selectedOrder.assignedStation || 'Not assigned'}</strong></article>
+              <article><span>Due</span><strong>{formatDate(selectedOrder.dueDate)}</strong></article>
+            </div>
+            <div className="production-order-details-table-wrap">
+              {orderDetails.loading ? (
+                <div className="production-order-details-empty">Loading order pieces...</div>
+              ) : orderDetails.error ? (
+                <div className="production-order-details-empty error">{orderDetails.error}</div>
+              ) : (
+                <table className="production-order-details-table">
+                  <thead>
+                    <tr>
+                      <th>Piece</th>
+                      <th>Status</th>
+                      <th>Serial</th>
+                      <th>Tool ID</th>
+                      <th>Measurements</th>
+                      <th>Reported</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {orderDetails.pieces.map((piece) => {
+                      const measurements = getProductionOrderDetailMeasurements(piece.traceability);
+                      return (
+                        <tr key={`${piece.pieceSequence}-${piece.serialNumber || 'pending'}`}>
+                          <td><strong>{piece.pieceSequence}</strong></td>
+                          <td><span className={`production-order-details-status ${piece.status}`}>{piece.status === 'not-started' ? 'Not started' : piece.status}</span></td>
+                          <td>{piece.serialNumber || '-'}</td>
+                          <td>{piece.toolId || '-'}</td>
+                          <td>
+                            {measurements.length ? (
+                              <div className="production-order-details-measures">
+                                {measurements.map((measurement) => (
+                                  <span key={measurement.label}><b>{measurement.label}</b>{measurement.value}</span>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="production-order-details-no-measurement">Not captured</span>
+                            )}
+                          </td>
+                          <td>{piece.reportedAt ? formatDate(toLocalIsoDate(piece.reportedAt)) : '-'}</td>
+                        </tr>
+                      );
+                    })}
+                    {!orderDetails.pieces.length ? (
+                      <tr>
+                        <td colSpan={6}>
+                          <div className="production-order-details-empty">No pieces found for this order.</div>
+                        </td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </section>
+        </div>
+      ) : null}
       {formMode ? (
         <div className="mes-modal-backdrop production-order-form-backdrop" role="presentation">
           <section className="mes-order-modal" role="dialog" aria-modal="true" aria-labelledby="production-order-form-title">
