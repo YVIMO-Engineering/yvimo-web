@@ -1190,15 +1190,39 @@ function InspectionDocuments({ order, serial, documents, onUploadDocument, onOpe
 }) {
   const [uploading, setUploading] = React.useState(false);
   const [dragActive, setDragActive] = React.useState(false);
+  const [uploadMessage, setUploadMessage] = React.useState<{ type: 'info' | 'success' | 'error'; text: string } | null>(null);
   const serialDocuments = documents.filter((document) => document.production_order_id === order.id && document.serial_number === serial);
+
+  React.useEffect(() => {
+    setUploadMessage(null);
+  }, [order.id, serial]);
+
+  React.useEffect(() => {
+    if (uploadMessage?.type !== 'success') return undefined;
+    const timeoutId = window.setTimeout(() => {
+      setUploadMessage((current) => current?.type === 'success' && current.text === uploadMessage.text ? null : current);
+    }, 5000);
+    return () => window.clearTimeout(timeoutId);
+  }, [uploadMessage]);
+
   const uploadFiles = async (fileList: FileList | File[]) => {
-    const files = Array.from(fileList).filter((file) => file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf'));
-    if (!files.length || uploading) return;
+    const files = Array.from(fileList);
+    if (!files.length) {
+      setUploadMessage({ type: 'error', text: 'No file was selected.' });
+      return;
+    }
+    if (uploading) return;
     setUploading(true);
+    setUploadMessage({ type: 'info', text: files.length === 1 ? 'Uploading file...' : `Uploading ${files.length} files...` });
     try {
       for (const file of files) {
         await onUploadDocument(file);
       }
+      setUploadMessage({ type: 'success', text: files.length === 1 ? 'File uploaded.' : `${files.length} files uploaded.` });
+    } catch (error) {
+      console.error('Unable to upload inspection document', error);
+      const message = error instanceof Error && error.message ? error.message : 'Could not upload the selected file.';
+      setUploadMessage({ type: 'error', text: message });
     } finally {
       setUploading(false);
     }
@@ -1237,12 +1261,17 @@ function InspectionDocuments({ order, serial, documents, onUploadDocument, onOpe
           multiple
           disabled={uploading}
           onChange={(event) => {
-            const files = event.target.files;
+            const files = Array.from(event.target.files ?? []);
             event.target.value = '';
-            if (files) void uploadFiles(files);
+            if (files.length) void uploadFiles(files);
           }}
         />
       </label>
+      {uploadMessage ? (
+        <div className={`quality-document-message ${uploadMessage.type}`} role="status">
+          {uploadMessage.text}
+        </div>
+      ) : null}
       {serialDocuments.length ? (
         <div className="quality-document-list">
           {serialDocuments.map((document) => (
@@ -2001,6 +2030,7 @@ export function QualityOperationsWorkspace({ onNavigate, activeTab, organization
     const safeFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '-');
     const storagePath = `${organizationId}/${selectedInspectionOrder.id}/${selectedInspectionSerial}/${Date.now()}-${safeFileName}`;
     const filePath = isDemoQualityOrder(selectedInspectionOrder) ? URL.createObjectURL(file) : storagePath;
+    const normalizedFileType = file.type && file.type !== 'application/octet-stream' ? file.type : 'application/pdf';
     let nextDocument: QualityInspectionDocument = {
       id: `quality-document-${Date.now()}`,
       production_order_id: selectedInspectionOrder.id,
@@ -2008,15 +2038,15 @@ export function QualityOperationsWorkspace({ onNavigate, activeTab, organization
       inspection_name: null,
       file_name: file.name,
       file_path: filePath,
-      file_type: file.type || 'application/pdf',
+      file_type: normalizedFileType,
       uploaded_at: new Date().toISOString(),
     };
 
     if (!isDemoQualityOrder(selectedInspectionOrder)) {
-      const { error: uploadError } = await supabase.storage.from(qualityDocumentsBucket).upload(storagePath, file, { contentType: file.type || 'application/pdf' });
+      const { error: uploadError } = await supabase.storage.from(qualityDocumentsBucket).upload(storagePath, file, { contentType: normalizedFileType });
       if (uploadError) {
         console.error('Unable to upload Quality inspection document', uploadError);
-        return;
+        throw new Error(uploadError.message || 'Could not upload the selected file.');
       }
 
       const { data, error } = await supabase
@@ -2028,14 +2058,15 @@ export function QualityOperationsWorkspace({ onNavigate, activeTab, organization
           inspection_name: null,
           file_name: file.name,
           file_path: storagePath,
-          file_type: file.type || 'application/pdf',
+          file_type: normalizedFileType,
         })
         .select('*')
         .single();
 
       if (error) {
         console.error('Unable to save Quality inspection document', error);
-        return;
+        await supabase.storage.from(qualityDocumentsBucket).remove([storagePath]);
+        throw new Error(error.message || 'The file uploaded, but the document record could not be saved.');
       }
       nextDocument = data as QualityInspectionDocument;
     }
