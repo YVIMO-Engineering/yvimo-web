@@ -912,16 +912,16 @@ function QualityOrderPickerModal({ orders, currentOrderId, inspectedSerials, pro
         </div>
         <div className="quality-order-switch-list">
           {filteredOrders.map((order) => {
-            const orderSerials = new Set(getQualityOrderSerials(order, productionSerials));
+            const orderSerials = getQualityOrderSerials(order, productionSerials);
             const inspectedCount = new Set(
               inspectedSerials
-                .filter((record) => record.production_order_id === order.id && orderSerials.has(record.serial_number))
-                .map((record) => record.serial_number),
+                .filter((record) => record.production_order_id === order.id && isQualitySerialInList(orderSerials, record.serial_number))
+                .map((record) => normalizeQualitySerial(record.serial_number)),
             ).size;
             return (
               <button className={order.id === currentOrderId ? 'active' : ''} type="button" key={order.id} disabled={order.id === currentOrderId} onClick={() => onSelect(order)}>
                 <div><strong>{order.orderNumber}</strong><span>{order.partName} / {order.partNumber}</span></div>
-                <em className={`quality-picker-status quality-picker-status-${order.status}`}>{order.status}</em><b><span>Inspected</span>{inspectedCount.toLocaleString()} of {orderSerials.size.toLocaleString()}</b>
+                <em className={`quality-picker-status quality-picker-status-${order.status}`}>{order.status}</em><b><span>Inspected</span>{inspectedCount.toLocaleString()} of {orderSerials.length.toLocaleString()}</b>
               </button>
             );
           })}
@@ -991,9 +991,22 @@ function getMeasurementKey(orderId: string, serial: string, inspectionName: stri
   return `${orderId}::${serial}::${inspectionName}`;
 }
 
+function normalizeQualitySerial(serial: string) {
+  return serial.trim().toLowerCase();
+}
+
+function isMatchingQualitySerial(firstSerial: string, secondSerial: string) {
+  return normalizeQualitySerial(firstSerial) === normalizeQualitySerial(secondSerial);
+}
+
+function isQualitySerialInList(serials: string[], serial: string) {
+  const normalizedSerial = normalizeQualitySerial(serial);
+  return serials.some((candidate) => normalizeQualitySerial(candidate) === normalizedSerial);
+}
+
 function getLatestMeasurement(records: QualityMeasurementRecord[], order: ProductionOrder, serial: string, inspectionName: string) {
   return records
-    .filter((record) => record.production_order_id === order.id && record.serial_number === serial && record.inspection_name === inspectionName)
+    .filter((record) => record.production_order_id === order.id && isMatchingQualitySerial(record.serial_number, serial) && record.inspection_name === inspectionName)
     .sort((first, second) => new Date(second.measured_at).getTime() - new Date(first.measured_at).getTime())[0];
 }
 
@@ -1043,7 +1056,7 @@ function getOverallSerialInspectionResult(order: ProductionOrder, serial: string
 
 function getNextPendingQualitySerial(order: ProductionOrder, currentSerial: string, inspectedRecords: QualitySerialInspectionRecord[], productionSerials: QualityProductionSerialRecord[]) {
   const serials = getQualityOrderSerials(order, productionSerials);
-  const currentIndex = serials.indexOf(currentSerial);
+  const currentIndex = serials.findIndex((serial) => isMatchingQualitySerial(serial, currentSerial));
   const followingSerials = currentIndex >= 0 ? serials.slice(currentIndex + 1) : serials;
   return followingSerials.find((serial) => !isQualitySerialInspected(inspectedRecords, order.id, serial))
     ?? serials.find((serial) => !isQualitySerialInspected(inspectedRecords, order.id, serial))
@@ -1051,11 +1064,11 @@ function getNextPendingQualitySerial(order: ProductionOrder, currentSerial: stri
 }
 
 function isQualitySerialInspected(records: QualitySerialInspectionRecord[], orderId: string, serial: string) {
-  return records.some((record) => record.production_order_id === orderId && record.serial_number === serial);
+  return records.some((record) => record.production_order_id === orderId && isMatchingQualitySerial(record.serial_number, serial));
 }
 
 function getQualitySerialInspectionRecord(records: QualitySerialInspectionRecord[], orderId: string, serial: string) {
-  return records.find((record) => record.production_order_id === orderId && record.serial_number === serial);
+  return records.find((record) => record.production_order_id === orderId && isMatchingQualitySerial(record.serial_number, serial));
 }
 
 function RequiredInspections({ order, serial, measurements, readyToSaveInspection, onSaveInspection, onSkipInspection }: {
@@ -1300,7 +1313,12 @@ function SkipInspectionModal({ order, serial, saving, onClose, onConfirm }: {
   onConfirm: (reason: string) => Promise<void>;
 }) {
   const [reason, setReason] = React.useState('');
+  const [errorMessage, setErrorMessage] = React.useState('');
   const canConfirm = reason.trim().length > 0 && !saving;
+
+  React.useEffect(() => {
+    setErrorMessage('');
+  }, [order.id, serial]);
 
   return (
     <div className="quality-order-modal-backdrop" role="presentation">
@@ -1313,11 +1331,25 @@ function SkipInspectionModal({ order, serial, saving, onClose, onConfirm }: {
         <p className="quality-order-modal-copy">This will mark serial {serial} as skipped and move Quality to the next pending piece. Use this instead of entering estimated measurements.</p>
         <label className="quality-skip-inspection-reason">
           <span>Reason</span>
-          <textarea autoFocus value={reason} placeholder="Example: urgent shipment, sample-only inspection, piece shipped before measurement..." onChange={(event) => setReason(event.target.value)} />
+          <textarea autoFocus value={reason} placeholder="Example: urgent shipment, sample-only inspection, piece shipped before measurement..." onChange={(event) => { setReason(event.target.value); setErrorMessage(''); }} />
         </label>
+        {errorMessage ? <div className="quality-document-message error" role="alert"><AlertTriangle size={16} /><span>{errorMessage}</span></div> : null}
         <div className="quality-order-modal-actions">
           <button type="button" onClick={onClose} disabled={saving}>Cancel</button>
-          <button className="danger" type="button" disabled={!canConfirm} onClick={() => void onConfirm(reason.trim())}>{saving ? 'Skipping' : 'Confirm Skip'}</button>
+          <button
+            className="danger"
+            type="button"
+            disabled={!canConfirm}
+            onClick={() => {
+              setErrorMessage('');
+              void onConfirm(reason.trim()).catch((error) => {
+                const message = error instanceof Error && error.message ? error.message : 'Could not skip this inspection.';
+                setErrorMessage(message);
+              });
+            }}
+          >
+            {saving ? 'Skipping' : 'Confirm Skip'}
+          </button>
         </div>
       </section>
     </div>
@@ -1344,7 +1376,11 @@ function QualityInspectionsPage({ selectedOrder, selectedSerial, measurements, d
   const [skipModalOpen, setSkipModalOpen] = React.useState(false);
   const [skippingInspection, setSkippingInspection] = React.useState(false);
   const availableSerials = getQualityOrderSerials(selectedOrder, productionSerials);
-  const inspectedCount = inspectedSerials.filter((record) => record.production_order_id === selectedOrder.id && availableSerials.includes(record.serial_number)).length;
+  const inspectedCount = new Set(
+    inspectedSerials
+      .filter((record) => record.production_order_id === selectedOrder.id && isQualitySerialInList(availableSerials, record.serial_number))
+      .map((record) => normalizeQualitySerial(record.serial_number)),
+  ).size;
   const readyToSaveInspection = isSerialReadyToSaveInspection(selectedOrder, selectedSerial, measurements)
     && !isQualitySerialInspected(inspectedSerials, selectedOrder.id, selectedSerial);
 
@@ -1789,6 +1825,7 @@ export function QualityOperationsWorkspace({ onNavigate, activeTab, organization
   const [measurementRecords, setMeasurementRecords] = React.useState<QualityMeasurementRecord[]>([]);
   const [inspectionDocuments, setInspectionDocuments] = React.useState<QualityInspectionDocument[]>([]);
   const [serialInspectionRecords, setSerialInspectionRecords] = React.useState<QualitySerialInspectionRecord[]>([]);
+  const serialInspectionRecordsRef = React.useRef<QualitySerialInspectionRecord[]>([]);
   const [productionSerialRecords, setProductionSerialRecords] = React.useState<QualityProductionSerialRecord[]>([]);
   const [dashboardDateRange, setDashboardDateRange] = React.useState<QualityDashboardDateRange>(() => getQualityQuickRange('month'));
   const [specificationHighlightRequest, setSpecificationHighlightRequest] = React.useState<SpecificationHighlightRequest | null>(null);
@@ -1855,6 +1892,10 @@ export function QualityOperationsWorkspace({ onNavigate, activeTab, organization
 
 
   React.useEffect(() => {
+    serialInspectionRecordsRef.current = serialInspectionRecords;
+  }, [serialInspectionRecords]);
+
+  React.useEffect(() => {
     if (selectionOrganizationRef.current !== organizationId || !selectedInspectionOrderId) return;
     writeQualitySelection(organizationId, { orderId: selectedInspectionOrderId, serial: selectedInspectionSerial });
   }, [organizationId, selectedInspectionOrderId, selectedInspectionSerial]);
@@ -1917,7 +1958,7 @@ export function QualityOperationsWorkspace({ onNavigate, activeTab, organization
 
       if (error) {
         console.error('Unable to save Quality measurement', error);
-        return;
+        throw new Error(error.message || 'Could not save this measurement.');
       }
       Object.assign(nextRecord, data as QualityMeasurementRecord);
     }
@@ -1959,23 +2000,24 @@ export function QualityOperationsWorkspace({ onNavigate, activeTab, organization
 
       if (error) {
         console.error('Unable to save Quality serial inspection', error);
-        return;
+        throw new Error(error.message || 'Could not save this inspection.');
       }
       nextRecord = data as QualitySerialInspectionRecord;
     }
 
     const nextSerialInspectionRecords = [
       nextRecord,
-      ...serialInspectionRecords.filter((record) => !(record.production_order_id === selectedInspectionOrder.id && record.serial_number === selectedInspectionSerial)),
+      ...serialInspectionRecordsRef.current.filter((record) => !(record.production_order_id === selectedInspectionOrder.id && record.serial_number === selectedInspectionSerial)),
     ];
+    serialInspectionRecordsRef.current = nextSerialInspectionRecords;
     setSerialInspectionRecords(nextSerialInspectionRecords);
 
     const nextPendingSerial = getNextPendingQualitySerial(selectedInspectionOrder, selectedInspectionSerial, nextSerialInspectionRecords, productionSerialRecords);
     if (!nextPendingSerial && selectedInspectionOrder.status === 'waiting-inspection') {
       setInspectionOrders((current) => current.map((order) => order.id === selectedInspectionOrder.id ? { ...order, status: 'completed' } : order));
     }
-    setSelectedInspectionSerial(nextPendingSerial ?? '');
-  }, [inspectionDocuments, measurementRecords, organizationId, selectedInspectionOrder, selectedInspectionSerial, serialInspectionRecords, productionSerialRecords]);
+    setSelectedInspectionSerial(nextPendingSerial);
+  }, [inspectionDocuments, measurementRecords, organizationId, selectedInspectionOrder, selectedInspectionSerial, productionSerialRecords]);
 
   const handleSkipSerialInspection = React.useCallback(async (reason: string) => {
     if (!selectedInspectionOrder || !selectedInspectionSerial) return;
@@ -2008,15 +2050,16 @@ export function QualityOperationsWorkspace({ onNavigate, activeTab, organization
 
       if (error) {
         console.error('Unable to skip Quality serial inspection', error);
-        return;
+        throw new Error(error.message || 'Could not skip this inspection.');
       }
       nextRecord = data as QualitySerialInspectionRecord;
     }
 
     const nextSerialInspectionRecords = [
       nextRecord,
-      ...serialInspectionRecords.filter((record) => !(record.production_order_id === selectedInspectionOrder.id && record.serial_number === selectedInspectionSerial)),
+      ...serialInspectionRecordsRef.current.filter((record) => !(record.production_order_id === selectedInspectionOrder.id && record.serial_number === selectedInspectionSerial)),
     ];
+    serialInspectionRecordsRef.current = nextSerialInspectionRecords;
     setSerialInspectionRecords(nextSerialInspectionRecords);
 
     const nextPendingSerial = getNextPendingQualitySerial(selectedInspectionOrder, selectedInspectionSerial, nextSerialInspectionRecords, productionSerialRecords);
@@ -2024,7 +2067,7 @@ export function QualityOperationsWorkspace({ onNavigate, activeTab, organization
       setInspectionOrders((current) => current.map((order) => order.id === selectedInspectionOrder.id ? { ...order, status: 'completed' } : order));
     }
     setSelectedInspectionSerial(nextPendingSerial);
-  }, [inspectionDocuments, organizationId, selectedInspectionOrder, selectedInspectionSerial, serialInspectionRecords, productionSerialRecords]);
+  }, [inspectionDocuments, organizationId, selectedInspectionOrder, selectedInspectionSerial, productionSerialRecords]);
   const handleUploadDocument = React.useCallback(async (file: File) => {
     if (!selectedInspectionOrder) return;
     const safeFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '-');

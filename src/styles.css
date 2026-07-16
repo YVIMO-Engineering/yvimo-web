@@ -29899,6 +29899,7 @@ body[data-screenshot-export="academy-track"] .academy-mobile-track-step button {
 }
 
 .quality-certificate-package {
+  container-type: inline-size;
   overflow: hidden;
   border: 1px solid rgba(255, 138, 31, 0.56);
   border-left: 6px solid #ff8a1f;
@@ -30102,7 +30103,7 @@ body[data-screenshot-export="academy-track"] .academy-mobile-track-step button {
 }
 
 .quality-certificate-order-data {
-  grid-template-columns: repeat(4, minmax(130px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 10px;
   margin-top: 12px;
 }
@@ -30211,6 +30212,95 @@ body[data-screenshot-export="academy-track"] .academy-mobile-track-step button {
 
   .quality-certificate-order-data {
     grid-template-columns: repeat(2, minmax(150px, 1fr));
+  }
+}
+
+@container (max-width: 1120px) {
+  .quality-certificate-package .quality-inspection-certificate {
+    grid-template-columns: minmax(0, 1fr) minmax(250px, 310px);
+    grid-template-rows: auto auto;
+    align-items: start;
+    gap: 18px 22px;
+  }
+
+  .quality-certificate-main {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .quality-certificate-order-data {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .quality-certificate-verification {
+    --quality-certificate-mark-size: 86px;
+    grid-column: 2;
+    grid-row: 1 / 3;
+    justify-self: stretch;
+    align-self: start;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .quality-certificate-verification .quality-certificate-result,
+  .quality-certificate-verification .quality-certificate-download,
+  .quality-certificate-verification .quality-certificate-download-error {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .quality-certificate-brand-mark,
+  .quality-certificate-verification .quality-certificate-qr {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 1;
+  }
+
+  .quality-certificate-identifiers {
+    grid-column: 1;
+    grid-row: 2;
+    width: 100%;
+  }
+}
+
+@container (max-width: 760px) {
+  .quality-certificate-package .quality-inspection-certificate {
+    grid-template-columns: 1fr;
+  }
+
+  .quality-certificate-main {
+    grid-column: 1;
+    align-items: flex-start;
+  }
+
+  .quality-certificate-order-data {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .quality-certificate-verification {
+    --quality-certificate-mark-size: 88px;
+    grid-column: 1;
+    grid-row: auto;
+    grid-template-columns: repeat(3, var(--quality-certificate-mark-size));
+    justify-self: start;
+  }
+
+  .quality-certificate-brand-mark,
+  .quality-certificate-verification .quality-certificate-qr {
+    width: var(--quality-certificate-mark-size);
+    height: var(--quality-certificate-mark-size);
+    aspect-ratio: auto;
+  }
+
+  .quality-certificate-verification .quality-certificate-result,
+  .quality-certificate-verification .quality-certificate-download,
+  .quality-certificate-verification .quality-certificate-download-error {
+    grid-column: 1 / -1;
+    width: min(100%, 360px);
+  }
+
+  .quality-certificate-identifiers > span {
+    grid-template-columns: 1fr;
   }
 }
 
