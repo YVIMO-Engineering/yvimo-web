@@ -6022,7 +6022,7 @@ function getTraceabilityEventTone(eventType: string): TraceabilityEventTone {
   if (eventType === 'production-scrap') return 'scrap';
   if (eventType === 'manufacturing-completed') return 'waiting-inspection';
   if (eventType === 'operation-completed') return 'order-completed';
-  if (eventType === 'quality-inspection-saved') return 'quality-inspection';
+  if (eventType === 'quality-inspection-saved' || eventType === 'quality-inspection-skipped') return 'quality-inspection';
   return 'adjustment';
 }
 
@@ -6036,6 +6036,7 @@ function renderTraceabilityEventIcon(eventType: string) {
   if (eventType === 'manufacturing-completed') return <CalendarDays {...iconProps} />;
   if (eventType === 'operation-completed') return <CheckCircle2 {...iconProps} />;
   if (eventType === 'quality-inspection-saved') return <Eye {...iconProps} />;
+  if (eventType === 'quality-inspection-skipped') return <Minus {...iconProps} />;
   if (eventType === 'measurement-corrected') return <Pencil {...iconProps} />;
   return <CircleHelp {...iconProps} />;
 }
@@ -6050,6 +6051,7 @@ function getTraceabilityEventLabel(eventType: string) {
     'manufacturing-completed': 'Waiting Inspection',
     'operation-completed': 'Order Completed',
     'quality-inspection-saved': 'Quality Inspection Saved',
+    'quality-inspection-skipped': 'Quality Inspection Skipped',
     'measurement-corrected': 'Measurement Corrected',
     adjustment: 'Adjustment',
   };
@@ -6070,6 +6072,12 @@ function getTraceabilityEventSummary(event: TraceabilityOperatorEventRow) {
     const serialNumber = event.payload && typeof event.payload.serial_number === 'string' ? event.payload.serial_number : '';
     return serialNumber ? `Quality inspection completed for ${serialNumber}` : 'Quality inspection completed';
   }
+  if (event.event_type === 'quality-inspection-skipped') {
+    const serialNumber = event.payload && typeof event.payload.serial_number === 'string' ? event.payload.serial_number : '';
+    const skipReason = event.payload && typeof event.payload.skip_reason === 'string' ? event.payload.skip_reason.trim() : '';
+    const summary = serialNumber ? `Quality inspection skipped for ${serialNumber}` : 'Quality inspection skipped';
+    return skipReason ? `${summary}: ${skipReason}` : summary;
+  }
   if (event.event_type === 'measurement-corrected') return 'Measurement was corrected from the Operator Terminal';
   return 'Operator event captured';
 }
@@ -6080,7 +6088,11 @@ function getTraceabilityEventShift(event: TraceabilityOperatorEventRow) {
     : 'N/A';
 }
 
-type TraceabilityQualityStatus = 'ok' | 'approach' | 'nok' | 'pending';
+function isTraceabilityQualityEvent(eventType: string) {
+  return eventType === 'quality-inspection-saved' || eventType === 'quality-inspection-skipped';
+}
+
+type TraceabilityQualityStatus = 'ok' | 'approach' | 'nok' | 'pending' | 'skipped';
 
 type TraceabilityQualityInspection = {
   inspection: string;
@@ -6258,7 +6270,7 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
           )
         `)
         .eq('organization_id', organizationId)
-        .in('event_type', ['production-scrap', 'downtime-started', 'job-paused', 'job-started', 'job-resumed', 'manufacturing-completed', 'operation-completed', 'adjustment', 'quality-inspection-saved', 'measurement-corrected'])
+        .in('event_type', ['production-scrap', 'downtime-started', 'job-paused', 'job-started', 'job-resumed', 'manufacturing-completed', 'operation-completed', 'adjustment', 'quality-inspection-saved', 'quality-inspection-skipped', 'measurement-corrected'])
         .order('created_at', { ascending: false })
         .limit(300),
       supabase
@@ -6355,7 +6367,7 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
         filter: `organization_id=eq.${organizationId}`,
       }, (payload) => {
         const newEvent = payload.new as Partial<{ id: string; event_type: string }>;
-        if (newEvent.event_type && !['production-scrap', 'downtime-started', 'job-paused', 'job-started', 'job-resumed', 'manufacturing-completed', 'operation-completed', 'adjustment', 'quality-inspection-saved', 'measurement-corrected'].includes(newEvent.event_type)) return;
+        if (newEvent.event_type && !['production-scrap', 'downtime-started', 'job-paused', 'job-started', 'job-resumed', 'manufacturing-completed', 'operation-completed', 'adjustment', 'quality-inspection-saved', 'quality-inspection-skipped', 'measurement-corrected'].includes(newEvent.event_type)) return;
         const eventId = typeof newEvent.id === 'string' ? newEvent.id : '';
         if (eventId) markCaptureAsNew(`event-${eventId}`);
         void loadTraceability(true);
@@ -6480,7 +6492,7 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
   const filteredOperatorEvents = operatorEvents.filter((event) => {
     const orderSearch = filters.orderSearch.trim().toLowerCase();
     const partSearch = filters.partSearch.trim().toLowerCase();
-    const isQualityEvent = event.event_type === 'quality-inspection-saved';
+    const isQualityEvent = isTraceabilityQualityEvent(event.event_type);
     const matchesRecordCategory = isQualityEvent ? filters.showQuality : filters.showEvents;
     const measurementOnlyFilterActive = Boolean(filters.serialSearch.trim() || filters.toolSearch.trim() || filters.shifts.length > 0);
     const eventDate = toLocalIsoDate(event.created_at);
@@ -6778,12 +6790,14 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
             const qualityInspections = getTraceabilityQualityInspections(event);
             const qualityDocumentCount = getTraceabilityQualityDocumentCount(event);
             const correctionComparison = event.event_type === 'measurement-corrected' ? getTraceabilityCorrectionComparison(event) : null;
-            const showEventQuantity = !['quality-inspection-saved', 'measurement-corrected'].includes(event.event_type);
+            const isQualityEvent = isTraceabilityQualityEvent(event.event_type);
+            const showEventQuantity = !isQualityEvent && event.event_type !== 'measurement-corrected';
             const qualityStatusConfig = {
               ok: { label: 'OK', icon: CheckCircle2 },
               approach: { label: 'Approach', icon: AlertTriangle },
               nok: { label: 'NOK', icon: CircleX },
               pending: { label: 'Pending', icon: Minus },
+              skipped: { label: 'Skipped', icon: Minus },
             } as const;
             return (
               <article
@@ -6809,10 +6823,10 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
                   <div className="mes-event-meta traceability-capture-meta">
                     <span><Factory size={15} /><b>Work Center</b>{event.work_center_code || 'No work center'}</span>
                     <span><RadioTower size={15} /><b>Station</b>{event.station_code || 'No station'}</span>
-                    {event.event_type !== 'quality-inspection-saved' ? <span><AlertTriangle size={15} /><b>Reason</b>{event.reason || 'No reason entered'}</span> : null}
-                    {event.event_type !== 'quality-inspection-saved' ? <span><Activity size={15} /><b>Status</b>{order?.status ? formatTraceabilityStatus(order.status) : 'Unknown'}</span> : null}
+                    {!isQualityEvent ? <span><AlertTriangle size={15} /><b>Reason</b>{event.reason || 'No reason entered'}</span> : null}
+                    {!isQualityEvent ? <span><Activity size={15} /><b>Status</b>{order?.status ? formatTraceabilityStatus(order.status) : 'Unknown'}</span> : null}
                   </div>
-                  {event.event_type === 'quality-inspection-saved' ? (
+                  {isQualityEvent ? (
                     <div className="traceability-quality-summary">
                       {qualityInspections.length ? (
                         <div className="traceability-quality-inspection-list">

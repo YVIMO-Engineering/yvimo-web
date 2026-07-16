@@ -286,7 +286,7 @@ function QualityDashboardDateFilters({ range, onChange }: { range: QualityDashbo
 }
 
 
-type QualityInspectionResult = 'ok' | 'nok' | 'approach';
+type QualityInspectionResult = 'ok' | 'nok' | 'approach' | 'skipped';
 
 type QualityMeasurementRecord = {
   id: string;
@@ -963,7 +963,8 @@ function QualitySerialPickerModal({ order, currentSerial, inspectedSerials, prod
         </label>
         <div className="quality-serial-list">
           {filteredSerials.map((serial) => {
-            const status = isQualitySerialInspected(inspectedSerials, order.id, serial) ? 'inspected' : 'pending';
+            const inspectionRecord = getQualitySerialInspectionRecord(inspectedSerials, order.id, serial);
+            const status = inspectionRecord?.result === 'skipped' ? 'skipped' : inspectionRecord ? 'inspected' : 'pending';
             return (
               <button className={serial === currentSerial ? 'active' : ''} type="button" key={serial} disabled={serial === currentSerial} onClick={() => onSelect(serial)}>
                 <span>{serial}</span><em className={`quality-picker-status quality-picker-status-${status}`}>{status}</em>
@@ -1040,11 +1041,31 @@ function getOverallSerialInspectionResult(order: ProductionOrder, serial: string
   return 'ok';
 }
 
+function getNextPendingQualitySerial(order: ProductionOrder, currentSerial: string, inspectedRecords: QualitySerialInspectionRecord[], productionSerials: QualityProductionSerialRecord[]) {
+  const serials = getQualityOrderSerials(order, productionSerials);
+  const currentIndex = serials.indexOf(currentSerial);
+  const followingSerials = currentIndex >= 0 ? serials.slice(currentIndex + 1) : serials;
+  return followingSerials.find((serial) => !isQualitySerialInspected(inspectedRecords, order.id, serial))
+    ?? serials.find((serial) => !isQualitySerialInspected(inspectedRecords, order.id, serial))
+    ?? '';
+}
+
 function isQualitySerialInspected(records: QualitySerialInspectionRecord[], orderId: string, serial: string) {
   return records.some((record) => record.production_order_id === orderId && record.serial_number === serial);
 }
 
-function RequiredInspections({ order, serial, measurements, readyToSaveInspection, onSaveInspection }: { order: ProductionOrder; serial: string; measurements: QualityMeasurementRecord[]; readyToSaveInspection: boolean; onSaveInspection: () => Promise<void> }) {
+function getQualitySerialInspectionRecord(records: QualitySerialInspectionRecord[], orderId: string, serial: string) {
+  return records.find((record) => record.production_order_id === orderId && record.serial_number === serial);
+}
+
+function RequiredInspections({ order, serial, measurements, readyToSaveInspection, onSaveInspection, onSkipInspection }: {
+  order: ProductionOrder;
+  serial: string;
+  measurements: QualityMeasurementRecord[];
+  readyToSaveInspection: boolean;
+  onSaveInspection: () => Promise<void>;
+  onSkipInspection: () => void;
+}) {
   const inspections = order.qualityChecksEnabled ? order.qualityChecks ?? [] : [];
   const statusConfig = {
     ok: { label: 'OK', icon: CheckCircle2 },
@@ -1070,11 +1091,12 @@ function RequiredInspections({ order, serial, measurements, readyToSaveInspectio
               );
             })}
           </div>
-          {readyToSaveInspection ? (
-            <div className="quality-save-inspection-actions">
+          <div className="quality-save-inspection-actions">
+            <button className="secondary" type="button" onClick={onSkipInspection}><Minus size={18} />Skip Inspection</button>
+            {readyToSaveInspection ? (
               <button type="button" onClick={onSaveInspection}><CheckCircle2 size={18} />Save Inspection</button>
-            </div>
-          ) : null}
+            ) : null}
+          </div>
         </>
       ) : (
         <div className="quality-inspection-empty-message"><AlertTriangle size={16} /><span>No inspections configured for this work order.</span></div>
@@ -1158,37 +1180,66 @@ function MeasurementCapture({ order, serial, measurements, onSaveMeasurement, on
   );
 }
 
-function InspectionDocuments({ order, serial, documents, onUploadDocument, onOpenDocument }: {
+function InspectionDocuments({ order, serial, documents, onUploadDocument, onOpenDocument, onDeleteDocument }: {
   order: ProductionOrder;
   serial: string;
   documents: QualityInspectionDocument[];
   onUploadDocument: (file: File) => Promise<void>;
   onOpenDocument: (document: QualityInspectionDocument) => Promise<void>;
+  onDeleteDocument: (document: QualityInspectionDocument) => Promise<void>;
 }) {
   const [uploading, setUploading] = React.useState(false);
+  const [dragActive, setDragActive] = React.useState(false);
   const serialDocuments = documents.filter((document) => document.production_order_id === order.id && document.serial_number === serial);
+  const uploadFiles = async (fileList: FileList | File[]) => {
+    const files = Array.from(fileList).filter((file) => file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf'));
+    if (!files.length || uploading) return;
+    setUploading(true);
+    try {
+      for (const file of files) {
+        await onUploadDocument(file);
+      }
+    } finally {
+      setUploading(false);
+    }
+  };
 
   return (
     <article className="quality-inspection-documents">
       <div className="quality-inspection-panel-heading"><FileText size={18} /><strong>Inspection Documents</strong></div>
-      <label className="quality-document-dropzone">
+      <label
+        className={`quality-document-dropzone ${dragActive ? 'drag-active' : ''}`}
+        onDragEnter={(event) => {
+          event.preventDefault();
+          if (!uploading) setDragActive(true);
+        }}
+        onDragOver={(event) => {
+          event.preventDefault();
+          if (!uploading) event.dataTransfer.dropEffect = 'copy';
+        }}
+        onDragLeave={(event) => {
+          event.preventDefault();
+          if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+          setDragActive(false);
+        }}
+        onDrop={(event) => {
+          event.preventDefault();
+          setDragActive(false);
+          void uploadFiles(event.dataTransfer.files);
+        }}
+      >
         <Upload size={18} />
-        <strong>{uploading ? 'Uploading PDF' : 'Upload PDF'}</strong>
-        <span>{serialDocuments.length ? `${serialDocuments.length} files attached` : 'No attachments yet'}</span>
+        <strong>{uploading ? 'Uploading PDF' : dragActive ? 'Drop PDF here' : 'Upload PDF'}</strong>
+        <span>{serialDocuments.length ? `${serialDocuments.length} files attached` : 'Click or drag PDF files here'}</span>
         <input
           type="file"
           accept="application/pdf,.pdf"
           multiple
           disabled={uploading}
-          onChange={async (event) => {
-            const files = Array.from(event.target.files ?? []);
+          onChange={(event) => {
+            const files = event.target.files;
             event.target.value = '';
-            if (!files.length) return;
-            setUploading(true);
-            for (const file of files) {
-              await onUploadDocument(file);
-            }
-            setUploading(false);
+            if (files) void uploadFiles(files);
           }}
         />
       </label>
@@ -1201,6 +1252,9 @@ function InspectionDocuments({ order, serial, documents, onUploadDocument, onOpe
                 <span>{new Date(document.uploaded_at).toLocaleDateString()}</span>
               </div>
               <button type="button" onClick={() => onOpenDocument(document)}>Open</button>
+              <button className="danger" type="button" onClick={() => onDeleteDocument(document)} aria-label={`Delete ${document.file_name}`}>
+                <X size={15} />
+              </button>
             </div>
           ))}
         </div>
@@ -1208,7 +1262,40 @@ function InspectionDocuments({ order, serial, documents, onUploadDocument, onOpe
     </article>
   );
 }
-function QualityInspectionsPage({ selectedOrder, selectedSerial, measurements, documents, inspectedSerials, productionSerials, onChangeOrder, onChangeSerial, onSaveMeasurement, onUploadDocument, onOpenDocument, onConfigureLimits, onSaveInspection }: {
+
+function SkipInspectionModal({ order, serial, saving, onClose, onConfirm }: {
+  order: ProductionOrder;
+  serial: string;
+  saving: boolean;
+  onClose: () => void;
+  onConfirm: (reason: string) => Promise<void>;
+}) {
+  const [reason, setReason] = React.useState('');
+  const canConfirm = reason.trim().length > 0 && !saving;
+
+  return (
+    <div className="quality-order-modal-backdrop" role="presentation">
+      <section className="quality-order-modal quality-skip-inspection-modal" role="dialog" aria-modal="true" aria-labelledby="quality-skip-inspection-title">
+        <div className="quality-order-modal-heading">
+          <span><Minus size={22} /></span>
+          <div><p className="eyebrow">{order.orderNumber}</p><h3 id="quality-skip-inspection-title">Skip Inspection</h3></div>
+          <button type="button" aria-label="Close" onClick={onClose} disabled={saving}><X size={18} /></button>
+        </div>
+        <p className="quality-order-modal-copy">This will mark serial {serial} as skipped and move Quality to the next pending piece. Use this instead of entering estimated measurements.</p>
+        <label className="quality-skip-inspection-reason">
+          <span>Reason</span>
+          <textarea autoFocus value={reason} placeholder="Example: urgent shipment, sample-only inspection, piece shipped before measurement..." onChange={(event) => setReason(event.target.value)} />
+        </label>
+        <div className="quality-order-modal-actions">
+          <button type="button" onClick={onClose} disabled={saving}>Cancel</button>
+          <button className="danger" type="button" disabled={!canConfirm} onClick={() => void onConfirm(reason.trim())}>{saving ? 'Skipping' : 'Confirm Skip'}</button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function QualityInspectionsPage({ selectedOrder, selectedSerial, measurements, documents, inspectedSerials, productionSerials, onChangeOrder, onChangeSerial, onSaveMeasurement, onUploadDocument, onOpenDocument, onDeleteDocument, onConfigureLimits, onSaveInspection, onSkipInspection }: {
   selectedOrder: ProductionOrder;
   selectedSerial: string;
   measurements: QualityMeasurementRecord[];
@@ -1220,9 +1307,13 @@ function QualityInspectionsPage({ selectedOrder, selectedSerial, measurements, d
   onSaveMeasurement: (inspectionName: string, measuredValue: number) => Promise<void>;
   onUploadDocument: (file: File) => Promise<void>;
   onOpenDocument: (document: QualityInspectionDocument) => Promise<void>;
+  onDeleteDocument: (document: QualityInspectionDocument) => Promise<void>;
   onConfigureLimits: (inspectionName: string) => void;
   onSaveInspection: () => Promise<void>;
+  onSkipInspection: (reason: string) => Promise<void>;
 }) {
+  const [skipModalOpen, setSkipModalOpen] = React.useState(false);
+  const [skippingInspection, setSkippingInspection] = React.useState(false);
   const availableSerials = getQualityOrderSerials(selectedOrder, productionSerials);
   const inspectedCount = inspectedSerials.filter((record) => record.production_order_id === selectedOrder.id && availableSerials.includes(record.serial_number)).length;
   const readyToSaveInspection = isSerialReadyToSaveInspection(selectedOrder, selectedSerial, measurements)
@@ -1235,10 +1326,27 @@ function QualityInspectionsPage({ selectedOrder, selectedSerial, measurements, d
         <QualityOrderSelector order={selectedOrder} selectedSerial={selectedSerial} onOpenOrder={onChangeOrder} onOpenSerial={onChangeSerial} />
       </div>
       <section className="quality-inspection-board" aria-label="Inspection foundation for selected work order">
-        <RequiredInspections order={selectedOrder} serial={selectedSerial} measurements={measurements} readyToSaveInspection={readyToSaveInspection} onSaveInspection={onSaveInspection} />
+        <RequiredInspections order={selectedOrder} serial={selectedSerial} measurements={measurements} readyToSaveInspection={readyToSaveInspection} onSaveInspection={onSaveInspection} onSkipInspection={() => setSkipModalOpen(true)} />
         <MeasurementCapture order={selectedOrder} serial={selectedSerial} measurements={measurements} onSaveMeasurement={onSaveMeasurement} onConfigureLimits={onConfigureLimits} />
-        <InspectionDocuments order={selectedOrder} serial={selectedSerial} documents={documents} onUploadDocument={onUploadDocument} onOpenDocument={onOpenDocument} />
+        <InspectionDocuments order={selectedOrder} serial={selectedSerial} documents={documents} onUploadDocument={onUploadDocument} onOpenDocument={onOpenDocument} onDeleteDocument={onDeleteDocument} />
       </section>
+      {skipModalOpen ? (
+        <SkipInspectionModal
+          order={selectedOrder}
+          serial={selectedSerial}
+          saving={skippingInspection}
+          onClose={() => setSkipModalOpen(false)}
+          onConfirm={async (reason) => {
+            setSkippingInspection(true);
+            try {
+              await onSkipInspection(reason);
+              setSkipModalOpen(false);
+            } finally {
+              setSkippingInspection(false);
+            }
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -1550,7 +1658,7 @@ function QualityCertificatesPage({ selectedOrder, selectedSerial, inspectionReco
           </span>
           <QualityCertificateQr value={certificateCode} />
           <div className={`quality-certificate-result ${inspectionRecord.result}`}>
-            {inspectionRecord.result === 'nok' ? <CircleX size={18} /> : inspectionRecord.result === 'approach' ? <AlertTriangle size={18} /> : <CheckCircle2 size={18} />}
+            {inspectionRecord.result === 'nok' ? <CircleX size={18} /> : inspectionRecord.result === 'approach' ? <AlertTriangle size={18} /> : inspectionRecord.result === 'skipped' ? <Minus size={18} /> : <CheckCircle2 size={18} />}
             {inspectionRecord.result.toUpperCase()}
           </div>
           <button className="quality-certificate-download" type="button" disabled={downloadingCertificate} data-html2canvas-ignore="true" onClick={() => void handleDownloadCertificate()}>
@@ -1833,16 +1941,61 @@ export function QualityOperationsWorkspace({ onNavigate, activeTab, organization
     ];
     setSerialInspectionRecords(nextSerialInspectionRecords);
 
-    const serials = getQualityOrderSerials(selectedInspectionOrder, productionSerialRecords);
-    const currentIndex = serials.indexOf(selectedInspectionSerial);
-    const followingSerials = currentIndex >= 0 ? serials.slice(currentIndex + 1) : serials;
-    const nextPendingSerial = followingSerials.find((serial) => !isQualitySerialInspected(nextSerialInspectionRecords, selectedInspectionOrder.id, serial))
-      ?? serials.find((serial) => !isQualitySerialInspected(nextSerialInspectionRecords, selectedInspectionOrder.id, serial));
+    const nextPendingSerial = getNextPendingQualitySerial(selectedInspectionOrder, selectedInspectionSerial, nextSerialInspectionRecords, productionSerialRecords);
     if (!nextPendingSerial && selectedInspectionOrder.status === 'waiting-inspection') {
       setInspectionOrders((current) => current.map((order) => order.id === selectedInspectionOrder.id ? { ...order, status: 'completed' } : order));
     }
     setSelectedInspectionSerial(nextPendingSerial ?? '');
   }, [inspectionDocuments, measurementRecords, organizationId, selectedInspectionOrder, selectedInspectionSerial, serialInspectionRecords, productionSerialRecords]);
+
+  const handleSkipSerialInspection = React.useCallback(async (reason: string) => {
+    if (!selectedInspectionOrder || !selectedInspectionSerial) return;
+    let nextRecord: QualitySerialInspectionRecord = {
+      id: `quality-serial-inspection-${Date.now()}`,
+      production_order_id: selectedInspectionOrder.id,
+      serial_number: selectedInspectionSerial,
+      result: 'skipped',
+      inspected_at: new Date().toISOString(),
+    };
+
+    if (!isDemoQualityOrder(selectedInspectionOrder)) {
+      const skippedInspections = (selectedInspectionOrder.qualityChecks ?? []).map((inspection) => ({ inspection, status: 'skipped' }));
+      const documentCount = inspectionDocuments.filter((document) => document.production_order_id === selectedInspectionOrder.id && document.serial_number === selectedInspectionSerial).length;
+      const { data, error } = await supabase.rpc('mes_quality_save_serial_inspection', {
+        p_organization_id: organizationId,
+        p_order_id: selectedInspectionOrder.id,
+        p_serial_number: selectedInspectionSerial,
+        p_result: 'skipped',
+        p_event_payload: {
+          inspection_count: skippedInspections.length,
+          inspections: skippedInspections,
+          document_count: documentCount,
+          measurement_unit: getQualityMeasurementUnit(selectedInspectionOrder),
+          measurement_unit_symbol: getQualityMeasurementUnitSymbol(selectedInspectionOrder),
+          skipped: true,
+          skip_reason: reason,
+        },
+      });
+
+      if (error) {
+        console.error('Unable to skip Quality serial inspection', error);
+        return;
+      }
+      nextRecord = data as QualitySerialInspectionRecord;
+    }
+
+    const nextSerialInspectionRecords = [
+      nextRecord,
+      ...serialInspectionRecords.filter((record) => !(record.production_order_id === selectedInspectionOrder.id && record.serial_number === selectedInspectionSerial)),
+    ];
+    setSerialInspectionRecords(nextSerialInspectionRecords);
+
+    const nextPendingSerial = getNextPendingQualitySerial(selectedInspectionOrder, selectedInspectionSerial, nextSerialInspectionRecords, productionSerialRecords);
+    if (!nextPendingSerial && selectedInspectionOrder.status === 'waiting-inspection') {
+      setInspectionOrders((current) => current.map((order) => order.id === selectedInspectionOrder.id ? { ...order, status: 'completed' } : order));
+    }
+    setSelectedInspectionSerial(nextPendingSerial);
+  }, [inspectionDocuments, organizationId, selectedInspectionOrder, selectedInspectionSerial, serialInspectionRecords, productionSerialRecords]);
   const handleUploadDocument = React.useCallback(async (file: File) => {
     if (!selectedInspectionOrder) return;
     const safeFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '-');
@@ -1889,6 +2042,32 @@ export function QualityOperationsWorkspace({ onNavigate, activeTab, organization
 
     setInspectionDocuments((current) => [nextDocument, ...current]);
   }, [organizationId, selectedInspectionOrder, selectedInspectionSerial]);
+
+  const handleDeleteDocument = React.useCallback(async (document: QualityInspectionDocument) => {
+    const isBlobDocument = document.file_path.startsWith('blob:');
+    if (!isBlobDocument) {
+      const { error: storageError } = await supabase.storage.from(qualityDocumentsBucket).remove([document.file_path]);
+      if (storageError) {
+        console.error('Unable to delete Quality inspection document file', storageError);
+      }
+
+      const { error: deleteError } = await supabase
+        .from('mes_quality_inspection_documents')
+        .delete()
+        .eq('id', document.id)
+        .eq('organization_id', organizationId);
+
+      if (deleteError) {
+        console.error('Unable to delete Quality inspection document record', deleteError);
+        return;
+      }
+    } else {
+      URL.revokeObjectURL(document.file_path);
+    }
+
+    setInspectionDocuments((current) => current.filter((item) => item.id !== document.id));
+    setDocumentPreview((current) => (current?.fileUrl === document.file_path ? null : current));
+  }, [organizationId]);
 
   const handleSaveSpecifications = React.useCallback(async (limits: Record<string, QualityCheckLimit>, measurementUnit: QualityMeasurementUnit) => {
     if (!selectedInspectionOrder) return;
@@ -2008,8 +2187,10 @@ export function QualityOperationsWorkspace({ onNavigate, activeTab, organization
             onSaveMeasurement={handleSaveMeasurement}
             onUploadDocument={handleUploadDocument}
             onOpenDocument={handleOpenDocument}
+            onDeleteDocument={handleDeleteDocument}
             onConfigureLimits={handleConfigureInspectionLimits}
             onSaveInspection={handleSaveSerialInspection}
+            onSkipInspection={handleSkipSerialInspection}
           />
         ) : null}
         {isInspectionsPage && !selectedInspectionSerial ? (
