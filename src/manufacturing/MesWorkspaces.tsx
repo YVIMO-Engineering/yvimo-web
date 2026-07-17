@@ -73,6 +73,13 @@ type ProductionOrderAction = {
   traceability?: boolean;
 };
 
+type ProductionOrderDetailPreview = {
+  title: string;
+  subtitle: string;
+  url: string;
+  type: 'pdf' | 'image';
+};
+
 type ProductionOrderFormState = {
   orderNumber: string;
   partNumber: string;
@@ -112,6 +119,8 @@ const productionOrderPartNameOptions: Array<{ value: ProductionOrderPartNameOpti
   { value: 'skiving', label: 'Skiving', pieceType: 'skiving' },
   { value: 'other', label: 'Other' },
 ];
+
+const productionOrderQualityDocumentsBucket = 'mes-quality-inspection-documents';
 
 type ProductionOrderRow = {
   id: string;
@@ -333,6 +342,39 @@ export type ProductionOrderDetailTraceabilityRow = {
   created_at: string;
 };
 
+type ProductionOrderDetailQualityResult = 'ok' | 'approach' | 'nok' | 'skipped';
+
+export type ProductionOrderDetailQualityInspectionRow = {
+  id: string;
+  production_order_id: string;
+  serial_number: string;
+  result: ProductionOrderDetailQualityResult;
+  inspected_at: string;
+};
+
+export type ProductionOrderDetailQualityMeasurementRow = {
+  id: string;
+  production_order_id: string;
+  serial_number: string;
+  inspection_name: string;
+  measured_value: number;
+  lower_limit: number | null;
+  upper_limit: number | null;
+  result: Exclude<ProductionOrderDetailQualityResult, 'skipped'>;
+  measured_at: string;
+};
+
+export type ProductionOrderDetailQualityDocumentRow = {
+  id: string;
+  production_order_id: string;
+  serial_number: string;
+  inspection_name: string | null;
+  file_name: string;
+  file_path: string;
+  file_type: string;
+  uploaded_at: string;
+};
+
 export type ProductionOrderDetailPiece = {
   pieceSequence: number;
   toolId: string;
@@ -340,6 +382,9 @@ export type ProductionOrderDetailPiece = {
   status: 'not-started' | 'good' | 'scrap';
   reportedAt: string;
   traceability: ProductionOrderDetailTraceabilityRow | null;
+  qualityInspection: ProductionOrderDetailQualityInspectionRow | null;
+  qualityMeasurements: ProductionOrderDetailQualityMeasurementRow[];
+  qualityDocuments: ProductionOrderDetailQualityDocumentRow[];
 };
 
 export type ProductionOrderDetailsState = {
@@ -1237,6 +1282,32 @@ export function formatProductionOrderDetailMeasurementValue(value: string | numb
   return `${value}${unit ? ` ${unit}` : ''}`;
 }
 
+function normalizeProductionOrderDetailSerial(serial: string) {
+  return serial.trim().toLowerCase();
+}
+
+function getProductionOrderDetailPieceKey(piece: Pick<ProductionOrderDetailPiece, 'pieceSequence' | 'serialNumber'>) {
+  return normalizeProductionOrderDetailSerial(piece.serialNumber) || `piece:${piece.pieceSequence}`;
+}
+
+function getProductionOrderDetailQualityLabel(result?: ProductionOrderDetailQualityResult | null) {
+  if (!result) return 'Pending';
+  if (result === 'ok') return 'OK';
+  if (result === 'nok') return 'NOK';
+  if (result === 'approach') return 'Approach';
+  return 'Skipped';
+}
+
+function getProductionOrderDetailDamageCodes(traceability: ProductionOrderDetailTraceabilityRow | null) {
+  if (!traceability) return [];
+  const payloadDamage = traceability.payload?.shaver_damage === true ? ['damage:yes'] : [];
+  return Array.from(new Set([...(traceability.damage_codes ?? []), ...payloadDamage]));
+}
+
+function hasProductionOrderDetailDamage(piece: ProductionOrderDetailPiece) {
+  return getProductionOrderDetailDamageCodes(piece.traceability).length > 0 || Boolean(piece.traceability?.damage_image_url);
+}
+
 export function getProductionOrderDetailMeasurements(traceability: ProductionOrderDetailTraceabilityRow | null) {
   if (!traceability) return [];
   const payload = traceability.payload ?? {};
@@ -1275,6 +1346,33 @@ export function ProductionOrderDetailsModal({
   details: ProductionOrderDetailsState;
   onClose: () => void;
 }) {
+  const [activeView, setActiveView] = React.useState<'production' | 'quality' | 'damage'>('production');
+  const [preview, setPreview] = React.useState<ProductionOrderDetailPreview | null>(null);
+  const [previewError, setPreviewError] = React.useState('');
+  const qualityPieces = details.pieces.filter((piece) => piece.qualityInspection || piece.qualityMeasurements.length > 0 || piece.qualityDocuments.length > 0);
+  const damagePieces = details.pieces.filter(hasProductionOrderDetailDamage);
+  const openQualityDocumentPreview = async (document: ProductionOrderDetailQualityDocumentRow) => {
+    setPreviewError('');
+    try {
+      const isPdf = document.file_type === 'application/pdf' || document.file_name.toLowerCase().endsWith('.pdf');
+      let fileUrl = document.file_path;
+      if (!fileUrl.startsWith('blob:') && !/^https?:\/\//i.test(fileUrl)) {
+        const { data, error } = await supabase.storage.from(productionOrderQualityDocumentsBucket).createSignedUrl(fileUrl, 60 * 10);
+        if (error || !data?.signedUrl) throw error ?? new Error('Unable to open document.');
+        fileUrl = data.signedUrl;
+      }
+      setPreview({
+        title: document.file_name,
+        subtitle: 'Inspection Document',
+        url: fileUrl,
+        type: isPdf ? 'pdf' : 'image',
+      });
+    } catch (error) {
+      console.error('Unable to open production order quality document', error);
+      setPreviewError(error instanceof Error && error.message ? error.message : 'Unable to open document.');
+    }
+  };
+
   return (
     <div className="mes-modal-backdrop production-order-details-backdrop" role="presentation">
       <section className="production-order-details-modal" role="dialog" aria-modal="true" aria-labelledby="production-order-details-title">
@@ -1298,7 +1396,20 @@ export function ProductionOrderDetailsModal({
           <article><span>Station</span><strong>{order.assignedStation || 'Not assigned'}</strong></article>
           <article><span>Due</span><strong>{formatDate(order.dueDate)}</strong></article>
         </div>
-        <div className="production-order-details-table-wrap">
+        <div className="production-order-details-view-switch" role="tablist" aria-label="Production order detail views">
+          <button type="button" className={activeView === 'production' ? 'active' : ''} onClick={() => setActiveView('production')} role="tab" aria-selected={activeView === 'production'}>
+            <Database size={16} />Production
+          </button>
+          <button type="button" className={activeView === 'quality' ? 'active' : ''} onClick={() => setActiveView('quality')} role="tab" aria-selected={activeView === 'quality'}>
+            <CheckCircle2 size={16} />Quality
+            {qualityPieces.length ? <b>{qualityPieces.length}</b> : null}
+          </button>
+          <button type="button" className={activeView === 'damage' ? 'active' : ''} onClick={() => setActiveView('damage')} role="tab" aria-selected={activeView === 'damage'}>
+            <ImagePlus size={16} />Damage & Evidence
+            {damagePieces.length ? <b>{damagePieces.length}</b> : null}
+          </button>
+        </div>
+        {activeView === 'production' ? <div className="production-order-details-table-wrap">
           {details.loading ? (
             <div className="production-order-details-empty">Loading order pieces...</div>
           ) : details.error ? (
@@ -1349,8 +1460,141 @@ export function ProductionOrderDetailsModal({
               </tbody>
             </table>
           )}
-        </div>
+        </div> : null}
+        {activeView === 'quality' ? (
+          <div className="production-order-details-table-wrap">
+            {details.loading ? (
+              <div className="production-order-details-empty">Loading quality records...</div>
+            ) : details.error ? (
+              <div className="production-order-details-empty error">{details.error}</div>
+            ) : qualityPieces.length ? (
+              <table className="production-order-details-table production-order-quality-table">
+                <thead>
+                  <tr>
+                    <th>Piece</th>
+                    <th>Result</th>
+                    <th>Serial</th>
+                    <th>Tool ID</th>
+                    <th>Quality Records</th>
+                    <th>Documents</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {qualityPieces.map((piece) => {
+                    const qualityResult = piece.qualityInspection?.result ?? null;
+                    return (
+                      <tr key={getProductionOrderDetailPieceKey(piece)}>
+                        <td><strong>{piece.pieceSequence}</strong></td>
+                        <td><span className={`production-order-quality-result ${qualityResult ?? 'pending'}`}>{getProductionOrderDetailQualityLabel(qualityResult)}</span></td>
+                        <td>{piece.serialNumber || '-'}</td>
+                        <td>{piece.toolId || '-'}</td>
+                        <td>
+                          {piece.qualityMeasurements.length ? (
+                            <div className="production-order-details-measures production-order-quality-measures">
+                              {piece.qualityMeasurements.map((measurement) => (
+                                <span className={measurement.result} key={measurement.id}><b>{measurement.inspection_name}</b>{measurement.measured_value}</span>
+                              ))}
+                            </div>
+                          ) : <span className="production-order-details-no-measurement">No measurements</span>}
+                        </td>
+                        <td>
+                          {piece.qualityDocuments.length ? (
+                            <div className="production-order-detail-actions">
+                              {piece.qualityDocuments.map((document) => (
+                                <button type="button" key={document.id} onClick={() => void openQualityDocumentPreview(document)}>
+                                  <FileText size={15} />{document.file_name}
+                                </button>
+                              ))}
+                            </div>
+                          ) : <span className="production-order-details-no-measurement">No documents</span>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            ) : (
+              <div className="production-order-details-empty">No quality records have been saved for this order yet.</div>
+            )}
+            {previewError ? <div className="production-order-details-empty error">{previewError}</div> : null}
+          </div>
+        ) : null}
+        {activeView === 'damage' ? (
+          <div className="production-order-details-table-wrap">
+            {details.loading ? (
+              <div className="production-order-details-empty">Loading damage records...</div>
+            ) : details.error ? (
+              <div className="production-order-details-empty error">{details.error}</div>
+            ) : damagePieces.length ? (
+              <table className="production-order-details-table production-order-damage-table">
+                <thead>
+                  <tr>
+                    <th>Piece</th>
+                    <th>Serial</th>
+                    <th>Tool ID</th>
+                    <th>Damage Codes</th>
+                    <th>Evidence</th>
+                    <th>Reported</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {damagePieces.map((piece) => {
+                    const damageCodes = getProductionOrderDetailDamageCodes(piece.traceability);
+                    const imageUrl = piece.traceability?.damage_image_url ?? '';
+                    return (
+                      <tr key={getProductionOrderDetailPieceKey(piece)}>
+                        <td><strong>{piece.pieceSequence}</strong></td>
+                        <td>{piece.serialNumber || '-'}</td>
+                        <td>{piece.toolId || '-'}</td>
+                        <td>
+                          <div className="production-order-damage-tags">
+                            {damageCodes.map((code) => <b key={code}>{formatTitleLabel(code.replace(/^damage:/, 'damage '))}</b>)}
+                          </div>
+                        </td>
+                        <td>
+                          {imageUrl ? (
+                            <div className="production-order-detail-actions">
+                              <button type="button" onClick={() => setPreview({ title: `Piece ${piece.pieceSequence} evidence`, subtitle: piece.serialNumber || 'Damage image', url: imageUrl, type: 'image' })}>
+                                <ImagePlus size={15} />Preview image
+                              </button>
+                            </div>
+                          ) : <span className="production-order-details-no-measurement">No image</span>}
+                        </td>
+                        <td>{piece.reportedAt ? formatDate(toLocalIsoDate(piece.reportedAt)) : '-'}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            ) : (
+              <div className="production-order-details-empty">No damage or evidence images were reported for this order.</div>
+            )}
+          </div>
+        ) : null}
       </section>
+      {preview ? (
+        <div className="supplier-modal-backdrop production-order-preview-backdrop" role="presentation">
+          <div className="supplier-modal production-order-preview-modal" role="dialog" aria-modal="true" aria-labelledby="production-order-preview-title">
+            <button className="supplier-modal-close" type="button" onClick={() => setPreview(null)} aria-label="Close preview">
+              <X size={18} />
+            </button>
+            <div>
+              <div className="supplier-modal-header">
+                <span>{preview.subtitle}</span>
+                <strong id="production-order-preview-title">{preview.title}</strong>
+              </div>
+              <div className={`supplier-document-preview production-order-preview-frame ${preview.type}`}>
+                {preview.type === 'pdf'
+                  ? <iframe src={`${preview.url}#toolbar=1&navpanes=0&scrollbar=1&view=FitH`} title={`Preview ${preview.title}`} />
+                  : <img src={preview.url} alt={preview.title} />}
+              </div>
+              <div className="supplier-modal-actions">
+                <button type="button" onClick={() => setPreview(null)}>Close</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1925,7 +2169,13 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
     setOrderDetailsOpen(true);
     setOrderDetails({ loading: true, error: '', pieces: [] });
     try {
-      const [{ data: serialData, error: serialError }, { data: traceabilityData, error: traceabilityError }] = await Promise.all([
+      const [
+        { data: serialData, error: serialError },
+        { data: traceabilityData, error: traceabilityError },
+        { data: qualityInspectionData, error: qualityInspectionError },
+        { data: qualityMeasurementData, error: qualityMeasurementError },
+        { data: qualityDocumentData, error: qualityDocumentError },
+      ] = await Promise.all([
         supabase
           .from('mes_production_serials')
           .select('id, production_order_id, piece_sequence, tool_id, serial_number, result, ready_for_quality, traceability_id, reported_at')
@@ -1938,23 +2188,64 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
           .eq('organization_id', organizationId)
           .eq('production_order_id', selectedOrder.id)
           .order('created_at', { ascending: false }),
+        supabase
+          .from('mes_quality_serial_inspections')
+          .select('id, production_order_id, serial_number, result, inspected_at')
+          .eq('organization_id', organizationId)
+          .eq('production_order_id', selectedOrder.id)
+          .order('inspected_at', { ascending: false }),
+        supabase
+          .from('mes_quality_measurements')
+          .select('id, production_order_id, serial_number, inspection_name, measured_value, lower_limit, upper_limit, result, measured_at')
+          .eq('organization_id', organizationId)
+          .eq('production_order_id', selectedOrder.id)
+          .order('measured_at', { ascending: false }),
+        supabase
+          .from('mes_quality_inspection_documents')
+          .select('id, production_order_id, serial_number, inspection_name, file_name, file_path, file_type, uploaded_at')
+          .eq('organization_id', organizationId)
+          .eq('production_order_id', selectedOrder.id)
+          .order('uploaded_at', { ascending: false }),
       ]);
 
       if (serialError) throw serialError;
       if (traceabilityError) throw traceabilityError;
+      if (qualityInspectionError) throw qualityInspectionError;
+      if (qualityMeasurementError) throw qualityMeasurementError;
+      if (qualityDocumentError) throw qualityDocumentError;
 
       const serialRows = (serialData ?? []) as ProductionOrderDetailSerialRow[];
       const traceabilityRows = (traceabilityData ?? []) as ProductionOrderDetailTraceabilityRow[];
+      const qualityInspectionRows = (qualityInspectionData ?? []) as ProductionOrderDetailQualityInspectionRow[];
+      const qualityMeasurementRows = (qualityMeasurementData ?? []) as ProductionOrderDetailQualityMeasurementRow[];
+      const qualityDocumentRows = (qualityDocumentData ?? []) as ProductionOrderDetailQualityDocumentRow[];
       const traceabilityById = new Map(traceabilityRows.map((traceability) => [traceability.id, traceability]));
       const traceabilityBySerial = new Map<string, ProductionOrderDetailTraceabilityRow>();
       const traceabilityBySequence = new Map<number, ProductionOrderDetailTraceabilityRow>();
       const serialBySequence = new Map(serialRows.map((serial) => [serial.piece_sequence, serial]));
+      const qualityInspectionBySerial = new Map<string, ProductionOrderDetailQualityInspectionRow>();
+      const qualityMeasurementsBySerial = new Map<string, ProductionOrderDetailQualityMeasurementRow[]>();
+      const qualityDocumentsBySerial = new Map<string, ProductionOrderDetailQualityDocumentRow[]>();
 
       traceabilityRows.forEach((traceability) => {
         const serialNumber = traceability.serial_number?.trim().toLowerCase();
         if (serialNumber && !traceabilityBySerial.has(serialNumber)) traceabilityBySerial.set(serialNumber, traceability);
         const pieceSequence = getProductionOrderDetailPayloadNumber(traceability.payload, 'piece_sequence');
         if (pieceSequence && !traceabilityBySequence.has(pieceSequence)) traceabilityBySequence.set(pieceSequence, traceability);
+      });
+      qualityInspectionRows.forEach((inspection) => {
+        const serialNumber = normalizeProductionOrderDetailSerial(inspection.serial_number);
+        if (serialNumber && !qualityInspectionBySerial.has(serialNumber)) qualityInspectionBySerial.set(serialNumber, inspection);
+      });
+      qualityMeasurementRows.forEach((measurement) => {
+        const serialNumber = normalizeProductionOrderDetailSerial(measurement.serial_number);
+        if (!serialNumber) return;
+        qualityMeasurementsBySerial.set(serialNumber, [...(qualityMeasurementsBySerial.get(serialNumber) ?? []), measurement]);
+      });
+      qualityDocumentRows.forEach((document) => {
+        const serialNumber = normalizeProductionOrderDetailSerial(document.serial_number);
+        if (!serialNumber) return;
+        qualityDocumentsBySerial.set(serialNumber, [...(qualityDocumentsBySerial.get(serialNumber) ?? []), document]);
       });
 
       const lastKnownSequence = Math.max(
@@ -1970,6 +2261,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
           ?? (serialKey ? traceabilityBySerial.get(serialKey) : null)
           ?? traceabilityBySequence.get(pieceSequence)
           ?? null;
+        const resolvedSerialKey = normalizeProductionOrderDetailSerial(serial?.serial_number || traceability?.serial_number || '');
         return {
           pieceSequence,
           toolId: serial?.tool_id ?? traceability?.tool_id ?? '',
@@ -1977,6 +2269,9 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
           status: serial?.result ?? (traceability ? 'good' : 'not-started'),
           reportedAt: serial?.reported_at ?? traceability?.created_at ?? '',
           traceability,
+          qualityInspection: resolvedSerialKey ? qualityInspectionBySerial.get(resolvedSerialKey) ?? null : null,
+          qualityMeasurements: resolvedSerialKey ? qualityMeasurementsBySerial.get(resolvedSerialKey) ?? [] : [],
+          qualityDocuments: resolvedSerialKey ? qualityDocumentsBySerial.get(resolvedSerialKey) ?? [] : [],
         };
       });
 
