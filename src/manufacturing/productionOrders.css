@@ -38,6 +38,38 @@
   box-shadow: 0 10px 22px rgba(255, 138, 31, 0.18);
 }
 
+.production-orders-header-actions {
+  display: grid;
+  gap: 8px;
+  justify-items: stretch;
+  min-width: 210px;
+}
+
+.production-orders-heading .production-orders-pending-report-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 38px;
+  border: 1px solid rgba(255, 138, 31, 0.38);
+  border-radius: 8px;
+  padding: 0 14px;
+  background: #fff7ed;
+  color: #c2410c;
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 950;
+  cursor: pointer;
+  transition: border-color 0.16s ease, background 0.16s ease, transform 0.16s ease;
+}
+
+.production-orders-heading .production-orders-pending-report-action:hover,
+.production-orders-heading .production-orders-pending-report-action:focus-visible {
+  border-color: rgba(255, 138, 31, 0.68);
+  background: #ffedd5;
+  transform: translateY(-1px);
+}
+
 .production-orders-overview {
   display: grid;
   grid-template-columns: repeat(3, minmax(170px, 0.65fr)) minmax(280px, 1.35fr);

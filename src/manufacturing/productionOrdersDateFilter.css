@@ -9,6 +9,10 @@
   gap: 10px;
 }
 
+.production-orders-header-actions {
+  flex: 0 0 auto;
+}
+
 .production-orders-date-filters {
   display: grid;
   grid-template-columns: repeat(2, 128px);
@@ -55,6 +59,10 @@
   .production-orders-header-controls {
     display: grid;
     grid-template-columns: 1fr;
+    width: 100%;
+  }
+
+  .production-orders-header-actions {
     width: 100%;
   }
 

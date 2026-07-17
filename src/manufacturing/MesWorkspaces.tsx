@@ -1617,6 +1617,210 @@ export function ProductionOrderDetailsModal({
   return typeof document === 'undefined' ? modalContent : createPortal(modalContent, document.body);
 }
 
+type PendingWorkReportLine = {
+  key: string;
+  quantity: number;
+  partLabel: string;
+  clientName: string;
+  orders: ProductionOrder[];
+};
+
+type PendingWorkReportStation = {
+  key: string;
+  label: string;
+  totalQuantity: number;
+  lines: PendingWorkReportLine[];
+  runningOrder: ProductionOrder | null;
+};
+
+type PendingWorkReport = {
+  generatedAt: string;
+  totalQuantity: number;
+  totalOrders: number;
+  stations: PendingWorkReportStation[];
+  machineStatuses: Array<{ station: string; status: string }>;
+  text: string;
+};
+
+function getPendingWorkStationLabel(order: ProductionOrder, stationOptionsByWorkCenter: Record<string, MesOrderDropdownOption[]>) {
+  if (order.assignedStation) return getProductionOrderStationLabel(stationOptionsByWorkCenter, order.assignedWorkCenter, order.assignedStation);
+  if (order.assignedWorkCenter) return order.assignedWorkCenter;
+  return 'Unassigned machine';
+}
+
+function getPendingWorkPartLabel(partName: string, quantity: number) {
+  const normalizedPart = partName.trim().toLowerCase();
+  if (!normalizedPart) return quantity === 1 ? 'piece' : 'pieces';
+  if (/\bshaver\b|\bshavers\b/.test(normalizedPart)) return quantity === 1 ? 'shaver' : 'shavers';
+  if (/\bhob\b|\bhobs\b/.test(normalizedPart)) return quantity === 1 ? 'hob' : 'hobs';
+  if (/\bskiving\b|\bskivings\b/.test(normalizedPart)) return quantity === 1 ? 'skiving' : 'skivings';
+  if (/\bpower\s*skiver\b|\bpowerskiver\b|\bpowerskivers\b/.test(normalizedPart)) return quantity === 1 ? 'powerskiver' : 'powerskivers';
+  if (/\btallador\b|\btalladores\b/.test(normalizedPart)) return quantity === 1 ? 'tallador' : 'talladores';
+  if (/\bshaper\b|\bshapers\b/.test(normalizedPart)) return quantity === 1 ? 'shaper' : 'shapers';
+  return quantity === 1 ? normalizedPart : normalizedPart.endsWith('s') ? normalizedPart : `${normalizedPart}s`;
+}
+
+function getPendingWorkClientLabel(clientName: string) {
+  const client = clientName.trim();
+  if (!client) return 'Unassigned';
+  if (/^caterpillar$/i.test(client)) return 'Cat';
+  return client;
+}
+
+function getPendingWorkReport(orders: ProductionOrder[], stationOptionsByWorkCenter: Record<string, MesOrderDropdownOption[]>): PendingWorkReport {
+  const pendingOrders = orders.filter((order) => {
+    const pendingQuantity = Math.max(0, order.plannedQuantity - order.completedQuantity - order.scrapQuantity);
+    return pendingQuantity > 0 && !['completed', 'cancelled'].includes(order.status);
+  });
+  const stationMap = new Map<string, PendingWorkReportStation>();
+
+  pendingOrders.forEach((order) => {
+    const stationLabel = getPendingWorkStationLabel(order, stationOptionsByWorkCenter);
+    const pendingQuantity = Math.max(0, order.plannedQuantity - order.completedQuantity - order.scrapQuantity);
+    const station = stationMap.get(stationLabel) ?? {
+      key: stationLabel,
+      label: stationLabel,
+      totalQuantity: 0,
+      lines: [],
+      runningOrder: null,
+    };
+    const partLabel = getPendingWorkPartLabel(order.partName, pendingQuantity);
+    const clientName = getPendingWorkClientLabel(order.clientName ?? '');
+    const lineKey = `${partLabel.toLowerCase()}::${clientName.toLowerCase()}`;
+    const existingLine = station.lines.find((line) => line.key === lineKey);
+
+    station.totalQuantity += pendingQuantity;
+    if (order.status === 'running' && !station.runningOrder) station.runningOrder = order;
+    if (existingLine) {
+      existingLine.quantity += pendingQuantity;
+      existingLine.orders.push(order);
+    } else {
+      station.lines.push({
+        key: lineKey,
+        quantity: pendingQuantity,
+        partLabel,
+        clientName,
+        orders: [order],
+      });
+    }
+    stationMap.set(stationLabel, station);
+  });
+
+  const stations = Array.from(stationMap.values())
+    .map((station) => ({
+      ...station,
+      lines: [...station.lines].sort((first, second) => second.quantity - first.quantity || first.partLabel.localeCompare(second.partLabel)),
+    }))
+    .sort((first, second) => second.totalQuantity - first.totalQuantity || first.label.localeCompare(second.label));
+  const totalQuantity = stations.reduce((total, station) => total + station.totalQuantity, 0);
+  const machineStatuses = stations.map((station) => ({
+    station: station.label,
+    status: station.runningOrder
+      ? `Running ${getPendingWorkPartLabel(station.runningOrder.partName, 2)} ${getPendingWorkClientLabel(station.runningOrder.clientName ?? '')}`
+      : 'No running order',
+  }));
+  const reportLines = [
+    `Pending Work Report - ${new Date().toLocaleString()}`,
+    '',
+    ...stations.flatMap((station) => [
+      station.label,
+      ...station.lines.map((line) => `- ${line.quantity} ${line.partLabel} ${line.clientName}`),
+      '',
+    ]),
+    `Total pending = ${totalQuantity} pieces`,
+    '',
+    'Machine Status',
+    ...machineStatuses.map((item) => `${item.station} = ${item.status}`),
+  ];
+
+  return {
+    generatedAt: new Date().toISOString(),
+    totalQuantity,
+    totalOrders: pendingOrders.length,
+    stations,
+    machineStatuses,
+    text: reportLines.join('\n').trim(),
+  };
+}
+
+function PendingWorkReportModal({ report, onClose }: { report: PendingWorkReport; onClose: () => void }) {
+  const [copied, setCopied] = React.useState(false);
+  const copyReport = async () => {
+    try {
+      await navigator.clipboard.writeText(report.text);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    } catch (error) {
+      console.error('Unable to copy pending work report', error);
+    }
+  };
+  const modalContent = (
+    <div className="mes-modal-backdrop pending-work-report-backdrop" role="presentation">
+      <section className="pending-work-report-modal" role="dialog" aria-modal="true" aria-labelledby="pending-work-report-title">
+        <header className="pending-work-report-header">
+          <span><FileText size={22} /></span>
+          <div>
+            <p className="eyebrow">Production Orders</p>
+            <h3 id="pending-work-report-title">Pending Work Report</h3>
+            <small>Generated {formatTimestamp(report.generatedAt)}</small>
+          </div>
+          <button type="button" aria-label="Close pending work report" onClick={onClose}><X size={18} /></button>
+        </header>
+        <div className="pending-work-report-kpis" aria-label="Pending work summary">
+          <article><span>Total pending</span><strong>{report.totalQuantity.toLocaleString()}</strong><em>pieces</em></article>
+          <article><span>Open orders</span><strong>{report.totalOrders.toLocaleString()}</strong><em>with pending work</em></article>
+          <article><span>Machines</span><strong>{report.stations.length.toLocaleString()}</strong><em>with assigned work</em></article>
+        </div>
+        <div className="pending-work-report-body">
+          {report.stations.length ? (
+            <div className="pending-work-report-stations">
+              {report.stations.map((station) => (
+                <article className="pending-work-report-station" key={station.key}>
+                  <div>
+                    <strong>{station.label}</strong>
+                    <span>{station.totalQuantity.toLocaleString()} pending</span>
+                  </div>
+                  <ul>
+                    {station.lines.map((line) => (
+                      <li key={line.key}>
+                        <b>{line.quantity.toLocaleString()}</b>
+                        <span>{line.partLabel} {line.clientName}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="pending-work-report-empty">
+              <CheckCircle2 size={26} />
+              <strong>No pending work found</strong>
+              <span>All active Production Orders are currently reported or closed.</span>
+            </div>
+          )}
+          <aside className="pending-work-report-copy">
+            <div>
+              <strong>Shareable text</strong>
+              <button type="button" onClick={() => void copyReport()}>{copied ? 'Copied' : 'Copy'}</button>
+            </div>
+            <pre>{report.text || 'No pending work found.'}</pre>
+          </aside>
+        </div>
+        <section className="pending-work-report-status">
+          <strong>Machine Status</strong>
+          <div>
+            {report.machineStatuses.length ? report.machineStatuses.map((item) => (
+              <span key={item.station}><b>{item.station}</b>{item.status}</span>
+            )) : <span><b>All machines</b>No running pending orders</span>}
+          </div>
+        </section>
+      </section>
+    </div>
+  );
+
+  return typeof document === 'undefined' ? modalContent : createPortal(modalContent, document.body);
+}
+
 export function ProductionOrdersWorkspace({ onNavigate, organizationId }: WorkspaceProps) {
   const restoredViewState = React.useMemo(() => loadProductionOrdersViewState(organizationId), [organizationId]);
   const [orders, setOrders] = React.useState<ProductionOrder[]>([]);
@@ -1645,6 +1849,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
   const [orderFormError, setOrderFormError] = React.useState('');
   const [confirmation, setConfirmation] = React.useState<ConfirmationState | null>(null);
   const [jobQueueSummary, setJobQueueSummary] = React.useState<JobQueueSummary | null>(null);
+  const [pendingWorkReport, setPendingWorkReport] = React.useState<PendingWorkReport | null>(null);
   const [orderDetailsOpen, setOrderDetailsOpen] = React.useState(false);
   const [orderDetails, setOrderDetails] = React.useState<ProductionOrderDetailsState>({
     loading: false,
@@ -1913,6 +2118,10 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
       stationCode: selectedOrder.assignedStation,
       stationName: getProductionOrderStationLabel(stationOptionsByWorkCenter, selectedOrder.assignedWorkCenter, selectedOrder.assignedStation),
     }, selectedOrder.id));
+  };
+
+  const openPendingWorkReport = () => {
+    setPendingWorkReport(getPendingWorkReport(orders, stationOptionsByWorkCenter));
   };
 
   const updateOrder = (orderNumber: string, action: string) => {
@@ -2308,7 +2517,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
   };
 
   React.useEffect(() => {
-    if (!formMode && !confirmation && !jobQueueSummary && !orderDetailsOpen) return undefined;
+    if (!formMode && !confirmation && !jobQueueSummary && !pendingWorkReport && !orderDetailsOpen) return undefined;
     const previousBodyOverflow = document.body.style.overflow;
     const previousDocumentOverflow = document.documentElement.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -2317,7 +2526,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
       document.body.style.overflow = previousBodyOverflow;
       document.documentElement.style.overflow = previousDocumentOverflow;
     };
-  }, [formMode, confirmation, jobQueueSummary, orderDetailsOpen]);
+  }, [formMode, confirmation, jobQueueSummary, pendingWorkReport, orderDetailsOpen]);
 
   return (
     <section className="mes-workspace-panel production-orders-workspace">
@@ -2342,9 +2551,14 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
               <MesOrderDatePicker id="production-orders-kpi-to" value={kpiDateRange.to} onChange={(to) => updateKpiDateRange({ ...kpiDateRange, to })} onQuickRange={updateKpiDateRange} />
             </label>
           </div>
-          <button className="mes-primary-action production-orders-create" type="button" onClick={openCreateOrderForm}>
-            <Plus size={16} /> Add Production Order
-          </button>
+          <div className="production-orders-header-actions">
+            <button className="mes-primary-action production-orders-create" type="button" onClick={openCreateOrderForm}>
+              <Plus size={16} /> Add Production Order
+            </button>
+            <button className="production-orders-pending-report-action" type="button" onClick={openPendingWorkReport}>
+              <FileText size={16} /> Pending Work Report
+            </button>
+          </div>
         </div>
       </div>
 
@@ -2570,6 +2784,9 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
           )}
         </aside>
       </div>
+      {pendingWorkReport ? (
+        <PendingWorkReportModal report={pendingWorkReport} onClose={() => setPendingWorkReport(null)} />
+      ) : null}
       {orderDetailsOpen && selectedOrder ? (
         <ProductionOrderDetailsModal
           order={selectedOrder}

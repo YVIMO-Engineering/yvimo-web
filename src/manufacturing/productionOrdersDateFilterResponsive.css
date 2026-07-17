@@ -3,7 +3,8 @@
     grid-template-columns: 1fr;
   }
 
-  .production-orders-header-controls .production-orders-create {
+  .production-orders-header-controls .production-orders-create,
+  .production-orders-header-controls .production-orders-pending-report-action {
     justify-content: center;
     width: 100%;
   }
