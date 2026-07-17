@@ -8710,8 +8710,8 @@ body.work-center-map-expanded .logged-workspace {
   --production-order-details-top-gap: 28px;
   --production-order-details-bottom-gap: var(--production-order-details-top-gap);
   --production-order-details-top-offset: calc(var(--header-height, 96px) + var(--production-order-details-top-gap));
-  --production-order-details-modal-height: calc(100vh - var(--production-order-details-top-offset) - var(--production-order-details-bottom-gap));
-  align-items: flex-start;
+  --production-order-details-modal-height: calc(100dvh - var(--production-order-details-top-offset) - var(--production-order-details-bottom-gap));
+  align-items: center;
   justify-items: center;
   box-sizing: border-box;
   padding: var(--production-order-details-top-offset) 40px var(--production-order-details-bottom-gap) calc(var(--sidebar-width, 104px) + 52px);
@@ -8719,11 +8719,10 @@ body.work-center-map-expanded .logged-workspace {
 }
 
 .production-order-details-modal {
-  display: grid;
-  grid-template-rows: auto auto auto minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
   gap: 14px;
   width: min(88vw, 1120px);
-  height: var(--production-order-details-modal-height);
   max-height: var(--production-order-details-modal-height);
   min-height: 0;
   border: 1px solid rgba(255, 138, 31, 0.34);
@@ -8838,6 +8837,7 @@ body.work-center-map-expanded .logged-workspace {
 }
 
 .production-order-details-table-wrap {
+  flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
   border: 1px solid #d8e0e8;
