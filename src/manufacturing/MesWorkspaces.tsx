@@ -1385,7 +1385,7 @@ export function ProductionOrderDetailsModal({
     }
   };
 
-  return (
+  const modalContent = (
     <div className="mes-modal-backdrop production-order-details-backdrop" role="presentation">
       <section className="production-order-details-modal" role="dialog" aria-modal="true" aria-labelledby="production-order-details-title">
         <div className="production-order-details-header">
@@ -1612,6 +1612,8 @@ export function ProductionOrderDetailsModal({
       ) : null}
     </div>
   );
+
+  return typeof document === 'undefined' ? modalContent : createPortal(modalContent, document.body);
 }
 
 export function ProductionOrdersWorkspace({ onNavigate, organizationId }: WorkspaceProps) {
