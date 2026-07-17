@@ -6,7 +6,7 @@ import { resolveGooglePlacesAddressMatch, searchGooglePlacesAddressMatches, type
 import { supabase } from '../lib/supabaseClient';
 import { useSupabaseRealtimeRefresh } from '../lib/useSupabaseRealtimeRefresh';
 import type { ProductionOrder, ProductionOrderManufacturingType, ProductionOrderPriority, ProductionOrderStatus, QualityCheckLimit, QualityMeasurementUnit, QualityPieceType, WorkCenterStatus } from './mesTypes';
-import { qualityInspectionsByPieceType, qualityPieceTypeLabels, qualityPieceTypes } from './qualityInspectionConfig';
+import { qualityInspectionsByPieceType, qualityPieceTypeLabels, qualityPieceTypes, qualityReportOnlyInspection } from './qualityInspectionConfig';
 import './productionOrders.css';
 import './productionOrdersDateFilter.css';
 import './productionOrdersDateFilterResponsive.css';
@@ -2801,7 +2801,12 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
                                 ...current,
                                 qualityChecks: selected
                                   ? current.qualityChecks.filter((check) => check !== inspection)
-                                  : [...current.qualityChecks, inspection],
+                                  : inspection === qualityReportOnlyInspection
+                                    ? [qualityReportOnlyInspection]
+                                    : [...current.qualityChecks.filter((check) => check !== qualityReportOnlyInspection), inspection],
+                                qualityCheckLimits: inspection === qualityReportOnlyInspection
+                                  ? {}
+                                  : current.qualityCheckLimits,
                               }))}
                             >
                               <Check size={15} />

@@ -1,5 +1,7 @@
 import type { QualityPieceType } from './mesTypes';
 
+export const qualityReportOnlyInspection = 'Just report';
+
 export const qualityPieceTypeLabels: Record<QualityPieceType, string> = {
   hobs: 'Hobs',
   shaper: 'Shaper',
@@ -11,6 +13,7 @@ export const qualityInspectionsByPieceType: Record<QualityPieceType, string[]> =
   hobs: ['Lead', 'Index', 'Rake', 'Runout'],
   shaper: ['Runout', 'Flatness', 'Profile', 'Lead', 'Index', 'Diameter', 'Height'],
   shavers: [
+    qualityReportOnlyInspection,
     'Lead',
     'Index',
     'Profile',

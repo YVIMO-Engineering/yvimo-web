@@ -26,7 +26,7 @@ import {
 import { supabase } from '../lib/supabaseClient';
 import { useSupabaseRealtimeRefresh } from '../lib/useSupabaseRealtimeRefresh';
 import { mockProductionOrders } from './mesMockData';
-import { qualityInspectionsByPieceType, qualityPieceTypes } from './qualityInspectionConfig';
+import { qualityInspectionsByPieceType, qualityPieceTypes, qualityReportOnlyInspection } from './qualityInspectionConfig';
 import type { ProductionOrder, ProductionOrderPriority, ProductionOrderStatus, QualityCheckLimit, QualityMeasurementUnit, QualityPieceType } from './mesTypes';
 
 export type QualityContextTab =
@@ -1034,21 +1034,36 @@ function getInspectionStatus(order: ProductionOrder, serial: string, inspection:
   return 'pending';
 }
 
-function getRequiredInspectionStatuses(order: ProductionOrder, serial: string, measurements: QualityMeasurementRecord[]) {
+function isQualityReportOnlyInspection(inspection: string) {
+  return inspection === qualityReportOnlyInspection;
+}
+
+function getQualityMeasurementInspections(order: ProductionOrder) {
+  const inspections = order.qualityChecksEnabled ? order.qualityChecks ?? [] : [];
+  return inspections.filter((inspection) => !isQualityReportOnlyInspection(inspection));
+}
+
+function getSerialQualityDocuments(documents: QualityInspectionDocument[], orderId: string, serial: string) {
+  return documents.filter((document) => document.production_order_id === orderId && isMatchingQualitySerial(document.serial_number, serial));
+}
+
+function getRequiredInspectionStatuses(order: ProductionOrder, serial: string, measurements: QualityMeasurementRecord[], documents: QualityInspectionDocument[] = []) {
   const inspections = order.qualityChecksEnabled ? order.qualityChecks ?? [] : [];
   return inspections.map((inspection) => ({
     inspection,
-    status: getInspectionStatus(order, serial, inspection, measurements),
+    status: isQualityReportOnlyInspection(inspection)
+      ? (getSerialQualityDocuments(documents, order.id, serial).length ? 'ok' : 'pending')
+      : getInspectionStatus(order, serial, inspection, measurements),
   }));
 }
 
-function isSerialReadyToSaveInspection(order: ProductionOrder, serial: string, measurements: QualityMeasurementRecord[]) {
-  const statuses = getRequiredInspectionStatuses(order, serial, measurements);
+function isSerialReadyToSaveInspection(order: ProductionOrder, serial: string, measurements: QualityMeasurementRecord[], documents: QualityInspectionDocument[]) {
+  const statuses = getRequiredInspectionStatuses(order, serial, measurements, documents);
   return statuses.length > 0 && statuses.every(({ status }) => status !== 'pending');
 }
 
-function getOverallSerialInspectionResult(order: ProductionOrder, serial: string, measurements: QualityMeasurementRecord[]): QualityInspectionResult {
-  const statuses = getRequiredInspectionStatuses(order, serial, measurements).map(({ status }) => status);
+function getOverallSerialInspectionResult(order: ProductionOrder, serial: string, measurements: QualityMeasurementRecord[], documents: QualityInspectionDocument[]): QualityInspectionResult {
+  const statuses = getRequiredInspectionStatuses(order, serial, measurements, documents).map(({ status }) => status);
   if (statuses.includes('nok')) return 'nok';
   if (statuses.includes('approach')) return 'approach';
   return 'ok';
@@ -1071,10 +1086,11 @@ function getQualitySerialInspectionRecord(records: QualitySerialInspectionRecord
   return records.find((record) => record.production_order_id === orderId && isMatchingQualitySerial(record.serial_number, serial));
 }
 
-function RequiredInspections({ order, serial, measurements, readyToSaveInspection, onSaveInspection, onSkipInspection }: {
+function RequiredInspections({ order, serial, measurements, documents, readyToSaveInspection, onSaveInspection, onSkipInspection }: {
   order: ProductionOrder;
   serial: string;
   measurements: QualityMeasurementRecord[];
+  documents: QualityInspectionDocument[];
   readyToSaveInspection: boolean;
   onSaveInspection: () => Promise<void>;
   onSkipInspection: () => void;
@@ -1094,7 +1110,9 @@ function RequiredInspections({ order, serial, measurements, readyToSaveInspectio
         <>
           <div className="quality-required-inspection-list">
             {inspections.map((inspection) => {
-              const status = getInspectionStatus(order, serial, inspection, measurements);
+              const status = isQualityReportOnlyInspection(inspection)
+                ? (getSerialQualityDocuments(documents, order.id, serial).length ? 'ok' : 'pending')
+                : getInspectionStatus(order, serial, inspection, measurements);
               const StatusIcon = statusConfig[status].icon;
               return (
                 <div className={`quality-required-inspection ${status}`} key={inspection}>
@@ -1125,7 +1143,7 @@ function MeasurementCapture({ order, serial, measurements, onSaveMeasurement, on
   onSaveMeasurement: (inspectionName: string, measuredValue: number) => Promise<void>;
   onConfigureLimits: (inspectionName: string) => void;
 }) {
-  const inspections = order.qualityChecksEnabled ? order.qualityChecks ?? [] : [];
+  const inspections = getQualityMeasurementInspections(order);
   const measurementUnitSymbol = getQualityMeasurementUnitSymbol(order);
   const [drafts, setDrafts] = React.useState<MeasurementDraft>({});
   const [savingInspection, setSavingInspection] = React.useState<string | null>(null);
@@ -1187,7 +1205,7 @@ function MeasurementCapture({ order, serial, measurements, onSaveMeasurement, on
           })}
         </div>
       ) : (
-        <div className="quality-inspection-empty-message"><AlertTriangle size={16} /><span>No measurement records.</span></div>
+        <div className="quality-inspection-empty-message"><AlertTriangle size={16} /><span>Upload the inspection report, then save this inspection.</span></div>
       )}
     </article>
   );
@@ -1381,7 +1399,7 @@ function QualityInspectionsPage({ selectedOrder, selectedSerial, measurements, d
       .filter((record) => record.production_order_id === selectedOrder.id && isQualitySerialInList(availableSerials, record.serial_number))
       .map((record) => normalizeQualitySerial(record.serial_number)),
   ).size;
-  const readyToSaveInspection = isSerialReadyToSaveInspection(selectedOrder, selectedSerial, measurements)
+  const readyToSaveInspection = isSerialReadyToSaveInspection(selectedOrder, selectedSerial, measurements, documents)
     && !isQualitySerialInspected(inspectedSerials, selectedOrder.id, selectedSerial);
 
   return (
@@ -1391,7 +1409,7 @@ function QualityInspectionsPage({ selectedOrder, selectedSerial, measurements, d
         <QualityOrderSelector order={selectedOrder} selectedSerial={selectedSerial} onOpenOrder={onChangeOrder} onOpenSerial={onChangeSerial} />
       </div>
       <section className="quality-inspection-board" aria-label="Inspection foundation for selected work order">
-        <RequiredInspections order={selectedOrder} serial={selectedSerial} measurements={measurements} readyToSaveInspection={readyToSaveInspection} onSaveInspection={onSaveInspection} onSkipInspection={() => setSkipModalOpen(true)} />
+        <RequiredInspections order={selectedOrder} serial={selectedSerial} measurements={measurements} documents={documents} readyToSaveInspection={readyToSaveInspection} onSaveInspection={onSaveInspection} onSkipInspection={() => setSkipModalOpen(true)} />
         <MeasurementCapture order={selectedOrder} serial={selectedSerial} measurements={measurements} onSaveMeasurement={onSaveMeasurement} onConfigureLimits={onConfigureLimits} />
         <InspectionDocuments order={selectedOrder} serial={selectedSerial} documents={documents} onUploadDocument={onUploadDocument} onOpenDocument={onOpenDocument} onDeleteDocument={onDeleteDocument} />
       </section>
@@ -1435,7 +1453,7 @@ function QualitySpecificationOrderSelector({ order, onOpenOrder }: { order: Prod
 }
 
 function createSpecificationDraft(order: ProductionOrder): SpecificationDraft {
-  const inspections = order.qualityChecksEnabled ? order.qualityChecks ?? [] : [];
+  const inspections = getQualityMeasurementInspections(order);
   return Object.fromEntries(inspections.map((inspection) => {
     const limits = order.qualityCheckLimits?.[inspection] ?? {};
     return [inspection, {
@@ -1460,7 +1478,7 @@ function QualitySpecificationsPage({ selectedOrder, onChangeOrder, onSaveSpecifi
   onSaveSpecifications: (limits: Record<string, QualityCheckLimit>, measurementUnit: QualityMeasurementUnit) => Promise<void>;
   highlightRequest: SpecificationHighlightRequest | null;
 }) {
-  const inspections = selectedOrder.qualityChecksEnabled ? selectedOrder.qualityChecks ?? [] : [];
+  const inspections = getQualityMeasurementInspections(selectedOrder);
   const [activeInspection, setActiveInspection] = React.useState(inspections[0] ?? '');
   const [draft, setDraft] = React.useState<SpecificationDraft>(() => createSpecificationDraft(selectedOrder));
   const [measurementUnit, setMeasurementUnit] = React.useState<QualityMeasurementUnit>(() => getQualityMeasurementUnit(selectedOrder));
@@ -1972,7 +1990,7 @@ export function QualityOperationsWorkspace({ onNavigate, activeTab, organization
 
   const handleSaveSerialInspection = React.useCallback(async () => {
     if (!selectedInspectionOrder || !selectedInspectionSerial) return;
-    const result = getOverallSerialInspectionResult(selectedInspectionOrder, selectedInspectionSerial, measurementRecords);
+    const result = getOverallSerialInspectionResult(selectedInspectionOrder, selectedInspectionSerial, measurementRecords, inspectionDocuments);
     let nextRecord: QualitySerialInspectionRecord = {
       id: `quality-serial-inspection-${Date.now()}`,
       production_order_id: selectedInspectionOrder.id,
@@ -1982,8 +2000,8 @@ export function QualityOperationsWorkspace({ onNavigate, activeTab, organization
     };
 
     if (!isDemoQualityOrder(selectedInspectionOrder)) {
-      const inspectionStatuses = getRequiredInspectionStatuses(selectedInspectionOrder, selectedInspectionSerial, measurementRecords);
-      const documentCount = inspectionDocuments.filter((document) => document.production_order_id === selectedInspectionOrder.id && document.serial_number === selectedInspectionSerial).length;
+      const inspectionStatuses = getRequiredInspectionStatuses(selectedInspectionOrder, selectedInspectionSerial, measurementRecords, inspectionDocuments);
+      const documentCount = getSerialQualityDocuments(inspectionDocuments, selectedInspectionOrder.id, selectedInspectionSerial).length;
       const { data, error } = await supabase.rpc('mes_quality_save_serial_inspection', {
         p_organization_id: organizationId,
         p_order_id: selectedInspectionOrder.id,
