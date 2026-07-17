@@ -1256,6 +1256,48 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
     return nextAvailableSerial;
   };
 
+  const reconcileReportedCounts = React.useCallback((orderId: string, serials: OperatorProductionSerial[], traceabilityRows: ProductionOrderDetailTraceabilityRow[]) => {
+    const serialResultsBySequence = new Map<number, 'good' | 'scrap'>();
+    serials.forEach((serial) => {
+      if (serial.result) serialResultsBySequence.set(serial.pieceSequence, serial.result);
+    });
+
+    const traceabilityResultsByPiece = new Map<string, 'good' | 'scrap'>();
+    traceabilityRows.forEach((traceability) => {
+      const pieceSequence = getProductionOrderDetailPayloadNumber(traceability.payload, 'piece_sequence');
+      if (pieceSequence && serialResultsBySequence.has(pieceSequence)) return;
+      const fallbackKey = (traceability.serial_number || traceability.id).trim().toLowerCase();
+      const pieceKey = pieceSequence ? `piece:${pieceSequence}` : `trace:${fallbackKey}`;
+      if (traceabilityResultsByPiece.has(pieceKey)) return;
+      const payloadResult = traceability.payload?.report_type;
+      traceabilityResultsByPiece.set(pieceKey, payloadResult === 'scrap' ? 'scrap' : 'good');
+    });
+
+    const results = [
+      ...Array.from(serialResultsBySequence.values()),
+      ...Array.from(traceabilityResultsByPiece.values()),
+    ];
+    const nextGoodQty = results.filter((result) => result === 'good').length;
+    const nextScrapQty = results.filter((result) => result === 'scrap').length;
+
+    setGoodQty(nextGoodQty);
+    setScrapQty(nextScrapQty);
+    setSnapshot((current) => {
+      if (!current) return current;
+      const updateOrderCounts = (order: ProductionOrder) => (
+        order.id === orderId
+          ? { ...order, completedQuantity: nextGoodQty, scrapQuantity: nextScrapQty }
+          : order
+      );
+      return {
+        ...current,
+        currentOrder: current.currentOrder ? updateOrderCounts(current.currentOrder) : current.currentOrder,
+        activeOrders: current.activeOrders.map(updateOrderCounts),
+        queuedOrders: current.queuedOrders.map(updateOrderCounts),
+      };
+    });
+  }, []);
+
   const operatorSnapshotRealtimeTables = React.useMemo(() => ([
     { table: 'mes_production_orders', filter: `organization_id=eq.${organizationId}` },
     { table: 'mes_work_centers', filter: `organization_id=eq.${organizationId}` },
@@ -1427,8 +1469,21 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
     }
     setProductionSerialsLoading(true);
     try {
-      const nextSerials = await fetchOperatorProductionSerials({ orderId: currentOrder.id, organizationId });
+      const [
+        nextSerials,
+        { data: traceabilityData, error: traceabilityError },
+      ] = await Promise.all([
+        fetchOperatorProductionSerials({ orderId: currentOrder.id, organizationId }),
+        supabase
+          .from('mes_operator_terminal_traceability')
+          .select('id, production_order_id, template_id, part_label, tool_id, serial_number, dimensions_unit, before_notch, before_tooth_length, damage_codes, stock_to_remove, after_tooth_length, payload, created_at')
+          .eq('organization_id', organizationId)
+          .eq('production_order_id', currentOrder.id)
+          .order('created_at', { ascending: false }),
+      ]);
+      if (traceabilityError) throw traceabilityError;
       setProductionSerials(nextSerials);
+      reconcileReportedCounts(currentOrder.id, nextSerials, (traceabilityData ?? []) as ProductionOrderDetailTraceabilityRow[]);
       if (correctionSerial) return;
       const selectedSerialStillAvailable = nextSerials.find((serial) => serial.id === selectedProductionSerialId && !serial.result);
       const nextAvailableSerial = selectedSerialStillAvailable ?? nextSerials.find((serial) => !serial.result) ?? null;
@@ -1444,7 +1499,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
     } finally {
       setProductionSerialsLoading(false);
     }
-  }, [applyProductionSerial, correctionSerial, currentOrder?.id, hasSupabaseOrder, organizationId, selectedProductionSerialId]);
+  }, [applyProductionSerial, correctionSerial, currentOrder?.id, hasSupabaseOrder, organizationId, reconcileReportedCounts, selectedProductionSerialId]);
 
   React.useEffect(() => {
     void loadProductionSerials();
@@ -1469,12 +1524,6 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
 
     if (nextOrder) {
       applyOrder(nextOrder);
-      if (!productionSerials.some((serial) => !serial.result)) {
-        setTraceabilityForm((current) => ({
-          ...current,
-          serialNumber: `${nextOrder.partNumber}-SN-${String(nextOrder.completedQuantity + nextOrder.scrapQuantity + 1).padStart(4, '0')}`,
-        }));
-      }
       setTerminalMessage('');
       return;
     }
@@ -1484,7 +1533,15 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
     setState('not-started');
     setEvents([]);
     setTerminalMessage('');
-  }, [currentOrder?.id, productionSerials, stationCode, workCenterCode]);
+  }, [applyOrder, snapshot, stationCode, workCenterCode]);
+
+  React.useEffect(() => {
+    if (!currentOrder || productionSerials.some((serial) => !serial.result)) return;
+    setTraceabilityForm((current) => ({
+      ...current,
+      serialNumber: `${currentOrder.partNumber}-SN-${String(currentOrder.completedQuantity + currentOrder.scrapQuantity + 1).padStart(4, '0')}`,
+    }));
+  }, [currentOrder, productionSerials]);
 
   const reportGood = async () => {
     if (!currentOrder) return;

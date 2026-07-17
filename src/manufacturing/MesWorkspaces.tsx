@@ -242,6 +242,7 @@ type TraceabilityCapture = {
   orderStatus: ProductionOrderStatus | '';
   statusAtCapture: ProductionOrderStatus | '';
   pieceSequence: number | null;
+  reportedQuantity: number;
   plannedQuantity: number;
   completionPercent: number;
   shift: string;
@@ -6096,7 +6097,7 @@ function mapTraceabilityCapture(row: TraceabilityCaptureRow): TraceabilityCaptur
     ? pieceSequence >= plannedQuantity ? 'completed' : 'running'
     : order?.status ?? '';
   const statusAtCapture = getTraceabilityPayloadStatus(payload) || inferredStatusAtCapture;
-  const reportedQuantity = pieceSequence ?? ((order?.completed_quantity ?? 0) + (order?.scrap_quantity ?? 0));
+  const reportedQuantity = (order?.completed_quantity ?? 0) + (order?.scrap_quantity ?? 0);
   return {
     id: row.id,
     productionOrderId: row.production_order_id ?? '',
@@ -6129,10 +6130,48 @@ function mapTraceabilityCapture(row: TraceabilityCaptureRow): TraceabilityCaptur
     orderStatus: order?.status ?? '',
     statusAtCapture,
     pieceSequence,
+    reportedQuantity,
     plannedQuantity,
     completionPercent: plannedQuantity > 0 ? Math.round((reportedQuantity / plannedQuantity) * 100) : 0,
     shift,
   };
+}
+
+function enrichTraceabilityCaptureProgress(captures: TraceabilityCapture[]) {
+  const capturesByOrder = new Map<string, TraceabilityCapture[]>();
+  captures.forEach((capture) => {
+    const groupKey = capture.productionOrderId || `capture:${capture.id}`;
+    capturesByOrder.set(groupKey, [...(capturesByOrder.get(groupKey) ?? []), capture]);
+  });
+
+  const progressByCaptureId = new Map<string, { reportedQuantity: number; completionPercent: number; statusAtCapture: ProductionOrderStatus | '' }>();
+  capturesByOrder.forEach((orderCaptures) => {
+    const reportedPieceKeys = new Set<string>();
+    [...orderCaptures]
+      .sort((first, second) => new Date(first.timestamp).getTime() - new Date(second.timestamp).getTime())
+      .forEach((capture) => {
+        const pieceKey = capture.pieceSequence
+          ? `piece:${capture.pieceSequence}`
+          : capture.serialNumber.trim()
+            ? `serial:${capture.serialNumber.trim().toLowerCase()}`
+            : `capture:${capture.id}`;
+        reportedPieceKeys.add(pieceKey);
+        const reportedQuantity = reportedPieceKeys.size;
+        const completionPercent = capture.plannedQuantity > 0
+          ? Math.round((reportedQuantity / capture.plannedQuantity) * 100)
+          : 0;
+        progressByCaptureId.set(capture.id, {
+          reportedQuantity,
+          completionPercent,
+          statusAtCapture: capture.plannedQuantity > 0 && reportedQuantity >= capture.plannedQuantity ? 'completed' : 'running',
+        });
+      });
+  });
+
+  return captures.map((capture) => {
+    const progress = progressByCaptureId.get(capture.id);
+    return progress ? { ...capture, ...progress } : capture;
+  });
 }
 
 const traceabilityShiftOptions = ['1st', '2nd', '3rd'];
@@ -6610,7 +6649,7 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
     } else {
       const workCenterRows = (workCentersData ?? []) as TraceabilityWorkCenterOption[];
       const workCenterCodeById = new Map(workCenterRows.map((workCenter) => [workCenter.id, workCenter.code]));
-      const nextCaptures = ((capturesData ?? []) as TraceabilityCaptureRow[]).map(mapTraceabilityCapture);
+      const nextCaptures = enrichTraceabilityCaptureProgress(((capturesData ?? []) as TraceabilityCaptureRow[]).map(mapTraceabilityCapture));
       if (silent && traceabilityLoadedRef.current) {
         nextCaptures
           .filter((capture) => !knownCaptureIdsRef.current.has(capture.id))
@@ -7220,7 +7259,7 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
                   <span><Factory size={15} /><b>Work Center</b>{capture.workCenter || 'No work center'}</span>
                   <span><RadioTower size={15} /><b>Station</b>{capture.stationName || capture.station || 'No station'}</span>
                   <span><Eye size={15} /><b>Serial</b>{capture.serialNumber || 'No serial'}</span>
-                  <span><Activity size={15} /><b>Progress</b>{capture.completionPercent}%{capture.pieceSequence ? ` (${capture.pieceSequence}/${capture.plannedQuantity || 'N/A'})` : ''}</span>
+                  <span><Activity size={15} /><b>Progress</b>{capture.completionPercent}%{capture.plannedQuantity ? ` (${capture.reportedQuantity}/${capture.plannedQuantity})` : ''}</span>
                 </div>
                 <div className="traceability-tags">
                   <span>{formatLabel(capture.templateId)}</span>
