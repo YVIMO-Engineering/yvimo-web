@@ -8706,11 +8706,16 @@ body.work-center-map-expanded .logged-workspace {
   padding: 18px;
 }
 
-.production-order-details-backdrop {
+.mes-modal-backdrop.production-order-details-backdrop {
+  --production-order-details-top-gap: 28px;
+  --production-order-details-bottom-gap: var(--production-order-details-top-gap);
+  --production-order-details-top-offset: calc(var(--header-height, 96px) + var(--production-order-details-top-gap));
+  --production-order-details-modal-height: calc(100vh - var(--production-order-details-top-offset) - var(--production-order-details-bottom-gap));
   align-items: flex-start;
   justify-items: center;
-  padding: calc(var(--header-height, 96px) + 48px) 40px 32px calc(var(--sidebar-width, 104px) + 52px);
-  overflow-y: auto;
+  box-sizing: border-box;
+  padding: var(--production-order-details-top-offset) 40px var(--production-order-details-bottom-gap) calc(var(--sidebar-width, 104px) + 52px);
+  overflow: hidden;
 }
 
 .production-order-details-modal {
@@ -8718,12 +8723,15 @@ body.work-center-map-expanded .logged-workspace {
   grid-template-rows: auto auto auto minmax(0, 1fr);
   gap: 14px;
   width: min(88vw, 1120px);
-  max-height: calc(100vh - var(--header-height, 96px) - 88px);
+  height: var(--production-order-details-modal-height);
+  max-height: var(--production-order-details-modal-height);
+  min-height: 0;
   border: 1px solid rgba(255, 138, 31, 0.34);
   border-radius: 10px;
   padding: 18px;
   background: #ffffff;
   box-shadow: 0 28px 80px rgba(7, 17, 28, 0.28);
+  overflow: hidden;
 }
 
 .production-order-details-header {
@@ -9095,12 +9103,16 @@ body.work-center-map-expanded .logged-workspace {
 }
 
 @media (max-width: 900px) {
-  .production-order-details-backdrop {
-    padding: calc(var(--header-height, 96px) + 20px) 18px 24px calc(var(--sidebar-width, 86px) + 18px);
+  .mes-modal-backdrop.production-order-details-backdrop {
+    --production-order-details-top-gap: 24px;
+    padding-right: 18px;
+    padding-left: calc(var(--sidebar-width, 86px) + 18px);
   }
 
   .production-order-details-modal {
     width: min(96vw, 1120px);
+    padding-top: 14px;
+    padding-bottom: 12px;
   }
 
   .production-order-details-summary {

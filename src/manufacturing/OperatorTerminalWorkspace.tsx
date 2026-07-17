@@ -27,6 +27,9 @@ import {
   ProductionOrderDetailsModal,
   type JobQueueSummary,
   type ProductionOrderDetailPiece,
+  type ProductionOrderDetailQualityDocumentRow,
+  type ProductionOrderDetailQualityInspectionRow,
+  type ProductionOrderDetailQualityMeasurementRow,
   type ProductionOrderDetailSerialRow,
   type ProductionOrderDetailsState,
   type ProductionOrderDetailTraceabilityRow,
@@ -1086,7 +1089,13 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
     setOrderDetailsOpen(true);
     setOrderDetails({ loading: true, error: '', pieces: [] });
     try {
-      const [{ data: serialData, error: serialError }, { data: traceabilityData, error: traceabilityError }] = await Promise.all([
+      const [
+        { data: serialData, error: serialError },
+        { data: traceabilityData, error: traceabilityError },
+        { data: qualityInspectionData, error: qualityInspectionError },
+        { data: qualityMeasurementData, error: qualityMeasurementError },
+        { data: qualityDocumentData, error: qualityDocumentError },
+      ] = await Promise.all([
         supabase
           .from('mes_production_serials')
           .select('id, production_order_id, piece_sequence, tool_id, serial_number, result, ready_for_quality, traceability_id, reported_at')
@@ -1099,23 +1108,64 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
           .eq('organization_id', organizationId)
           .eq('production_order_id', currentOrder.id)
           .order('created_at', { ascending: false }),
+        supabase
+          .from('mes_quality_serial_inspections')
+          .select('id, production_order_id, serial_number, result, inspected_at')
+          .eq('organization_id', organizationId)
+          .eq('production_order_id', currentOrder.id)
+          .order('inspected_at', { ascending: false }),
+        supabase
+          .from('mes_quality_measurements')
+          .select('id, production_order_id, serial_number, inspection_name, measured_value, lower_limit, upper_limit, result, measured_at')
+          .eq('organization_id', organizationId)
+          .eq('production_order_id', currentOrder.id)
+          .order('measured_at', { ascending: false }),
+        supabase
+          .from('mes_quality_inspection_documents')
+          .select('id, production_order_id, serial_number, inspection_name, file_name, file_path, file_type, uploaded_at')
+          .eq('organization_id', organizationId)
+          .eq('production_order_id', currentOrder.id)
+          .order('uploaded_at', { ascending: false }),
       ]);
 
       if (serialError) throw serialError;
       if (traceabilityError) throw traceabilityError;
+      if (qualityInspectionError) throw qualityInspectionError;
+      if (qualityMeasurementError) throw qualityMeasurementError;
+      if (qualityDocumentError) throw qualityDocumentError;
 
       const serialRows = (serialData ?? []) as ProductionOrderDetailSerialRow[];
       const traceabilityRows = (traceabilityData ?? []) as ProductionOrderDetailTraceabilityRow[];
+      const qualityInspectionRows = (qualityInspectionData ?? []) as ProductionOrderDetailQualityInspectionRow[];
+      const qualityMeasurementRows = (qualityMeasurementData ?? []) as ProductionOrderDetailQualityMeasurementRow[];
+      const qualityDocumentRows = (qualityDocumentData ?? []) as ProductionOrderDetailQualityDocumentRow[];
       const traceabilityById = new Map(traceabilityRows.map((traceability) => [traceability.id, traceability]));
       const traceabilityBySerial = new Map<string, ProductionOrderDetailTraceabilityRow>();
       const traceabilityBySequence = new Map<number, ProductionOrderDetailTraceabilityRow>();
       const serialBySequence = new Map(serialRows.map((serial) => [serial.piece_sequence, serial]));
+      const qualityInspectionBySerial = new Map<string, ProductionOrderDetailQualityInspectionRow>();
+      const qualityMeasurementsBySerial = new Map<string, ProductionOrderDetailQualityMeasurementRow[]>();
+      const qualityDocumentsBySerial = new Map<string, ProductionOrderDetailQualityDocumentRow[]>();
 
       traceabilityRows.forEach((traceability) => {
         const serialNumber = traceability.serial_number?.trim().toLowerCase();
         if (serialNumber && !traceabilityBySerial.has(serialNumber)) traceabilityBySerial.set(serialNumber, traceability);
         const pieceSequence = getProductionOrderDetailPayloadNumber(traceability.payload, 'piece_sequence');
         if (pieceSequence && !traceabilityBySequence.has(pieceSequence)) traceabilityBySequence.set(pieceSequence, traceability);
+      });
+      qualityInspectionRows.forEach((inspection) => {
+        const serialNumber = inspection.serial_number.trim().toLowerCase();
+        if (serialNumber && !qualityInspectionBySerial.has(serialNumber)) qualityInspectionBySerial.set(serialNumber, inspection);
+      });
+      qualityMeasurementRows.forEach((measurement) => {
+        const serialNumber = measurement.serial_number.trim().toLowerCase();
+        if (!serialNumber) return;
+        qualityMeasurementsBySerial.set(serialNumber, [...(qualityMeasurementsBySerial.get(serialNumber) ?? []), measurement]);
+      });
+      qualityDocumentRows.forEach((document) => {
+        const serialNumber = document.serial_number.trim().toLowerCase();
+        if (!serialNumber) return;
+        qualityDocumentsBySerial.set(serialNumber, [...(qualityDocumentsBySerial.get(serialNumber) ?? []), document]);
       });
 
       const lastKnownSequence = Math.max(
@@ -1131,6 +1181,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
           ?? (serialKey ? traceabilityBySerial.get(serialKey) : null)
           ?? traceabilityBySequence.get(pieceSequence)
           ?? null;
+        const resolvedSerialKey = (serial?.serial_number || traceability?.serial_number || '').trim().toLowerCase();
         return {
           pieceSequence,
           toolId: serial?.tool_id ?? traceability?.tool_id ?? '',
@@ -1138,6 +1189,9 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
           status: serial?.result ?? (traceability ? 'good' : 'not-started'),
           reportedAt: serial?.reported_at ?? traceability?.created_at ?? '',
           traceability,
+          qualityInspection: resolvedSerialKey ? qualityInspectionBySerial.get(resolvedSerialKey) ?? null : null,
+          qualityMeasurements: resolvedSerialKey ? qualityMeasurementsBySerial.get(resolvedSerialKey) ?? [] : [],
+          qualityDocuments: resolvedSerialKey ? qualityDocumentsBySerial.get(resolvedSerialKey) ?? [] : [],
         };
       });
 

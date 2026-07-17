@@ -1308,6 +1308,18 @@ function hasProductionOrderDetailDamage(piece: ProductionOrderDetailPiece) {
   return getProductionOrderDetailDamageCodes(piece.traceability).length > 0 || Boolean(piece.traceability?.damage_image_url);
 }
 
+function getProductionOrderDetailQualityInspection(piece: ProductionOrderDetailPiece) {
+  return piece.qualityInspection ?? null;
+}
+
+function getProductionOrderDetailQualityMeasurements(piece: ProductionOrderDetailPiece) {
+  return piece.qualityMeasurements ?? [];
+}
+
+function getProductionOrderDetailQualityDocuments(piece: ProductionOrderDetailPiece) {
+  return piece.qualityDocuments ?? [];
+}
+
 export function getProductionOrderDetailMeasurements(traceability: ProductionOrderDetailTraceabilityRow | null) {
   if (!traceability) return [];
   const payload = traceability.payload ?? {};
@@ -1349,7 +1361,7 @@ export function ProductionOrderDetailsModal({
   const [activeView, setActiveView] = React.useState<'production' | 'quality' | 'damage'>('production');
   const [preview, setPreview] = React.useState<ProductionOrderDetailPreview | null>(null);
   const [previewError, setPreviewError] = React.useState('');
-  const qualityPieces = details.pieces.filter((piece) => piece.qualityInspection || piece.qualityMeasurements.length > 0 || piece.qualityDocuments.length > 0);
+  const qualityPieces = details.pieces.filter((piece) => getProductionOrderDetailQualityInspection(piece) || getProductionOrderDetailQualityMeasurements(piece).length > 0 || getProductionOrderDetailQualityDocuments(piece).length > 0);
   const damagePieces = details.pieces.filter(hasProductionOrderDetailDamage);
   const openQualityDocumentPreview = async (document: ProductionOrderDetailQualityDocumentRow) => {
     setPreviewError('');
@@ -1481,7 +1493,10 @@ export function ProductionOrderDetailsModal({
                 </thead>
                 <tbody>
                   {qualityPieces.map((piece) => {
-                    const qualityResult = piece.qualityInspection?.result ?? null;
+                    const qualityInspection = getProductionOrderDetailQualityInspection(piece);
+                    const qualityMeasurements = getProductionOrderDetailQualityMeasurements(piece);
+                    const qualityDocuments = getProductionOrderDetailQualityDocuments(piece);
+                    const qualityResult = qualityInspection?.result ?? null;
                     return (
                       <tr key={getProductionOrderDetailPieceKey(piece)}>
                         <td><strong>{piece.pieceSequence}</strong></td>
@@ -1489,18 +1504,18 @@ export function ProductionOrderDetailsModal({
                         <td>{piece.serialNumber || '-'}</td>
                         <td>{piece.toolId || '-'}</td>
                         <td>
-                          {piece.qualityMeasurements.length ? (
+                          {qualityMeasurements.length ? (
                             <div className="production-order-details-measures production-order-quality-measures">
-                              {piece.qualityMeasurements.map((measurement) => (
+                              {qualityMeasurements.map((measurement) => (
                                 <span className={measurement.result} key={measurement.id}><b>{measurement.inspection_name}</b>{measurement.measured_value}</span>
                               ))}
                             </div>
                           ) : <span className="production-order-details-no-measurement">No measurements</span>}
                         </td>
                         <td>
-                          {piece.qualityDocuments.length ? (
+                          {qualityDocuments.length ? (
                             <div className="production-order-detail-actions">
-                              {piece.qualityDocuments.map((document) => (
+                              {qualityDocuments.map((document) => (
                                 <button type="button" key={document.id} onClick={() => void openQualityDocumentPreview(document)}>
                                   <FileText size={15} />{document.file_name}
                                 </button>
