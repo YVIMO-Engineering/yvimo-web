@@ -9113,9 +9113,9 @@ body.work-center-map-expanded .logged-workspace {
 
 .pending-work-report-modal {
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto minmax(0, 1fr);
   gap: 14px;
-  width: min(92vw, 1120px);
+  width: min(96vw, 1320px);
   max-height: calc(100dvh - var(--header-height, 96px) - 56px);
   min-height: 0;
   border: 1px solid rgba(255, 138, 31, 0.34);
@@ -9169,7 +9169,45 @@ body.work-center-map-expanded .logged-workspace {
   font-weight: 800;
 }
 
-.pending-work-report-header > button {
+.pending-work-report-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.pending-work-report-copy-action,
+.pending-work-report-pdf-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 38px;
+  border: 1px solid rgba(255, 138, 31, 0.42);
+  border-radius: 8px;
+  padding: 0 12px;
+  background: #fff7ed;
+  color: #c2410c;
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 950;
+  cursor: pointer;
+}
+
+.pending-work-report-pdf-action {
+  border-color: rgba(37, 99, 235, 0.28);
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+.pending-work-report-pdf-action:disabled {
+  border-color: rgba(18, 29, 41, 0.1);
+  background: #e5e7eb;
+  color: #94a3b8;
+  cursor: progress;
+}
+
+.pending-work-report-close {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -9177,7 +9215,6 @@ body.work-center-map-expanded .logged-workspace {
   height: 38px;
   border: 1px solid rgba(83, 101, 120, 0.2);
   border-radius: 8px;
-  margin-left: auto;
   background: #f8fafc;
   color: #17202a;
   cursor: pointer;
@@ -9185,20 +9222,42 @@ body.work-center-map-expanded .logged-workspace {
 
 .pending-work-report-kpis {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: minmax(220px, 1.2fr) repeat(3, minmax(150px, 0.82fr));
   gap: 10px;
 }
 
 .pending-work-report-kpis article {
+  --pending-work-kpi-accent: #ff6b00;
+  --pending-work-kpi-bg: #fff7ed;
   min-width: 0;
-  border: 1px solid #d8e0e8;
+  border: 1px solid color-mix(in srgb, var(--pending-work-kpi-accent) 24%, transparent);
   border-radius: 8px;
   padding: 12px;
-  background: #f8fafc;
+  background: var(--pending-work-kpi-bg);
+}
+
+.pending-work-report-kpis article.total {
+  --pending-work-kpi-accent: #ff6b00;
+  --pending-work-kpi-bg: #fff7ed;
+}
+
+.pending-work-report-kpis article.manufacturing {
+  --pending-work-kpi-accent: #2563eb;
+  --pending-work-kpi-bg: #eff6ff;
+}
+
+.pending-work-report-kpis article.inspection {
+  --pending-work-kpi-accent: #0f766e;
+  --pending-work-kpi-bg: #f0fdfa;
+}
+
+.pending-work-report-kpis article.quotation {
+  --pending-work-kpi-accent: #7c3aed;
+  --pending-work-kpi-bg: #f5f3ff;
 }
 
 .pending-work-report-kpis span {
-  color: #ff6b00;
+  color: var(--pending-work-kpi-accent);
   font-size: 0.68rem;
   font-weight: 950;
   letter-spacing: 0.08em;
@@ -9222,10 +9281,52 @@ body.work-center-map-expanded .logged-workspace {
 
 .pending-work-report-body {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(300px, 380px);
+  grid-template-columns: minmax(0, 1.38fr) minmax(400px, 0.9fr);
   gap: 12px;
   min-height: 0;
   overflow: hidden;
+}
+
+.pending-work-report-panel {
+  display: grid;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid #d8e0e8;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.pending-work-report-pending {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.pending-work-report-side {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  padding-bottom: 12px;
+  background: #f8fafc;
+}
+
+.pending-work-report-panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid #d8e0e8;
+  padding: 12px 14px;
+  background: #f8fafc;
+}
+
+.pending-work-report-panel-heading strong {
+  color: #07111c;
+  font-size: 0.94rem;
+}
+
+.pending-work-report-panel-heading span {
+  color: #c2410c;
+  font-size: 0.7rem;
+  font-weight: 950;
+  text-transform: uppercase;
 }
 
 .pending-work-report-stations {
@@ -9234,7 +9335,7 @@ body.work-center-map-expanded .logged-workspace {
   gap: 10px;
   min-height: 0;
   overflow: auto;
-  padding-right: 4px;
+  padding: 12px;
 }
 
 .pending-work-report-station {
@@ -9273,8 +9374,8 @@ body.work-center-map-expanded .logged-workspace {
 
 .pending-work-report-station li {
   display: grid;
-  grid-template-columns: 48px minmax(0, 1fr);
-  gap: 8px;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 10px;
   align-items: center;
   border: 1px solid rgba(255, 138, 31, 0.18);
   border-radius: 7px;
@@ -9283,11 +9384,25 @@ body.work-center-map-expanded .logged-workspace {
 }
 
 .pending-work-report-station li b {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
   color: #ff6b00;
   font-size: 1rem;
 }
 
 .pending-work-report-station li span {
+  display: grid;
+  grid-template-columns: 112px 148px minmax(180px, 1fr);
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.pending-work-report-station li span strong,
+.pending-work-report-station li span em,
+.pending-work-report-station li span i {
   min-width: 0;
   overflow: hidden;
   color: #17202a;
@@ -9296,90 +9411,123 @@ body.work-center-map-expanded .logged-workspace {
   white-space: nowrap;
 }
 
-.pending-work-report-copy {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  min-height: 0;
-  overflow: hidden;
-  border: 1px solid #d8e0e8;
-  border-radius: 8px;
-  background: #f8fafc;
-}
-
-.pending-work-report-copy > div {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  border-bottom: 1px solid #d8e0e8;
-  padding: 10px;
-}
-
-.pending-work-report-copy strong {
-  color: #07111c;
-  font-size: 0.88rem;
-}
-
-.pending-work-report-copy button {
+.pending-work-report-station li span .pending-work-report-part-badge {
+  --pending-work-report-part-color: #c2410c;
+  --pending-work-report-part-bg: #fff7ed;
+  --pending-work-report-part-border: rgba(255, 138, 31, 0.28);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 32px;
-  border: 1px solid rgba(255, 138, 31, 0.42);
-  border-radius: 7px;
-  padding: 0 12px;
-  background: #fff7ed;
-  color: #c2410c;
-  font: inherit;
-  font-size: 0.72rem;
-  font-weight: 950;
-  cursor: pointer;
+  width: 100%;
+  min-height: 34px;
+  min-width: 0;
+  border: 1px solid var(--pending-work-report-part-border);
+  border-radius: 6px;
+  padding: 0 9px;
+  background: var(--pending-work-report-part-bg);
+  color: var(--pending-work-report-part-color);
+  font-size: 0.82rem;
+  line-height: 1.05;
 }
 
-.pending-work-report-copy pre {
-  margin: 0;
+.pending-work-report-station li span .pending-work-report-part-badge.shaver {
+  --pending-work-report-part-color: #6d28d9;
+  --pending-work-report-part-bg: #f5f3ff;
+  --pending-work-report-part-border: rgba(124, 58, 237, 0.3);
+}
+
+.pending-work-report-station li span .pending-work-report-part-badge.hob {
+  --pending-work-report-part-color: #2563eb;
+  --pending-work-report-part-bg: #eff6ff;
+  --pending-work-report-part-border: rgba(37, 99, 235, 0.28);
+}
+
+.pending-work-report-station li span .pending-work-report-part-badge.skiving {
+  --pending-work-report-part-color: #047857;
+  --pending-work-report-part-bg: #ecfdf5;
+  --pending-work-report-part-border: rgba(16, 185, 129, 0.28);
+}
+
+.pending-work-report-station li span .pending-work-report-part-badge.tallador {
+  --pending-work-report-part-color: #b45309;
+  --pending-work-report-part-bg: #fffbeb;
+  --pending-work-report-part-border: rgba(245, 158, 11, 0.34);
+}
+
+.pending-work-report-station li span .pending-work-report-part-badge.shaper {
+  --pending-work-report-part-color: #0f766e;
+  --pending-work-report-part-bg: #f0fdfa;
+  --pending-work-report-part-border: rgba(20, 184, 166, 0.28);
+}
+
+.pending-work-report-station li span em {
+  display: block;
+  font-style: normal;
+}
+
+.pending-work-report-station li span .pending-work-report-category-badge {
+  --pending-work-category-color: #2563eb;
+  --pending-work-category-bg: #eff6ff;
+  --pending-work-category-border: rgba(37, 99, 235, 0.28);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 34px;
+  min-width: 0;
+  border: 1px solid var(--pending-work-category-border);
+  border-radius: 6px;
+  padding: 0 9px;
+  background: var(--pending-work-category-bg);
+  color: var(--pending-work-category-color);
+  font-size: 0.68rem;
+  font-style: normal;
+  font-weight: 950;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.pending-work-report-station li span .pending-work-report-category-badge.manufacturing {
+  --pending-work-category-color: #2563eb;
+  --pending-work-category-bg: #eff6ff;
+  --pending-work-category-border: rgba(37, 99, 235, 0.28);
+}
+
+.pending-work-report-station li span .pending-work-report-category-badge.inspection {
+  --pending-work-category-color: #0f766e;
+  --pending-work-category-bg: #f0fdfa;
+  --pending-work-category-border: rgba(20, 184, 166, 0.28);
+}
+
+.pending-work-report-station li span .pending-work-report-category-badge.quotation {
+  --pending-work-category-color: #7c3aed;
+  --pending-work-category-bg: #f5f3ff;
+  --pending-work-category-border: rgba(124, 58, 237, 0.28);
+}
+
+.pending-work-report-status-list {
+  display: grid;
+  align-content: start;
+  gap: 8px;
   min-height: 0;
   overflow: auto;
   padding: 12px;
-  color: #17202a;
-  font: 800 0.82rem/1.45 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-  white-space: pre-wrap;
 }
 
-.pending-work-report-status {
-  border: 1px solid #d8e0e8;
-  border-radius: 8px;
-  padding: 12px;
-  background: #f8fafc;
-}
-
-.pending-work-report-status > strong {
-  display: block;
-  margin-bottom: 8px;
-  color: #07111c;
-  font-size: 0.9rem;
-}
-
-.pending-work-report-status > div {
+.pending-work-report-status-list span {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.pending-work-report-status span {
-  display: grid;
-  gap: 2px;
+  gap: 5px;
   min-width: 0;
   border: 1px solid rgba(37, 99, 235, 0.18);
   border-radius: 7px;
-  padding: 8px;
+  padding: 11px;
   background: #eff6ff;
   color: #405162;
-  font-size: 0.76rem;
+  font-size: 0.82rem;
   font-weight: 800;
 }
 
-.pending-work-report-status b {
+.pending-work-report-status-list b {
   overflow: hidden;
   color: #2563eb;
   text-overflow: ellipsis;
@@ -9434,7 +9582,7 @@ body.work-center-map-expanded .logged-workspace {
   }
 
   .pending-work-report-kpis,
-  .pending-work-report-status > div {
+  .pending-work-report-status-list {
     grid-template-columns: 1fr;
   }
 
@@ -9443,8 +9591,13 @@ body.work-center-map-expanded .logged-workspace {
     overflow: auto;
   }
 
+  .pending-work-report-header-actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
   .pending-work-report-stations,
-  .pending-work-report-copy pre {
+  .pending-work-report-status-list {
     overflow: visible;
   }
 }
