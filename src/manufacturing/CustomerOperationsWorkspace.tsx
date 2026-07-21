@@ -112,6 +112,7 @@ type CustomerAssetRecord = {
   sourceProductionOrderId: string | null;
   lastProductionOrderId: string | null;
   assetType: string;
+  toolId: string;
   serialNumber: string;
   partNumber: string;
   description: string;
@@ -122,6 +123,7 @@ type CustomerAssetRecord = {
   custodianRole: string;
   status: AssetStatus;
   estimatedLifePercent: number | null;
+  maximumSharpenings: number | null;
   lastInspectionAt: string | null;
   lastServiceAt: string | null;
   serviceCount: number;
@@ -136,7 +138,7 @@ type CustomerAssetService = {
   productionOrderId: string | null;
   sourceType: 'manual' | 'production-order';
   serviceType: string;
-  result: 'completed' | 'ok' | 'approach' | 'nok' | 'scrap';
+  result: 'completed' | 'ok' | 'approach' | 'nok' | 'scrap' | 'skipped';
   serviceDate: string;
   remainingLifePercent: number | null;
   notes: string;
@@ -146,6 +148,7 @@ type CustomerAssetService = {
 type CustomerAssetAttachment = {
   id: string;
   assetId: string;
+  serviceEventId: string | null;
   attachmentType: 'photo' | 'document';
   storageBucket: string;
   fileName: string;
@@ -166,7 +169,7 @@ type CustomerAssetFormState = {
   custodianName: string;
   custodianRole: string;
   status: AssetStatus;
-  estimatedLifePercent: string;
+  maximumSharpenings: string;
   lastInspectionAt: string;
   internalNotes: string;
 };
@@ -203,7 +206,7 @@ const emptyCustomerAssetForm: CustomerAssetFormState = {
   custodianName: '',
   custodianRole: '',
   status: 'in-custody',
-  estimatedLifePercent: '',
+  maximumSharpenings: '',
   lastInspectionAt: '',
   internalNotes: '',
 };
@@ -438,6 +441,7 @@ type CustomerAssetRow = {
   custodian_role: string | null;
   status: AssetStatus;
   estimated_life_percent: number | null;
+  max_sharpenings?: number | null;
   last_inspection_at: string | null;
   last_service_at: string | null;
   service_count: number;
@@ -462,6 +466,7 @@ type CustomerAssetServiceRow = {
 type CustomerAssetAttachmentRow = {
   id: string;
   asset_id: string;
+  service_event_id?: string | null;
   attachment_type: 'photo' | 'document';
   storage_bucket: string;
   file_name: string;
@@ -469,6 +474,40 @@ type CustomerAssetAttachmentRow = {
   file_type: string;
   created_at: string;
 };
+
+type ProductionSerialToolRow = {
+  production_order_id: string;
+  serial_number: string;
+  tool_id: string | null;
+};
+
+function normalizeAssetType(value: string) {
+  return value.trim().toLocaleLowerCase();
+}
+
+function getAssetTypeColors(assetType: string): React.CSSProperties {
+  const normalizedType = normalizeAssetType(assetType);
+  const knownColors = [
+    { pattern: /shaver/, color: '#6d28d9', background: '#f5f3ff', border: '#c4b5fd' },
+    { pattern: /hob/, color: '#2563eb', background: '#eff6ff', border: '#93c5fd' },
+    { pattern: /skiving|powerskiver/, color: '#047857', background: '#ecfdf5', border: '#6ee7b7' },
+    { pattern: /tallador/, color: '#b45309', background: '#fffbeb', border: '#fcd34d' },
+    { pattern: /shaper/, color: '#0f766e', background: '#f0fdfa', border: '#5eead4' },
+  ];
+  const knownColor = knownColors.find(({ pattern }) => pattern.test(normalizedType));
+  const hash = Array.from(normalizedType).reduce((total, character) => ((total * 31) + character.charCodeAt(0)) >>> 0, 0);
+  const hue = hash % 360;
+  const colors = knownColor ?? {
+    color: `hsl(${hue} 72% 34%)`,
+    background: `hsl(${hue} 85% 96%)`,
+    border: `hsl(${hue} 65% 75%)`,
+  };
+  return {
+    '--clients-asset-type-color': colors.color,
+    '--clients-asset-type-bg': colors.background,
+    '--clients-asset-type-border': colors.border,
+  } as React.CSSProperties;
+}
 
 function formatAssetDate(value: string | null) {
   if (!value) return 'Not recorded';
@@ -483,6 +522,7 @@ function mapAssetRow(row: CustomerAssetRow): CustomerAssetRecord {
     sourceProductionOrderId: row.source_production_order_id,
     lastProductionOrderId: row.last_production_order_id,
     assetType: row.asset_type,
+    toolId: '',
     serialNumber: row.serial_number,
     partNumber: row.part_number ?? '',
     description: row.description,
@@ -493,6 +533,7 @@ function mapAssetRow(row: CustomerAssetRow): CustomerAssetRecord {
     custodianRole: row.custodian_role ?? '',
     status: row.status,
     estimatedLifePercent: row.estimated_life_percent,
+    maximumSharpenings: row.max_sharpenings ?? null,
     lastInspectionAt: row.last_inspection_at,
     lastServiceAt: row.last_service_at,
     serviceCount: row.service_count,
@@ -507,12 +548,14 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
   const [customers, setCustomers] = React.useState<CustomerRecord[]>([]);
   const [assetCustomerFilter, setAssetCustomerFilter] = React.useState('all');
   const [assetSearch, setAssetSearch] = React.useState('');
+  const [selectedAssetTypes, setSelectedAssetTypes] = React.useState<Set<string> | null>(null);
   const [assets, setAssets] = React.useState<CustomerAssetRecord[]>([]);
   const [assetServices, setAssetServices] = React.useState<CustomerAssetService[]>([]);
   const [assetAttachments, setAssetAttachments] = React.useState<CustomerAssetAttachment[]>([]);
   const [selectedAssetId, setSelectedAssetId] = React.useState<string | null>(null);
   const [assetLoading, setAssetLoading] = React.useState(false);
   const [assetError, setAssetError] = React.useState('');
+  const [assetAttachmentPreview, setAssetAttachmentPreview] = React.useState<{ fileName: string; url: string; isPdf: boolean } | null>(null);
   const [assetFormOpen, setAssetFormOpen] = React.useState(false);
   const [assetEditingId, setAssetEditingId] = React.useState<string | null>(null);
   const [assetForm, setAssetForm] = React.useState<CustomerAssetFormState>(emptyCustomerAssetForm);
@@ -561,7 +604,7 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
     setAssetLoading(true);
     setAssetError('');
 
-    const [assetResponse, serviceResponse, attachmentResponse] = await Promise.all([
+    const [assetResponse, serviceResponse, attachmentResponse, productionSerialResponse] = await Promise.all([
       supabase
         .from('mes_customer_assets')
         .select('*')
@@ -577,16 +620,35 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
         .select('*')
         .eq('organization_id', organizationId)
         .order('created_at', { ascending: false }),
+      supabase
+        .from('mes_production_serials')
+        .select('production_order_id, serial_number, tool_id')
+        .eq('organization_id', organizationId),
     ]);
 
-    const firstError = assetResponse.error || serviceResponse.error || attachmentResponse.error;
+    const firstError = assetResponse.error || serviceResponse.error || attachmentResponse.error || productionSerialResponse.error;
     if (firstError) {
       setAssetError(firstError.message);
       setAssets([]);
       setAssetServices([]);
       setAssetAttachments([]);
     } else {
-      const nextAssets = ((assetResponse.data ?? []) as CustomerAssetRow[]).map(mapAssetRow);
+      const toolIdByProductionSerial = new Map(
+        ((productionSerialResponse.data ?? []) as ProductionSerialToolRow[]).map((row) => [
+          `${row.production_order_id}:${row.serial_number.trim().toLocaleLowerCase()}`,
+          row.tool_id?.trim() ?? '',
+        ]),
+      );
+      const nextAssets = ((assetResponse.data ?? []) as CustomerAssetRow[]).map((row) => {
+        const asset = mapAssetRow(row);
+        const productionOrderId = asset.lastProductionOrderId ?? asset.sourceProductionOrderId;
+        return {
+          ...asset,
+          toolId: productionOrderId
+            ? toolIdByProductionSerial.get(`${productionOrderId}:${asset.serialNumber.trim().toLocaleLowerCase()}`) ?? ''
+            : '',
+        };
+      });
       setAssets(nextAssets);
       setAssetServices(((serviceResponse.data ?? []) as CustomerAssetServiceRow[]).map((row) => {
         const order = Array.isArray(row.production_order) ? row.production_order[0] : row.production_order;
@@ -606,6 +668,7 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
       setAssetAttachments(((attachmentResponse.data ?? []) as CustomerAssetAttachmentRow[]).map((row) => ({
         id: row.id,
         assetId: row.asset_id,
+        serviceEventId: row.service_event_id ?? null,
         attachmentType: row.attachment_type,
         storageBucket: row.storage_bucket,
         fileName: row.file_name,
@@ -629,17 +692,18 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
   }, [activeTab, loadAssets]);
 
   React.useEffect(() => {
-    if (!formMode && !customerToDelete && !assetFormOpen) return undefined;
+    if (!formMode && !customerToDelete && !assetFormOpen && !assetAttachmentPreview) return undefined;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || saving) return;
       setFormMode(null);
       setCustomerToDelete(null);
       setAssetFormOpen(false);
       setAssetEditingId(null);
+      setAssetAttachmentPreview(null);
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [formMode, customerToDelete, assetFormOpen, saving]);
+  }, [formMode, customerToDelete, assetFormOpen, assetAttachmentPreview, saving]);
 
   const updateAddressSuggestionPosition = React.useCallback(() => {
     const control = addressLookupControlRef.current;
@@ -884,7 +948,7 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
       custodianName: asset.custodianName,
       custodianRole: asset.custodianRole,
       status: asset.status,
-      estimatedLifePercent: asset.estimatedLifePercent === null ? '' : String(asset.estimatedLifePercent),
+      maximumSharpenings: asset.maximumSharpenings === null ? '' : String(asset.maximumSharpenings),
       lastInspectionAt: asset.lastInspectionAt?.slice(0, 10) ?? '',
       internalNotes: asset.internalNotes,
     });
@@ -930,9 +994,9 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
     setSaving(true);
     setAssetError('');
 
-    const lifePercent = assetForm.estimatedLifePercent.trim() === ''
+    const maximumSharpenings = assetForm.maximumSharpenings.trim() === ''
       ? null
-      : Number(assetForm.estimatedLifePercent);
+      : Number(assetForm.maximumSharpenings);
     const assetPayload = {
       organization_id: organizationId,
       customer_id: assetForm.customerId,
@@ -946,7 +1010,7 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
       custodian_name: assetForm.custodianName.trim() || null,
       custodian_role: assetForm.custodianRole.trim() || null,
       status: assetForm.status,
-      estimated_life_percent: lifePercent,
+      max_sharpenings: maximumSharpenings,
       last_inspection_at: assetForm.lastInspectionAt || null,
       internal_notes: assetForm.internalNotes.trim(),
     };
@@ -997,7 +1061,11 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
       setAssetError(error?.message || 'This file could not be opened.');
       return;
     }
-    window.open(data.signedUrl, '_blank', 'noopener,noreferrer');
+    setAssetAttachmentPreview({
+      fileName: attachment.fileName,
+      url: data.signedUrl,
+      isPdf: attachment.fileType === 'application/pdf' || attachment.fileName.toLocaleLowerCase().endsWith('.pdf'),
+    });
   };
 
   const customerFilterOptions = React.useMemo<Array<CustomerDropdownOption<string>>>(() => [
@@ -1019,16 +1087,38 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
     label: customer.status === 'inactive' ? `${customer.customerName} (Inactive)` : customer.customerName,
   })), [customers]);
 
+  const assetTypeOptions = React.useMemo(() => {
+    const typeByKey = new Map<string, string>();
+    assets.forEach((asset) => {
+      const key = normalizeAssetType(asset.assetType);
+      if (key && !typeByKey.has(key)) typeByKey.set(key, asset.assetType.trim());
+    });
+    return Array.from(typeByKey, ([key, label]) => ({ key, label }))
+      .sort((left, right) => left.label.localeCompare(right.label));
+  }, [assets]);
+
   const filteredAssets = React.useMemo(() => {
     const query = assetSearch.trim().toLowerCase();
     return assets.filter((asset) => {
       if (assetCustomerFilter !== 'all' && asset.customerId !== assetCustomerFilter) return false;
+      if (selectedAssetTypes && !selectedAssetTypes.has(normalizeAssetType(asset.assetType))) return false;
       if (!query) return true;
       const customer = customers.find((item) => item.id === asset.customerId);
       return [asset.serialNumber, asset.partNumber, asset.assetType, asset.description, asset.manufacturer, customer?.customerName]
         .some((value) => value?.toLowerCase().includes(query));
     });
-  }, [assetCustomerFilter, assetSearch, assets, customers]);
+  }, [assetCustomerFilter, assetSearch, assets, customers, selectedAssetTypes]);
+
+  const assetTypeSummaries = React.useMemo(() => {
+    const countByType = new Map<string, number>();
+    filteredAssets.forEach((asset) => {
+      const key = normalizeAssetType(asset.assetType);
+      countByType.set(key, (countByType.get(key) ?? 0) + 1);
+    });
+    return assetTypeOptions
+      .map((assetType) => ({ ...assetType, count: countByType.get(assetType.key) ?? 0 }))
+      .filter((assetType) => assetType.count > 0);
+  }, [assetTypeOptions, filteredAssets]);
 
   React.useEffect(() => {
     if (selectedAssetId && filteredAssets.some((asset) => asset.id === selectedAssetId)) return;
@@ -1045,9 +1135,18 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
   const selectedAssetAttachments = selectedAsset
     ? assetAttachments.filter((attachment) => attachment.assetId === selectedAsset.id)
     : [];
-  const assetsInCustody = filteredAssets.filter((asset) => ['in-custody', 'in-service', 'maintenance', 'inspection'].includes(asset.status)).length;
-  const assetsWithLowLife = filteredAssets.filter((asset) => asset.estimatedLifePercent !== null && asset.estimatedLifePercent <= 35).length;
-
+  const selectedAssetSharpeningCount = selectedAssetServices.filter((service) => (
+    /sharpen|afilad/i.test(service.serviceType) && service.result !== 'skipped'
+  )).length;
+  const selectedAssetSharpeningsRemaining = selectedAsset?.maximumSharpenings == null
+    ? null
+    : Math.max(0, selectedAsset.maximumSharpenings - selectedAssetSharpeningCount);
+  const selectedAssetLifePercent = selectedAsset?.maximumSharpenings
+    ? Math.max(0, Math.min(100, (selectedAssetSharpeningsRemaining ?? 0) / selectedAsset.maximumSharpenings * 100))
+    : null;
+  const selectedAssetLifeTone = selectedAssetLifePercent === null
+    ? 'unestimated'
+    : selectedAssetLifePercent < 30 ? 'critical' : selectedAssetLifePercent <= 50 ? 'warning' : 'healthy';
   const activeCustomers = customers.filter((customer) => customer.status === 'active').length;
   const addressSuggestionMenu = (showAddressSuggestions || addressSuggestionsLoading)
     && (addressSuggestions.length > 0 || addressSuggestionsLoading)
@@ -1205,13 +1304,39 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
                   <span>Search assets</span>
                   <div><Search size={16} /><input value={assetSearch} onChange={(event) => setAssetSearch(event.target.value)} placeholder="Serial, part, type, manufacturer" /></div>
                 </label>
+                <fieldset className="clients-assets-type-filters">
+                  <legend>Part Type</legend>
+                  <div>
+                    {assetTypeOptions.map((assetType) => {
+                      const checked = selectedAssetTypes === null || selectedAssetTypes.has(assetType.key);
+                      return (
+                        <label key={assetType.key} style={getAssetTypeColors(assetType.label)}>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => setSelectedAssetTypes((current) => {
+                              const next = current ? new Set(current) : new Set(assetTypeOptions.map((option) => option.key));
+                              if (next.has(assetType.key)) next.delete(assetType.key);
+                              else next.add(assetType.key);
+                              return next.size === assetTypeOptions.length ? null : next;
+                            })}
+                          />
+                          <span>{assetType.label}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </fieldset>
               </section>
 
               <section className="clients-assets-kpis" aria-label="Asset summary">
                 <div><Package size={18} /><span>Total Assets<strong>{filteredAssets.length}</strong></span></div>
-                <div><Building2 size={18} /><span>Clients Represented<strong>{new Set(filteredAssets.map((asset) => asset.customerId)).size}</strong></span></div>
-                <div><MapPin size={18} /><span>In YVIMO Custody<strong>{assetsInCustody}</strong></span></div>
-                <div className={assetsWithLowLife ? 'warning' : ''}><Clock3 size={18} /><span>Low Estimated Life<strong>{assetsWithLowLife}</strong></span></div>
+                {assetTypeSummaries.map((assetType) => (
+                  <div className="asset-type" style={getAssetTypeColors(assetType.label)} key={assetType.key}>
+                    <Package size={18} />
+                    <span>{assetType.label}<strong>{assetType.count}</strong></span>
+                  </div>
+                ))}
               </section>
 
               {!customers.length ? (
@@ -1240,13 +1365,12 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
                           >
                             <span className="clients-asset-list-icon"><Package size={18} /></span>
                             <span className="clients-asset-list-name">
-                              <strong>{asset.assetType}</strong>
-                              <b>{asset.serialNumber}</b>
+                              <strong className="clients-asset-type-badge" style={getAssetTypeColors(asset.assetType)}>{asset.assetType}</strong>
+                              <b>{asset.toolId || 'Not specified'}</b>
                             </span>
                             <span><small>Client</small>{customer?.customerName ?? 'Unknown client'}</span>
-                            <span><small>Part Number</small>{asset.partNumber || 'Not specified'}</span>
+                            <span><small>Serial Number</small>{asset.serialNumber}</span>
                             <span><small>Services</small>{asset.serviceCount}</span>
-                            <em className={`clients-asset-status ${asset.status}`}>{assetStatusOptions.find((option) => option.value === asset.status)?.label}</em>
                           </button>
                         );
                       })}
@@ -1270,63 +1394,73 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
 
                       <div className="clients-asset-identity-grid">
                         <span><small>Owner</small><b>{selectedAssetCustomer?.customerName ?? 'Unknown client'}</b></span>
-                        <span><small>Part Number</small><b>{selectedAsset.partNumber || 'Not specified'}</b></span>
-                        <span><small>Manufacturer</small><b>{selectedAsset.manufacturer || 'Not specified'}</b></span>
                         <span><small>Family / Category</small><b>{selectedAsset.familyCategory || 'Not specified'}</b></span>
-                        <span><small>Current Location</small><b>{selectedAsset.currentLocation || 'Not recorded'}</b></span>
-                        <span><small>Responsible / Role</small><b>{selectedAsset.custodianName || 'Unassigned'}{selectedAsset.custodianRole ? ` · ${selectedAsset.custodianRole}` : ''}</b></span>
+                        <span><small>Serial Number</small><b>{selectedAsset.serialNumber}</b></span>
+                        <span><small>Tool ID</small><b>{selectedAsset.toolId || 'Not specified'}</b></span>
                       </div>
 
                       <div className="clients-asset-lifecycle">
-                        <div>
-                          <span>Estimated Useful Life<strong>{selectedAsset.estimatedLifePercent === null ? 'Not estimated' : `${selectedAsset.estimatedLifePercent}%`}</strong></span>
-                          <div><i style={{ width: `${selectedAsset.estimatedLifePercent ?? 0}%` }} /></div>
+                        <div className={`clients-asset-life-progress ${selectedAssetLifeTone}`}>
+                          <span>
+                            Estimated Useful Life
+                            <strong>{selectedAssetLifePercent === null ? 'Not estimated' : `${Math.round(selectedAssetLifePercent)}%`}</strong>
+                          </span>
+                          <div><i style={{ width: `${selectedAssetLifePercent ?? 0}%` }} /></div>
+                          <small>{selectedAssetSharpeningsRemaining === null
+                            ? 'Set the maximum number of sharpenings to calculate remaining life.'
+                            : `${selectedAssetSharpeningsRemaining} of ${selectedAsset.maximumSharpenings} sharpenings remaining`}</small>
                         </div>
                         <span><small>Last Service</small><b>{formatAssetDate(selectedAsset.lastServiceAt)}</b></span>
                         <span><small>Last Inspection</small><b>{formatAssetDate(selectedAsset.lastInspectionAt)}</b></span>
                         <span><small>Total Services</small><b>{selectedAsset.serviceCount}</b></span>
                       </div>
 
-                      {selectedAsset.description || selectedAsset.internalNotes ? (
-                        <div className="clients-asset-notes">
-                          {selectedAsset.description ? <p><b>Description</b>{selectedAsset.description}</p> : null}
-                          {selectedAsset.internalNotes ? <p><b>Internal Notes</b>{selectedAsset.internalNotes}</p> : null}
-                        </div>
-                      ) : null}
-
-                      <div className="clients-asset-detail-columns">
-                        <section className="clients-asset-evidence">
-                          <div className="clients-assets-section-heading"><span><FileText size={16} /> Evidence</span><strong>{selectedAssetAttachments.length} files</strong></div>
-                          {selectedAssetAttachments.length ? selectedAssetAttachments.map((attachment) => (
-                            <button type="button" key={attachment.id} onClick={() => void openAssetAttachment(attachment)}>
-                              <span>{attachment.attachmentType === 'photo' ? <Camera size={17} /> : <FileText size={17} />}</span>
-                              <b>{attachment.fileName}</b>
-                              <small>{formatAssetDate(attachment.createdAt)}</small>
-                              <ExternalLink size={15} />
-                            </button>
-                          )) : <p className="clients-assets-inline-empty">No photos or documents attached.</p>}
-                        </section>
-
-                        <section className="clients-asset-history">
-                          <div className="clients-assets-section-heading"><span><History size={16} /> Service History</span><strong>{selectedAssetServices.length} events</strong></div>
-                          {selectedAssetServices.length ? (
-                            <div className="clients-asset-timeline">
-                              {selectedAssetServices.map((service) => (
-                                <article key={service.id}>
-                                  <span><Wrench size={15} /></span>
-                                  <div>
-                                    <strong>{service.serviceType}</strong>
-                                    <small>{formatAssetDate(service.serviceDate)}{service.orderNumber ? ` · ${service.orderNumber}` : ''}</small>
-                                    {service.notes ? <p>{service.notes}</p> : null}
-                                  </div>
-                                  <em className={`clients-service-result ${service.result}`}>{service.result}</em>
-                                  {service.remainingLifePercent !== null ? <b>{service.remainingLifePercent}% life</b> : null}
-                                </article>
-                              ))}
-                            </div>
-                          ) : <p className="clients-assets-inline-empty">No service events recorded yet.</p>}
-                        </section>
+                      <div className="clients-asset-notes">
+                        <p><b>Description</b>{selectedAsset.description || 'Not specified'}</p>
                       </div>
+
+                      <section className="clients-asset-service-records">
+                        <div className="clients-assets-section-heading">
+                          <span><History size={16} /> Service &amp; Evidence History</span>
+                          <strong>{selectedAssetServices.length} events · {selectedAssetAttachments.length} files</strong>
+                        </div>
+                        <div className="clients-asset-service-table-wrap">
+                          <table>
+                            <thead><tr><th>Service</th><th>Date / Order</th><th>Result / Life</th><th>Description</th><th>Evidence</th></tr></thead>
+                            <tbody>
+                              {selectedAssetServices.map((service) => {
+                                const serviceAttachments = selectedAssetAttachments.filter((attachment) => attachment.serviceEventId === service.id);
+                                return (
+                                  <tr key={service.id}>
+                                    <td><span className="clients-asset-service-name"><Wrench size={15} /><b>{service.serviceType}</b></span></td>
+                                    <td><b>{formatAssetDate(service.serviceDate)}</b>{service.orderNumber ? <small>{service.orderNumber}</small> : null}</td>
+                                    <td><em className={`clients-service-result ${service.result}`}>{service.result}</em>{service.remainingLifePercent !== null ? <small>{service.remainingLifePercent}% life</small> : null}</td>
+                                    <td>{service.notes || 'No description recorded.'}</td>
+                                    <td>
+                                      {serviceAttachments.length ? <div className="clients-asset-service-files">{serviceAttachments.map((attachment) => (
+                                        <button type="button" key={attachment.id} onClick={() => void openAssetAttachment(attachment)}>
+                                          {attachment.attachmentType === 'photo' ? <Camera size={15} /> : <FileText size={15} />}
+                                          <span>{attachment.fileName}</span><ExternalLink size={13} />
+                                        </button>
+                                      ))}</div> : <span className="clients-asset-no-evidence">No evidence</span>}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                              {selectedAssetAttachments.filter((attachment) => !attachment.serviceEventId).map((attachment) => (
+                                <tr className="unlinked-evidence" key={`attachment-${attachment.id}`}>
+                                  <td><b>Unlinked evidence</b></td>
+                                  <td><b>{formatAssetDate(attachment.createdAt)}</b></td>
+                                  <td>—</td>
+                                  <td>Evidence uploaded directly to the asset.</td>
+                                  <td><div className="clients-asset-service-files"><button type="button" onClick={() => void openAssetAttachment(attachment)}>{attachment.attachmentType === 'photo' ? <Camera size={15} /> : <FileText size={15} />}<span>{attachment.fileName}</span><ExternalLink size={13} /></button></div></td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                          {!selectedAssetServices.length && !selectedAssetAttachments.length ? <p className="clients-assets-inline-empty">No service events or evidence recorded yet.</p> : null}
+                        </div>
+                      </section>
                     </article>
                   ) : null}
                 </section>
@@ -1417,8 +1551,9 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
                   <input value={assetForm.custodianRole} onChange={(event) => setAssetForm((current) => ({ ...current, custodianRole: event.target.value }))} />
                 </label>
                 <label>
-                  Estimated Useful Life % <em>Optional</em>
-                  <input type="number" min="0" max="100" step="0.1" value={assetForm.estimatedLifePercent} onChange={(event) => setAssetForm((current) => ({ ...current, estimatedLifePercent: event.target.value }))} />
+                  Maximum Sharpenings <em>Optional</em>
+                  <input type="number" min="1" step="1" value={assetForm.maximumSharpenings} onChange={(event) => setAssetForm((current) => ({ ...current, maximumSharpenings: event.target.value }))} placeholder="e.g. 10" />
+                  <small>Used to calculate the asset's remaining useful life.</small>
                 </label>
                 <label>
                   Last Inspection <em>Optional</em>
@@ -1451,6 +1586,28 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      ) : null}
+
+      {assetAttachmentPreview ? (
+        <div className="supplier-modal-backdrop" role="presentation" onMouseDown={(event) => {
+          if (event.target === event.currentTarget) setAssetAttachmentPreview(null);
+        }}>
+          <div className="supplier-modal clients-asset-evidence-preview" role="dialog" aria-modal="true" aria-labelledby="asset-evidence-preview-title">
+            <button className="supplier-modal-close" type="button" onClick={() => setAssetAttachmentPreview(null)} aria-label="Close evidence preview"><X size={18} /></button>
+            <div>
+              <div className="supplier-modal-header">
+                <span>Asset Evidence</span>
+                <strong id="asset-evidence-preview-title">{assetAttachmentPreview.fileName}</strong>
+              </div>
+              <div className={`supplier-document-preview ${assetAttachmentPreview.isPdf ? 'pdf' : 'image'}`}>
+                {assetAttachmentPreview.isPdf
+                  ? <iframe src={`${assetAttachmentPreview.url}#toolbar=1&navpanes=0&scrollbar=1&view=FitH`} title={`Preview ${assetAttachmentPreview.fileName}`} />
+                  : <img src={assetAttachmentPreview.url} alt={assetAttachmentPreview.fileName} />}
+              </div>
+              <div className="supplier-modal-actions"><button type="button" onClick={() => setAssetAttachmentPreview(null)}>Close</button></div>
+            </div>
           </div>
         </div>
       ) : null}
