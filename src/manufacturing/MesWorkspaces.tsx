@@ -1647,6 +1647,8 @@ type PendingWorkReport = {
   text: string;
 };
 
+const pendingWorkCategories: PendingWorkCategory[] = ['manufacturing', 'inspection', 'quotation'];
+
 function getPendingWorkStationLabel(order: ProductionOrder, stationOptionsByWorkCenter: Record<string, MesOrderDropdownOption[]>) {
   if (order.assignedStation) return getProductionOrderStationLabel(stationOptionsByWorkCenter, order.assignedWorkCenter, order.assignedStation);
   return 'Unassigned station';
@@ -1702,6 +1704,52 @@ function getPendingWorkCategoryLabel(category: PendingWorkCategory) {
   if (category === 'manufacturing') return 'Manufacturing';
   if (category === 'inspection') return 'Inspection';
   return 'Quotation';
+}
+
+function getVisiblePendingWorkReport(report: PendingWorkReport, visibleCategories: Set<PendingWorkCategory>): PendingWorkReport {
+  const stations = report.stations
+    .map((station) => {
+      const lines = station.lines.filter((line) => visibleCategories.has(line.category));
+      return {
+        ...station,
+        lines,
+        totalQuantity: lines.reduce((total, line) => total + line.quantity, 0),
+      };
+    })
+    .filter((station) => station.totalQuantity > 0);
+  const subtotals = stations.reduce<Record<PendingWorkCategory, number>>((totals, station) => {
+    station.lines.forEach((line) => {
+      totals[line.category] += line.quantity;
+    });
+    return totals;
+  }, { manufacturing: 0, inspection: 0, quotation: 0 });
+  const totalQuantity = subtotals.manufacturing + subtotals.inspection + subtotals.quotation;
+  const totalOrders = new Set(stations.flatMap((station) => station.lines.flatMap((line) => line.orders.map((order) => order.id)))).size;
+  const reportLines = [
+    `Pending Work Report - ${new Date(report.generatedAt).toLocaleString()}`,
+    '',
+    ...stations.flatMap((station) => [
+      station.label,
+      ...station.lines.map((line) => `- ${line.quantity} ${formatPendingWorkPartDisplay(line.partLabel)} ${line.clientName} (${getPendingWorkCategoryLabel(line.category)})`),
+      '',
+    ]),
+    `Total pending = ${totalQuantity} pieces`,
+    `Manufacturing pending = ${subtotals.manufacturing} pieces`,
+    `Inspection pending = ${subtotals.inspection} pieces`,
+    `Quotation pending = ${subtotals.quotation} pieces`,
+    '',
+    'Machine Status',
+    ...report.machineStatuses.map((item) => `${item.station} = ${item.status}`),
+  ];
+
+  return {
+    ...report,
+    totalQuantity,
+    totalOrders,
+    subtotals,
+    stations,
+    text: reportLines.join('\n').trim(),
+  };
 }
 
 function getPendingWorkReport(
@@ -1821,9 +1869,23 @@ function getPendingWorkReport(
 function PendingWorkReportModal({ report, onClose }: { report: PendingWorkReport; onClose: () => void }) {
   const [copied, setCopied] = React.useState(false);
   const [downloadingPdf, setDownloadingPdf] = React.useState(false);
+  const [visibleCategories, setVisibleCategories] = React.useState<Set<PendingWorkCategory>>(() => new Set(pendingWorkCategories));
+  const visibleReport = React.useMemo(() => getVisiblePendingWorkReport(report, visibleCategories), [report, visibleCategories]);
+  const toggleVisibleCategory = (category: PendingWorkCategory) => {
+    setVisibleCategories((currentCategories) => {
+      const nextCategories = new Set(currentCategories);
+      if (nextCategories.has(category)) {
+        if (nextCategories.size === 1) return currentCategories;
+        nextCategories.delete(category);
+      } else {
+        nextCategories.add(category);
+      }
+      return nextCategories;
+    });
+  };
   const copyReport = async () => {
     try {
-      await navigator.clipboard.writeText(report.text);
+      await navigator.clipboard.writeText(visibleReport.text);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1800);
     } catch (error) {
@@ -1847,24 +1909,24 @@ function PendingWorkReportModal({ report, onClose }: { report: PendingWorkReport
       cursorY += 22;
       pdf.setFont('helvetica', 'normal');
       pdf.setFontSize(10);
-      pdf.text(`Generated ${formatTimestamp(report.generatedAt)}`, margin, cursorY);
+      pdf.text(`Generated ${formatTimestamp(visibleReport.generatedAt)}`, margin, cursorY);
       cursorY += 24;
       pdf.setFont('helvetica', 'bold');
-      pdf.text(`Total pending: ${report.totalQuantity} pieces`, margin, cursorY);
+      pdf.text(`Total pending: ${visibleReport.totalQuantity} pieces`, margin, cursorY);
       cursorY += 16;
-      pdf.text(`Open orders: ${report.totalOrders}`, margin, cursorY);
+      pdf.text(`Open orders: ${visibleReport.totalOrders}`, margin, cursorY);
       cursorY += 16;
-      pdf.text(`Machines: ${report.totalMachines}`, margin, cursorY);
+      pdf.text(`Machines: ${visibleReport.totalMachines}`, margin, cursorY);
       cursorY += 16;
-      pdf.text(`Manufacturing pending: ${report.subtotals.manufacturing}`, margin, cursorY);
+      pdf.text(`Manufacturing pending: ${visibleReport.subtotals.manufacturing}`, margin, cursorY);
       cursorY += 16;
-      pdf.text(`Inspection pending: ${report.subtotals.inspection}`, margin, cursorY);
+      pdf.text(`Inspection pending: ${visibleReport.subtotals.inspection}`, margin, cursorY);
       cursorY += 16;
-      pdf.text(`Quotation pending: ${report.subtotals.quotation}`, margin, cursorY);
+      pdf.text(`Quotation pending: ${visibleReport.subtotals.quotation}`, margin, cursorY);
       cursorY += 22;
       pdf.setFont('courier', 'normal');
       pdf.setFontSize(9);
-      const textLines = pdf.splitTextToSize(report.text || 'No pending work found.', pageWidth - margin * 2) as string[];
+      const textLines = pdf.splitTextToSize(visibleReport.text || 'No pending work found.', pageWidth - margin * 2) as string[];
       textLines.forEach((line) => {
         if (cursorY > pageHeight - margin) {
           pdf.addPage();
@@ -1873,7 +1935,7 @@ function PendingWorkReportModal({ report, onClose }: { report: PendingWorkReport
         pdf.text(line, margin, cursorY);
         cursorY += lineHeight;
       });
-      pdf.save(`pending-work-report-${report.generatedAt.slice(0, 10)}.pdf`);
+      pdf.save(`pending-work-report-${visibleReport.generatedAt.slice(0, 10)}.pdf`);
     } catch (error) {
       console.error('Unable to download pending work report PDF', error);
     } finally {
@@ -1901,20 +1963,28 @@ function PendingWorkReportModal({ report, onClose }: { report: PendingWorkReport
           </div>
         </header>
         <div className="pending-work-report-kpis" aria-label="Pending work summary">
-          <article className="total"><span>Total pending</span><strong>{report.totalQuantity.toLocaleString()}</strong><em>pieces</em></article>
-          <article className="manufacturing"><span>Manufacturing</span><strong>{report.subtotals.manufacturing.toLocaleString()}</strong><em>pending pieces</em></article>
-          <article className="inspection"><span>Inspection</span><strong>{report.subtotals.inspection.toLocaleString()}</strong><em>pending pieces</em></article>
-          <article className="quotation"><span>Quotation</span><strong>{report.subtotals.quotation.toLocaleString()}</strong><em>pending pieces</em></article>
+          <article className="total"><span>Total pending</span><strong>{visibleReport.totalQuantity.toLocaleString()}</strong><em>pieces</em></article>
+          <article className="manufacturing"><span>Manufacturing</span><strong>{visibleReport.subtotals.manufacturing.toLocaleString()}</strong><em>pending pieces</em></article>
+          <article className="inspection"><span>Inspection</span><strong>{visibleReport.subtotals.inspection.toLocaleString()}</strong><em>pending pieces</em></article>
+          <article className="quotation"><span>Quotation</span><strong>{visibleReport.subtotals.quotation.toLocaleString()}</strong><em>pending pieces</em></article>
         </div>
         <div className="pending-work-report-body">
           <section className="pending-work-report-panel pending-work-report-pending" aria-label="Pending work by machine">
             <div className="pending-work-report-panel-heading">
               <strong>Pending Work</strong>
-              <span>{report.totalQuantity.toLocaleString()} pieces</span>
+              <div className="pending-work-report-filters" aria-label="Pending work type filters">
+                {pendingWorkCategories.map((category) => (
+                  <label className={category} key={category}>
+                    <input type="checkbox" checked={visibleCategories.has(category)} onChange={() => toggleVisibleCategory(category)} />
+                    <span>{getPendingWorkCategoryLabel(category)}</span>
+                  </label>
+                ))}
+              </div>
+              <span>{visibleReport.totalQuantity.toLocaleString()} pieces</span>
             </div>
-            {report.stations.length ? (
+            {visibleReport.stations.length ? (
               <div className="pending-work-report-stations">
-                {report.stations.map((station) => (
+                {visibleReport.stations.map((station) => (
                   <article className="pending-work-report-station" key={station.key}>
                     <div>
                       <strong>{station.label}</strong>
@@ -1946,10 +2016,10 @@ function PendingWorkReportModal({ report, onClose }: { report: PendingWorkReport
           <aside className="pending-work-report-panel pending-work-report-side">
             <div className="pending-work-report-panel-heading">
               <strong>Machine Status</strong>
-              <span>{report.machineStatuses.length.toLocaleString()} machines</span>
+              <span>{visibleReport.machineStatuses.length.toLocaleString()} machines</span>
             </div>
             <div className="pending-work-report-status-list">
-              {report.machineStatuses.length ? report.machineStatuses.map((item) => (
+              {visibleReport.machineStatuses.length ? visibleReport.machineStatuses.map((item) => (
                 <span key={item.station}><b>{item.station}</b>{item.status}</span>
               )) : <span><b>All machines</b>No running pending orders</span>}
             </div>

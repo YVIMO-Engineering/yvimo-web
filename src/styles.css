@@ -9115,7 +9115,7 @@ body.work-center-map-expanded .logged-workspace {
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
   gap: 14px;
-  width: min(96vw, 1320px);
+  width: min(100%, 1320px);
   max-height: calc(100dvh - var(--header-height, 96px) - 56px);
   min-height: 0;
   border: 1px solid rgba(255, 138, 31, 0.34);
@@ -9317,6 +9317,11 @@ body.work-center-map-expanded .logged-workspace {
   background: #f8fafc;
 }
 
+.pending-work-report-pending .pending-work-report-panel-heading {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
 .pending-work-report-panel-heading strong {
   color: #07111c;
   font-size: 0.94rem;
@@ -9327,6 +9332,76 @@ body.work-center-map-expanded .logged-workspace {
   font-size: 0.7rem;
   font-weight: 950;
   text-transform: uppercase;
+}
+
+.pending-work-report-filters {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 7px;
+}
+
+.pending-work-report-filters label {
+  --pending-work-filter-accent: #2563eb;
+  --pending-work-filter-bg: #eff6ff;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 30px;
+  border: 1px solid color-mix(in srgb, var(--pending-work-filter-accent) 30%, transparent);
+  border-radius: 7px;
+  padding: 0 9px;
+  background: var(--pending-work-filter-bg);
+  color: var(--pending-work-filter-accent);
+  font-size: 0.66rem;
+  font-weight: 950;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.pending-work-report-filters label.manufacturing {
+  --pending-work-filter-accent: #2563eb;
+  --pending-work-filter-bg: #eff6ff;
+}
+
+.pending-work-report-filters label.inspection {
+  --pending-work-filter-accent: #0f766e;
+  --pending-work-filter-bg: #f0fdfa;
+}
+
+.pending-work-report-filters label.quotation {
+  --pending-work-filter-accent: #7c3aed;
+  --pending-work-filter-bg: #f5f3ff;
+}
+
+.pending-work-report-filters input {
+  display: inline-grid;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  place-items: center;
+  appearance: none;
+  border: 1px solid color-mix(in srgb, var(--pending-work-filter-accent) 36%, transparent);
+  border-radius: 4px;
+  margin: 0;
+  background: #ffffff;
+  color: #ffffff;
+  cursor: pointer;
+}
+
+.pending-work-report-filters input:checked {
+  border-color: var(--pending-work-filter-accent);
+  background: var(--pending-work-filter-accent);
+}
+
+.pending-work-report-filters input:checked::before {
+  content: "✓";
+  color: #ffffff;
+  font-size: 0.68rem;
+  font-weight: 950;
+  line-height: 1;
 }
 
 .pending-work-report-stations {
