@@ -880,6 +880,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
   const [traceabilityForm, setTraceabilityForm] = React.useState<TraceabilityFormState>(initialTraceabilityForm);
   const [customerOptions, setCustomerOptions] = React.useState<OperatorCustomerOption[]>([]);
   const [selectedShift, setSelectedShift] = React.useState<'1st' | '2nd' | '3rd'>('1st');
+  const reportedCountsByOrderRef = React.useRef(new Map<string, { goodQty: number; scrapQty: number }>());
   const baseSnapshotOrder = snapshot?.currentOrder ?? fallbackCurrentOrder;
   const baseWorkCenterCode = snapshot?.workCenter?.code ?? baseSnapshotOrder.assignedWorkCenter;
   const baseWorkCenterName = snapshot?.workCenter?.name ?? 'Sharpening Area 01';
@@ -979,11 +980,31 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
     setTraceabilityForm((current) => ({ ...current, ...clearedTraceabilityMeasurements }));
   };
 
-  const applyOrder = React.useCallback((order: ProductionOrder) => {
-    setGoodQty(order.completedQuantity);
-    setScrapQty(order.scrapQuantity);
-    setState(order.status === 'running' ? 'running' : order.status === 'paused' ? 'paused' : ['waiting-inspection', 'completed'].includes(order.status) ? 'completed' : 'not-started');
+  const rememberReportedCounts = React.useCallback((orderId: string, goodQuantity: number, scrapQuantity: number) => {
+    const current = reportedCountsByOrderRef.current.get(orderId);
+    const nextTotal = goodQuantity + scrapQuantity;
+    const currentTotal = current ? current.goodQty + current.scrapQty : -1;
+    if (!current || nextTotal >= currentTotal) {
+      reportedCountsByOrderRef.current.set(orderId, { goodQty: goodQuantity, scrapQty: scrapQuantity });
+    }
   }, []);
+
+  const resolveOrderReportedCounts = React.useCallback((order: ProductionOrder) => {
+    const reportedCounts = reportedCountsByOrderRef.current.get(order.id);
+    if (!reportedCounts) return order;
+    return {
+      ...order,
+      completedQuantity: reportedCounts.goodQty,
+      scrapQuantity: reportedCounts.scrapQty,
+    };
+  }, []);
+
+  const applyOrder = React.useCallback((order: ProductionOrder) => {
+    const resolvedOrder = resolveOrderReportedCounts(order);
+    setGoodQty(resolvedOrder.completedQuantity);
+    setScrapQty(resolvedOrder.scrapQuantity);
+    setState(resolvedOrder.status === 'running' ? 'running' : resolvedOrder.status === 'paused' ? 'paused' : ['waiting-inspection', 'completed'].includes(resolvedOrder.status) ? 'completed' : 'not-started');
+  }, [resolveOrderReportedCounts]);
 
   const buildTraceabilityForUnit = (
     reportType: 'good' | 'scrap',
@@ -992,7 +1013,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
     reason = '',
     comment = '',
   ) => {
-    const reportedSequence = selectedProductionSerial?.pieceSequence ?? Math.max(1, order.completedQuantity + order.scrapQuantity + 1);
+    const reportedSequence = selectedProductionSerial?.pieceSequence ?? Math.max(1, completedQty + 1);
     const isShaperTemplate = traceabilityTemplate.id === 'shapers';
     const isShaverTemplate = traceabilityTemplate.id === 'shavers';
     const templateDamageCodes = isShaverTemplate
@@ -1203,32 +1224,34 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
   };
 
   const syncSnapshotOrder = (order: ProductionOrder) => {
+    const resolvedOrder = resolveOrderReportedCounts(order);
     setSnapshot((current) => {
       if (!current) return current;
-      const remainsActive = ['released', 'running', 'paused'].includes(order.status);
+      const remainsActive = ['released', 'running', 'paused'].includes(resolvedOrder.status);
       const activeOrders = remainsActive
-        ? current.activeOrders.some((candidate) => candidate.id === order.id)
-          ? current.activeOrders.map((candidate) => candidate.id === order.id ? order : candidate)
-          : [order, ...current.activeOrders]
-        : current.activeOrders.filter((candidate) => candidate.id !== order.id);
+        ? current.activeOrders.some((candidate) => candidate.id === resolvedOrder.id)
+          ? current.activeOrders.map((candidate) => candidate.id === resolvedOrder.id ? resolvedOrder : candidate)
+          : [resolvedOrder, ...current.activeOrders]
+        : current.activeOrders.filter((candidate) => candidate.id !== resolvedOrder.id);
 
       return {
         ...current,
-        currentOrder: remainsActive ? order : null,
+        currentOrder: remainsActive ? resolvedOrder : null,
         activeOrders,
-        queuedOrders: activeOrders.filter((candidate) => candidate.id !== order.id),
+        queuedOrders: activeOrders.filter((candidate) => candidate.id !== resolvedOrder.id),
       };
     });
   };
 
   const syncSwitchedOrder = (order: ProductionOrder) => {
+    const resolvedOrder = resolveOrderReportedCounts(order);
     setSnapshot((current) => {
       if (!current) return current;
       const activeOrders = current.activeOrders.map((candidate) => {
-        if (candidate.id === order.id) return order;
+        if (candidate.id === resolvedOrder.id) return resolvedOrder;
         if (
-          candidate.assignedWorkCenter === order.assignedWorkCenter
-          && candidate.assignedStation === order.assignedStation
+          candidate.assignedWorkCenter === resolvedOrder.assignedWorkCenter
+          && candidate.assignedStation === resolvedOrder.assignedStation
           && candidate.status === 'running'
         ) {
           return { ...candidate, status: 'paused' as const };
@@ -1238,9 +1261,9 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
 
       return {
         ...current,
-        currentOrder: order,
+        currentOrder: resolvedOrder,
         activeOrders,
-        queuedOrders: activeOrders.filter((candidate) => candidate.id !== order.id),
+        queuedOrders: activeOrders.filter((candidate) => candidate.id !== resolvedOrder.id),
       };
     });
   };
@@ -1280,6 +1303,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
     const nextGoodQty = results.filter((result) => result === 'good').length;
     const nextScrapQty = results.filter((result) => result === 'scrap').length;
 
+    rememberReportedCounts(orderId, nextGoodQty, nextScrapQty);
     setGoodQty(nextGoodQty);
     setScrapQty(nextScrapQty);
     setSnapshot((current) => {
@@ -1296,7 +1320,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
         queuedOrders: current.queuedOrders.map(updateOrderCounts),
       };
     });
-  }, []);
+  }, [rememberReportedCounts]);
 
   const operatorSnapshotRealtimeTables = React.useMemo(() => ([
     { table: 'mes_production_orders', filter: `organization_id=eq.${organizationId}` },
@@ -1315,27 +1339,35 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
   const loadSnapshot = React.useCallback(async () => {
     try {
       const nextSnapshot = await fetchOperatorTerminalSnapshot(organizationId);
+      const normalizedActiveOrders = nextSnapshot.activeOrders.map(resolveOrderReportedCounts);
+      const normalizedCurrentOrder = nextSnapshot.currentOrder ? resolveOrderReportedCounts(nextSnapshot.currentOrder) : null;
+      const normalizedSnapshot = {
+        ...nextSnapshot,
+        currentOrder: normalizedCurrentOrder,
+        activeOrders: normalizedActiveOrders,
+        queuedOrders: nextSnapshot.queuedOrders.map(resolveOrderReportedCounts),
+      };
       const storedOrderId = loadActiveOrderId(organizationId);
-      const restoredOrder = nextSnapshot.activeOrders.find((order) => order.id === storedOrderId)
-        ?? nextSnapshot.currentOrder;
+      const restoredOrder = normalizedSnapshot.activeOrders.find((order) => order.id === storedOrderId)
+        ?? normalizedSnapshot.currentOrder;
       const restoredSnapshot = restoredOrder
         ? {
-            ...nextSnapshot,
+            ...normalizedSnapshot,
             currentOrder: restoredOrder,
-            queuedOrders: nextSnapshot.activeOrders.filter((order) => order.id !== restoredOrder.id),
+            queuedOrders: normalizedSnapshot.activeOrders.filter((order) => order.id !== restoredOrder.id),
           }
-        : nextSnapshot;
+        : normalizedSnapshot;
       setSnapshot(restoredSnapshot);
-      setTerminalMessage(nextSnapshot.activeOrders.length ? '' : 'No single-operation production orders are assigned yet.');
+      setTerminalMessage(normalizedSnapshot.activeOrders.length ? '' : 'No single-operation production orders are assigned yet.');
       setSelectedOrderId(restoredOrder?.id ?? '');
-      setSelectedWorkCenterCode(restoredOrder?.assignedWorkCenter ?? nextSnapshot.workCenter?.code ?? nextSnapshot.workCenterOptions[0]?.code ?? '');
-      setSelectedStationCode(restoredOrder?.assignedStation ?? nextSnapshot.station?.code ?? '');
+      setSelectedWorkCenterCode(restoredOrder?.assignedWorkCenter ?? normalizedSnapshot.workCenter?.code ?? normalizedSnapshot.workCenterOptions[0]?.code ?? '');
+      setSelectedStationCode(restoredOrder?.assignedStation ?? normalizedSnapshot.station?.code ?? '');
       if (restoredOrder) applyOrder(restoredOrder);
     } catch (error) {
       console.error('Unable to load Operator Terminal snapshot', error);
       setTerminalMessage('Operator Terminal backend is not available yet. Showing demo terminal data.');
     }
-  }, [applyOrder, organizationId]);
+  }, [applyOrder, organizationId, resolveOrderReportedCounts]);
 
   const loadCustomers = React.useCallback(async () => {
     const { data, error } = await supabase
@@ -1564,6 +1596,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
     setSyncPending(true);
     try {
       const order = await reportOperatorProduction({ orderId: currentOrder.id, organizationId, stationCode, shift: selectedShift, goodDelta: 1, serialNumber, traceability: buildTraceabilityForUnit('good', currentOrder, serialNumber) });
+      rememberReportedCounts(order.id, order.completedQuantity, order.scrapQuantity);
       applyOrder(order);
       syncSnapshotOrder(order);
       setTerminalMessage('');
@@ -1577,6 +1610,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
         setTraceField('serialNumber', suggestNextSerialNumber(serialNumber, order.partNumber, order.completedQuantity + order.scrapQuantity + 1));
       }
       clearTraceabilityMeasurements();
+      void loadProductionSerials();
     } catch (error) {
       console.error('Unable to report good production', error);
       const message = getOperatorReportErrorMessage(error);
@@ -1663,6 +1697,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
         setSyncPending(true);
         try {
           const order = await reportOperatorProduction({ orderId: currentOrder.id, organizationId, stationCode, shift: selectedShift, scrapDelta: 1, serialNumber, traceability: buildTraceabilityForUnit('scrap', currentOrder, serialNumber, reason, comment), reason, comment });
+          rememberReportedCounts(order.id, order.completedQuantity, order.scrapQuantity);
           applyOrder(order);
           syncSnapshotOrder(order);
           setTerminalMessage('');
@@ -1685,6 +1720,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
             setTraceField('serialNumber', suggestNextSerialNumber(serialNumber, order.partNumber, order.completedQuantity + order.scrapQuantity + 1));
           }
           clearTraceabilityMeasurements();
+          void loadProductionSerials();
         } catch (error) {
           console.error('Unable to report scrap', error);
           const message = getOperatorReportErrorMessage(error);

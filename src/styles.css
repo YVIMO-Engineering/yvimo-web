@@ -30738,7 +30738,7 @@ body[data-screenshot-export="academy-track"] .academy-mobile-track-step button {
 
 .quality-certificate-order-data {
   display: grid;
-  grid-template-columns: repeat(4, minmax(110px, 1fr));
+  grid-template-columns: repeat(2, minmax(170px, 1fr));
   gap: 8px;
   margin-top: 10px;
 }
@@ -30837,8 +30837,9 @@ body[data-screenshot-export="academy-track"] .academy-mobile-track-step button {
 }
 
 .quality-certificate-order-data {
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  grid-template-columns: repeat(2, minmax(180px, 1fr));
   gap: 10px;
+  width: min(620px, 100%);
   margin-top: 12px;
 }
 
