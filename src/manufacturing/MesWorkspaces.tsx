@@ -179,6 +179,13 @@ type ProductionSerialInsertRow = {
   reported_at: null;
 };
 
+type ProductionSerialAssignmentRow = {
+  id?: string;
+  piece_sequence: number;
+  tool_id: string | null;
+  serial_number: string;
+};
+
 type TraceabilityCaptureRow = {
   id: string;
   production_order_id: string | null;
@@ -2474,7 +2481,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
     setFormMode('create');
   };
 
-  const openEditOrderForm = () => {
+  const openEditOrderForm = async () => {
     if (!selectedOrder) return;
     setOrderFormError('');
     const linkedCustomer = customerOptions.find((customer) =>
@@ -2488,9 +2495,30 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
     });
     setPartNameOption(getPartNameOptionValue(selectedOrder.partName));
     setAssignSerialsEnabled(false);
-    setSerialAssignmentDrafts([]);
+    setSerialAssignmentDrafts(createSerialAssignmentDrafts(selectedOrder.plannedQuantity));
     setSerialAssignmentModalOpen(false);
     setFormMode('edit');
+
+    try {
+      const { data, error } = await supabase
+        .from('mes_production_serials')
+        .select('piece_sequence, tool_id, serial_number')
+        .eq('organization_id', organizationId)
+        .eq('production_order_id', selectedOrder.id)
+        .order('piece_sequence', { ascending: true });
+      if (error) throw error;
+      const serialRows = (data ?? []) as ProductionSerialAssignmentRow[];
+      if (!serialRows.length) return;
+      setAssignSerialsEnabled(true);
+      setSerialAssignmentDrafts(createSerialAssignmentDrafts(selectedOrder.plannedQuantity, serialRows.map((serial) => ({
+        pieceSequence: serial.piece_sequence,
+        toolId: serial.tool_id ?? '',
+        serialNumber: serial.serial_number ?? '',
+      }))));
+    } catch (error) {
+      console.error('Unable to load Production Order serial assignments', error);
+      setOrderFormError('Existing Tool IDs and Serial Numbers could not be loaded. Try opening Edit again.');
+    }
   };
 
   const closeOrderForm = () => {
@@ -2600,6 +2628,56 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
               .eq('id', selectedOrder.id)
               .abortSignal(controller.signal);
             if (error) throw error;
+            if (assignSerialsEnabled) {
+              const { data: existingSerialsData, error: existingSerialsError } = await supabase
+                .from('mes_production_serials')
+                .select('id, piece_sequence, tool_id, serial_number')
+                .eq('organization_id', organizationId)
+                .eq('production_order_id', selectedOrder.id)
+                .abortSignal(controller.signal);
+              if (existingSerialsError) throw existingSerialsError;
+              const existingSerialsBySequence = new Map(((existingSerialsData ?? []) as ProductionSerialAssignmentRow[]).map((serial) => [serial.piece_sequence, serial]));
+              await Promise.all(normalizedSerialDrafts.map(async (draft) => {
+                const existingSerial = existingSerialsBySequence.get(draft.pieceSequence);
+                if (existingSerial?.id) {
+                  const { error: updateSerialError } = await supabase
+                    .from('mes_production_serials')
+                    .update({
+                      tool_id: draft.toolId.trim(),
+                      serial_number: draft.serialNumber.trim(),
+                    })
+                    .eq('organization_id', organizationId)
+                    .eq('id', existingSerial.id)
+                    .abortSignal(controller.signal);
+                  if (updateSerialError) throw updateSerialError;
+                  return;
+                }
+                const { error: insertSerialError } = await supabase
+                  .from('mes_production_serials')
+                  .insert({
+                    organization_id: organizationId,
+                    production_order_id: selectedOrder.id,
+                    piece_sequence: draft.pieceSequence,
+                    tool_id: draft.toolId.trim(),
+                    serial_number: draft.serialNumber.trim(),
+                    result: null,
+                    ready_for_quality: false,
+                    reported_at: null,
+                  })
+                  .abortSignal(controller.signal);
+                if (insertSerialError) throw insertSerialError;
+              }));
+              const validSequences = normalizedSerialDrafts.map((draft) => draft.pieceSequence);
+              const { error: staleSerialsError } = await supabase
+                .from('mes_production_serials')
+                .delete()
+                .eq('organization_id', organizationId)
+                .eq('production_order_id', selectedOrder.id)
+                .is('result', null)
+                .not('piece_sequence', 'in', `(${validSequences.join(',')})`)
+                .abortSignal(controller.signal);
+              if (staleSerialsError) throw staleSerialsError;
+            }
             setOrders((currentOrders) => currentOrders.map((order) => (order.id === selectedOrder.id ? orderFromForm : order)));
             setSelectedOrderNumber(orderFromForm.orderNumber);
             setTableMessage(null);
@@ -3013,7 +3091,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
             <button className="production-orders-details-action" type="button" onClick={() => void openOrderDetails()} disabled={!selectedOrder}>
               Order Details
             </button>
-            <button type="button" onClick={openEditOrderForm} disabled={!selectedOrder}>
+            <button type="button" onClick={() => void openEditOrderForm()} disabled={!selectedOrder}>
               Edit
             </button>
             <button type="button" onClick={deleteSelectedOrder} disabled={!selectedOrder}>
@@ -3156,7 +3234,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
                 Planned quantity
                 <input type="number" min="0" value={formState.plannedQuantity} onChange={(event) => setFormState((current) => ({ ...current, plannedQuantity: event.target.value }))} required />
               </label>
-              {formMode === 'create' ? (
+              {formMode ? (
                 <fieldset className="production-order-serial-assignment mes-order-form-wide">
                   <div className="production-order-quality-heading">
                     <div>
@@ -3399,7 +3477,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
           </section>
         </div>
       ) : null}
-      {formMode === 'create' && serialAssignmentModalOpen ? (
+      {formMode && serialAssignmentModalOpen ? (
         <div className="mes-modal-backdrop production-order-serial-backdrop" role="presentation">
           <section className="mes-order-modal production-order-serial-modal" role="dialog" aria-modal="true" aria-labelledby="production-order-serial-title">
             <div className="production-order-serial-modal-heading">
