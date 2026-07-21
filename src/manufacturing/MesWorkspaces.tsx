@@ -1272,6 +1272,68 @@ export function getProductionOrderDetailPayloadNumber(payload: Record<string, un
   return Number.isFinite(numericValue) ? numericValue : null;
 }
 
+type ProductionOrderReportedSerialRow = Pick<ProductionOrderDetailSerialRow, 'production_order_id' | 'piece_sequence' | 'serial_number' | 'result'>;
+type ProductionOrderReportedTraceabilityRow = Pick<ProductionOrderDetailTraceabilityRow, 'id' | 'production_order_id' | 'serial_number' | 'payload'>;
+
+function reconcileProductionOrderReportedCounts(
+  orders: ProductionOrder[],
+  serialRows: ProductionOrderReportedSerialRow[],
+  traceabilityRows: ProductionOrderReportedTraceabilityRow[],
+) {
+  const countsByOrder = new Map<string, { good: number; scrap: number }>();
+  const serialResultsByOrder = new Map<string, Map<number, 'good' | 'scrap'>>();
+  const serialResultKeysByOrder = new Map<string, Set<string>>();
+
+  serialRows.forEach((serial) => {
+    if (!serial.result) return;
+    const orderId = serial.production_order_id;
+    if (!serialResultsByOrder.has(orderId)) serialResultsByOrder.set(orderId, new Map());
+    if (!serialResultKeysByOrder.has(orderId)) serialResultKeysByOrder.set(orderId, new Set());
+    serialResultsByOrder.get(orderId)?.set(serial.piece_sequence, serial.result);
+    const serialKey = serial.serial_number?.trim().toLowerCase();
+    if (serialKey) serialResultKeysByOrder.get(orderId)?.add(serialKey);
+  });
+
+  const traceabilityResultsByOrder = new Map<string, Map<string, 'good' | 'scrap'>>();
+  traceabilityRows.forEach((traceability) => {
+    const orderId = traceability.production_order_id;
+    if (!orderId) return;
+    const pieceSequence = getProductionOrderDetailPayloadNumber(traceability.payload, 'piece_sequence');
+    const serialKey = traceability.serial_number?.trim().toLowerCase() ?? '';
+    if (pieceSequence && serialResultsByOrder.get(orderId)?.has(pieceSequence)) return;
+    if (serialKey && serialResultKeysByOrder.get(orderId)?.has(serialKey)) return;
+    if (!traceabilityResultsByOrder.has(orderId)) traceabilityResultsByOrder.set(orderId, new Map());
+    const pieceKey = pieceSequence ? `piece:${pieceSequence}` : serialKey ? `serial:${serialKey}` : `trace:${traceability.id}`;
+    const orderTraceabilityResults = traceabilityResultsByOrder.get(orderId)!;
+    if (orderTraceabilityResults.has(pieceKey)) return;
+    const payloadResult = traceability.payload?.report_type;
+    orderTraceabilityResults.set(pieceKey, payloadResult === 'scrap' ? 'scrap' : 'good');
+  });
+
+  const orderIds = new Set([...serialResultsByOrder.keys(), ...traceabilityResultsByOrder.keys()]);
+  orderIds.forEach((orderId) => {
+    const results = [
+      ...Array.from(serialResultsByOrder.get(orderId)?.values() ?? []),
+      ...Array.from(traceabilityResultsByOrder.get(orderId)?.values() ?? []),
+    ];
+    if (!results.length) return;
+    countsByOrder.set(orderId, {
+      good: results.filter((result) => result === 'good').length,
+      scrap: results.filter((result) => result === 'scrap').length,
+    });
+  });
+
+  return orders.map((order) => {
+    const counts = countsByOrder.get(order.id);
+    if (!counts) return order;
+    return {
+      ...order,
+      completedQuantity: counts.good,
+      scrapQuantity: counts.scrap,
+    };
+  });
+}
+
 export function getProductionOrderDetailPayloadString(payload: Record<string, unknown> | null, key: string) {
   const value = payload?.[key];
   return typeof value === 'string' ? value : '';
@@ -2155,6 +2217,8 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
         : 'low';
   const productionOrdersRealtimeTables = React.useMemo(() => ([
     { table: 'mes_production_orders', filter: `organization_id=eq.${organizationId}` },
+    { table: 'mes_production_serials', filter: `organization_id=eq.${organizationId}` },
+    { table: 'mes_operator_terminal_traceability', filter: `organization_id=eq.${organizationId}` },
     { table: 'mes_work_centers', filter: `organization_id=eq.${organizationId}` },
     { table: 'mes_work_center_stations', filter: `organization_id=eq.${organizationId}` },
     { table: 'mes_customers', filter: `organization_id=eq.${organizationId}` },
@@ -2226,7 +2290,36 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
       setOrdersLoaded(true);
       return;
     }
-    const nextOrders = ((data ?? []) as ProductionOrderRow[]).map(mapProductionOrderRow);
+    const loadedOrders = ((data ?? []) as ProductionOrderRow[]).map(mapProductionOrderRow);
+    let nextOrders = loadedOrders;
+    const loadedOrderIds = loadedOrders.map((order) => order.id);
+    if (loadedOrderIds.length) {
+      const [
+        { data: serialCountData, error: serialCountError },
+        { data: traceabilityCountData, error: traceabilityCountError },
+      ] = await Promise.all([
+        supabase
+          .from('mes_production_serials')
+          .select('production_order_id, piece_sequence, serial_number, result')
+          .eq('organization_id', organizationId)
+          .in('production_order_id', loadedOrderIds),
+        supabase
+          .from('mes_operator_terminal_traceability')
+          .select('id, production_order_id, serial_number, payload')
+          .eq('organization_id', organizationId)
+          .in('production_order_id', loadedOrderIds),
+      ]);
+      if (serialCountError || traceabilityCountError) {
+        console.warn('Unable to reconcile Production Orders reported counts', serialCountError ?? traceabilityCountError);
+      } else {
+        nextOrders = reconcileProductionOrderReportedCounts(
+          loadedOrders,
+          (serialCountData ?? []) as ProductionOrderReportedSerialRow[],
+          (traceabilityCountData ?? []) as ProductionOrderReportedTraceabilityRow[],
+        );
+      }
+    }
+    if (requestId !== productionOrdersLoadRequestRef.current) return;
     setOrders(nextOrders);
     setSelectedOrderNumber((currentOrderNumber) => {
       const rememberedOrderNumber = restoredSelectedOrderNumberRef.current;
