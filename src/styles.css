@@ -16284,6 +16284,13 @@ body.work-center-map-expanded .logged-workspace {
   align-items: start;
   justify-content: stretch;
   gap: 14px;
+  min-height: 220px;
+}
+
+.station-card .station-card-visual {
+  width: 100%;
+  height: 220px;
+  min-height: 220px;
 }
 
 .station-card-visual {
@@ -16318,6 +16325,11 @@ body.work-center-map-expanded .logged-workspace {
   justify-self: stretch;
   min-height: inherit;
   object-fit: cover;
+}
+
+@media (max-width: 900px) {
+  .station-card-header { min-height: 180px; }
+  .station-card .station-card-visual { height: 180px; min-height: 180px; }
 }
 
 .station-card-title {
@@ -16444,10 +16456,11 @@ body.work-center-map-expanded .logged-workspace {
 }
 
 .station-card > .station-cycle-box time {
-  font-size: 1.15rem;
+  font-size: 1rem;
   font-weight: 820;
   font-variant-numeric: tabular-nums;
-  letter-spacing: .035em;
+  line-height: 1.3;
+  white-space: normal;
 }
 
 .station-card > .station-cycle-box small {

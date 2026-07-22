@@ -186,6 +186,21 @@ function formatCycleDuration(milliseconds: number) {
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
+function formatStationCycleDuration(milliseconds: number) {
+  const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000));
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const units = [
+    days ? `${days} ${days === 1 ? 'day' : 'days'}` : '',
+    `${hours} ${hours === 1 ? 'hour' : 'hours'}`,
+    `${minutes} min`,
+    `${seconds} sec`,
+  ].filter(Boolean);
+  return units.join(' · ');
+}
+
 type ProductionOrderCustomerOptionRow = {
   id: string;
   customer_name: string;
@@ -6463,7 +6478,7 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
                     </div>
                     <div className={`station-cycle-box station-cycle-${station.status}`}>
                       <div><span>Current State</span><strong>{formatLabel(station.status)}</strong></div>
-                      <div className="station-cycle-time"><time>{activeStatusCycle ? formatCycleDuration(cycleDuration(activeStatusCycle)) : '00:00:00'}</time><small>{activeStatusCycle ? `Since ${formatTimestamp(activeStatusCycle.started_at)}` : 'Waiting for first status record'}</small></div>
+                      <div className="station-cycle-time"><time>{activeStatusCycle ? formatStationCycleDuration(cycleDuration(activeStatusCycle)) : '0 hours · 0 min · 0 sec'}</time><small>{activeStatusCycle ? `Since ${formatTimestamp(activeStatusCycle.started_at)}` : 'Waiting for first status record'}</small></div>
                     </div>
                     <dl className="station-property-grid">
                       <div className="station-current-job"><dt>Current Job</dt><dd>{stationCurrentOrder ? (
