@@ -30,6 +30,7 @@ import {
 } from '../lib/maps/googlePlacesAddressLookup';
 import { SUPPORTED_CURRENCIES, type SupportedCurrency } from '../lib/exchangeRates';
 import { supabase } from '../lib/supabaseClient';
+import { useSupabaseRealtimeRefresh } from '../lib/useSupabaseRealtimeRefresh';
 import { ClientBalancesWorkspace } from './ClientBalancesWorkspace';
 
 export type ClientsContextTab =
@@ -113,6 +114,7 @@ type CustomerAssetRecord = {
   lastProductionOrderId: string | null;
   assetType: string;
   toolId: string;
+  toolDefinitionId: string | null;
   serialNumber: string;
   partNumber: string;
   description: string;
@@ -159,6 +161,7 @@ type CustomerAssetAttachment = {
 
 type CustomerAssetFormState = {
   customerId: string;
+  toolDefinitionId: string;
   assetType: string;
   serialNumber: string;
   partNumber: string;
@@ -169,7 +172,6 @@ type CustomerAssetFormState = {
   custodianName: string;
   custodianRole: string;
   status: AssetStatus;
-  maximumSharpenings: string;
   lastInspectionAt: string;
   internalNotes: string;
 };
@@ -196,6 +198,7 @@ const emptyCustomerForm: CustomerFormState = {
 
 const emptyCustomerAssetForm: CustomerAssetFormState = {
   customerId: '',
+  toolDefinitionId: '',
   assetType: '',
   serialNumber: '',
   partNumber: '',
@@ -206,7 +209,6 @@ const emptyCustomerAssetForm: CustomerAssetFormState = {
   custodianName: '',
   custodianRole: '',
   status: 'in-custody',
-  maximumSharpenings: '',
   lastInspectionAt: '',
   internalNotes: '',
 };
@@ -431,6 +433,7 @@ type CustomerAssetRow = {
   source_production_order_id: string | null;
   last_production_order_id: string | null;
   asset_type: string;
+  tool_definition_id?: string | null;
   serial_number: string;
   part_number: string | null;
   description: string;
@@ -481,6 +484,32 @@ type ProductionSerialToolRow = {
   tool_id: string | null;
 };
 
+type CustomerToolDefinition = {
+  id: string;
+  toolId: string;
+  partType: string;
+  minimumLife: number | null;
+  measurementUnit: 'in' | 'mm';
+};
+
+type CustomerToolDefinitionRow = {
+  id: string;
+  tool_id: string;
+  part_type: string;
+  minimum_life: number | null;
+  measurement_unit: 'in' | 'mm';
+};
+
+type AssetLifeTraceabilityRow = {
+  tool_id: string | null;
+  serial_number: string | null;
+  dimensions_unit: string;
+  stock_to_remove: number | null;
+  after_tooth_length: number | null;
+  payload: Record<string, unknown> | null;
+  created_at: string;
+};
+
 function normalizeAssetType(value: string) {
   return value.trim().toLocaleLowerCase();
 }
@@ -523,6 +552,7 @@ function mapAssetRow(row: CustomerAssetRow): CustomerAssetRecord {
     lastProductionOrderId: row.last_production_order_id,
     assetType: row.asset_type,
     toolId: '',
+    toolDefinitionId: row.tool_definition_id ?? null,
     serialNumber: row.serial_number,
     partNumber: row.part_number ?? '',
     description: row.description,
@@ -550,6 +580,8 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
   const [assetSearch, setAssetSearch] = React.useState('');
   const [selectedAssetTypes, setSelectedAssetTypes] = React.useState<Set<string> | null>(null);
   const [assets, setAssets] = React.useState<CustomerAssetRecord[]>([]);
+  const [toolDefinitions, setToolDefinitions] = React.useState<CustomerToolDefinition[]>([]);
+  const [assetLifeTraceability, setAssetLifeTraceability] = React.useState<AssetLifeTraceabilityRow[]>([]);
   const [assetServices, setAssetServices] = React.useState<CustomerAssetService[]>([]);
   const [assetAttachments, setAssetAttachments] = React.useState<CustomerAssetAttachment[]>([]);
   const [selectedAssetId, setSelectedAssetId] = React.useState<string | null>(null);
@@ -559,6 +591,11 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
   const [assetFormOpen, setAssetFormOpen] = React.useState(false);
   const [assetEditingId, setAssetEditingId] = React.useState<string | null>(null);
   const [assetForm, setAssetForm] = React.useState<CustomerAssetFormState>(emptyCustomerAssetForm);
+  const [toolIdSearch, setToolIdSearch] = React.useState('');
+  const [toolFormOpen, setToolFormOpen] = React.useState(false);
+  const [toolForm, setToolForm] = React.useState({ toolId: '', partType: 'Hobs', minimumLife: '', measurementUnit: 'in' as 'in' | 'mm' });
+  const [toolDrawingFiles, setToolDrawingFiles] = React.useState<File[]>([]);
+  const [toolDrawingDragActive, setToolDrawingDragActive] = React.useState(false);
   const [assetPhotos, setAssetPhotos] = React.useState<File[]>([]);
   const [assetDocuments, setAssetDocuments] = React.useState<File[]>([]);
   const [loading, setLoading] = React.useState(activeTab === 'customers' || activeTab === 'assets-equipment' || activeTab === 'balances');
@@ -604,7 +641,7 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
     setAssetLoading(true);
     setAssetError('');
 
-    const [assetResponse, serviceResponse, attachmentResponse, productionSerialResponse] = await Promise.all([
+    const [assetResponse, serviceResponse, attachmentResponse, productionSerialResponse, toolResponse, traceabilityResponse] = await Promise.all([
       supabase
         .from('mes_customer_assets')
         .select('*')
@@ -624,14 +661,18 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
         .from('mes_production_serials')
         .select('production_order_id, serial_number, tool_id')
         .eq('organization_id', organizationId),
+      supabase.from('mes_customer_tool_ids').select('id, tool_id, part_type, minimum_life, measurement_unit').eq('organization_id', organizationId).order('tool_id'),
+      supabase.from('mes_operator_terminal_traceability').select('tool_id, serial_number, dimensions_unit, stock_to_remove, after_tooth_length, payload, created_at').eq('organization_id', organizationId).order('created_at', { ascending: false }),
     ]);
 
-    const firstError = assetResponse.error || serviceResponse.error || attachmentResponse.error || productionSerialResponse.error;
+    const firstError = assetResponse.error || serviceResponse.error || attachmentResponse.error || productionSerialResponse.error || toolResponse.error || traceabilityResponse.error;
     if (firstError) {
       setAssetError(firstError.message);
       setAssets([]);
       setAssetServices([]);
       setAssetAttachments([]);
+      setToolDefinitions([]);
+      setAssetLifeTraceability([]);
     } else {
       const toolIdByProductionSerial = new Map(
         ((productionSerialResponse.data ?? []) as ProductionSerialToolRow[]).map((row) => [
@@ -641,15 +682,18 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
       );
       const nextAssets = ((assetResponse.data ?? []) as CustomerAssetRow[]).map((row) => {
         const asset = mapAssetRow(row);
+        const linkedTool = ((toolResponse.data ?? []) as CustomerToolDefinitionRow[]).find((tool) => tool.id === asset.toolDefinitionId);
         const productionOrderId = asset.lastProductionOrderId ?? asset.sourceProductionOrderId;
         return {
           ...asset,
-          toolId: productionOrderId
+          toolId: linkedTool?.tool_id ?? (productionOrderId
             ? toolIdByProductionSerial.get(`${productionOrderId}:${asset.serialNumber.trim().toLocaleLowerCase()}`) ?? ''
-            : '',
+            : ''),
         };
       });
       setAssets(nextAssets);
+      setToolDefinitions(((toolResponse.data ?? []) as CustomerToolDefinitionRow[]).map((row) => ({ id: row.id, toolId: row.tool_id, partType: row.part_type, minimumLife: row.minimum_life === null ? null : Number(row.minimum_life), measurementUnit: row.measurement_unit })));
+      setAssetLifeTraceability((traceabilityResponse.data ?? []) as AssetLifeTraceabilityRow[]);
       setAssetServices(((serviceResponse.data ?? []) as CustomerAssetServiceRow[]).map((row) => {
         const order = Array.isArray(row.production_order) ? row.production_order[0] : row.production_order;
         return {
@@ -691,19 +735,35 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
     if (activeTab === 'assets-equipment') void loadAssets();
   }, [activeTab, loadAssets]);
 
+  const assetRealtimeTables = React.useMemo(() => ([
+    { table: 'mes_customer_assets', filter: `organization_id=eq.${organizationId}` },
+    { table: 'mes_customer_asset_service_events', filter: `organization_id=eq.${organizationId}` },
+    { table: 'mes_customer_asset_attachments', filter: `organization_id=eq.${organizationId}` },
+    { table: 'mes_operator_terminal_traceability', filter: `organization_id=eq.${organizationId}` },
+    { table: 'mes_customer_tool_ids', filter: `organization_id=eq.${organizationId}` },
+  ]), [organizationId]);
+
+  useSupabaseRealtimeRefresh({
+    channelName: `mes-customer-assets-live:${organizationId}`,
+    tables: assetRealtimeTables,
+    onRefresh: loadAssets,
+    enabled: activeTab === 'assets-equipment' && Boolean(organizationId),
+  });
+
   React.useEffect(() => {
-    if (!formMode && !customerToDelete && !assetFormOpen && !assetAttachmentPreview) return undefined;
+    if (!formMode && !customerToDelete && !assetFormOpen && !toolFormOpen && !assetAttachmentPreview) return undefined;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || saving) return;
       setFormMode(null);
       setCustomerToDelete(null);
       setAssetFormOpen(false);
+      setToolFormOpen(false);
       setAssetEditingId(null);
       setAssetAttachmentPreview(null);
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [formMode, customerToDelete, assetFormOpen, assetAttachmentPreview, saving]);
+  }, [formMode, customerToDelete, assetFormOpen, toolFormOpen, assetAttachmentPreview, saving]);
 
   const updateAddressSuggestionPosition = React.useCallback(() => {
     const control = addressLookupControlRef.current;
@@ -850,6 +910,7 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
     setCustomerToDelete(null);
     setAssetFormOpen(false);
     setAssetEditingId(null);
+    setToolFormOpen(false);
   };
 
   const saveCustomer = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -928,6 +989,7 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
       ? assetCustomerFilter
       : customers.find((customer) => customer.status === 'active')?.id ?? customers[0]?.id ?? '';
     setAssetForm({ ...emptyCustomerAssetForm, customerId: preferredCustomer });
+    setToolIdSearch('');
     setAssetPhotos([]);
     setAssetDocuments([]);
     setAssetError('');
@@ -938,6 +1000,7 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
     setAssetEditingId(asset.id);
     setAssetForm({
       customerId: asset.customerId,
+      toolDefinitionId: asset.toolDefinitionId ?? '',
       assetType: asset.assetType,
       serialNumber: asset.serialNumber,
       partNumber: asset.partNumber,
@@ -948,12 +1011,12 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
       custodianName: asset.custodianName,
       custodianRole: asset.custodianRole,
       status: asset.status,
-      maximumSharpenings: asset.maximumSharpenings === null ? '' : String(asset.maximumSharpenings),
       lastInspectionAt: asset.lastInspectionAt?.slice(0, 10) ?? '',
       internalNotes: asset.internalNotes,
     });
     setAssetPhotos([]);
     setAssetDocuments([]);
+    setToolIdSearch(asset.toolId);
     setAssetError('');
     setAssetFormOpen(true);
   };
@@ -988,19 +1051,66 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
     }
   };
 
+  const saveToolDefinition = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (saving || !toolForm.toolId.trim() || !toolForm.minimumLife) return;
+    setSaving(true);
+    setAssetError('');
+    const existingTool = toolDefinitions.find((tool) => tool.toolId.trim().toLowerCase() === toolForm.toolId.trim().toLowerCase());
+    const toolPayload = {
+      organization_id: organizationId,
+      tool_id: toolForm.toolId.trim(),
+      part_type: toolForm.partType,
+      minimum_life: Number(toolForm.minimumLife),
+      measurement_unit: toolForm.measurementUnit,
+    };
+    const request = existingTool
+      ? supabase.from('mes_customer_tool_ids').update(toolPayload).eq('id', existingTool.id).eq('organization_id', organizationId)
+      : supabase.from('mes_customer_tool_ids').insert(toolPayload);
+    const { data, error } = await request.select('id, tool_id, part_type, minimum_life, measurement_unit').single();
+    if (error || !data) {
+      setAssetError(error?.message ?? 'The Tool ID could not be saved.');
+      setSaving(false);
+      return;
+    }
+    try {
+      const uploadedRows = [];
+      for (const [index, file] of toolDrawingFiles.entries()) {
+        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '-');
+        const filePath = `${organizationId}/tool-ids/${data.id}/${Date.now()}-${index}-${safeName}`;
+        const { error: uploadError } = await supabase.storage.from('mes-customer-assets').upload(filePath, file, { contentType: file.type, upsert: false });
+        if (uploadError) throw uploadError;
+        uploadedRows.push({ organization_id: organizationId, tool_definition_id: data.id, storage_bucket: 'mes-customer-assets', file_name: file.name, file_path: filePath, file_type: file.type || 'application/pdf' });
+      }
+      if (uploadedRows.length) {
+        const { error: documentError } = await supabase.from('mes_customer_tool_id_documents').insert(uploadedRows);
+        if (documentError) throw documentError;
+      }
+      setToolFormOpen(false);
+      setToolForm({ toolId: '', partType: 'Hobs', minimumLife: '', measurementUnit: 'in' });
+      setToolDrawingFiles([]);
+      await loadAssets();
+    } catch (uploadError) {
+      setAssetError(uploadError instanceof Error ? uploadError.message : 'The Tool ID was saved, but its drawings could not be uploaded.');
+      setToolFormOpen(false);
+      await loadAssets();
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const saveAsset = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!organizationId || saving || !assetForm.customerId) return;
+    if (!organizationId || saving || !assetForm.customerId || !assetForm.toolDefinitionId) return;
     setSaving(true);
     setAssetError('');
 
-    const maximumSharpenings = assetForm.maximumSharpenings.trim() === ''
-      ? null
-      : Number(assetForm.maximumSharpenings);
+    const linkedTool = toolDefinitions.find((tool) => tool.id === assetForm.toolDefinitionId);
     const assetPayload = {
       organization_id: organizationId,
       customer_id: assetForm.customerId,
-      asset_type: assetForm.assetType.trim(),
+      tool_definition_id: assetForm.toolDefinitionId || null,
+      asset_type: linkedTool?.partType ?? assetForm.assetType.trim(),
       serial_number: assetForm.serialNumber.trim(),
       part_number: assetForm.partNumber.trim() || null,
       description: assetForm.description.trim(),
@@ -1010,7 +1120,7 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
       custodian_name: assetForm.custodianName.trim() || null,
       custodian_role: assetForm.custodianRole.trim() || null,
       status: assetForm.status,
-      max_sharpenings: maximumSharpenings,
+      max_sharpenings: null,
       last_inspection_at: assetForm.lastInspectionAt || null,
       internal_notes: assetForm.internalNotes.trim(),
     };
@@ -1142,12 +1252,35 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
     ? assetAttachments.filter((attachment) => attachment.assetId === selectedAsset.id)
     : [];
   const selectedAssetSharpeningCount = selectedAssetServices.filter((service) => service.result !== 'skipped').length;
-  const selectedAssetSharpeningsRemaining = selectedAsset?.maximumSharpenings == null
-    ? null
-    : Math.max(0, selectedAsset.maximumSharpenings - selectedAssetSharpeningCount);
-  const selectedAssetLifePercent = selectedAsset?.maximumSharpenings
-    ? Math.max(0, Math.min(100, (selectedAssetSharpeningsRemaining ?? 0) / selectedAsset.maximumSharpenings * 100))
+  const selectedAssetTool = selectedAsset?.toolDefinitionId ? toolDefinitions.find((tool) => tool.id === selectedAsset.toolDefinitionId) ?? null : null;
+  const matchingToolMeasurements = selectedAssetTool
+    ? assetLifeTraceability.filter((record) => record.tool_id?.trim().toLowerCase() === selectedAssetTool.toolId.trim().toLowerCase() && record.dimensions_unit === selectedAssetTool.measurementUnit)
+    : [];
+  const selectedSerialMeasurement = selectedAsset
+    ? matchingToolMeasurements.find((record) => record.serial_number?.trim().toLowerCase() === selectedAsset.serialNumber.trim().toLowerCase()) ?? null
     : null;
+  const getLifeMeasurement = (record: AssetLifeTraceabilityRow | null) => {
+    if (!record || !selectedAssetTool) return null;
+    const payload = record.payload ?? {};
+    const rawValue = /shaver/i.test(selectedAssetTool.partType)
+      ? payload.shaver_diameter
+      : /shaper/i.test(selectedAssetTool.partType) ? payload.after_height : record.after_tooth_length;
+    const value = typeof rawValue === 'number' ? rawValue : typeof rawValue === 'string' ? Number(rawValue) : NaN;
+    return Number.isFinite(value) ? value : null;
+  };
+  const explicitMaterialRemovalValues = matchingToolMeasurements.map((record) => Number(record.stock_to_remove)).filter((value) => Number.isFinite(value) && value > 0);
+  const measuredDimensions = matchingToolMeasurements.map((record) => getLifeMeasurement(record)).filter((value): value is number => value !== null);
+  const derivedMaterialRemovalValues = measuredDimensions.slice(0, -1).map((value, index) => measuredDimensions[index + 1] - value).filter((value) => value > 0);
+  const materialRemovalValues = explicitMaterialRemovalValues.length ? explicitMaterialRemovalValues : derivedMaterialRemovalValues;
+  const averageMaterialRemoval = materialRemovalValues.length ? materialRemovalValues.reduce((sum, value) => sum + value, 0) / materialRemovalValues.length : null;
+  const currentLifeMeasurement = getLifeMeasurement(selectedSerialMeasurement);
+  const selectedAssetSharpeningsRemaining = selectedAssetTool && selectedAssetTool.minimumLife !== null && currentLifeMeasurement !== null && averageMaterialRemoval
+    ? Math.max(0, Math.floor((currentLifeMeasurement - selectedAssetTool.minimumLife) / averageMaterialRemoval))
+    : null;
+  const estimatedTotalSharpenings = selectedAssetSharpeningsRemaining === null ? null : selectedAssetSharpeningCount + selectedAssetSharpeningsRemaining;
+  const selectedAssetLifePercent = estimatedTotalSharpenings
+    ? Math.max(0, Math.min(100, selectedAssetSharpeningsRemaining! / estimatedTotalSharpenings * 100))
+    : selectedAssetSharpeningsRemaining === 0 ? 0 : null;
   const selectedAssetLifeTone = selectedAssetLifePercent === null
     ? 'unestimated'
     : selectedAssetLifePercent < 30 ? 'critical' : selectedAssetLifePercent <= 50 ? 'warning' : 'healthy';
@@ -1199,10 +1332,10 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
             </button>
           ) : null}
           {activeTab === 'assets-equipment' ? (
-            <button type="button" onClick={openCreateAsset} disabled={!customers.length}>
-              <Plus size={16} />
-              Add Asset
-            </button>
+            <>
+              <button type="button" onClick={openCreateAsset} disabled={!customers.length}><Plus size={16} /> Add Asset</button>
+              <button type="button" className="secondary" onClick={() => { setToolForm({ toolId: '', partType: 'Hobs', minimumLife: '', measurementUnit: 'in' }); setToolDrawingFiles([]); setAssetError(''); setToolFormOpen(true); }}><Plus size={16} /> Add Tool ID</button>
+            </>
           ) : null}
         </div>
       </div>
@@ -1411,8 +1544,8 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
                           </span>
                           <div><i style={{ width: `${selectedAssetLifePercent ?? 0}%` }} /></div>
                           <small>{selectedAssetSharpeningsRemaining === null
-                            ? 'Set the maximum number of sharpenings to calculate remaining life.'
-                            : `${selectedAssetSharpeningsRemaining} of ${selectedAsset.maximumSharpenings} sharpenings remaining`}</small>
+                            ? 'Link a Tool ID with compatible service measurements to estimate remaining life.'
+                            : `Approximately ${selectedAssetSharpeningsRemaining} sharpenings remaining · Avg. removal ${averageMaterialRemoval?.toFixed(4)} ${selectedAssetTool?.measurementUnit}`}</small>
                         </div>
                         <span><small>Last Service</small><b>{formatAssetDate(selectedAsset.lastServiceAt)}</b></span>
                         <span><small>Last Inspection</small><b>{formatAssetDate(selectedAsset.lastInspectionAt)}</b></span>
@@ -1524,7 +1657,21 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
                 </label>
                 <label>
                   Asset Type
-                  <input required autoFocus value={assetForm.assetType} onChange={(event) => setAssetForm((current) => ({ ...current, assetType: event.target.value }))} placeholder="Hob, fixture, machine, tooling..." />
+                  <input required value={assetForm.assetType} readOnly={Boolean(assetForm.toolDefinitionId)} onChange={(event) => setAssetForm((current) => ({ ...current, assetType: event.target.value }))} placeholder="Selected from the Tool ID" />
+                </label>
+                <label className="clients-tool-id-link-field">
+                  Tool ID
+                  <input autoFocus type="search" value={toolIdSearch} onChange={(event) => setToolIdSearch(event.target.value)} placeholder="Search Tool ID..." />
+                  <CustomerDropdown
+                    id="asset-tool-id"
+                    value={assetForm.toolDefinitionId}
+                    options={toolDefinitions.filter((tool) => !toolIdSearch || `${tool.toolId} ${tool.partType}`.toLowerCase().includes(toolIdSearch.toLowerCase())).map((tool) => ({ value: tool.id, label: `${tool.toolId} · ${tool.partType}${tool.minimumLife === null ? ' · Life not configured' : ''}` }))}
+                    placeholder="Select Tool ID"
+                    onChange={(toolDefinitionId) => {
+                      const tool = toolDefinitions.find((item) => item.id === toolDefinitionId);
+                      setAssetForm((current) => ({ ...current, toolDefinitionId, assetType: tool?.partType ?? current.assetType, familyCategory: tool?.partType ?? current.familyCategory }));
+                    }}
+                  />
                 </label>
                 <label>
                   Serial Number
@@ -1553,11 +1700,6 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
                 <label>
                   Position / Role <em>Optional</em>
                   <input value={assetForm.custodianRole} onChange={(event) => setAssetForm((current) => ({ ...current, custodianRole: event.target.value }))} />
-                </label>
-                <label>
-                  Maximum Sharpenings <em>Optional</em>
-                  <input type="number" min="1" step="1" value={assetForm.maximumSharpenings} onChange={(event) => setAssetForm((current) => ({ ...current, maximumSharpenings: event.target.value }))} placeholder="e.g. 10" />
-                  <small>Used to calculate the asset's remaining useful life.</small>
                 </label>
                 <label>
                   Last Inspection <em>Optional</em>
@@ -1593,10 +1735,47 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
               {assetError ? <div className="clients-modal-error" role="alert">{assetError}</div> : null}
               <div className="mes-order-form-actions">
                 <button type="button" onClick={closeDialog} disabled={saving}>Cancel</button>
-                <button type="submit" disabled={saving || !assetForm.customerId}>
+                <button type="submit" disabled={saving || !assetForm.customerId || !assetForm.toolDefinitionId}>
                   {assetEditingId ? <Pencil size={16} /> : <Plus size={16} />} {saving ? 'Saving...' : assetEditingId ? 'Save Asset' : 'Register Asset'}
                 </button>
               </div>
+            </form>
+          </section>
+        </div>
+      ) : null}
+
+      {toolFormOpen ? (
+        <div className="mes-modal-backdrop production-order-form-backdrop clients-asset-form-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeDialog(); }}>
+          <section className="mes-order-modal clients-asset-modal clients-tool-id-modal" role="dialog" aria-modal="true" aria-labelledby="tool-id-dialog-title">
+            <button className="supplier-modal-close" type="button" onClick={closeDialog} aria-label="Close dialog" disabled={saving}><X size={18} /></button>
+            <form className="mes-order-form clients-asset-form" onSubmit={saveToolDefinition}>
+              <div className="clients-asset-modal-header mes-order-form-wide">
+                <p className="eyebrow">Tool Definition</p>
+                <h3 id="tool-id-dialog-title">Add Tool ID</h3>
+                <p>Define the shared dimensional limit and drawings used by every serial linked to this Tool ID.</p>
+              </div>
+              <div className="clients-asset-form-grid mes-order-form-wide">
+                <label>Tool ID<input required autoFocus value={toolForm.toolId} onChange={(event) => setToolForm((current) => ({ ...current, toolId: event.target.value }))} placeholder="e.g. 17864-T-4" /></label>
+                <label>Part Type<CustomerDropdown id="tool-part-type" value={toolForm.partType} options={['Hobs', 'Shaper', 'Shavers', 'Skiving', 'Talladores', 'Other'].map((value) => ({ value, label: value }))} onChange={(partType) => setToolForm((current) => ({ ...current, partType }))} /></label>
+                <label>Minimum Tool Life<input required type="number" min="0" step="any" value={toolForm.minimumLife} onChange={(event) => setToolForm((current) => ({ ...current, minimumLife: event.target.value }))} placeholder="Minimum usable dimension" /></label>
+                <label>Measurement Unit<CustomerDropdown id="tool-measurement-unit" value={toolForm.measurementUnit} options={[{ value: 'in', label: 'Inches' }, { value: 'mm', label: 'Millimeters' }]} onChange={(measurementUnit) => setToolForm((current) => ({ ...current, measurementUnit }))} /></label>
+                <div
+                  className={`clients-asset-file-field clients-tool-drawing-drop mes-order-form-wide${toolDrawingDragActive ? ' drag-active' : ''}`}
+                  onDragOver={(event) => { event.preventDefault(); setToolDrawingDragActive(true); }}
+                  onDragLeave={() => setToolDrawingDragActive(false)}
+                  onDrop={(event) => { event.preventDefault(); setToolDrawingDragActive(false); setToolDrawingFiles(Array.from(event.dataTransfer.files).filter((file) => file.type === 'application/pdf')); }}
+                >
+                  <div className="clients-asset-file-heading"><span><FileText size={16} /> Drawings</span><em>Optional</em></div>
+                  <div className="clients-asset-file-control">
+                    <input id="tool-drawing-files" type="file" accept="application/pdf" multiple onChange={(event) => setToolDrawingFiles(Array.from(event.target.files ?? []))} />
+                    <label htmlFor="tool-drawing-files"><Plus size={15} /> Select drawings</label>
+                    <span>{toolDrawingFiles.length ? `${toolDrawingFiles.length} selected` : 'Drop PDF drawings here or select files'}</span>
+                  </div>
+                  <small>PDF drawings · drag and drop supported</small>
+                </div>
+              </div>
+              {assetError ? <div className="clients-modal-error" role="alert">{assetError}</div> : null}
+              <div className="mes-order-form-actions"><button type="button" onClick={closeDialog} disabled={saving}>Cancel</button><button type="submit" disabled={saving}><Plus size={16} /> {saving ? 'Saving...' : 'Save Tool ID'}</button></div>
             </form>
           </section>
         </div>

@@ -32222,6 +32222,31 @@ body[data-screenshot-export="academy-track"] .academy-mobile-track-step button {
   background: #fff;
 }
 
+.clients-tool-id-modal {
+  width: min(100%, 900px);
+}
+
+.clients-tool-id-link-field {
+  display: grid;
+  gap: 6px;
+}
+
+.clients-tool-id-link-field .customer-dropdown {
+  width: 100%;
+}
+
+.clients-tool-drawing-drop {
+  border-style: dashed;
+  min-height: 116px;
+  align-content: center;
+  transition: border-color 160ms ease, background 160ms ease;
+}
+
+.clients-tool-drawing-drop.drag-active {
+  border-color: #ff7a00;
+  background: #fff3e8;
+}
+
 .clients-asset-modal .clients-asset-form {
   grid-template-columns: 1fr;
   gap: 14px;

@@ -36,7 +36,13 @@
 
 .clients-header-actions {
   display: flex;
+  flex-direction: column;
+  gap: 8px;
   justify-content: flex-end;
+}
+
+.clients-header-actions button.secondary {
+  background: #ffffff;
 }
 
 .clients-header-actions button,
