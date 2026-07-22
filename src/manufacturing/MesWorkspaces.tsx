@@ -6974,6 +6974,7 @@ function getTraceabilityEventTone(eventType: string): TraceabilityEventTone {
   if (eventType === 'job-resumed') return 'job-resumed';
   if (eventType === 'job-paused') return 'job-paused';
   if (eventType === 'downtime-started') return 'downtime';
+  if (eventType === 'downtime-ended') return 'job-resumed';
   if (eventType === 'production-scrap') return 'scrap';
   if (eventType === 'manufacturing-completed') return 'waiting-inspection';
   if (eventType === 'operation-completed') return 'order-completed';
@@ -6987,6 +6988,7 @@ function renderTraceabilityEventIcon(eventType: string) {
   if (eventType === 'job-resumed') return <RadioTower {...iconProps} />;
   if (eventType === 'job-paused') return <Timer {...iconProps} />;
   if (eventType === 'downtime-started') return <AlertTriangle {...iconProps} />;
+  if (eventType === 'downtime-ended') return <CheckCircle2 {...iconProps} />;
   if (eventType === 'production-scrap') return <CircleX {...iconProps} />;
   if (eventType === 'manufacturing-completed') return <CalendarDays {...iconProps} />;
   if (eventType === 'operation-completed') return <CheckCircle2 {...iconProps} />;
@@ -7002,6 +7004,7 @@ function getTraceabilityEventLabel(eventType: string) {
     'job-resumed': 'Job Resumed',
     'job-paused': 'Job Paused',
     'downtime-started': 'Downtime Started',
+    'downtime-ended': 'Station Returned to Service',
     'production-scrap': '+1 Scrap',
     'manufacturing-completed': 'Waiting Inspection',
     'operation-completed': 'Order Completed',
@@ -7018,6 +7021,7 @@ function getTraceabilityEventSummary(event: TraceabilityOperatorEventRow) {
     return `${event.quantity || 1} scrap part${(event.quantity || 1) === 1 ? '' : 's'} reported`;
   }
   if (event.event_type === 'downtime-started') return 'Downtime was reported from the Operator Terminal';
+  if (event.event_type === 'downtime-ended') return 'Station returned to service from the Operator Terminal';
   if (event.event_type === 'job-paused') return 'Production was paused by the operator';
   if (event.event_type === 'job-started') return 'Production was started from the Operator Terminal';
   if (event.event_type === 'job-resumed') return 'Production was resumed by the operator';
@@ -7225,7 +7229,7 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
           )
         `)
         .eq('organization_id', organizationId)
-        .in('event_type', ['production-scrap', 'downtime-started', 'job-paused', 'job-started', 'job-resumed', 'manufacturing-completed', 'operation-completed', 'adjustment', 'quality-inspection-saved', 'quality-inspection-skipped', 'measurement-corrected'])
+        .in('event_type', ['production-scrap', 'downtime-started', 'downtime-ended', 'job-paused', 'job-started', 'job-resumed', 'manufacturing-completed', 'operation-completed', 'adjustment', 'quality-inspection-saved', 'quality-inspection-skipped', 'measurement-corrected'])
         .order('created_at', { ascending: false })
         .limit(300),
       supabase
@@ -7322,7 +7326,7 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
         filter: `organization_id=eq.${organizationId}`,
       }, (payload) => {
         const newEvent = payload.new as Partial<{ id: string; event_type: string }>;
-        if (newEvent.event_type && !['production-scrap', 'downtime-started', 'job-paused', 'job-started', 'job-resumed', 'manufacturing-completed', 'operation-completed', 'adjustment', 'quality-inspection-saved', 'quality-inspection-skipped', 'measurement-corrected'].includes(newEvent.event_type)) return;
+        if (newEvent.event_type && !['production-scrap', 'downtime-started', 'downtime-ended', 'job-paused', 'job-started', 'job-resumed', 'manufacturing-completed', 'operation-completed', 'adjustment', 'quality-inspection-saved', 'quality-inspection-skipped', 'measurement-corrected'].includes(newEvent.event_type)) return;
         const eventId = typeof newEvent.id === 'string' ? newEvent.id : '';
         if (eventId) markCaptureAsNew(`event-${eventId}`);
         void loadTraceability(true);

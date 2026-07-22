@@ -13328,6 +13328,15 @@ body.work-center-map-expanded .logged-workspace {
   font-weight: 950;
 }
 
+.operator-terminal-empty-job.downtime {
+  border-color: rgba(239, 68, 68, 0.72);
+  background: #2b0b0b;
+}
+
+.operator-terminal-empty-job.downtime strong {
+  color: #fca5a5;
+}
+
 .operator-terminal-progress {
   display: grid;
   gap: 8px;

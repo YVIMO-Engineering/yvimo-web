@@ -42,6 +42,8 @@ import {
   correctOperatorMeasurement,
   fetchOperatorTerminalSnapshot,
   reportOperatorProduction,
+  reportOperatorStationDowntime,
+  resumeOperatorStation,
   setOperatorTerminalState,
   switchOperatorActiveOrder,
   type OperatorScrapEvent,
@@ -83,6 +85,7 @@ const operatorTerminalSpanish: Record<string, string> = {
   'Part Number': 'Número de parte',
   'Due Date': 'Fecha vencimiento',
   'No Production Order assigned to this station': 'No hay orden de producción asignada a esta estación',
+  'Station is in downtime': 'La estación está en paro',
   'Operator actions': 'Acciones del operador',
   'Complete Operation': 'Completar operación',
   'Final counts reached': 'Conteos finales alcanzados',
@@ -99,6 +102,7 @@ const operatorTerminalSpanish: Record<string, string> = {
   'Undo Last': 'Deshacer último',
   'Pause': 'Pausar',
   'Resume': 'Reanudar',
+  'Station returned to service': 'Estación nuevamente disponible',
   'Start Job': 'Iniciar trabajo',
   'Report Downtime': 'Reportar paro',
   'Job Queue': 'Cola de trabajo',
@@ -938,8 +942,9 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
   const canReport = hasAssignedOrder && state === 'running';
   const isOrderPaused = hasAssignedOrder && state === 'paused';
   const isOrderDown = hasAssignedOrder && state === 'down';
+  const isStationDown = state === 'down' || selectedStation?.status === 'down';
   const isOrderNotStarted = hasAssignedOrder && state === 'not-started';
-  const startLabel = state === 'paused' || state === 'down' ? 'Resume' : 'Start Job';
+  const startLabel = state === 'paused' || isStationDown ? 'Resume' : 'Start Job';
   const traceabilityTemplate = React.useMemo(() => getTraceabilityTemplateForPart(currentOrder?.partName), [currentOrder?.partName]);
   const jobQueueSummary: JobQueueSummary = {
     machine: {
@@ -1666,7 +1671,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
   };
 
   const submitModal = async (reason = '', comment = '') => {
-    if (!currentOrder && modal !== 'undo') {
+    if (!currentOrder && modal !== 'undo' && modal !== 'downtime') {
       setModal(null);
       return;
     }
@@ -1749,19 +1754,34 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
       showToast('Job paused');
     }
     if (modal === 'downtime') {
-      if (hasSupabaseOrder) {
-        setSyncPending(true);
-        try {
+      setSyncPending(true);
+      try {
+        if (hasSupabaseOrder && currentOrder) {
           const order = await setOperatorTerminalState({ orderId: currentOrder.id, organizationId, stationCode, shift: selectedShift, state: 'down', reason, comment });
           syncSnapshotOrder(order);
-        } catch (error) {
-          console.error('Unable to report downtime', error);
-          showToast('Could not sync downtime');
-        } finally {
-          setSyncPending(false);
+        } else {
+          await reportOperatorStationDowntime({ organizationId, workCenterCode, stationCode, shift: selectedShift, reason, comment });
+          setSnapshot((current) => current ? {
+            ...current,
+            station: current.station?.code === stationCode ? { ...current.station, status: 'down', processStep: 'Downtime reported' } : current.station,
+            stationOptions: current.stationOptions.map((station) => station.code === stationCode
+              ? { ...station, status: 'down', processStep: 'Downtime reported' }
+              : station),
+          } : current);
         }
+      } catch (error) {
+        console.error('Unable to report downtime', error);
+        const message = error && typeof error === 'object' && 'message' in error && typeof error.message === 'string'
+          ? error.message
+          : 'Could not sync downtime';
+        setTerminalMessage(message);
+        showToast('Could not sync downtime');
+        return;
+      } finally {
+        setSyncPending(false);
       }
       setState('down');
+      setTerminalMessage('');
       showToast('Downtime reported');
     }
     if (modal === 'complete') {
@@ -1795,6 +1815,33 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
   };
 
   const startOrResume = async () => {
+    if (!currentOrder && !isStationDown) return;
+    if (!currentOrder && isStationDown) {
+      setSyncPending(true);
+      try {
+        await resumeOperatorStation({ organizationId, workCenterCode, stationCode, shift: selectedShift });
+        setSnapshot((current) => current ? {
+          ...current,
+          station: current.station?.code === stationCode ? { ...current.station, status: 'idle', processStep: 'Ready' } : current.station,
+          stationOptions: current.stationOptions.map((station) => station.code === stationCode
+            ? { ...station, status: 'idle', processStep: 'Ready' }
+            : station),
+        } : current);
+        setState('not-started');
+        setTerminalMessage('');
+        showToast('Station returned to service');
+      } catch (error) {
+        console.error('Unable to return station to service', error);
+        const message = error && typeof error === 'object' && 'message' in error && typeof error.message === 'string'
+          ? error.message
+          : 'Could not return station to service';
+        setTerminalMessage(message);
+        showToast('Could not return station to service');
+      } finally {
+        setSyncPending(false);
+      }
+      return;
+    }
     if (!currentOrder) return;
     const nextMessage = state === 'paused' || state === 'down' ? 'Job resumed' : 'Job started';
     if (hasSupabaseOrder) {
@@ -1945,8 +1992,8 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
                   <article><span>{t('Due Date')}</span><strong>{currentOrder.dueDate}</strong></article>
                 </div>
               ) : (
-                <div className="operator-terminal-empty-job" role="status">
-                  <strong>{t('No Production Order assigned to this station')}</strong>
+                <div className={`operator-terminal-empty-job ${isStationDown ? 'downtime' : ''}`} role="status">
+                  <strong>{t(isStationDown ? 'Station is in downtime' : 'No Production Order assigned to this station')}</strong>
                 </div>
               )}
             </div>
@@ -2002,7 +2049,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
               <button
                 className={`operator-control ${state === 'running' ? 'pause' : 'start'}`}
                 type="button"
-                disabled={!hasAssignedOrder || syncPending || state === 'completed' || isQuantityComplete}
+                disabled={syncPending || (!hasAssignedOrder && !isStationDown) || (hasAssignedOrder && (state === 'completed' || isQuantityComplete))}
                 onClick={() => {
                   if (state === 'running') {
                     setModal('pause');
@@ -2014,7 +2061,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
                 {state === 'running' ? <Pause size={22} /> : <Play size={22} />}
                 {state === 'running' ? t('Pause') : t(startLabel)}
               </button>
-              <button className="operator-control downtime" type="button" disabled={!hasAssignedOrder || syncPending || state === 'completed' || isQuantityComplete} onClick={() => setModal('downtime')}>
+              <button className="operator-control downtime" type="button" disabled={syncPending || !stationCode || isStationDown || (hasAssignedOrder && (state === 'completed' || isQuantityComplete))} onClick={() => setModal('downtime')}>
                 <AlertTriangle size={22} />
                 {t('Report Downtime')}
               </button>

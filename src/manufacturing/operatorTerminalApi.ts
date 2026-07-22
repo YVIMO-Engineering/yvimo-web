@@ -526,6 +526,89 @@ export async function setOperatorTerminalState(
   return mapProductionOrderRow(data as ProductionOrderRow);
 }
 
+export async function reportOperatorStationDowntime(
+  input: {
+    organizationId: string;
+    workCenterCode: string;
+    stationCode: string;
+    shift?: string;
+    reason?: string;
+    comment?: string;
+  },
+  client: OperatorClient = supabase,
+): Promise<void> {
+  const { error } = await client.rpc('mes_operator_report_station_downtime', {
+    p_organization_id: input.organizationId,
+    p_work_center_code: input.workCenterCode,
+    p_station_code: input.stationCode,
+    p_reason: input.reason ?? null,
+    p_comment: input.comment ?? null,
+    p_shift: input.shift ?? null,
+  });
+
+  if (!error) return;
+
+  const rpcUnavailable = error.code === 'PGRST202'
+    || error.code === '42883'
+    || /mes_operator_report_station_downtime|schema cache/i.test(error.message);
+  if (!rpcUnavailable) throw error;
+
+  const reason = input.reason?.trim() || 'Downtime reported';
+  const comment = input.comment?.trim() || null;
+  const [eventResponse, downtimeResponse] = await Promise.all([
+    client.from('mes_operator_terminal_events').insert({
+      organization_id: input.organizationId,
+      production_order_id: null,
+      work_center_code: input.workCenterCode,
+      station_code: input.stationCode,
+      event_type: 'downtime-started',
+      reason,
+      comment,
+      payload: { shift: input.shift ?? null, without_order: true, fallback: true },
+    }),
+    client.from('mes_operator_terminal_downtime').insert({
+      organization_id: input.organizationId,
+      production_order_id: null,
+      work_center_code: input.workCenterCode,
+      station_code: input.stationCode,
+      reason,
+      comment,
+    }),
+  ]);
+
+  if (eventResponse.error) throw eventResponse.error;
+  if (downtimeResponse.error) throw downtimeResponse.error;
+
+  const { error: stationError } = await client
+    .from('mes_work_center_stations')
+    .update({ current_job: null, status: 'down', last_event: 'Downtime reported' })
+    .eq('organization_id', input.organizationId)
+    .eq('code', input.stationCode);
+
+  if (stationError) throw stationError;
+}
+
+export async function resumeOperatorStation(
+  input: {
+    organizationId: string;
+    workCenterCode: string;
+    stationCode: string;
+    shift?: string;
+    comment?: string;
+  },
+  client: OperatorClient = supabase,
+): Promise<void> {
+  const { error } = await client.rpc('mes_operator_resume_station', {
+    p_organization_id: input.organizationId,
+    p_work_center_code: input.workCenterCode,
+    p_station_code: input.stationCode,
+    p_comment: input.comment ?? null,
+    p_shift: input.shift ?? null,
+  });
+
+  if (error) throw error;
+}
+
 export async function switchOperatorActiveOrder(
   input: {
     orderId: string;
