@@ -1068,6 +1068,12 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
     });
   };
 
+  const openProductionOrder = (orderNumber: string) => {
+    if (!orderNumber) return;
+    window.sessionStorage.setItem('yvimo:mes:selectedProductionOrderNumber', orderNumber);
+    onNavigate('/workspace/manufacturing-ops/mes/orders');
+  };
+
   const customerFilterOptions = React.useMemo<Array<CustomerDropdownOption<string>>>(() => [
     { value: 'all', label: 'All clients' },
     ...customers.map((customer) => ({
@@ -1135,9 +1141,7 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
   const selectedAssetAttachments = selectedAsset
     ? assetAttachments.filter((attachment) => attachment.assetId === selectedAsset.id)
     : [];
-  const selectedAssetSharpeningCount = selectedAssetServices.filter((service) => (
-    /sharpen|afilad/i.test(service.serviceType) && service.result !== 'skipped'
-  )).length;
+  const selectedAssetSharpeningCount = selectedAssetServices.filter((service) => service.result !== 'skipped').length;
   const selectedAssetSharpeningsRemaining = selectedAsset?.maximumSharpenings == null
     ? null
     : Math.max(0, selectedAsset.maximumSharpenings - selectedAssetSharpeningCount);
@@ -1426,16 +1430,16 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
                         </div>
                         <div className="clients-asset-service-table-wrap">
                           <table>
-                            <thead><tr><th>Service</th><th>Date / Order</th><th>Result / Life</th><th>Description</th><th>Evidence</th></tr></thead>
+                            <thead><tr><th>Service</th><th>Date</th><th>Order</th><th>Result / Life</th><th>Evidence</th></tr></thead>
                             <tbody>
                               {selectedAssetServices.map((service) => {
                                 const serviceAttachments = selectedAssetAttachments.filter((attachment) => attachment.serviceEventId === service.id);
                                 return (
                                   <tr key={service.id}>
-                                    <td><span className="clients-asset-service-name"><Wrench size={15} /><b>{service.serviceType}</b></span></td>
-                                    <td><b>{formatAssetDate(service.serviceDate)}</b>{service.orderNumber ? <small>{service.orderNumber}</small> : null}</td>
+                                    <td><span className="clients-asset-service-name"><Wrench size={17} /><b>Sharpening</b></span></td>
+                                    <td><b>{formatAssetDate(service.serviceDate)}</b></td>
+                                    <td>{service.orderNumber ? <button className="clients-asset-order-link" type="button" onClick={() => openProductionOrder(service.orderNumber)}>{service.orderNumber}</button> : <span className="clients-asset-no-evidence">Not linked</span>}</td>
                                     <td><em className={`clients-service-result ${service.result}`}>{service.result}</em>{service.remainingLifePercent !== null ? <small>{service.remainingLifePercent}% life</small> : null}</td>
-                                    <td>{service.notes || 'No description recorded.'}</td>
                                     <td>
                                       {serviceAttachments.length ? <div className="clients-asset-service-files">{serviceAttachments.map((attachment) => (
                                         <button type="button" key={attachment.id} onClick={() => void openAssetAttachment(attachment)}>
@@ -1452,7 +1456,7 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
                                   <td><b>Unlinked evidence</b></td>
                                   <td><b>{formatAssetDate(attachment.createdAt)}</b></td>
                                   <td>—</td>
-                                  <td>Evidence uploaded directly to the asset.</td>
+                                  <td>—</td>
                                   <td><div className="clients-asset-service-files"><button type="button" onClick={() => void openAssetAttachment(attachment)}>{attachment.attachmentType === 'photo' ? <Camera size={15} /> : <FileText size={15} />}<span>{attachment.fileName}</span><ExternalLink size={13} /></button></div></td>
                                 </tr>
                               ))}
@@ -1496,20 +1500,20 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
       ) : null}
 
       {assetFormOpen ? (
-        <div className="supplier-modal-backdrop" role="presentation" onMouseDown={(event) => {
+        <div className="mes-modal-backdrop production-order-form-backdrop clients-asset-form-backdrop" role="presentation" onMouseDown={(event) => {
           if (event.target === event.currentTarget) closeDialog();
         }}>
-          <div className="supplier-modal clients-asset-modal" role="dialog" aria-modal="true" aria-labelledby="asset-dialog-title">
+          <section className="mes-order-modal clients-asset-modal" role="dialog" aria-modal="true" aria-labelledby="asset-dialog-title">
             <button className="supplier-modal-close" type="button" onClick={closeDialog} aria-label="Close dialog" disabled={saving}>
               <X size={18} />
             </button>
-            <form onSubmit={saveAsset}>
-              <div className="supplier-modal-header clients-asset-modal-header">
-                <span>Customer Asset</span>
-                <strong id="asset-dialog-title">{assetEditingId ? 'Edit Asset' : 'Register Existing Asset'}</strong>
+            <form className="mes-order-form clients-asset-form" onSubmit={saveAsset}>
+              <div className="clients-asset-modal-header mes-order-form-wide">
+                <p className="eyebrow">Customer Asset</p>
+                <h3 id="asset-dialog-title">{assetEditingId ? 'Edit asset' : 'Register existing asset'}</h3>
                 <p>{assetEditingId ? 'Update its custody, condition, and identity without changing its service history.' : 'Add an asset already owned by the client. Future completed Production Orders with this serial will extend its service history.'}</p>
               </div>
-              <div className="supplier-form-grid clients-asset-form-grid">
+              <div className="clients-asset-form-grid mes-order-form-wide">
                 <label>
                   Owner Client
                   <CustomerDropdown id="asset-owner-client" value={assetForm.customerId} options={assetCustomerOptions} onChange={(customerId) => setAssetForm((current) => ({ ...current, customerId }))} />
@@ -1559,34 +1563,42 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
                   Last Inspection <em>Optional</em>
                   <input type="date" value={assetForm.lastInspectionAt} onChange={(event) => setAssetForm((current) => ({ ...current, lastInspectionAt: event.target.value }))} />
                 </label>
-                <label className="supplier-form-wide">
+                <label className="mes-order-form-wide">
                   Description
                   <textarea required value={assetForm.description} onChange={(event) => setAssetForm((current) => ({ ...current, description: event.target.value }))} placeholder="Identify the asset and its operational purpose." />
                 </label>
-                <label className="clients-asset-file-field">
-                  <span><Camera size={15} /> Photos <em>Optional</em></span>
-                  <input type="file" accept="image/jpeg,image/png,image/webp,image/heic" multiple onChange={(event) => setAssetPhotos(Array.from(event.target.files ?? []))} />
-                  <small>{assetPhotos.length ? `${assetPhotos.length} photos selected` : 'JPG, PNG, WEBP or HEIC'}</small>
-                </label>
-                <label className="clients-asset-file-field">
-                  <span><FileText size={15} /> Documents <em>Optional</em></span>
-                  <input type="file" accept="application/pdf" multiple onChange={(event) => setAssetDocuments(Array.from(event.target.files ?? []))} />
-                  <small>{assetDocuments.length ? `${assetDocuments.length} documents selected` : 'PDF files up to 50 MB'}</small>
-                </label>
-                <label className="supplier-form-wide">
+                <div className="clients-asset-file-field">
+                  <div className="clients-asset-file-heading"><span><Camera size={16} /> Photos</span><em>Optional</em></div>
+                  <div className="clients-asset-file-control">
+                    <input id="asset-photo-files" type="file" accept="image/jpeg,image/png,image/webp,image/heic" multiple onChange={(event) => setAssetPhotos(Array.from(event.target.files ?? []))} />
+                    <label htmlFor="asset-photo-files"><Plus size={15} /> Select photos</label>
+                    <span>{assetPhotos.length ? `${assetPhotos.length} selected` : 'No files selected'}</span>
+                  </div>
+                  <small>JPG, PNG, WEBP or HEIC</small>
+                </div>
+                <div className="clients-asset-file-field">
+                  <div className="clients-asset-file-heading"><span><FileText size={16} /> Documents</span><em>Optional</em></div>
+                  <div className="clients-asset-file-control">
+                    <input id="asset-document-files" type="file" accept="application/pdf" multiple onChange={(event) => setAssetDocuments(Array.from(event.target.files ?? []))} />
+                    <label htmlFor="asset-document-files"><Plus size={15} /> Select PDFs</label>
+                    <span>{assetDocuments.length ? `${assetDocuments.length} selected` : 'No files selected'}</span>
+                  </div>
+                  <small>PDF files up to 50 MB</small>
+                </div>
+                <label className="mes-order-form-wide">
                   Internal Notes <em>Optional</em>
                   <textarea value={assetForm.internalNotes} onChange={(event) => setAssetForm((current) => ({ ...current, internalNotes: event.target.value }))} />
                 </label>
               </div>
               {assetError ? <div className="clients-modal-error" role="alert">{assetError}</div> : null}
-              <div className="supplier-modal-actions">
+              <div className="mes-order-form-actions">
                 <button type="button" onClick={closeDialog} disabled={saving}>Cancel</button>
                 <button type="submit" disabled={saving || !assetForm.customerId}>
                   {assetEditingId ? <Pencil size={16} /> : <Plus size={16} />} {saving ? 'Saving...' : assetEditingId ? 'Save Asset' : 'Register Asset'}
                 </button>
               </div>
             </form>
-          </div>
+          </section>
         </div>
       ) : null}
 

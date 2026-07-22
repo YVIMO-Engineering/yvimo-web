@@ -25,8 +25,7 @@ begin
     into v_completed_sharpenings
   from public.mes_customer_asset_service_events service
   where service.asset_id = p_asset_id
-    and service.result <> 'skipped'
-    and (lower(service.service_type) like '%sharpen%' or lower(service.service_type) like '%afilad%');
+    and service.result <> 'skipped';
 
   update public.mes_customer_assets
   set estimated_life_percent = greatest(0, least(100,
@@ -88,7 +87,6 @@ set estimated_life_percent = greatest(0, least(100,
         from public.mes_customer_asset_service_events service
         where service.asset_id = asset.id
           and service.result <> 'skipped'
-          and (lower(service.service_type) like '%sharpen%' or lower(service.service_type) like '%afilad%')
       ))::numeric / asset.max_sharpenings) * 100, 1)
     ))
 where asset.max_sharpenings is not null;
