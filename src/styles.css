@@ -16357,9 +16357,19 @@ body.work-center-map-expanded .logged-workspace {
 .station-card .station-property-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-areas:
+    "job queue"
+    "process risk"
+    "last last";
   gap: 10px;
   margin: 0;
 }
+
+.station-current-job { grid-area: job; }
+.station-queue-box { grid-area: queue; }
+.station-process-box { grid-area: process; }
+.station-property-risk { grid-area: risk; }
+.station-last-produced { grid-area: last; }
 
 .station-card .station-property-grid > div {
   display: grid;
@@ -16396,6 +16406,111 @@ body.work-center-map-expanded .logged-workspace {
 
 .station-card .station-property-grid .station-last-produced {
   grid-column: 1 / -1;
+}
+
+.station-card > .station-cycle-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  min-height: 70px;
+  border: 1px solid;
+  border-left-width: 4px;
+  border-radius: 9px;
+  padding: 11px 14px;
+  box-shadow: 0 5px 14px rgba(7, 17, 28, 0.045);
+}
+
+.station-card > .station-cycle-box > div {
+  display: grid;
+  gap: 4px;
+}
+
+.station-card > .station-cycle-box span,
+.station-card > .station-cycle-box small {
+  font-size: .65rem;
+  font-weight: 760;
+  letter-spacing: .055em;
+  text-transform: uppercase;
+}
+
+.station-card > .station-cycle-box strong {
+  font-size: .92rem;
+}
+
+.station-card > .station-cycle-box .station-cycle-time {
+  justify-items: end;
+  text-align: right;
+}
+
+.station-card > .station-cycle-box time {
+  font-size: 1.15rem;
+  font-weight: 820;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .035em;
+}
+
+.station-card > .station-cycle-box small {
+  font-size: .62rem;
+  opacity: .78;
+  text-transform: none;
+}
+
+.station-card > .station-cycle-running,
+.station-cycle-kpi.station-cycle-running { border-color: #f59e0b; background: #fff7df; color: #9a5700; }
+.station-card > .station-cycle-idle,
+.station-card > .station-cycle-available,
+.station-cycle-kpi.station-cycle-idle { border-color: #10b981; background: #eafbf4; color: #007c5b; }
+.station-card > .station-cycle-down,
+.station-cycle-kpi.station-cycle-down { border-color: #ef4444; background: #fff0f1; color: #b91c1c; }
+.station-card > .station-cycle-setup,
+.station-cycle-kpi.station-cycle-setup { border-color: #3b82f6; background: #eef5ff; color: #1d5fd0; }
+.station-card > .station-cycle-maintenance,
+.station-cycle-kpi.station-cycle-maintenance { border-color: #d97706; background: #fff8e7; color: #9a5700; }
+.station-card > .station-cycle-offline { border-color: #94a3b8; background: #f1f5f9; color: #475569; }
+
+.stations-heading-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
+.stations-heading-actions button {
+  display: inline-flex; align-items: center; gap: 8px; border: 1px solid #ff9b45; border-radius: 9px;
+  padding: 10px 14px; background: #fff7ed; color: #9a4300; font: inherit; font-size: .78rem; font-weight: 760; cursor: pointer;
+}
+.stations-heading-actions button:hover { border-color: #ff7a00; background: #ffead5; }
+
+.station-cycle-report-modal { width: min(1380px, calc(100vw - 44px)); max-height: calc(100vh - 44px); padding: 0; overflow: hidden; }
+.station-cycle-report-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 24px 28px 20px; border-bottom: 1px solid #dbe4ec; }
+.station-cycle-report-title { display: flex; align-items: center; gap: 14px; }
+.station-cycle-report-title h3 { margin: 2px 0 3px; font-size: 1.75rem; }
+.station-cycle-report-title small { color: #607080; font-weight: 650; }
+.station-cycle-report-icon { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 10px; background: #fff4e8; color: #ff7a00; }
+.station-cycle-report-close { display: grid; place-items: center; width: 44px; height: 44px; border: 1px solid #d6dee7; border-radius: 10px; background: #f7f9fb; color: #253547; cursor: pointer; }
+.station-cycle-report-kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; padding: 18px 28px; }
+.station-cycle-kpi { display: grid; gap: 5px; border: 1px solid; border-left-width: 4px; border-radius: 9px; padding: 13px 15px; }
+.station-cycle-kpi span { font-size: .7rem; font-weight: 760; letter-spacing: .06em; text-transform: uppercase; }
+.station-cycle-kpi strong { font-size: 1.22rem; font-variant-numeric: tabular-nums; }
+.station-cycle-report-content { display: grid; gap: 14px; max-height: calc(100vh - 250px); padding: 0 28px 28px; overflow: auto; }
+.station-cycle-machine { overflow: hidden; border: 1px solid #d8e1ea; border-radius: 10px; background: #fff; }
+.station-cycle-machine > header { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 13px 16px; background: #fff8f1; border-bottom: 1px solid #f0d8c0; }
+.station-cycle-machine > header div { display: flex; align-items: baseline; gap: 9px; }
+.station-cycle-machine > header strong { font-size: 1rem; }
+.station-cycle-machine > header span { color: #9a4a00; font-size: .72rem; font-weight: 760; }
+.station-cycle-table-head, .station-cycle-table-row { display: grid; grid-template-columns: 1fr 1.25fr 1.25fr .8fr; align-items: center; gap: 14px; padding: 10px 16px; }
+.station-cycle-table-head { background: #f5f8fb; color: #526477; font-size: .67rem; font-weight: 780; letter-spacing: .055em; text-transform: uppercase; }
+.station-cycle-table-row { border-top: 1px solid #e4eaf0; font-size: .76rem; }
+.station-cycle-table-row time { color: #34475a; }
+.station-cycle-table-row > strong { font-size: .82rem; font-variant-numeric: tabular-nums; }
+.station-cycle-status { display: inline-flex; border: 1px solid; border-radius: 7px; padding: 4px 9px; font-style: normal; font-weight: 760; }
+.station-cycle-status.station-cycle-running { border-color: #f59e0b; background: #fff7df; color: #9a5700; }
+.station-cycle-status.station-cycle-idle, .station-cycle-status.station-cycle-available { border-color: #10b981; background: #eafbf4; color: #007c5b; }
+.station-cycle-status.station-cycle-down { border-color: #ef4444; background: #fff0f1; color: #b91c1c; }
+.station-cycle-status.station-cycle-setup { border-color: #3b82f6; background: #eef5ff; color: #1d5fd0; }
+.station-cycle-status.station-cycle-maintenance { border-color: #d97706; background: #fff8e7; color: #9a5700; }
+.station-cycle-status.station-cycle-offline { border-color: #94a3b8; background: #f1f5f9; color: #475569; }
+.station-cycle-empty { margin: 0; padding: 18px 16px; color: #607080; }
+
+@media (max-width: 900px) {
+  .station-cycle-report-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .station-cycle-table-head { display: none; }
+  .station-cycle-table-row { grid-template-columns: 1fr 1fr; }
 }
 
 .station-last-produced dd {

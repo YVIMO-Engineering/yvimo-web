@@ -168,6 +168,24 @@ type WorkCenterProductionEventRow = {
   payload: Record<string, unknown> | null;
 };
 
+type StationStatusCycleRow = {
+  id: string;
+  work_center_id: string;
+  station_id: string;
+  station_code: string;
+  status: WorkCenterStatus;
+  started_at: string;
+  ended_at: string | null;
+};
+
+function formatCycleDuration(milliseconds: number) {
+  const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
 type ProductionOrderCustomerOptionRow = {
   id: string;
   customer_name: string;
@@ -4909,6 +4927,9 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
   const [workCenters, setWorkCenters] = React.useState<MesWorkCenter[]>([]);
   const [productionOrders, setProductionOrders] = React.useState<ProductionOrder[]>([]);
   const [productionEvents, setProductionEvents] = React.useState<WorkCenterProductionEventRow[]>([]);
+  const [stationStatusCycles, setStationStatusCycles] = React.useState<StationStatusCycleRow[]>([]);
+  const [cycleReportOpen, setCycleReportOpen] = React.useState(false);
+  const [cycleClock, setCycleClock] = React.useState(() => Date.now());
   const [selectedWorkCenterId, setSelectedWorkCenterId] = React.useState('');
   const [selectedStationId, setSelectedStationId] = React.useState('');
   const [customCapabilityColors, setCustomCapabilityColors] = React.useState<Record<string, string>>({});
@@ -4958,18 +4979,20 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
     setWorkCentersLoading(true);
     setWorkCentersError('');
 
-    const [{ data: workCenterRows, error: workCenterError }, { data: stationRows, error: stationError }, { data: productionOrderRows, error: productionOrderError }, { data: productionEventRows, error: productionEventError }] = await Promise.all([
+    const [{ data: workCenterRows, error: workCenterError }, { data: stationRows, error: stationError }, { data: productionOrderRows, error: productionOrderError }, { data: productionEventRows, error: productionEventError }, { data: statusCycleRows, error: statusCycleError }] = await Promise.all([
       supabase.from('mes_work_centers').select('*').eq('organization_id', organizationId).order('created_at', { ascending: false }),
       supabase.from('mes_work_center_stations').select('*').eq('organization_id', organizationId).order('created_at', { ascending: true }),
       supabase.from('mes_production_orders').select('*').eq('organization_id', organizationId).order('due_date', { ascending: true }),
       supabase.from('mes_operator_terminal_events').select('production_order_id, station_code, created_at, payload').eq('organization_id', organizationId).eq('event_type', 'production-good').order('created_at', { ascending: false }),
+      supabase.from('mes_station_status_cycles').select('id, work_center_id, station_id, station_code, status, started_at, ended_at').eq('organization_id', organizationId).order('started_at', { ascending: false }),
     ]);
 
-    if (workCenterError || stationError || productionOrderError || productionEventError) {
-      setWorkCentersError(workCenterError?.message ?? stationError?.message ?? productionOrderError?.message ?? productionEventError?.message ?? 'Could not load Work Centers.');
+    if (workCenterError || stationError || productionOrderError || productionEventError || statusCycleError) {
+      setWorkCentersError(workCenterError?.message ?? stationError?.message ?? productionOrderError?.message ?? productionEventError?.message ?? statusCycleError?.message ?? 'Could not load Work Centers.');
       setWorkCenters([]);
       setProductionOrders([]);
       setProductionEvents([]);
+      setStationStatusCycles([]);
       setWorkCentersLoading(false);
       return;
     }
@@ -4990,6 +5013,7 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
     setWorkCenters(nextWorkCenters);
     setProductionOrders((productionOrderRows as ProductionOrderRow[] | null ?? []).map(mapProductionOrderRow));
     setProductionEvents((productionEventRows as WorkCenterProductionEventRow[] | null) ?? []);
+    setStationStatusCycles((statusCycleRows as StationStatusCycleRow[] | null) ?? []);
     setSelectedWorkCenterId((currentId) => (nextWorkCenters.some((workCenter) => workCenter.id === currentId) ? currentId : nextWorkCenters[0]?.id ?? ''));
     setSelectedStationId((currentId) => (nextWorkCenters.some((workCenter) => workCenter.stations.some((station) => station.id === currentId)) ? currentId : ''));
     setWorkCentersLoading(false);
@@ -4999,11 +5023,17 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
     { table: 'mes_work_center_stations', filter: `organization_id=eq.${organizationId}` },
     { table: 'mes_production_orders', filter: `organization_id=eq.${organizationId}` },
     { table: 'mes_operator_terminal_events', filter: `organization_id=eq.${organizationId}` },
+    { table: 'mes_station_status_cycles', filter: `organization_id=eq.${organizationId}` },
   ]), [organizationId]);
 
   React.useEffect(() => {
     void loadWorkCenters();
   }, [loadWorkCenters]);
+
+  React.useEffect(() => {
+    const timer = window.setInterval(() => setCycleClock(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useSupabaseRealtimeRefresh({
     channelName: `mes-work-centers-live:${organizationId}`,
@@ -5134,6 +5164,12 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
   const stationMaintenanceStatus = getStationMaintenanceStatus(stationTotal, stationMaintenance);
   const selectedWorkCenterPlanningSummary = selectedWorkCenter ? getPlanningSummaryForWorkCenter(selectedWorkCenter) : undefined;
   const operationalSummary = getWorkCenterOperationalSummary(selectedWorkCenter, selectedStations, selectedWorkCenterPlanningSummary);
+  const selectedStatusCycles = stationStatusCycles.filter((cycle) => cycle.work_center_id === selectedWorkCenter?.id);
+  const cycleDuration = (cycle: StationStatusCycleRow) => Math.max(0, (cycle.ended_at ? new Date(cycle.ended_at).getTime() : cycleClock) - new Date(cycle.started_at).getTime());
+  const cycleTotals = selectedStatusCycles.reduce<Record<string, number>>((totals, cycle) => {
+    totals[cycle.status] = (totals[cycle.status] ?? 0) + cycleDuration(cycle);
+    return totals;
+  }, {});
 
   const setFilter = (key: keyof typeof filters, value: string) => {
     setFilters((currentFilters) => ({ ...currentFilters, [key]: value }));
@@ -6242,7 +6278,13 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
                   </div>
                 </div>
               </div>
-              <span>{filteredStations.length} showing / {selectedStations.length} total</span>
+              <div className="stations-heading-actions">
+                <span>{filteredStations.length} showing / {selectedStations.length} total</span>
+                <button type="button" onClick={() => setCycleReportOpen(true)} disabled={!selectedWorkCenter}>
+                  <Timer size={17} aria-hidden="true" />
+                  Cycle Time Report
+                </button>
+              </div>
             </div>
             <div className={`work-center-operational-summary summary-${operationalSummary.tone}`}>
               <span>Operational summary</span>
@@ -6374,6 +6416,7 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
                   ? lastProductionEvent.payload.serial_number
                   : 'Not recorded';
                 const processCustomColor = customCapabilityColors[station.processStep];
+                const activeStatusCycle = stationStatusCycles.find((cycle) => cycle.station_id === station.id && !cycle.ended_at);
                 const stationPlanningMetrics = getStationPlanningMetrics(
                   getActiveStationOrders(productionOrders, selectedWorkCenter, station),
                   todayIsoDate,
@@ -6418,6 +6461,10 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
                         </div>
                       </div>
                     </div>
+                    <div className={`station-cycle-box station-cycle-${station.status}`}>
+                      <div><span>Current State</span><strong>{formatLabel(station.status)}</strong></div>
+                      <div className="station-cycle-time"><time>{activeStatusCycle ? formatCycleDuration(cycleDuration(activeStatusCycle)) : '00:00:00'}</time><small>{activeStatusCycle ? `Since ${formatTimestamp(activeStatusCycle.started_at)}` : 'Waiting for first status record'}</small></div>
+                    </div>
                     <dl className="station-property-grid">
                       <div className="station-current-job"><dt>Current Job</dt><dd>{stationCurrentOrder ? (
                         <button
@@ -6430,7 +6477,7 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
                           {stationCurrentJob}
                         </button>
                       ) : stationCurrentJob}</dd></div>
-                      <div><dt>Queue</dt><dd>{stationQueueCount}</dd></div>
+                      <div className="station-queue-box"><dt>Queue</dt><dd>{stationQueueCount}</dd></div>
                       <div
                         className={`station-process-box capability-${getCapabilityTone(station.processStep)}`}
                         style={processCustomColor ? {
@@ -6475,6 +6522,47 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
           </section>
         </main>
       </div>
+
+      {cycleReportOpen ? (
+        <div className="mes-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setCycleReportOpen(false); }}>
+          <section className="mes-order-modal station-cycle-report-modal" role="dialog" aria-modal="true" aria-labelledby="station-cycle-report-title">
+            <header className="station-cycle-report-header">
+              <div className="station-cycle-report-title">
+                <span className="station-cycle-report-icon"><Timer size={24} aria-hidden="true" /></span>
+                <div><p className="eyebrow">Work Center Performance</p><h3 id="station-cycle-report-title">Cycle Time Report</h3><small>{selectedWorkCenter?.name ?? 'Work Center'} · Updated {formatTimestamp(new Date(cycleClock).toISOString())}</small></div>
+              </div>
+              <button className="station-cycle-report-close" type="button" aria-label="Close cycle time report" onClick={() => setCycleReportOpen(false)}><X size={22} /></button>
+            </header>
+            <div className="station-cycle-report-kpis">
+              {(['running', 'idle', 'down', 'setup', 'maintenance'] as WorkCenterStatus[]).map((status) => (
+                <article className={`station-cycle-kpi station-cycle-${status}`} key={status}><span>{formatLabel(status)}</span><strong>{formatCycleDuration(cycleTotals[status] ?? 0)}</strong></article>
+              ))}
+            </div>
+            <div className="station-cycle-report-content">
+              {selectedStations.map((station) => {
+                const stationCycles = selectedStatusCycles.filter((cycle) => cycle.station_id === station.id);
+                const stationTotalDuration = stationCycles.reduce((total, cycle) => total + cycleDuration(cycle), 0);
+                return (
+                  <article className="station-cycle-machine" key={station.id}>
+                    <header><div><strong>{station.name}</strong><span>{station.code}</span></div><span>{formatCycleDuration(stationTotalDuration)} tracked</span></header>
+                    <div className="station-cycle-table" role="table" aria-label={`${station.name} status history`}>
+                      <div className="station-cycle-table-head" role="row"><span>Status</span><span>Started</span><span>Ended</span><span>Duration</span></div>
+                      {stationCycles.length ? stationCycles.map((cycle) => (
+                        <div className="station-cycle-table-row" role="row" key={cycle.id}>
+                          <span><em className={`station-cycle-status station-cycle-${cycle.status}`}>{formatLabel(cycle.status)}</em></span>
+                          <time>{formatTimestamp(cycle.started_at)}</time>
+                          <time>{cycle.ended_at ? formatTimestamp(cycle.ended_at) : 'Current'}</time>
+                          <strong>{formatCycleDuration(cycleDuration(cycle))}</strong>
+                        </div>
+                      )) : <p className="station-cycle-empty">No status history recorded yet.</p>}
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+        </div>
+      ) : null}
 
       {showAddForm ? (
         <div className="mes-modal-backdrop" role="presentation">
