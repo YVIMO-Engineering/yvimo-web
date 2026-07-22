@@ -161,6 +161,13 @@ type ProductionOrderStationOptionRow = {
   name: string;
 };
 
+type WorkCenterProductionEventRow = {
+  production_order_id: string | null;
+  station_code: string;
+  created_at: string;
+  payload: Record<string, unknown> | null;
+};
+
 type ProductionOrderCustomerOptionRow = {
   id: string;
   customer_name: string;
@@ -4901,6 +4908,7 @@ function getWorkCenterOperationalSummary(workCenter: MesWorkCenter | null, stati
 export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspaceProps) {
   const [workCenters, setWorkCenters] = React.useState<MesWorkCenter[]>([]);
   const [productionOrders, setProductionOrders] = React.useState<ProductionOrder[]>([]);
+  const [productionEvents, setProductionEvents] = React.useState<WorkCenterProductionEventRow[]>([]);
   const [selectedWorkCenterId, setSelectedWorkCenterId] = React.useState('');
   const [selectedStationId, setSelectedStationId] = React.useState('');
   const [customCapabilityColors, setCustomCapabilityColors] = React.useState<Record<string, string>>({});
@@ -4950,16 +4958,18 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
     setWorkCentersLoading(true);
     setWorkCentersError('');
 
-    const [{ data: workCenterRows, error: workCenterError }, { data: stationRows, error: stationError }, { data: productionOrderRows, error: productionOrderError }] = await Promise.all([
+    const [{ data: workCenterRows, error: workCenterError }, { data: stationRows, error: stationError }, { data: productionOrderRows, error: productionOrderError }, { data: productionEventRows, error: productionEventError }] = await Promise.all([
       supabase.from('mes_work_centers').select('*').eq('organization_id', organizationId).order('created_at', { ascending: false }),
       supabase.from('mes_work_center_stations').select('*').eq('organization_id', organizationId).order('created_at', { ascending: true }),
       supabase.from('mes_production_orders').select('*').eq('organization_id', organizationId).order('due_date', { ascending: true }),
+      supabase.from('mes_operator_terminal_events').select('production_order_id, station_code, created_at, payload').eq('organization_id', organizationId).eq('event_type', 'production-good').order('created_at', { ascending: false }),
     ]);
 
-    if (workCenterError || stationError || productionOrderError) {
-      setWorkCentersError(workCenterError?.message ?? stationError?.message ?? productionOrderError?.message ?? 'Could not load Work Centers.');
+    if (workCenterError || stationError || productionOrderError || productionEventError) {
+      setWorkCentersError(workCenterError?.message ?? stationError?.message ?? productionOrderError?.message ?? productionEventError?.message ?? 'Could not load Work Centers.');
       setWorkCenters([]);
       setProductionOrders([]);
+      setProductionEvents([]);
       setWorkCentersLoading(false);
       return;
     }
@@ -4979,6 +4989,7 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
     setCustomCapabilityColors(capabilityColors);
     setWorkCenters(nextWorkCenters);
     setProductionOrders((productionOrderRows as ProductionOrderRow[] | null ?? []).map(mapProductionOrderRow));
+    setProductionEvents((productionEventRows as WorkCenterProductionEventRow[] | null) ?? []);
     setSelectedWorkCenterId((currentId) => (nextWorkCenters.some((workCenter) => workCenter.id === currentId) ? currentId : nextWorkCenters[0]?.id ?? ''));
     setSelectedStationId((currentId) => (nextWorkCenters.some((workCenter) => workCenter.stations.some((station) => station.id === currentId)) ? currentId : ''));
     setWorkCentersLoading(false);
@@ -4987,6 +4998,7 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
     { table: 'mes_work_centers', filter: `organization_id=eq.${organizationId}` },
     { table: 'mes_work_center_stations', filter: `organization_id=eq.${organizationId}` },
     { table: 'mes_production_orders', filter: `organization_id=eq.${organizationId}` },
+    { table: 'mes_operator_terminal_events', filter: `organization_id=eq.${organizationId}` },
   ]), [organizationId]);
 
   React.useEffect(() => {
@@ -6352,7 +6364,16 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
                 const stationSelected = station.id === selectedStation?.id;
                 const stationQueueSummary = getStationJobQueueSummary(selectedWorkCenter, station);
                 const stationCurrentJob = stationQueueSummary?.currentJob?.orderNumber ?? station.currentJob ?? 'Unassigned';
+                const stationCurrentOrder = stationQueueSummary?.currentJob ?? productionOrders.find((order) => order.orderNumber === station.currentJob) ?? null;
                 const stationQueueCount = stationQueueSummary?.queuedJobs.length ?? station.queueCount;
+                const lastProductionEvent = productionEvents.find((event) => event.station_code === station.code);
+                const lastProducedOrder = lastProductionEvent?.production_order_id
+                  ? productionOrders.find((order) => order.id === lastProductionEvent.production_order_id)
+                  : null;
+                const lastProducedSerial = typeof lastProductionEvent?.payload?.serial_number === 'string'
+                  ? lastProductionEvent.payload.serial_number
+                  : 'Not recorded';
+                const processCustomColor = customCapabilityColors[station.processStep];
                 const stationPlanningMetrics = getStationPlanningMetrics(
                   getActiveStationOrders(productionOrders, selectedWorkCenter, station),
                   todayIsoDate,
@@ -6380,7 +6401,7 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
                           <span>{station.code}</span>
                         </div>
                         <div className="station-card-title-actions">
-                          <span className={`station-status-pill station-status-${station.status}`}>{formatLabel(station.status)}</span>
+                          <MesStatusBadge value={station.status} />
                           <button
                             className="station-card-edit-button"
                             type="button"
@@ -6397,19 +6418,47 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
                         </div>
                       </div>
                     </div>
-                    <dl>
-                      <div><dt>Type</dt><dd>{station.type}</dd></div>
-                      <div><dt>Process</dt><dd>{station.processStep}</dd></div>
-                      <div><dt>Current Job</dt><dd>{stationCurrentJob}</dd></div>
-                      <div><dt>Operator</dt><dd><span className="station-operator-pill">{station.operator}</span></dd></div>
+                    <dl className="station-property-grid">
+                      <div className="station-current-job"><dt>Current Job</dt><dd>{stationCurrentOrder ? (
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            openProductionOrderFromShiftChip(stationCurrentOrder);
+                          }}
+                        >
+                          {stationCurrentJob}
+                        </button>
+                      ) : stationCurrentJob}</dd></div>
                       <div><dt>Queue</dt><dd>{stationQueueCount}</dd></div>
-                      <div><dt>WIP</dt><dd>{stationPlanningMetrics.wipCount}</dd></div>
+                      <div
+                        className={`station-process-box capability-${getCapabilityTone(station.processStep)}`}
+                        style={processCustomColor ? {
+                          borderColor: processCustomColor,
+                          backgroundColor: `${processCustomColor}1a`,
+                          color: processCustomColor,
+                        } : undefined}
+                      ><dt>Process</dt><dd>{station.processStep}</dd></div>
+                      <div className={`station-property-risk risk-${stationPlanningMetrics.dueRisk}`}><dt>Risk</dt><dd>{formatRiskLabel(stationPlanningMetrics.dueRisk)}</dd></div>
+                      <div className="station-last-produced"><dt>Last Produced Part</dt><dd>{lastProducedOrder ? (
+                        <>
+                          <span className="station-last-produced-details">
+                            <span><small>Part Type</small><strong>{lastProducedOrder.partName || 'Not recorded'}</strong></span>
+                            <span><small>Order</small><strong>{lastProducedOrder.orderNumber}</strong></span>
+                            <span><small>Client</small><strong>{lastProducedOrder.clientName || 'Not specified'}</strong></span>
+                            <span><small>Serial</small><strong>{lastProducedSerial}</strong></span>
+                          </span>
+                          <span className="station-last-produced-time"><small>Produced</small><time dateTime={lastProductionEvent?.created_at}>{formatTimestamp(lastProductionEvent?.created_at ?? '')}</time></span>
+                        </>
+                      ) : <span className="station-last-produced-empty">No production recorded</span>}</dd></div>
                     </dl>
-                    <div className={`work-center-utilization utilization-${getStationUtilizationStatus(stationPlanningMetrics.scheduledUtilization)}`} aria-hidden="true"><span style={{ width: `${stationPlanningMetrics.scheduledUtilization}%` }} /></div>
-                    <div className="station-card-footer">
-                      <span>{stationPlanningMetrics.hasPlannedShifts ? `${stationPlanningMetrics.scheduledUtilization}% scheduled utilization` : 'No shifts planned'}</span>
-                      <span className={`machine-load-pill load-${stationPlanningMetrics.machineLoad}`}>{formatMachineLoadLabel(stationPlanningMetrics.machineLoad)}</span>
-                      <strong className={`risk-${stationPlanningMetrics.dueRisk}`}>{formatRiskLabel(stationPlanningMetrics.dueRisk)} risk</strong>
+                    <div className={`station-utilization-panel utilization-${getStationUtilizationStatus(stationPlanningMetrics.scheduledUtilization)}`}>
+                      <div className="station-utilization-heading">
+                        <span>Scheduled utilization</span>
+                        <strong>{stationPlanningMetrics.hasPlannedShifts ? `${stationPlanningMetrics.scheduledUtilization}%` : '—'}</strong>
+                      </div>
+                      <div className="work-center-utilization" aria-hidden="true"><span style={{ width: `${stationPlanningMetrics.scheduledUtilization}%` }} /></div>
+                      <small>{stationPlanningMetrics.hasPlannedShifts ? 'Based on planned station shifts' : 'No shifts planned'}</small>
                     </div>
                     <div className="station-shift-breakdown">
                       {stationPlanningMetrics.shiftBreakdown.map((shift) => (
@@ -6418,9 +6467,6 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
                           {renderShiftOrderChips(shift.orders, openProductionOrderFromShiftChip)}
                         </span>
                       ))}
-                    </div>
-                    <div className="work-center-tags">
-                      {station.capabilities.map((capability) => renderCapabilityPill(capability))}
                     </div>
                   </article>
                 );

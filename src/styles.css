@@ -16348,90 +16348,228 @@ body.work-center-map-expanded .logged-workspace {
   line-height: 1.2;
 }
 
-.station-card-title > div > span {
+.station-card-title > div > span:not(.mes-status-badge) {
   color: #ff7a00;
   font-size: 0.76rem;
   font-weight: 900;
 }
 
-.station-status-pill {
-  display: inline-flex;
-  align-items: center;
-  min-height: 24px;
-  border: 1px solid transparent;
-  border-radius: 999px;
-  padding: 0 9px;
-  font-size: 0.68rem;
-  font-weight: 900;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-.station-status-running {
-  border-color: #047857;
-  background: #059669;
-  color: #ffffff;
-}
-
-.station-status-idle,
-.station-status-available {
-  border-color: #d96f00;
-  background: #ff8a1f;
-  color: #17110b;
-}
-
-.station-status-setup {
-  border-color: #1d4ed8;
-  background: #2563eb;
-  color: #ffffff;
-}
-
-.station-status-down {
-  border-color: #b91c1c;
-  background: #dc2626;
-  color: #ffffff;
-}
-
-.station-status-maintenance {
-  border-color: #b45309;
-  background: #d97706;
-  color: #ffffff;
-}
-
-.station-status-offline {
-  border-color: #475569;
-  background: #64748b;
-  color: #ffffff;
-}
-
-.station-card dl {
+.station-card .station-property-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+  gap: 10px;
   margin: 0;
 }
 
-.station-card dl div {
+.station-card .station-property-grid > div {
   display: grid;
-  gap: 3px;
-  border-bottom: 1px solid rgba(18, 29, 41, 0.08);
-  padding-bottom: 7px;
+  align-content: center;
+  gap: 5px;
+  min-height: 68px;
+  border: 1px solid #d9e2ec;
+  border-left: 3px solid #ff8a1f;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #ffffff;
+  box-shadow: 0 5px 14px rgba(7, 17, 28, 0.045);
 }
 
-.station-card dt {
+.station-card .station-property-grid dt {
   color: #455769;
   font-size: 0.68rem;
-  font-weight: 900;
+  font-weight: 800;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
-.station-card dd {
+.station-card .station-property-grid dd {
   margin: 0;
   color: #07111c;
-  font-size: 0.8rem;
+  font-size: 0.88rem;
+  font-weight: 780;
+  line-height: 1.25;
+}
+
+.station-card .station-property-grid .station-property-risk {
+  border-left-color: currentColor;
+}
+
+.station-card .station-property-grid .station-last-produced {
+  grid-column: 1 / -1;
+}
+
+.station-last-produced dd {
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.station-last-produced-details {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  flex: 1;
+  gap: 10px;
+  min-width: 0;
+}
+
+.station-last-produced-details > span {
+  display: grid;
+  align-content: center;
+  gap: 3px;
+  min-width: 0;
+}
+
+.station-last-produced-details small,
+.station-last-produced-time small {
+  color: #607080;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+}
+
+.station-last-produced-details strong {
+  overflow: hidden;
+  color: #07111c;
+  font-size: 0.78rem;
+  font-weight: 760;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.station-last-produced-time {
+  display: grid;
+  align-content: center;
+  flex: 0 0 auto;
+  gap: 4px;
+  min-width: 145px;
+  border: 1px solid rgba(255, 122, 0, 0.34);
+  border-radius: 8px;
+  padding: 9px 12px;
+  background: #fff7ed;
+  text-align: right;
+}
+
+.station-last-produced-time time {
+  color: #9a4a00;
+  font-size: 0.88rem;
   font-weight: 820;
+  white-space: nowrap;
+}
+
+.station-last-produced-empty {
+  align-self: center;
+  color: #607080;
+}
+
+.station-current-job button {
+  border: 1px solid rgba(255, 122, 0, 0.42);
+  border-radius: 7px;
+  padding: 4px 9px;
+  background: #fff7ed;
+  color: #a84d00;
+  font: inherit;
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease, color 160ms ease;
+}
+
+.station-current-job button:hover,
+.station-current-job button:focus-visible {
+  border-color: #ff7a00;
+  background: #ff8a1f;
+  color: #07111c;
+  outline: none;
+}
+
+.station-card .station-property-grid .station-process-box {
+  border-left-color: currentColor;
+}
+
+.station-process-box.capability-receiving { background: #eef2ff; color: #4338ca; }
+.station-process-box.capability-packaging { background: #eff6ff; color: #1d4ed8; }
+.station-process-box.capability-incoming-inspection { background: #f5f3ff; color: #6d28d9; }
+.station-process-box.capability-final-qc { background: #f0f9ff; color: #0369a1; }
+.station-process-box.capability-hob-grinding { background: #fff7ed; color: #c2410c; }
+.station-process-box.capability-rework { background: #fdf2f8; color: #be185d; }
+.station-process-box.capability-cnc { background: #f0fdf4; color: #15803d; }
+.station-process-box.capability-skiving-grinding { background: #fffbeb; color: #a16207; }
+.station-process-box.capability-deburr { background: #f0fdfa; color: #0f766e; }
+.station-process-box.capability-assembly { background: #fff1f2; color: #be123c; }
+.station-process-box.capability-default { background: #f8fafc; color: #475569; }
+
+.station-process-box dt,
+.station-process-box dd {
+  color: inherit !important;
+}
+
+.station-card .station-property-risk.risk-low {
+  background: #f0fdf7;
+  color: #087a55;
+}
+
+.station-card .station-property-risk.risk-medium {
+  background: #fffbeb;
+  color: #a15c00;
+}
+
+.station-card .station-property-risk.risk-high,
+.station-card .station-property-risk.risk-critical {
+  background: #fff1f2;
+  color: #b42318;
+}
+
+.station-card .station-property-risk dt,
+.station-card .station-property-risk dd {
+  color: inherit;
+}
+
+.station-utilization-panel {
+  display: grid;
+  gap: 7px;
+  border: 1px solid #d9e2ec;
+  border-radius: 8px;
+  padding: 11px 12px;
+  background: #f7f9fc;
+}
+
+.station-utilization-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.station-utilization-heading span {
+  color: #455769;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+}
+
+.station-utilization-heading strong {
+  color: #07111c;
+  font-size: 0.9rem;
+  font-weight: 850;
+}
+
+.station-utilization-panel small {
+  color: #607080;
+  font-size: 0.7rem;
+  font-weight: 650;
+}
+
+.station-utilization-panel.utilization-high-activity .work-center-utilization span {
+  background: #059669;
+}
+
+.station-utilization-panel.utilization-moderate-activity .work-center-utilization span {
+  background: #ff8a1f;
+}
+
+.station-utilization-panel.utilization-low-activity .work-center-utilization span {
+  background: #64748b;
 }
 
 .station-operator-pill {
