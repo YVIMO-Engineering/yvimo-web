@@ -7,6 +7,7 @@ import {
   Check,
   ChevronDown,
   Clock3,
+  Download,
   ExternalLink,
   FileText,
   History,
@@ -55,6 +56,26 @@ type FloatingMenuPosition = {
   width: number;
   maxHeight: number;
 };
+
+type AssetRegistryViewState = {
+  customerFilter: string;
+  assetSearch: string;
+  toolIdSearch: string;
+  selectedAssetTypes: string[] | null;
+  selectedAssetId: string | null;
+};
+
+const getAssetRegistryViewStateKey = (organizationId: string) => `yvimo:clients:assets:view:${organizationId}`;
+
+function readAssetRegistryViewState(organizationId: string): AssetRegistryViewState {
+  const fallback: AssetRegistryViewState = { customerFilter: 'all', assetSearch: '', toolIdSearch: '', selectedAssetTypes: null, selectedAssetId: null };
+  try {
+    const stored = window.sessionStorage.getItem(getAssetRegistryViewStateKey(organizationId));
+    return stored ? { ...fallback, ...JSON.parse(stored) as Partial<AssetRegistryViewState> } : fallback;
+  } catch {
+    return fallback;
+  }
+}
 
 type CustomerRecord = {
   id: string;
@@ -575,16 +596,18 @@ function mapAssetRow(row: CustomerAssetRow): CustomerAssetRecord {
 
 export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizationId }: CustomerOperationsWorkspaceProps) {
   const page = clientsPageContent[activeTab];
+  const restoredAssetView = React.useMemo(() => readAssetRegistryViewState(organizationId), [organizationId]);
   const [customers, setCustomers] = React.useState<CustomerRecord[]>([]);
-  const [assetCustomerFilter, setAssetCustomerFilter] = React.useState('all');
-  const [assetSearch, setAssetSearch] = React.useState('');
-  const [selectedAssetTypes, setSelectedAssetTypes] = React.useState<Set<string> | null>(null);
+  const [assetCustomerFilter, setAssetCustomerFilter] = React.useState(restoredAssetView.customerFilter);
+  const [assetSearch, setAssetSearch] = React.useState(restoredAssetView.assetSearch);
+  const [assetToolIdSearch, setAssetToolIdSearch] = React.useState(restoredAssetView.toolIdSearch);
+  const [selectedAssetTypes, setSelectedAssetTypes] = React.useState<Set<string> | null>(() => restoredAssetView.selectedAssetTypes ? new Set(restoredAssetView.selectedAssetTypes) : null);
   const [assets, setAssets] = React.useState<CustomerAssetRecord[]>([]);
   const [toolDefinitions, setToolDefinitions] = React.useState<CustomerToolDefinition[]>([]);
   const [assetLifeTraceability, setAssetLifeTraceability] = React.useState<AssetLifeTraceabilityRow[]>([]);
   const [assetServices, setAssetServices] = React.useState<CustomerAssetService[]>([]);
   const [assetAttachments, setAssetAttachments] = React.useState<CustomerAssetAttachment[]>([]);
-  const [selectedAssetId, setSelectedAssetId] = React.useState<string | null>(null);
+  const [selectedAssetId, setSelectedAssetId] = React.useState<string | null>(restoredAssetView.selectedAssetId);
   const [assetLoading, setAssetLoading] = React.useState(false);
   const [assetError, setAssetError] = React.useState('');
   const [assetAttachmentPreview, setAssetAttachmentPreview] = React.useState<{ fileName: string; url: string; isPdf: boolean } | null>(null);
@@ -593,9 +616,13 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
   const [assetForm, setAssetForm] = React.useState<CustomerAssetFormState>(emptyCustomerAssetForm);
   const [toolIdSearch, setToolIdSearch] = React.useState('');
   const [toolFormOpen, setToolFormOpen] = React.useState(false);
+  const [toolEditingId, setToolEditingId] = React.useState<string | null>(null);
+  const [toolEditSearch, setToolEditSearch] = React.useState('');
   const [toolForm, setToolForm] = React.useState({ toolId: '', partType: 'Hobs', minimumLife: '', measurementUnit: 'in' as 'in' | 'mm' });
   const [toolDrawingFiles, setToolDrawingFiles] = React.useState<File[]>([]);
   const [toolDrawingDragActive, setToolDrawingDragActive] = React.useState(false);
+  const [toolMissingReportOpen, setToolMissingReportOpen] = React.useState(false);
+  const [toolMissingReportDownloading, setToolMissingReportDownloading] = React.useState(false);
   const [assetPhotos, setAssetPhotos] = React.useState<File[]>([]);
   const [assetDocuments, setAssetDocuments] = React.useState<File[]>([]);
   const [loading, setLoading] = React.useState(activeTab === 'customers' || activeTab === 'assets-equipment' || activeTab === 'balances');
@@ -751,19 +778,31 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
   });
 
   React.useEffect(() => {
-    if (!formMode && !customerToDelete && !assetFormOpen && !toolFormOpen && !assetAttachmentPreview) return undefined;
+    if (activeTab !== 'assets-equipment') return;
+    window.sessionStorage.setItem(getAssetRegistryViewStateKey(organizationId), JSON.stringify({
+      customerFilter: assetCustomerFilter,
+      assetSearch,
+      toolIdSearch: assetToolIdSearch,
+      selectedAssetTypes: selectedAssetTypes ? Array.from(selectedAssetTypes) : null,
+      selectedAssetId,
+    } satisfies AssetRegistryViewState));
+  }, [activeTab, organizationId, assetCustomerFilter, assetSearch, assetToolIdSearch, selectedAssetTypes, selectedAssetId]);
+
+  React.useEffect(() => {
+    if (!formMode && !customerToDelete && !assetFormOpen && !toolFormOpen && !toolMissingReportOpen && !assetAttachmentPreview) return undefined;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || saving) return;
       setFormMode(null);
       setCustomerToDelete(null);
       setAssetFormOpen(false);
       setToolFormOpen(false);
+      setToolMissingReportOpen(false);
       setAssetEditingId(null);
       setAssetAttachmentPreview(null);
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [formMode, customerToDelete, assetFormOpen, toolFormOpen, assetAttachmentPreview, saving]);
+  }, [formMode, customerToDelete, assetFormOpen, toolFormOpen, toolMissingReportOpen, assetAttachmentPreview, saving]);
 
   const updateAddressSuggestionPosition = React.useCallback(() => {
     const control = addressLookupControlRef.current;
@@ -911,6 +950,8 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
     setAssetFormOpen(false);
     setAssetEditingId(null);
     setToolFormOpen(false);
+    setToolEditingId(null);
+    setToolMissingReportOpen(false);
   };
 
   const saveCustomer = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -1056,7 +1097,9 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
     if (saving || !toolForm.toolId.trim() || !toolForm.minimumLife) return;
     setSaving(true);
     setAssetError('');
-    const existingTool = toolDefinitions.find((tool) => tool.toolId.trim().toLowerCase() === toolForm.toolId.trim().toLowerCase());
+    const existingTool = toolEditingId
+      ? toolDefinitions.find((tool) => tool.id === toolEditingId)
+      : toolDefinitions.find((tool) => tool.toolId.trim().toLowerCase() === toolForm.toolId.trim().toLowerCase());
     const toolPayload = {
       organization_id: organizationId,
       tool_id: toolForm.toolId.trim(),
@@ -1087,6 +1130,7 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
         if (documentError) throw documentError;
       }
       setToolFormOpen(false);
+      setToolEditingId(null);
       setToolForm({ toolId: '', partType: 'Hobs', minimumLife: '', measurementUnit: 'in' });
       setToolDrawingFiles([]);
       await loadAssets();
@@ -1215,15 +1259,17 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
 
   const filteredAssets = React.useMemo(() => {
     const query = assetSearch.trim().toLowerCase();
+    const toolIdQuery = assetToolIdSearch.trim().toLowerCase();
     return assets.filter((asset) => {
       if (assetCustomerFilter !== 'all' && asset.customerId !== assetCustomerFilter) return false;
       if (selectedAssetTypes && !selectedAssetTypes.has(normalizeAssetType(asset.assetType))) return false;
+      if (toolIdQuery && !asset.toolId.toLowerCase().includes(toolIdQuery)) return false;
       if (!query) return true;
       const customer = customers.find((item) => item.id === asset.customerId);
       return [asset.serialNumber, asset.partNumber, asset.assetType, asset.description, asset.manufacturer, customer?.customerName]
         .some((value) => value?.toLowerCase().includes(query));
     });
-  }, [assetCustomerFilter, assetSearch, assets, customers, selectedAssetTypes]);
+  }, [assetCustomerFilter, assetSearch, assetToolIdSearch, assets, customers, selectedAssetTypes]);
 
   const assetTypeSummaries = React.useMemo(() => {
     const countByType = new Map<string, number>();
@@ -1237,9 +1283,10 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
   }, [assetTypeOptions, filteredAssets]);
 
   React.useEffect(() => {
+    if (loading || assetLoading || assets.length === 0) return;
     if (selectedAssetId && filteredAssets.some((asset) => asset.id === selectedAssetId)) return;
     setSelectedAssetId(filteredAssets[0]?.id ?? null);
-  }, [filteredAssets, selectedAssetId]);
+  }, [assetLoading, assets.length, filteredAssets, loading, selectedAssetId]);
 
   const selectedAsset = filteredAssets.find((asset) => asset.id === selectedAssetId) ?? null;
   const selectedAssetCustomer = selectedAsset
@@ -1262,11 +1309,16 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
   const getLifeMeasurement = (record: AssetLifeTraceabilityRow | null) => {
     if (!record || !selectedAssetTool) return null;
     const payload = record.payload ?? {};
-    const rawValue = /shaver/i.test(selectedAssetTool.partType)
-      ? payload.shaver_diameter
-      : /shaper/i.test(selectedAssetTool.partType) ? payload.after_height : record.after_tooth_length;
-    const value = typeof rawValue === 'number' ? rawValue : typeof rawValue === 'string' ? Number(rawValue) : NaN;
-    return Number.isFinite(value) ? value : null;
+    const preferredValues = /shaver/i.test(selectedAssetTool.partType)
+      ? [payload.shaver_diameter, payload.after_height, record.after_tooth_length]
+      : /shaper/i.test(selectedAssetTool.partType)
+        ? [payload.after_height, record.after_tooth_length, payload.shaver_diameter]
+        : [record.after_tooth_length, payload.after_height, payload.shaver_diameter];
+    for (const rawValue of preferredValues) {
+      const value = typeof rawValue === 'number' ? rawValue : typeof rawValue === 'string' ? Number(rawValue) : NaN;
+      if (Number.isFinite(value)) return value;
+    }
+    return null;
   };
   const explicitMaterialRemovalValues = matchingToolMeasurements.map((record) => Number(record.stock_to_remove)).filter((value) => Number.isFinite(value) && value > 0);
   const measuredDimensions = matchingToolMeasurements.map((record) => getLifeMeasurement(record)).filter((value): value is number => value !== null);
@@ -1284,6 +1336,97 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
   const selectedAssetLifeTone = selectedAssetLifePercent === null
     ? 'unestimated'
     : selectedAssetLifePercent < 30 ? 'critical' : selectedAssetLifePercent <= 50 ? 'warning' : 'healthy';
+  const incompleteToolDefinitions = React.useMemo(() => toolDefinitions.filter((tool) => (
+    tool.minimumLife === null || !tool.partType.trim() || !tool.measurementUnit
+  )), [toolDefinitions]);
+  const incompleteToolTypeSummaries = React.useMemo(() => {
+    const counts = new Map<string, number>();
+    incompleteToolDefinitions.forEach((tool) => counts.set(tool.partType || 'Other', (counts.get(tool.partType || 'Other') ?? 0) + 1));
+    return Array.from(counts, ([partType, count]) => ({ partType, count })).sort((left, right) => right.count - left.count || left.partType.localeCompare(right.partType));
+  }, [incompleteToolDefinitions]);
+  const incompleteToolClientGroups = React.useMemo(() => {
+    const groups = new Map<string, { customerId: string; customerName: string; tools: CustomerToolDefinition[] }>();
+    incompleteToolDefinitions.forEach((tool) => {
+      const linkedCustomerIds = Array.from(new Set(assets.filter((asset) => asset.toolDefinitionId === tool.id).map((asset) => asset.customerId)));
+      const customerIds = linkedCustomerIds.length ? linkedCustomerIds : ['unassigned'];
+      customerIds.forEach((customerId) => {
+        const customerName = customerId === 'unassigned'
+          ? 'Unassigned / No linked client'
+          : customers.find((customer) => customer.id === customerId)?.customerName ?? 'Unknown client';
+        const current = groups.get(customerId) ?? { customerId, customerName, tools: [] };
+        current.tools.push(tool);
+        groups.set(customerId, current);
+      });
+    });
+    return Array.from(groups.values()).sort((left, right) => left.customerName.localeCompare(right.customerName));
+  }, [assets, customers, incompleteToolDefinitions]);
+
+  const downloadMissingToolDataReport = async () => {
+    if (toolMissingReportDownloading) return;
+    setToolMissingReportDownloading(true);
+    try {
+      const { default: jsPDF } = await import('jspdf');
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' });
+      const generatedAt = new Date();
+      let y = 54;
+      pdf.setTextColor(7, 17, 28);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(22);
+      pdf.text('Missing Tool ID Data Report', 48, y);
+      y += 22;
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(10);
+      pdf.setTextColor(82, 98, 115);
+      pdf.text(`Generated ${generatedAt.toLocaleString('en-US')}`, 48, y);
+      y += 30;
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(12);
+      pdf.setTextColor(7, 17, 28);
+      pdf.text(`Total Tool IDs missing data: ${incompleteToolDefinitions.length}`, 48, y);
+      y += 18;
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(10);
+      incompleteToolTypeSummaries.forEach((summary) => { pdf.text(`${summary.partType}: ${summary.count}`, 48, y); y += 14; });
+      y += 15;
+      pdf.setFillColor(247, 249, 252);
+      pdf.rect(48, y - 13, 516, 24, 'F');
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('TOOL ID', 58, y);
+      pdf.text('PART TYPE', 205, y);
+      pdf.text('MISSING DATA', 330, y);
+      pdf.text('SERIALS', 510, y);
+      y += 22;
+      pdf.setFont('helvetica', 'normal');
+      incompleteToolClientGroups.forEach((group) => {
+        if (y > 710) { pdf.addPage(); y = 54; }
+        pdf.setFont('helvetica', 'bold');
+        pdf.setTextColor(230, 102, 0);
+        pdf.text(`${group.customerName} (${group.tools.length})`, 52, y);
+        y += 18;
+        pdf.setFont('helvetica', 'normal');
+        pdf.setTextColor(38, 53, 68);
+        group.tools.forEach((tool) => {
+          if (y > 735) { pdf.addPage(); y = 54; }
+          const missing = [tool.minimumLife === null ? 'Minimum life' : '', !tool.partType.trim() ? 'Part type' : '', !tool.measurementUnit ? 'Unit' : ''].filter(Boolean).join(', ');
+          const linkedSerials = assets.filter((asset) => asset.toolDefinitionId === tool.id && (group.customerId === 'unassigned' || asset.customerId === group.customerId)).length;
+          pdf.text(tool.toolId.slice(0, 22), 58, y);
+          pdf.text((tool.partType || 'Not specified').slice(0, 18), 205, y);
+          pdf.text(missing.slice(0, 27), 330, y);
+          pdf.text(String(linkedSerials), 520, y);
+          pdf.setDrawColor(226, 232, 240);
+          pdf.line(48, y + 7, 564, y + 7);
+          y += 22;
+        });
+        y += 8;
+      });
+      pdf.save(`missing-tool-id-data-${generatedAt.toISOString().slice(0, 10)}.pdf`);
+    } catch (error) {
+      console.error('Unable to generate missing Tool ID data report', error);
+      setAssetError('The Missing Tool ID Data report could not be generated.');
+    } finally {
+      setToolMissingReportDownloading(false);
+    }
+  };
   const activeCustomers = customers.filter((customer) => customer.status === 'active').length;
   const addressSuggestionMenu = (showAddressSuggestions || addressSuggestionsLoading)
     && (addressSuggestions.length > 0 || addressSuggestionsLoading)
@@ -1334,7 +1477,11 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
           {activeTab === 'assets-equipment' ? (
             <>
               <button type="button" onClick={openCreateAsset} disabled={!customers.length}><Plus size={16} /> Add Asset</button>
-              <button type="button" className="secondary" onClick={() => { setToolForm({ toolId: '', partType: 'Hobs', minimumLife: '', measurementUnit: 'in' }); setToolDrawingFiles([]); setAssetError(''); setToolFormOpen(true); }}><Plus size={16} /> Add Tool ID</button>
+              <span className="clients-tool-header-row">
+                <button type="button" className="secondary" onClick={() => { setToolEditingId(null); setToolEditSearch(''); setToolForm({ toolId: '', partType: 'Hobs', minimumLife: '', measurementUnit: 'in' }); setToolDrawingFiles([]); setAssetError(''); setToolFormOpen(true); }}><Plus size={16} /> Add Tool ID</button>
+                <button type="button" className="secondary" onClick={() => { setToolEditingId(''); setToolEditSearch(''); setToolForm({ toolId: '', partType: 'Hobs', minimumLife: '', measurementUnit: 'in' }); setToolDrawingFiles([]); setAssetError(''); setToolFormOpen(true); }} disabled={!toolDefinitions.length}><Pencil size={16} /> Edit Tool ID</button>
+              </span>
+              <button type="button" className="secondary clients-tool-report-action" onClick={() => setToolMissingReportOpen(true)}><FileText size={16} /> Missing Tool ID Data</button>
             </>
           ) : null}
         </div>
@@ -1441,6 +1588,10 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
                   <span>Search assets</span>
                   <div><Search size={16} /><input value={assetSearch} onChange={(event) => setAssetSearch(event.target.value)} placeholder="Serial, part, type, manufacturer" /></div>
                 </label>
+                <label className="clients-assets-search clients-assets-tool-search">
+                  <span>Search Tool IDs</span>
+                  <div><Search size={16} /><input value={assetToolIdSearch} onChange={(event) => setAssetToolIdSearch(event.target.value)} placeholder="Tool ID" /></div>
+                </label>
                 <fieldset className="clients-assets-type-filters">
                   <legend>Part Type</legend>
                   <div>
@@ -1542,10 +1693,12 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
                             Estimated Useful Life
                             <strong>{selectedAssetLifePercent === null ? 'Not estimated' : `${Math.round(selectedAssetLifePercent)}%`}</strong>
                           </span>
-                          <div><i style={{ width: `${selectedAssetLifePercent ?? 0}%` }} /></div>
-                          <small>{selectedAssetSharpeningsRemaining === null
-                            ? 'Link a Tool ID with compatible service measurements to estimate remaining life.'
-                            : `Approximately ${selectedAssetSharpeningsRemaining} sharpenings remaining · Avg. removal ${averageMaterialRemoval?.toFixed(4)} ${selectedAssetTool?.measurementUnit}`}</small>
+                          <div className="clients-asset-life-bar"><i style={{ width: `${selectedAssetLifePercent ?? 0}%` }} /></div>
+                          <div className="clients-asset-life-metrics">
+                            <span className={`remaining-${selectedAssetSharpeningsRemaining === null ? 'unknown' : selectedAssetSharpeningsRemaining === 0 ? 'critical' : selectedAssetSharpeningsRemaining <= 4 ? 'warning' : 'healthy'}`}><small>Remaining Sharpenings</small><b>{selectedAssetSharpeningsRemaining === null ? '—' : `~${selectedAssetSharpeningsRemaining}`}</b></span>
+                            <span><small>Average Removal</small><b>{averageMaterialRemoval === null ? '—' : `${averageMaterialRemoval.toFixed(4)} ${selectedAssetTool?.measurementUnit ?? ''}`}</b></span>
+                          </div>
+                          {selectedAssetSharpeningsRemaining === null ? <p className="clients-asset-life-hint">Link a configured Tool ID and compatible measurements.</p> : null}
                         </div>
                         <span><small>Last Service</small><b>{formatAssetDate(selectedAsset.lastServiceAt)}</b></span>
                         <span><small>Last Inspection</small><b>{formatAssetDate(selectedAsset.lastInspectionAt)}</b></span>
@@ -1751,10 +1904,26 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
             <form className="mes-order-form clients-asset-form" onSubmit={saveToolDefinition}>
               <div className="clients-asset-modal-header mes-order-form-wide">
                 <p className="eyebrow">Tool Definition</p>
-                <h3 id="tool-id-dialog-title">Add Tool ID</h3>
-                <p>Define the shared dimensional limit and drawings used by every serial linked to this Tool ID.</p>
+                <h3 id="tool-id-dialog-title">{toolEditingId === null ? 'Add Tool ID' : 'Edit Tool ID'}</h3>
+                <p>{toolEditingId === null ? 'Define the shared dimensional limit and drawings used by every serial linked to this Tool ID.' : 'Find an existing Tool ID, then update its shared dimensional parameters or attach additional drawings.'}</p>
               </div>
               <div className="clients-asset-form-grid mes-order-form-wide">
+                {toolEditingId !== null ? (
+                  <div className="clients-tool-edit-picker mes-order-form-wide">
+                    <label>Search Tool IDs<input type="search" value={toolEditSearch} onChange={(event) => setToolEditSearch(event.target.value)} placeholder="Search Tool ID or part type..." /></label>
+                    <label>Select Tool ID<CustomerDropdown
+                      id="edit-tool-id-picker"
+                      value={toolEditingId}
+                      options={toolDefinitions.filter((tool) => !toolEditSearch || `${tool.toolId} ${tool.partType}`.toLowerCase().includes(toolEditSearch.toLowerCase())).map((tool) => ({ value: tool.id, label: `${tool.toolId} · ${tool.partType}${tool.minimumLife === null ? ' · Life not configured' : ''}` }))}
+                      placeholder="Choose a Tool ID"
+                      onChange={(toolId) => {
+                        const tool = toolDefinitions.find((item) => item.id === toolId);
+                        setToolEditingId(toolId);
+                        if (tool) setToolForm({ toolId: tool.toolId, partType: tool.partType, minimumLife: tool.minimumLife === null ? '' : String(tool.minimumLife), measurementUnit: tool.measurementUnit });
+                      }}
+                    /></label>
+                  </div>
+                ) : null}
                 <label>Tool ID<input required autoFocus value={toolForm.toolId} onChange={(event) => setToolForm((current) => ({ ...current, toolId: event.target.value }))} placeholder="e.g. 17864-T-4" /></label>
                 <label>Part Type<CustomerDropdown id="tool-part-type" value={toolForm.partType} options={['Hobs', 'Shaper', 'Shavers', 'Skiving', 'Talladores', 'Other'].map((value) => ({ value, label: value }))} onChange={(partType) => setToolForm((current) => ({ ...current, partType }))} /></label>
                 <label>Minimum Tool Life<input required type="number" min="0" step="any" value={toolForm.minimumLife} onChange={(event) => setToolForm((current) => ({ ...current, minimumLife: event.target.value }))} placeholder="Minimum usable dimension" /></label>
@@ -1775,8 +1944,43 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
                 </div>
               </div>
               {assetError ? <div className="clients-modal-error" role="alert">{assetError}</div> : null}
-              <div className="mes-order-form-actions"><button type="button" onClick={closeDialog} disabled={saving}>Cancel</button><button type="submit" disabled={saving}><Plus size={16} /> {saving ? 'Saving...' : 'Save Tool ID'}</button></div>
+              <div className="mes-order-form-actions"><button type="button" onClick={closeDialog} disabled={saving}>Cancel</button><button type="submit" disabled={saving || toolEditingId === ''}>{toolEditingId === null ? <Plus size={16} /> : <Pencil size={16} />} {saving ? 'Saving...' : toolEditingId === null ? 'Save Tool ID' : 'Update Tool ID'}</button></div>
             </form>
+          </section>
+        </div>
+      ) : null}
+
+      {toolMissingReportOpen ? (
+        <div className="mes-modal-backdrop clients-tool-report-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setToolMissingReportOpen(false); }}>
+          <section className="clients-tool-report-modal" role="dialog" aria-modal="true" aria-labelledby="missing-tool-report-title">
+            <header>
+              <span className="clients-tool-report-icon"><FileText size={23} /></span>
+              <div><small>Asset Registry</small><h3 id="missing-tool-report-title">Missing Tool ID Data</h3><p>Generated {new Date().toLocaleString('en-US')}</p></div>
+              <button className="clients-tool-report-download" type="button" disabled={toolMissingReportDownloading} onClick={() => void downloadMissingToolDataReport()}><Download size={17} /> {toolMissingReportDownloading ? 'Generating PDF' : 'Download PDF'}</button>
+              <button className="supplier-modal-close" type="button" onClick={() => setToolMissingReportOpen(false)} aria-label="Close report"><X size={18} /></button>
+            </header>
+            <div className="clients-tool-report-kpis">
+              <article className="total"><small>Total Missing</small><strong>{incompleteToolDefinitions.length}</strong><span>Tool IDs</span></article>
+              <article className="clients"><small>Clients Affected</small><strong>{incompleteToolClientGroups.filter((group) => group.customerId !== 'unassigned').length}</strong><span>with incomplete Tool IDs</span></article>
+              {incompleteToolTypeSummaries.map((summary) => <article style={getAssetTypeColors(summary.partType)} key={summary.partType}><small>{summary.partType}</small><strong>{summary.count}</strong><span>missing definitions</span></article>)}
+            </div>
+            <section className="clients-tool-report-table-panel">
+              <div className="clients-assets-section-heading"><span><FileText size={16} /> Tool IDs Requiring Data</span><strong>{incompleteToolDefinitions.length} items</strong></div>
+              <div className="clients-tool-report-table-scroll">
+                <table>
+                  <thead><tr><th>Tool ID</th><th>Part Type</th><th>Missing Data</th><th>Unit</th><th>Linked Serials</th></tr></thead>
+                  <tbody>{incompleteToolClientGroups.map((group) => <React.Fragment key={group.customerId}>
+                    <tr className="clients-tool-report-client-row"><td colSpan={5}><span>{group.customerName}</span><b>{group.tools.length} Tool IDs</b></td></tr>
+                    {group.tools.map((tool) => {
+                      const missing = [tool.minimumLife === null ? 'Minimum life' : '', !tool.partType.trim() ? 'Part type' : '', !tool.measurementUnit ? 'Measurement unit' : ''].filter(Boolean);
+                      const linkedSerials = assets.filter((asset) => asset.toolDefinitionId === tool.id && (group.customerId === 'unassigned' || asset.customerId === group.customerId)).length;
+                      return <tr key={`${group.customerId}:${tool.id}`}><td><b>{tool.toolId}</b></td><td><span className="clients-asset-type-badge" style={getAssetTypeColors(tool.partType)}>{tool.partType || 'Not specified'}</span></td><td>{missing.map((item) => <em key={item}>{item}</em>)}</td><td>{tool.measurementUnit || '—'}</td><td>{linkedSerials}</td></tr>;
+                    })}
+                  </React.Fragment>)}</tbody>
+                </table>
+                {!incompleteToolDefinitions.length ? <div className="clients-tool-report-empty"><Check size={22} /><strong>All Tool IDs are configured</strong><span>No missing dimensional data was found.</span></div> : null}
+              </div>
+            </section>
           </section>
         </div>
       ) : null}
