@@ -44,6 +44,7 @@ export type ClientsContextTab =
 type CustomerStatus = 'active' | 'inactive';
 type AssetStatus = 'available' | 'in-custody' | 'in-service' | 'awaiting-return' | 'delivered' | 'maintenance' | 'inspection' | 'retired';
 type PaymentTermsMode = 'Net 30' | 'Net 60' | '50/50' | 'Immediate' | 'Custom';
+const SHAVER_MAX_SHARPENINGS = 16;
 
 type CustomerDropdownOption<T extends string> = {
   value: T;
@@ -1094,7 +1095,8 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
 
   const saveToolDefinition = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (saving || !toolForm.toolId.trim() || !toolForm.minimumLife) return;
+    const toolFormIsShaver = /shaver/i.test(toolForm.partType);
+    if (saving || !toolForm.toolId.trim() || (!toolFormIsShaver && !toolForm.minimumLife)) return;
     setSaving(true);
     setAssetError('');
     const existingTool = toolEditingId
@@ -1104,7 +1106,7 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
       organization_id: organizationId,
       tool_id: toolForm.toolId.trim(),
       part_type: toolForm.partType,
-      minimum_life: Number(toolForm.minimumLife),
+      minimum_life: toolFormIsShaver ? null : Number(toolForm.minimumLife),
       measurement_unit: toolForm.measurementUnit,
     };
     const request = existingTool
@@ -1300,8 +1302,9 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
     : [];
   const selectedAssetSharpeningCount = selectedAssetServices.filter((service) => service.result !== 'skipped').length;
   const selectedAssetTool = selectedAsset?.toolDefinitionId ? toolDefinitions.find((tool) => tool.id === selectedAsset.toolDefinitionId) ?? null : null;
+  const isSelectedAssetShaver = /shaver/i.test(selectedAsset?.assetType ?? '') || /shaver/i.test(selectedAssetTool?.partType ?? '');
   const matchingToolMeasurements = selectedAssetTool
-    ? assetLifeTraceability.filter((record) => record.tool_id?.trim().toLowerCase() === selectedAssetTool.toolId.trim().toLowerCase() && record.dimensions_unit === selectedAssetTool.measurementUnit)
+    ? assetLifeTraceability.filter((record) => record.tool_id?.trim().toLowerCase() === selectedAssetTool.toolId.trim().toLowerCase() && (isSelectedAssetShaver || record.dimensions_unit === selectedAssetTool.measurementUnit))
     : [];
   const selectedSerialMeasurement = selectedAsset
     ? matchingToolMeasurements.find((record) => record.serial_number?.trim().toLowerCase() === selectedAsset.serialNumber.trim().toLowerCase()) ?? null
@@ -1326,18 +1329,28 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
   const materialRemovalValues = explicitMaterialRemovalValues.length ? explicitMaterialRemovalValues : derivedMaterialRemovalValues;
   const averageMaterialRemoval = materialRemovalValues.length ? materialRemovalValues.reduce((sum, value) => sum + value, 0) / materialRemovalValues.length : null;
   const currentLifeMeasurement = getLifeMeasurement(selectedSerialMeasurement);
-  const selectedAssetSharpeningsRemaining = selectedAssetTool && selectedAssetTool.minimumLife !== null && currentLifeMeasurement !== null && averageMaterialRemoval
+  const rawShaverSharpeningNumber = selectedSerialMeasurement?.payload?.shaver_sharpening_number;
+  const parsedShaverSharpeningNumber = typeof rawShaverSharpeningNumber === 'number'
+    ? rawShaverSharpeningNumber
+    : typeof rawShaverSharpeningNumber === 'string' ? Number.parseInt(rawShaverSharpeningNumber, 10) : NaN;
+  const currentShaverSharpeningNumber = Number.isFinite(parsedShaverSharpeningNumber) ? Math.max(0, parsedShaverSharpeningNumber) : null;
+  const dimensionalSharpeningsRemaining = selectedAssetTool && selectedAssetTool.minimumLife !== null && currentLifeMeasurement !== null && averageMaterialRemoval
     ? Math.max(0, Math.floor((currentLifeMeasurement - selectedAssetTool.minimumLife) / averageMaterialRemoval))
     : null;
+  const selectedAssetSharpeningsRemaining = isSelectedAssetShaver
+    ? currentShaverSharpeningNumber === null ? null : Math.max(0, SHAVER_MAX_SHARPENINGS - currentShaverSharpeningNumber)
+    : dimensionalSharpeningsRemaining;
   const estimatedTotalSharpenings = selectedAssetSharpeningsRemaining === null ? null : selectedAssetSharpeningCount + selectedAssetSharpeningsRemaining;
-  const selectedAssetLifePercent = estimatedTotalSharpenings
-    ? Math.max(0, Math.min(100, selectedAssetSharpeningsRemaining! / estimatedTotalSharpenings * 100))
-    : selectedAssetSharpeningsRemaining === 0 ? 0 : null;
+  const selectedAssetLifePercent = isSelectedAssetShaver
+    ? selectedAssetSharpeningsRemaining === null ? null : Math.max(0, Math.min(100, selectedAssetSharpeningsRemaining / SHAVER_MAX_SHARPENINGS * 100))
+    : estimatedTotalSharpenings
+      ? Math.max(0, Math.min(100, selectedAssetSharpeningsRemaining! / estimatedTotalSharpenings * 100))
+      : selectedAssetSharpeningsRemaining === 0 ? 0 : null;
   const selectedAssetLifeTone = selectedAssetLifePercent === null
     ? 'unestimated'
     : selectedAssetLifePercent < 30 ? 'critical' : selectedAssetLifePercent <= 50 ? 'warning' : 'healthy';
   const incompleteToolDefinitions = React.useMemo(() => toolDefinitions.filter((tool) => (
-    tool.minimumLife === null || !tool.partType.trim() || !tool.measurementUnit
+    (!/shaver/i.test(tool.partType) && tool.minimumLife === null) || !tool.partType.trim() || !tool.measurementUnit
   )), [toolDefinitions]);
   const incompleteToolTypeSummaries = React.useMemo(() => {
     const counts = new Map<string, number>();
@@ -1407,7 +1420,7 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
         pdf.setTextColor(38, 53, 68);
         group.tools.forEach((tool) => {
           if (y > 735) { pdf.addPage(); y = 54; }
-          const missing = [tool.minimumLife === null ? 'Minimum life' : '', !tool.partType.trim() ? 'Part type' : '', !tool.measurementUnit ? 'Unit' : ''].filter(Boolean).join(', ');
+        const missing = [!/shaver/i.test(tool.partType) && tool.minimumLife === null ? 'Minimum life' : '', !tool.partType.trim() ? 'Part type' : '', !tool.measurementUnit ? 'Unit' : ''].filter(Boolean).join(', ');
           const linkedSerials = assets.filter((asset) => asset.toolDefinitionId === tool.id && (group.customerId === 'unassigned' || asset.customerId === group.customerId)).length;
           pdf.text(tool.toolId.slice(0, 22), 58, y);
           pdf.text((tool.partType || 'Not specified').slice(0, 18), 205, y);
@@ -1695,10 +1708,10 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
                           </span>
                           <div className="clients-asset-life-bar"><i style={{ width: `${selectedAssetLifePercent ?? 0}%` }} /></div>
                           <div className="clients-asset-life-metrics">
-                            <span className={`remaining-${selectedAssetSharpeningsRemaining === null ? 'unknown' : selectedAssetSharpeningsRemaining === 0 ? 'critical' : selectedAssetSharpeningsRemaining <= 4 ? 'warning' : 'healthy'}`}><small>Remaining Sharpenings</small><b>{selectedAssetSharpeningsRemaining === null ? '—' : `~${selectedAssetSharpeningsRemaining}`}</b></span>
-                            <span><small>Average Removal</small><b>{averageMaterialRemoval === null ? '—' : `${averageMaterialRemoval.toFixed(4)} ${selectedAssetTool?.measurementUnit ?? ''}`}</b></span>
+                            <span className={`remaining-${selectedAssetSharpeningsRemaining === null ? 'unknown' : selectedAssetSharpeningsRemaining === 0 ? 'critical' : selectedAssetSharpeningsRemaining <= 4 ? 'warning' : 'healthy'}`}><small>Remaining Sharpenings</small><b>{selectedAssetSharpeningsRemaining === null ? '—' : `${isSelectedAssetShaver ? '' : '~'}${selectedAssetSharpeningsRemaining}`}</b></span>
+                            <span><small>{isSelectedAssetShaver ? 'Current Sharpening' : 'Average Removal'}</small><b>{isSelectedAssetShaver ? (currentShaverSharpeningNumber === null ? '—' : `${currentShaverSharpeningNumber} of ${SHAVER_MAX_SHARPENINGS}`) : (averageMaterialRemoval === null ? '—' : `${averageMaterialRemoval.toFixed(4)} ${selectedAssetTool?.measurementUnit ?? ''}`)}</b></span>
                           </div>
-                          {selectedAssetSharpeningsRemaining === null ? <p className="clients-asset-life-hint">Link a configured Tool ID and compatible measurements.</p> : null}
+                          {selectedAssetSharpeningsRemaining === null ? <p className="clients-asset-life-hint">{isSelectedAssetShaver ? 'Record the current sharpening number to calculate remaining life.' : 'Link a configured Tool ID and compatible measurements.'}</p> : null}
                         </div>
                         <span><small>Last Service</small><b>{formatAssetDate(selectedAsset.lastServiceAt)}</b></span>
                         <span><small>Last Inspection</small><b>{formatAssetDate(selectedAsset.lastInspectionAt)}</b></span>
@@ -1818,7 +1831,7 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
                   <CustomerDropdown
                     id="asset-tool-id"
                     value={assetForm.toolDefinitionId}
-                    options={toolDefinitions.filter((tool) => !toolIdSearch || `${tool.toolId} ${tool.partType}`.toLowerCase().includes(toolIdSearch.toLowerCase())).map((tool) => ({ value: tool.id, label: `${tool.toolId} · ${tool.partType}${tool.minimumLife === null ? ' · Life not configured' : ''}` }))}
+                    options={toolDefinitions.filter((tool) => !toolIdSearch || `${tool.toolId} ${tool.partType}`.toLowerCase().includes(toolIdSearch.toLowerCase())).map((tool) => ({ value: tool.id, label: `${tool.toolId} · ${tool.partType}${tool.minimumLife === null && !/shaver/i.test(tool.partType) ? ' · Life not configured' : ''}` }))}
                     placeholder="Select Tool ID"
                     onChange={(toolDefinitionId) => {
                       const tool = toolDefinitions.find((item) => item.id === toolDefinitionId);
@@ -1914,7 +1927,7 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
                     <label>Select Tool ID<CustomerDropdown
                       id="edit-tool-id-picker"
                       value={toolEditingId}
-                      options={toolDefinitions.filter((tool) => !toolEditSearch || `${tool.toolId} ${tool.partType}`.toLowerCase().includes(toolEditSearch.toLowerCase())).map((tool) => ({ value: tool.id, label: `${tool.toolId} · ${tool.partType}${tool.minimumLife === null ? ' · Life not configured' : ''}` }))}
+                      options={toolDefinitions.filter((tool) => !toolEditSearch || `${tool.toolId} ${tool.partType}`.toLowerCase().includes(toolEditSearch.toLowerCase())).map((tool) => ({ value: tool.id, label: `${tool.toolId} · ${tool.partType}${tool.minimumLife === null && !/shaver/i.test(tool.partType) ? ' · Life not configured' : ''}` }))}
                       placeholder="Choose a Tool ID"
                       onChange={(toolId) => {
                         const tool = toolDefinitions.find((item) => item.id === toolId);
@@ -1926,7 +1939,11 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
                 ) : null}
                 <label>Tool ID<input required autoFocus value={toolForm.toolId} onChange={(event) => setToolForm((current) => ({ ...current, toolId: event.target.value }))} placeholder="e.g. 17864-T-4" /></label>
                 <label>Part Type<CustomerDropdown id="tool-part-type" value={toolForm.partType} options={['Hobs', 'Shaper', 'Shavers', 'Skiving', 'Talladores', 'Other'].map((value) => ({ value, label: value }))} onChange={(partType) => setToolForm((current) => ({ ...current, partType }))} /></label>
-                <label>Minimum Tool Life<input required type="number" min="0" step="any" value={toolForm.minimumLife} onChange={(event) => setToolForm((current) => ({ ...current, minimumLife: event.target.value }))} placeholder="Minimum usable dimension" /></label>
+                {/shaver/i.test(toolForm.partType) ? (
+                  <label>Maximum Sharpenings<input value={SHAVER_MAX_SHARPENINGS} readOnly /><small>Fixed YVIMO standard for Shavers. Remaining life uses the recorded sharpening number.</small></label>
+                ) : (
+                  <label>Minimum Tool Life<input required type="number" min="0" step="any" value={toolForm.minimumLife} onChange={(event) => setToolForm((current) => ({ ...current, minimumLife: event.target.value }))} placeholder="Minimum usable dimension" /></label>
+                )}
                 <label>Measurement Unit<CustomerDropdown id="tool-measurement-unit" value={toolForm.measurementUnit} options={[{ value: 'in', label: 'Inches' }, { value: 'mm', label: 'Millimeters' }]} onChange={(measurementUnit) => setToolForm((current) => ({ ...current, measurementUnit }))} /></label>
                 <div
                   className={`clients-asset-file-field clients-tool-drawing-drop mes-order-form-wide${toolDrawingDragActive ? ' drag-active' : ''}`}
@@ -1972,7 +1989,7 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
                   <tbody>{incompleteToolClientGroups.map((group) => <React.Fragment key={group.customerId}>
                     <tr className="clients-tool-report-client-row"><td colSpan={5}><span>{group.customerName}</span><b>{group.tools.length} Tool IDs</b></td></tr>
                     {group.tools.map((tool) => {
-                      const missing = [tool.minimumLife === null ? 'Minimum life' : '', !tool.partType.trim() ? 'Part type' : '', !tool.measurementUnit ? 'Measurement unit' : ''].filter(Boolean);
+                      const missing = [!/shaver/i.test(tool.partType) && tool.minimumLife === null ? 'Minimum life' : '', !tool.partType.trim() ? 'Part type' : '', !tool.measurementUnit ? 'Measurement unit' : ''].filter(Boolean);
                       const linkedSerials = assets.filter((asset) => asset.toolDefinitionId === tool.id && (group.customerId === 'unassigned' || asset.customerId === group.customerId)).length;
                       return <tr key={`${group.customerId}:${tool.id}`}><td><b>{tool.toolId}</b></td><td><span className="clients-asset-type-badge" style={getAssetTypeColors(tool.partType)}>{tool.partType || 'Not specified'}</span></td><td>{missing.map((item) => <em key={item}>{item}</em>)}</td><td>{tool.measurementUnit || '—'}</td><td>{linkedSerials}</td></tr>;
                     })}
