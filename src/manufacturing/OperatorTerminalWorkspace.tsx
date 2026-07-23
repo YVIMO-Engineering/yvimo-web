@@ -39,11 +39,13 @@ import {
   fetchOperatorScrapEvents,
   fetchOperatorProductionSerials,
   fetchOperatorTraceabilityRecord,
+  closeOperatorStationDowntime,
   correctOperatorMeasurement,
   fetchOperatorTerminalSnapshot,
   reportOperatorProduction,
   reportOperatorStationDowntime,
   resumeOperatorStation,
+  setOperatorStationSetup,
   setOperatorTerminalState,
   switchOperatorActiveOrder,
   type OperatorScrapEvent,
@@ -59,7 +61,7 @@ type OperatorTerminalProps = {
   t?: (text: string) => string;
 };
 
-type TerminalState = 'not-started' | 'running' | 'paused' | 'down' | 'completed';
+type TerminalState = 'not-started' | 'running' | 'paused' | 'setup' | 'down' | 'completed';
 type TerminalModal = 'scrap' | 'pause' | 'downtime' | 'complete' | 'undo' | 'queue' | 'scrap-events' | 'switch-order' | 'part-picker' | null;
 const getActiveOrderStorageKey = (organizationId: string) => `yvimo-operator-terminal-active-order:${organizationId}`;
 const defaultOperatorT = (text: string) => text;
@@ -943,9 +945,21 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
   const isOrderPaused = hasAssignedOrder && state === 'paused';
   const isOrderDown = hasAssignedOrder && state === 'down';
   const isStationDown = state === 'down' || selectedStation?.status === 'down';
+  const isStationSetup = state === 'setup' || selectedStation?.status === 'setup';
   const isOrderNotStarted = hasAssignedOrder && state === 'not-started';
-  const startLabel = state === 'paused' || isStationDown ? 'Resume' : 'Start Job';
+  const startLabel = state === 'paused' || isStationDown || isStationSetup ? 'Resume' : 'Start Job';
   const traceabilityTemplate = React.useMemo(() => getTraceabilityTemplateForPart(currentOrder?.partName), [currentOrder?.partName]);
+
+  React.useEffect(() => {
+    if (selectedStation?.status === 'down' && state !== 'down') {
+      setState('down');
+      return;
+    }
+    if (selectedStation?.status === 'setup' && state !== 'setup') {
+      setState('setup');
+    }
+  }, [selectedStation?.status, state]);
+
   const jobQueueSummary: JobQueueSummary = {
     machine: {
       workCenterCode,
@@ -1008,7 +1022,16 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
     const resolvedOrder = resolveOrderReportedCounts(order);
     setGoodQty(resolvedOrder.completedQuantity);
     setScrapQty(resolvedOrder.scrapQuantity);
-    setState(resolvedOrder.status === 'running' ? 'running' : resolvedOrder.status === 'paused' ? 'paused' : ['waiting-inspection', 'completed'].includes(resolvedOrder.status) ? 'completed' : 'not-started');
+    setState((currentState) => {
+      if (currentState === 'down' || currentState === 'setup') return currentState;
+      return resolvedOrder.status === 'running'
+        ? 'running'
+        : resolvedOrder.status === 'paused'
+          ? 'paused'
+          : ['waiting-inspection', 'completed'].includes(resolvedOrder.status)
+            ? 'completed'
+            : 'not-started';
+    });
   }, [resolveOrderReportedCounts]);
 
   const buildTraceabilityForUnit = (
@@ -1759,6 +1782,13 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
         if (hasSupabaseOrder && currentOrder) {
           const order = await setOperatorTerminalState({ orderId: currentOrder.id, organizationId, stationCode, shift: selectedShift, state: 'down', reason, comment });
           syncSnapshotOrder(order);
+          setSnapshot((current) => current ? {
+            ...current,
+            station: current.station?.code === stationCode ? { ...current.station, status: 'down', processStep: 'Downtime reported' } : current.station,
+            stationOptions: current.stationOptions.map((station) => station.code === stationCode
+              ? { ...station, status: 'down', processStep: 'Downtime reported' }
+              : station),
+          } : current);
         } else {
           await reportOperatorStationDowntime({ organizationId, workCenterCode, stationCode, shift: selectedShift, reason, comment });
           setSnapshot((current) => current ? {
@@ -1816,27 +1846,41 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
 
   const startOrResume = async () => {
     if (!currentOrder && !isStationDown) return;
-    if (!currentOrder && isStationDown) {
+    if (isStationDown) {
       setSyncPending(true);
       try {
-        await resumeOperatorStation({ organizationId, workCenterCode, stationCode, shift: selectedShift });
+        let resumedOrder: ProductionOrder | null = null;
+        if (currentOrder && hasSupabaseOrder) {
+          await closeOperatorStationDowntime({ organizationId, workCenterCode, stationCode });
+          resumedOrder = await setOperatorTerminalState({
+            orderId: currentOrder.id,
+            organizationId,
+            stationCode,
+            shift: selectedShift,
+            state: 'running',
+          });
+          syncSnapshotOrder(resumedOrder);
+        } else {
+          await resumeOperatorStation({ organizationId, workCenterCode, stationCode, shift: selectedShift });
+        }
+        const nextStationStatus = resumedOrder ? 'running' : 'idle';
         setSnapshot((current) => current ? {
           ...current,
-          station: current.station?.code === stationCode ? { ...current.station, status: 'idle', processStep: 'Ready' } : current.station,
+          station: current.station?.code === stationCode ? { ...current.station, status: nextStationStatus, processStep: resumedOrder ? 'Job running' : 'Ready' } : current.station,
           stationOptions: current.stationOptions.map((station) => station.code === stationCode
-            ? { ...station, status: 'idle', processStep: 'Ready' }
+            ? { ...station, status: nextStationStatus, processStep: resumedOrder ? 'Job running' : 'Ready' }
             : station),
         } : current);
-        setState('not-started');
+        setState(resumedOrder ? 'running' : 'not-started');
         setTerminalMessage('');
-        showToast('Station returned to service');
+        showToast(resumedOrder ? 'Downtime ended; job resumed' : 'Station returned to service');
       } catch (error) {
-        console.error('Unable to return station to service', error);
+        console.error('Unable to end downtime and resume', error);
         const message = error && typeof error === 'object' && 'message' in error && typeof error.message === 'string'
           ? error.message
-          : 'Could not return station to service';
+          : 'Could not end downtime';
         setTerminalMessage(message);
-        showToast('Could not return station to service');
+        showToast('Could not end downtime');
       } finally {
         setSyncPending(false);
       }
@@ -1858,6 +1902,48 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
     }
     setState('running');
     showToast(nextMessage);
+  };
+
+  const toggleStationSetup = async () => {
+    if (!stationCode || isStationDown || syncPending) return;
+    setSyncPending(true);
+    try {
+      if (!isStationSetup && hasSupabaseOrder && currentOrder && state === 'running') {
+        const pausedOrder = await setOperatorTerminalState({
+          orderId: currentOrder.id,
+          organizationId,
+          stationCode,
+          shift: selectedShift,
+          state: 'paused',
+          reason: 'Setup started',
+        });
+        syncSnapshotOrder(pausedOrder);
+      }
+
+      await setOperatorStationSetup({
+        organizationId,
+        workCenterCode,
+        stationCode,
+        shift: selectedShift,
+        active: !isStationSetup,
+      });
+      const nextStationStatus = isStationSetup ? 'idle' : 'setup';
+      setSnapshot((current) => current ? {
+        ...current,
+        station: current.station?.code === stationCode ? { ...current.station, status: nextStationStatus, processStep: isStationSetup ? 'Ready' : 'Setup in progress' } : current.station,
+        stationOptions: current.stationOptions.map((station) => station.code === stationCode
+          ? { ...station, status: nextStationStatus, processStep: isStationSetup ? 'Ready' : 'Setup in progress' }
+          : station),
+      } : current);
+      setState(isStationSetup ? (currentOrder ? 'paused' : 'not-started') : 'setup');
+      setTerminalMessage('');
+      showToast(isStationSetup ? 'Setup completed' : 'Setup started');
+    } catch (error) {
+      console.error('Unable to update setup state', error);
+      showToast('Could not update setup state');
+    } finally {
+      setSyncPending(false);
+    }
   };
 
   const switchActiveOrder = async (order: ProductionOrder) => {
@@ -2020,12 +2106,14 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
                     <strong>{t('+1 Scrap')}</strong>
                     <span>{t('Requires reason')}</span>
                   </button>
-                  {isOrderPaused || isOrderDown || isOrderNotStarted ? (
-                    <div className={`operator-terminal-hold-overlay ${isOrderDown ? 'downtime' : isOrderNotStarted ? 'not-started' : 'paused'}`} role="status">
-                      {isOrderDown ? <Wrench size={28} /> : isOrderNotStarted ? <Play size={28} /> : <Pause size={28} />}
+                  {isOrderPaused || isOrderDown || isOrderNotStarted || isStationSetup ? (
+                    <div className={`operator-terminal-hold-overlay ${isOrderDown ? 'downtime' : isStationSetup ? 'setup' : isOrderNotStarted ? 'not-started' : 'paused'}`} role="status">
+                      {isOrderDown || isStationSetup ? <Wrench size={28} /> : isOrderNotStarted ? <Play size={28} /> : <Pause size={28} />}
                       <strong>
                         {isOrderDown
                           ? t('Production Order is in downtime')
+                          : isStationSetup
+                            ? t('Station setup is in progress')
                           : isOrderNotStarted
                             ? t('Production Order has not started')
                             : t('Production Order is paused')}
@@ -2033,6 +2121,8 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
                       <span>
                         {isOrderDown
                           ? t('Press Resume once the issue is cleared to continue reporting production.')
+                          : isStationSetup
+                            ? t('Press End Setup when setup is complete.')
                           : isOrderNotStarted
                             ? t('Press Start Job to begin reporting production.')
                             : t('Press Resume to continue reporting production.')}
@@ -2050,7 +2140,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
               <button
                 className={`operator-control ${state === 'running' ? 'pause' : 'start'}`}
                 type="button"
-                disabled={syncPending || (!hasAssignedOrder && !isStationDown) || (hasAssignedOrder && (state === 'completed' || isQuantityComplete))}
+                disabled={syncPending || isStationSetup || (!hasAssignedOrder && !isStationDown) || (hasAssignedOrder && (state === 'completed' || isQuantityComplete))}
                 onClick={() => {
                   if (state === 'running') {
                     setModal('pause');
@@ -2062,18 +2152,24 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
                 {state === 'running' ? <Pause size={22} /> : <Play size={22} />}
                 {state === 'running' ? t('Pause') : t(startLabel)}
               </button>
-              <button className="operator-control downtime" type="button" disabled={syncPending || !stationCode || isStationDown || (hasAssignedOrder && (state === 'completed' || isQuantityComplete))} onClick={() => setModal('downtime')}>
+              <button className="operator-control downtime" type="button" disabled={syncPending || !stationCode || isStationDown || isStationSetup || (hasAssignedOrder && (state === 'completed' || isQuantityComplete))} onClick={() => setModal('downtime')}>
                 <AlertTriangle size={22} />
                 {t('Report Downtime')}
               </button>
-              <button className="operator-control queue" type="button" disabled={!hasAssignedOrder || syncPending} onClick={() => setModal('queue')}>
-                <Timer size={22} />
-                {t('Job Queue')}
+              <button className={`operator-control setup ${isStationSetup ? 'active' : ''}`} type="button" disabled={syncPending || !stationCode || isStationDown} onClick={() => { void toggleStationSetup(); }}>
+                <Wrench size={22} />
+                {t(isStationSetup ? 'End Setup' : 'Start Setup')}
               </button>
-              <button className="operator-control details" type="button" disabled={!hasAssignedOrder || syncPending} onClick={() => void openOrderDetails()}>
-                <FileText size={22} />
-                {t('Order Details')}
-              </button>
+              <div className="operator-terminal-secondary-actions">
+                <button className="operator-control queue" type="button" disabled={!hasAssignedOrder || syncPending} onClick={() => setModal('queue')}>
+                  <Timer size={19} />
+                  {t('Job Queue')}
+                </button>
+                <button className="operator-control details" type="button" disabled={!hasAssignedOrder || syncPending} onClick={() => void openOrderDetails()}>
+                  <FileText size={19} />
+                  {t('Order Details')}
+                </button>
+              </div>
             </div>
           </section>
 

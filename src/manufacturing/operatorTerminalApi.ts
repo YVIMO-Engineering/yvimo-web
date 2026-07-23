@@ -523,7 +523,26 @@ export async function setOperatorTerminalState(
   });
 
   if (error) throw error;
-  return mapProductionOrderRow(data as ProductionOrderRow);
+  let resolvedData = data as ProductionOrderRow;
+  if (input.state === 'down') {
+    const { data: runningOrderData, error: orderError } = await client
+      .from('mes_production_orders')
+      .update({ status: 'running' })
+      .eq('id', input.orderId)
+      .eq('organization_id', input.organizationId)
+      .select('*')
+      .single();
+    if (orderError) throw orderError;
+    resolvedData = runningOrderData as ProductionOrderRow;
+
+    const { error: stationError } = await client
+      .from('mes_work_center_stations')
+      .update({ status: 'down', last_event: 'Downtime reported' })
+      .eq('organization_id', input.organizationId)
+      .eq('code', input.stationCode);
+    if (stationError) throw stationError;
+  }
+  return mapProductionOrderRow(resolvedData);
 }
 
 export async function reportOperatorStationDowntime(
@@ -607,6 +626,60 @@ export async function resumeOperatorStation(
   });
 
   if (error) throw error;
+}
+
+export async function closeOperatorStationDowntime(
+  input: {
+    organizationId: string;
+    workCenterCode: string;
+    stationCode: string;
+  },
+  client: OperatorClient = supabase,
+): Promise<void> {
+  const { error } = await client
+    .from('mes_operator_terminal_downtime')
+    .update({ ended_at: new Date().toISOString() })
+    .eq('organization_id', input.organizationId)
+    .eq('work_center_code', input.workCenterCode)
+    .eq('station_code', input.stationCode)
+    .is('ended_at', null);
+
+  if (error) throw error;
+}
+
+export async function setOperatorStationSetup(
+  input: {
+    organizationId: string;
+    workCenterCode: string;
+    stationCode: string;
+    shift?: string;
+    active: boolean;
+  },
+  client: OperatorClient = supabase,
+): Promise<void> {
+  const nextStatus = input.active ? 'setup' : 'idle';
+  const nextEvent = input.active ? 'Setup started' : 'Setup completed';
+  const { error: stationError } = await client
+    .from('mes_work_center_stations')
+    .update({ status: nextStatus, last_event: nextEvent })
+    .eq('organization_id', input.organizationId)
+    .eq('code', input.stationCode);
+
+  if (stationError) throw stationError;
+
+  const { error: eventError } = await client
+    .from('mes_operator_terminal_events')
+    .insert({
+      organization_id: input.organizationId,
+      production_order_id: null,
+      work_center_code: input.workCenterCode,
+      station_code: input.stationCode,
+      event_type: 'adjustment',
+      reason: nextEvent,
+      payload: { action: input.active ? 'setup-started' : 'setup-completed', shift: input.shift ?? null },
+    });
+
+  if (eventError) throw eventError;
 }
 
 export async function switchOperatorActiveOrder(
