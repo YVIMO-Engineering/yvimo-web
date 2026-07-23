@@ -4946,6 +4946,7 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
   const [cycleReportOpen, setCycleReportOpen] = React.useState(false);
   const [cycleReportDateRange, setCycleReportDateRange] = React.useState<MesOrderDateRange>(() => getMesOrderQuickRange('today'));
   const [cycleReportDownloading, setCycleReportDownloading] = React.useState(false);
+  const [cycleDetailSelection, setCycleDetailSelection] = React.useState<{ stationId: string; status: WorkCenterStatus } | null>(null);
   const [cycleClock, setCycleClock] = React.useState(() => Date.now());
   const [selectedWorkCenterId, setSelectedWorkCenterId] = React.useState('');
   const [selectedStationId, setSelectedStationId] = React.useState('');
@@ -5219,33 +5220,114 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
       pdf.text(`${selectedWorkCenter.name} · ${cycleReportDateRange.from} to ${cycleReportDateRange.to}`, margin, cursorY);
       cursorY += 14;
       pdf.text(`Generated ${formatTimestamp(new Date().toISOString())}`, margin, cursorY);
-      cursorY += 24;
-      selectedStations.forEach((station) => {
+      cursorY += 20;
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(9);
+      pdf.text('WORK CENTER TOTALS', margin, cursorY);
+      cursorY += 13;
+      pdf.setFont('helvetica', 'normal');
+      (['running', 'idle', 'down', 'setup', 'maintenance', 'offline'] as WorkCenterStatus[]).forEach((status) => {
+        pdf.text(`${formatLabel(status)}: ${formatCycleDuration(cycleTotals[status] ?? 0)}`, margin, cursorY);
+        cursorY += 12;
+      });
+      cursorY += 12;
+      const pdfStatusColors: Record<string, [number, number, number]> = {
+        running: [154, 87, 0],
+        idle: [0, 124, 91],
+        down: [185, 28, 28],
+        setup: [109, 40, 217],
+        maintenance: [154, 87, 0],
+        offline: [71, 85, 105],
+      };
+      selectedStations.forEach((station, stationIndex) => {
+        if (stationIndex > 0) {
+          pdf.addPage();
+          cursorY = margin;
+        }
         const stationCycles = selectedStatusCycles.filter((cycle) => cycle.station_id === station.id);
         const statusTotals = stationCycles.reduce<Record<string, number>>((totals, cycle) => {
           totals[cycle.status] = (totals[cycle.status] ?? 0) + reportCycleDuration(cycle);
           return totals;
         }, {});
-        ensureSpace(128);
+        const stationTracked = stationCycles.reduce((total, cycle) => total + reportCycleDuration(cycle), 0);
+        ensureSpace(76);
+        const stationHeaderHeight = 30;
+        const stationHeaderWidth = pdf.internal.pageSize.getWidth() - (margin * 2);
+        pdf.setFillColor(255, 247, 237);
+        pdf.setDrawColor(255, 122, 0);
+        pdf.setLineWidth(1);
+        pdf.roundedRect(margin, cursorY - 13, stationHeaderWidth, stationHeaderHeight, 5, 5, 'FD');
         pdf.setFont('helvetica', 'bold');
         pdf.setFontSize(12);
-        pdf.text(`${station.name}  ${station.code}`, margin, cursorY);
-        cursorY += 17;
+        pdf.setTextColor(255, 122, 0);
+        pdf.text(`${station.name}  ${station.code}`, margin + 12, cursorY + 5);
+        pdf.setFontSize(9);
+        pdf.setTextColor(154, 74, 0);
+        pdf.text(
+          `${formatCycleDuration(stationTracked)} tracked`,
+          margin + stationHeaderWidth - 12,
+          cursorY + 5,
+          { align: 'right' },
+        );
+        cursorY += 29;
         pdf.setFontSize(8);
         pdf.setTextColor(83, 100, 118);
         pdf.text('STATUS', margin, cursorY);
-        pdf.text('ACCUMULATED TIME', margin + 210, cursorY);
-        cursorY += 10;
+        pdf.text('LAST CYCLE STARTED', margin + 100, cursorY);
+        pdf.text('LAST CYCLE ENDED', margin + 260, cursorY);
+        pdf.text('TOTAL TIME', margin + 420, cursorY);
+        pdf.text('CYCLES', margin + 540, cursorY);
+        cursorY += 12;
         (['running', 'idle', 'down', 'setup', 'maintenance', 'offline'] as WorkCenterStatus[]).forEach((status) => {
+          const statusCycles = stationCycles
+            .filter((cycle) => cycle.status === status)
+            .sort((left, right) => new Date(left.started_at).getTime() - new Date(right.started_at).getTime());
+          const lastCycle = statusCycles.at(-1) ?? null;
+          const lastStartedAt = lastCycle ? Math.max(new Date(lastCycle.started_at).getTime(), cycleReportRangeStart) : null;
+          const lastEndedAt = lastCycle ? Math.min(lastCycle.ended_at ? new Date(lastCycle.ended_at).getTime() : cycleClock, cycleReportRangeEnd) : null;
+          ensureSpace(statusCycles.length ? 30 + (statusCycles.length * 12) : 18);
+          const statusColor = pdfStatusColors[status] ?? [20, 32, 45];
+          pdf.setTextColor(...statusColor);
+          pdf.setFont('helvetica', 'bold');
+          pdf.setFontSize(9);
+          pdf.text(formatLabel(status), margin, cursorY);
           pdf.setTextColor(20, 32, 45);
           pdf.setFont('helvetica', 'normal');
           pdf.setFontSize(9);
-          pdf.text(formatLabel(status), margin, cursorY);
+          pdf.text(lastStartedAt === null ? '-' : formatTimestamp(new Date(lastStartedAt).toISOString()), margin + 100, cursorY);
+          pdf.text(lastEndedAt === null ? '-' : lastCycle && !lastCycle.ended_at && cycleReportDateRange.to === getMesOrderQuickRange('today').to ? 'Current' : formatTimestamp(new Date(lastEndedAt).toISOString()), margin + 260, cursorY);
           pdf.setFont('helvetica', 'bold');
-          pdf.text(formatCycleDuration(statusTotals[status] ?? 0), margin + 210, cursorY);
-          cursorY += 14;
+          pdf.text(formatCycleDuration(statusTotals[status] ?? 0), margin + 420, cursorY);
+          pdf.text(String(statusCycles.length), margin + 540, cursorY);
+          cursorY += 13;
+
+          if (statusCycles.length) {
+            pdf.setFont('helvetica', 'bold');
+            pdf.setFontSize(7.5);
+            pdf.setTextColor(...statusColor);
+            pdf.text('ALL CYCLES', margin + 18, cursorY);
+            cursorY += 10;
+            statusCycles.forEach((cycle, index) => {
+              ensureSpace(14);
+              const startedAt = Math.max(new Date(cycle.started_at).getTime(), cycleReportRangeStart);
+              const endedAt = Math.min(cycle.ended_at ? new Date(cycle.ended_at).getTime() : cycleClock, cycleReportRangeEnd);
+              const endedLabel = !cycle.ended_at && cycleReportDateRange.to === getMesOrderQuickRange('today').to
+                ? 'Current'
+                : formatTimestamp(new Date(endedAt).toISOString());
+              pdf.setFont('helvetica', 'normal');
+              pdf.setFontSize(8);
+              pdf.setTextColor(52, 71, 90);
+              pdf.text(
+                `#${index + 1}   ${formatTimestamp(new Date(startedAt).toISOString())}   -   ${endedLabel}   (${formatCycleDuration(Math.max(0, endedAt - startedAt))})`,
+                margin + 18,
+                cursorY,
+              );
+              cursorY += 11;
+            });
+          }
+          cursorY += 5;
         });
-        cursorY += 10;
+        cursorY += 12;
       });
       pdf.save(`cycle-time-report-${cycleReportDateRange.from}-${cycleReportDateRange.to}.pdf`);
     } finally {
@@ -6639,18 +6721,19 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
                   <article className="station-cycle-machine" key={station.id}>
                     <header><div><strong>{station.name}</strong><span>{station.code}</span></div><span>{formatCycleDuration(stationTotalDuration)} tracked</span></header>
                     <div className="station-cycle-machine-summary" role="table" aria-label={`${station.name} accumulated time by status`}>
-                      <div className="station-cycle-summary-head" role="row"><span>Status</span><span>Started</span><span>Ended</span><span>Duration</span></div>
+                      <div className="station-cycle-summary-head" role="row"><span>Status</span><span>Last Cycle Started</span><span>Last Cycle Ended</span><span>Total Time</span><span aria-hidden="true" /></div>
                       {(['running', 'idle', 'down', 'setup', 'maintenance', 'offline'] as WorkCenterStatus[]).map((status) => {
                         const statusCycles = stationCycles.filter((cycle) => cycle.status === status);
-                        const firstStartedAt = statusCycles.length ? Math.max(Math.min(...statusCycles.map((cycle) => new Date(cycle.started_at).getTime())), cycleReportRangeStart) : null;
-                        const hasActiveCycle = statusCycles.some((cycle) => !cycle.ended_at);
-                        const lastEndedAt = statusCycles.length ? Math.min(Math.max(...statusCycles.map((cycle) => cycle.ended_at ? new Date(cycle.ended_at).getTime() : cycleClock)), cycleReportRangeEnd) : null;
+                        const lastCycle = [...statusCycles].sort((left, right) => new Date(right.started_at).getTime() - new Date(left.started_at).getTime())[0] ?? null;
+                        const lastStartedAt = lastCycle ? Math.max(new Date(lastCycle.started_at).getTime(), cycleReportRangeStart) : null;
+                        const lastEndedAt = lastCycle ? Math.min(lastCycle.ended_at ? new Date(lastCycle.ended_at).getTime() : cycleClock, cycleReportRangeEnd) : null;
                         return (
                           <div className="station-cycle-summary-row" role="row" key={status}>
                             <span><em className={`station-cycle-status station-cycle-${status}`}>{formatLabel(status)}</em></span>
-                            <time>{firstStartedAt === null ? '—' : formatTimestamp(new Date(firstStartedAt).toISOString())}</time>
-                            <time>{lastEndedAt === null ? '—' : hasActiveCycle && cycleReportDateRange.to === getMesOrderQuickRange('today').to ? 'Current' : formatTimestamp(new Date(lastEndedAt).toISOString())}</time>
+                            <time>{lastStartedAt === null ? '—' : formatTimestamp(new Date(lastStartedAt).toISOString())}</time>
+                            <time>{lastEndedAt === null ? '—' : lastCycle && !lastCycle.ended_at && cycleReportDateRange.to === getMesOrderQuickRange('today').to ? 'Current' : formatTimestamp(new Date(lastEndedAt).toISOString())}</time>
                             <strong>{formatCycleDuration(stationStateTotals[status] ?? 0)}</strong>
+                            <button type="button" disabled={!statusCycles.length} onClick={() => setCycleDetailSelection({ stationId: station.id, status })}>View All Cycles</button>
                           </div>
                         );
                       })}
@@ -6662,6 +6745,42 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
           </section>
         </div>
       ) : null}
+
+      {cycleReportOpen && cycleDetailSelection ? (() => {
+        const detailStation = selectedStations.find((station) => station.id === cycleDetailSelection.stationId) ?? null;
+        const detailCycles = selectedStatusCycles
+          .filter((cycle) => cycle.station_id === cycleDetailSelection.stationId && cycle.status === cycleDetailSelection.status)
+          .sort((left, right) => new Date(left.started_at).getTime() - new Date(right.started_at).getTime());
+        return (
+          <div className="mes-modal-backdrop station-cycle-detail-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setCycleDetailSelection(null); }}>
+            <section className="mes-order-modal station-cycle-detail-modal" role="dialog" aria-modal="true" aria-labelledby="station-cycle-detail-title">
+              <header>
+                <div>
+                  <p className="eyebrow">Cycle Detail</p>
+                  <h3 id="station-cycle-detail-title">{detailStation?.name ?? 'Station'} · {formatLabel(cycleDetailSelection.status)}</h3>
+                  <small>{cycleReportDateRange.from} to {cycleReportDateRange.to} · {detailCycles.length} cycle{detailCycles.length === 1 ? '' : 's'}</small>
+                </div>
+                <button type="button" aria-label="Close cycle detail" onClick={() => setCycleDetailSelection(null)}><X size={21} /></button>
+              </header>
+              <div className="station-cycle-detail-table" role="table">
+                <div className="station-cycle-detail-head" role="row"><span>Cycle</span><span>Started</span><span>Ended</span><span>Duration</span></div>
+                {detailCycles.map((cycle, index) => {
+                  const startedAt = Math.max(new Date(cycle.started_at).getTime(), cycleReportRangeStart);
+                  const endedAt = Math.min(cycle.ended_at ? new Date(cycle.ended_at).getTime() : cycleClock, cycleReportRangeEnd);
+                  return (
+                    <div className="station-cycle-detail-row" role="row" key={cycle.id}>
+                      <strong>#{index + 1}</strong>
+                      <time>{formatTimestamp(new Date(startedAt).toISOString())}</time>
+                      <time>{!cycle.ended_at && cycleReportDateRange.to === getMesOrderQuickRange('today').to ? 'Current' : formatTimestamp(new Date(endedAt).toISOString())}</time>
+                      <strong>{formatCycleDuration(Math.max(0, endedAt - startedAt))}</strong>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          </div>
+        );
+      })() : null}
 
       {showAddForm ? (
         <div className="mes-modal-backdrop" role="presentation">
