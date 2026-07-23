@@ -653,7 +653,7 @@ export async function switchOperatorActiveOrder(
 
   const { data: updatedData, error: updateError } = await client
     .from('mes_production_orders')
-    .update({ status: 'running' })
+    .update({ status: 'paused' })
     .eq('id', input.orderId)
     .eq('organization_id', input.organizationId)
     .select('*')
@@ -665,8 +665,8 @@ export async function switchOperatorActiveOrder(
     .from('mes_work_center_stations')
     .update({
       current_job: selectedOrder.order_number,
-      status: 'running',
-      last_event: 'Active order changed',
+      status: 'idle',
+      last_event: 'Order selected - awaiting operator start',
     })
     .eq('organization_id', input.organizationId)
     .eq('code', stationCode);
@@ -678,9 +678,9 @@ export async function switchOperatorActiveOrder(
       organization_id: input.organizationId,
       work_center_code: selectedOrder.assigned_work_center,
       station_code: stationCode,
-      event_type: 'job-resumed',
+      event_type: 'job-paused',
       comment: input.comment ?? null,
-      payload: { action: 'active-order-switch', fallback: true, shift: input.shift ?? null },
+      payload: { action: 'active-order-selected', awaiting_operator_start: true, fallback: true, shift: input.shift ?? null },
     });
 
   return mapProductionOrderRow(updatedData as ProductionOrderRow);

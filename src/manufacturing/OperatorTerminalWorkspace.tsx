@@ -1864,11 +1864,12 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
     if (order.id === currentOrder?.id || switchOrderLoading) return;
     if (!snapshot) {
       setSelectedOrderId(order.id);
-      applyOrder(order);
-      syncSwitchedOrder({ ...order, status: 'running' });
+      const pausedOrder = { ...order, status: 'paused' as const };
+      applyOrder(pausedOrder);
+      syncSwitchedOrder(pausedOrder);
       setEvents([]);
       setModal(null);
-      showToast('Active order changed');
+      showToast('Order selected; press Resume to start');
       return;
     }
 
@@ -1889,7 +1890,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
       syncSwitchedOrder(nextOrder);
       setEvents([]);
       setModal(null);
-      showToast('Active order changed');
+      showToast('Order selected; press Resume to start');
     } catch (error) {
       console.error('Unable to switch active order', error);
       showToast('Could not change active order');
