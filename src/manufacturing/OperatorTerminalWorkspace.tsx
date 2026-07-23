@@ -1020,6 +1020,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
 
   const applyOrder = React.useCallback((order: ProductionOrder) => {
     const resolvedOrder = resolveOrderReportedCounts(order);
+    rememberReportedCounts(resolvedOrder.id, resolvedOrder.completedQuantity, resolvedOrder.scrapQuantity);
     setGoodQty(resolvedOrder.completedQuantity);
     setScrapQty(resolvedOrder.scrapQuantity);
     setState((currentState) => {
@@ -1032,7 +1033,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
             ? 'completed'
             : 'not-started';
     });
-  }, [resolveOrderReportedCounts]);
+  }, [rememberReportedCounts, resolveOrderReportedCounts]);
 
   const buildTraceabilityForUnit = (
     reportType: 'good' | 'scrap',
@@ -1328,8 +1329,15 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
       ...Array.from(serialResultsBySequence.values()),
       ...Array.from(traceabilityResultsByPiece.values()),
     ];
-    const nextGoodQty = results.filter((result) => result === 'good').length;
-    const nextScrapQty = results.filter((result) => result === 'scrap').length;
+    const reconciledGoodQty = results.filter((result) => result === 'good').length;
+    const reconciledScrapQty = results.filter((result) => result === 'scrap').length;
+    const rememberedCounts = reportedCountsByOrderRef.current.get(orderId);
+    const shouldKeepRememberedCounts = Boolean(
+      rememberedCounts
+      && rememberedCounts.goodQty + rememberedCounts.scrapQty > reconciledGoodQty + reconciledScrapQty
+    );
+    const nextGoodQty = shouldKeepRememberedCounts ? rememberedCounts!.goodQty : reconciledGoodQty;
+    const nextScrapQty = shouldKeepRememberedCounts ? rememberedCounts!.scrapQty : reconciledScrapQty;
 
     rememberReportedCounts(orderId, nextGoodQty, nextScrapQty);
     setGoodQty(nextGoodQty);
