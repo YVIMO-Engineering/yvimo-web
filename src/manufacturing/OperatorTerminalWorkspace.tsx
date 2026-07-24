@@ -951,14 +951,24 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
   const traceabilityTemplate = React.useMemo(() => getTraceabilityTemplateForPart(currentOrder?.partName), [currentOrder?.partName]);
 
   React.useEffect(() => {
-    if (selectedStation?.status === 'down' && state !== 'down') {
-      setState('down');
-      return;
-    }
-    if (selectedStation?.status === 'setup' && state !== 'setup') {
-      setState('setup');
-    }
-  }, [selectedStation?.status, state]);
+    const nextState: TerminalState = selectedStation?.status === 'down'
+      ? 'down'
+      : selectedStation?.status === 'setup'
+        ? 'setup'
+        : currentOrder?.status === 'running'
+          ? 'running'
+          : currentOrder?.status === 'paused'
+            ? 'paused'
+            : currentOrder && ['waiting-inspection', 'completed'].includes(currentOrder.status)
+              ? 'completed'
+              : 'not-started';
+    setState((currentState) => currentState === nextState ? currentState : nextState);
+  }, [stationCode, selectedStation?.status, currentOrder?.id, currentOrder?.status]);
+
+  React.useEffect(() => {
+    setModal(null);
+    setTerminalMessage('');
+  }, [stationCode]);
 
   const jobQueueSummary: JobQueueSummary = {
     machine: {
