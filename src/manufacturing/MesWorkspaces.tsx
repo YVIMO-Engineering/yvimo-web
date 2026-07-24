@@ -2197,50 +2197,120 @@ function DailyProductionReportModal({ report, onClose }: { report: DailyProducti
           cursorY = margin;
         }
         const headerWidth = pageWidth - (margin * 2);
-        pdf.setFillColor(255, 247, 237);
-        pdf.setDrawColor(255, 138, 31);
-        pdf.roundedRect(margin, cursorY - 12, headerWidth, 31, 5, 5, 'FD');
-        pdf.setFont('helvetica', 'bold');
-        pdf.setFontSize(12);
-        pdf.setTextColor(194, 65, 12);
-        pdf.text(machine.stationName, margin + 12, cursorY + 7);
-        pdf.setFontSize(9);
-        pdf.text(
-          `${machine.goodQuantity} good · ${machine.scrapQuantity} scrap · ${machine.inspectionCount} inspections · ${machine.orderCount} orders`,
-          margin + headerWidth - 12,
-          cursorY + 7,
-          { align: 'right' },
-        );
-        cursorY += 34;
-        pdf.setFontSize(9);
-        pdf.setTextColor(83, 100, 118);
-        pdf.text('TIME', margin, cursorY);
-        pdf.text('ACTIVITY', margin + 72, cursorY);
-        pdf.text('ORDER / CLIENT', margin + 178, cursorY);
-        pdf.text('PART / SERIAL', margin + 320, cursorY);
-        pdf.text('RESULT / DETAILS', margin + 500, cursorY);
-        cursorY += 12;
-
-        machine.items.forEach((item) => {
-          const inspectionDetail = item.inspections.map((inspection) => `${inspection.inspection}: ${inspection.status}`).join(', ');
-          const detail = inspectionDetail || item.result || `Qty ${item.quantity}`;
-          const detailLines = pdf.splitTextToSize(detail, 205) as string[];
-          const rowHeight = Math.max(28, (detailLines.length * 9) + 9);
-          ensureSpace(rowHeight);
-          pdf.setDrawColor(226, 232, 240);
-          pdf.line(margin, cursorY + rowHeight - 5, pageWidth - margin, cursorY + rowHeight - 5);
-          pdf.setFont('helvetica', 'normal');
-          pdf.setFontSize(9);
-          pdf.setTextColor(51, 65, 85);
-          pdf.text(formatTimestamp(item.timestamp), margin, cursorY + 9);
+        const columns = {
+          time: margin + 10,
+          activity: margin + 82,
+          order: margin + 194,
+          client: margin + 266,
+          part: margin + 370,
+          details: margin + 505,
+        };
+        const drawMachineHeader = (continued = false) => {
+          pdf.setFillColor(255, 247, 237);
+          pdf.setDrawColor(255, 138, 31);
+          pdf.setLineWidth(0.8);
+          pdf.roundedRect(margin, cursorY, headerWidth, 27, 5, 5, 'FD');
           pdf.setFont('helvetica', 'bold');
-          pdf.setTextColor(item.category === 'scrap' ? 185 : item.category === 'quality' ? 37 : 4, item.category === 'scrap' ? 28 : item.category === 'quality' ? 99 : 120, item.category === 'scrap' ? 28 : item.category === 'quality' ? 235 : 87);
-          pdf.text(getDailyProductionEventLabel(item), margin + 72, cursorY + 9);
+          pdf.setFontSize(12);
+          pdf.setTextColor(194, 65, 12);
+          pdf.text(`${machine.stationName}${continued ? ' · continued' : ''}`, margin + 12, cursorY + 17);
+          pdf.setFontSize(8.5);
+          pdf.text(
+            `${machine.goodQuantity} good · ${machine.scrapQuantity} scrap · ${machine.inspectionCount} inspections · ${machine.orderCount} orders`,
+            margin + headerWidth - 12,
+            cursorY + 17,
+            { align: 'right' },
+          );
+          cursorY += 31;
+          pdf.setFillColor(243, 247, 250);
+          pdf.setDrawColor(216, 224, 232);
+          pdf.rect(margin, cursorY, headerWidth, 21, 'FD');
+          pdf.setFont('helvetica', 'bold');
+          pdf.setFontSize(8);
+          pdf.setTextColor(83, 100, 118);
+          pdf.text('TIME', columns.time, cursorY + 14);
+          pdf.text('ACTIVITY', columns.activity, cursorY + 14);
+          pdf.text('ORDER', columns.order, cursorY + 14);
+          pdf.text('CLIENT', columns.client, cursorY + 14);
+          pdf.text('PART / SERIAL', columns.part, cursorY + 14);
+          pdf.text('RESULT / INSPECTION DETAILS', columns.details, cursorY + 14);
+          cursorY += 21;
+        };
+        drawMachineHeader();
+
+        machine.items.forEach((item, itemIndex) => {
+          const activityLabel = getDailyProductionEventLabel(item);
+          const activityLines = pdf.splitTextToSize(activityLabel, 94) as string[];
+          const badgeHeight = Math.max(18, 5 + (activityLines.length * 8));
+          const inspectionHeight = item.inspections.length ? (item.inspections.length * 11) + 9 : 0;
+          const rowHeight = Math.max(30, badgeHeight + 10, inspectionHeight);
+          if (cursorY + rowHeight > pageHeight - margin) {
+            pdf.addPage();
+            cursorY = margin;
+            drawMachineHeader(true);
+          }
+
+          if (itemIndex % 2 === 1) {
+            pdf.setFillColor(250, 252, 253);
+            pdf.rect(margin, cursorY, headerWidth, rowHeight, 'F');
+          }
+          pdf.setDrawColor(226, 232, 240);
+          pdf.line(margin, cursorY + rowHeight, pageWidth - margin, cursorY + rowHeight);
+
           pdf.setFont('helvetica', 'normal');
-          pdf.setTextColor(51, 65, 85);
-          pdf.text(`${item.orderNumber} · ${item.clientName}`, margin + 178, cursorY + 9);
-          pdf.text(`${item.partName} · ${item.serialNumber}`, margin + 320, cursorY + 9);
-          pdf.text(detailLines, margin + 500, cursorY + 9);
+          pdf.setFontSize(8.5);
+          pdf.setTextColor(71, 85, 105);
+          pdf.text(formatTimestamp(item.timestamp), columns.time, cursorY + 18);
+
+          const badgePalette = item.category === 'scrap'
+            ? { fill: [255, 241, 242] as [number, number, number], border: [239, 68, 68] as [number, number, number], text: [185, 28, 28] as [number, number, number] }
+            : item.category === 'quality'
+              ? { fill: [239, 246, 255] as [number, number, number], border: [96, 165, 250] as [number, number, number], text: [29, 78, 216] as [number, number, number] }
+              : item.category === 'completion' || item.category === 'correction'
+                ? { fill: [245, 243, 255] as [number, number, number], border: [196, 181, 253] as [number, number, number], text: [109, 40, 217] as [number, number, number] }
+                : { fill: [236, 253, 245] as [number, number, number], border: [110, 231, 183] as [number, number, number], text: [4, 120, 87] as [number, number, number] };
+          pdf.setFillColor(...badgePalette.fill);
+          pdf.setDrawColor(...badgePalette.border);
+          pdf.roundedRect(columns.activity, cursorY + 5, 102, badgeHeight, 4, 4, 'FD');
+          pdf.setFont('helvetica', 'bold');
+          pdf.setFontSize(8);
+          pdf.setTextColor(...badgePalette.text);
+          pdf.text(activityLines, columns.activity + 8, cursorY + 16);
+
+          pdf.setTextColor(38, 56, 74);
+          pdf.setFontSize(9);
+          pdf.text(item.orderNumber, columns.order, cursorY + 18);
+          pdf.setFont('helvetica', 'normal');
+          pdf.text(item.clientName, columns.client, cursorY + 18);
+          pdf.setFont('helvetica', 'bold');
+          pdf.text(item.partName, columns.part, cursorY + 12);
+          pdf.setFont('helvetica', 'normal');
+          pdf.setFontSize(8.5);
+          pdf.setTextColor(100, 116, 139);
+          pdf.text(item.serialNumber, columns.part, cursorY + 24);
+
+          if (item.inspections.length) {
+            item.inspections.forEach((inspection, inspectionIndex) => {
+              const inspectionY = cursorY + 12 + (inspectionIndex * 11);
+              pdf.setFont('helvetica', 'bold');
+              pdf.setFontSize(8);
+              pdf.setTextColor(71, 85, 105);
+              pdf.text(inspection.inspection, columns.details, inspectionY);
+              pdf.setFont('helvetica', 'normal');
+              pdf.text(formatTitleLabel(inspection.status), pageWidth - margin - 8, inspectionY, { align: 'right' });
+              if (inspectionIndex < item.inspections.length - 1) {
+                pdf.setDrawColor(216, 224, 232);
+                pdf.setLineDashPattern([1, 1], 0);
+                pdf.line(columns.details, inspectionY + 5, pageWidth - margin - 8, inspectionY + 5);
+                pdf.setLineDashPattern([], 0);
+              }
+            });
+          } else {
+            pdf.setFont('helvetica', 'bold');
+            pdf.setFontSize(9);
+            pdf.setTextColor(38, 56, 74);
+            pdf.text(item.result || `Qty ${item.quantity}`, columns.details, cursorY + 18);
+          }
           cursorY += rowHeight;
         });
       });
