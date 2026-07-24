@@ -8787,34 +8787,38 @@ body.work-center-map-expanded .logged-workspace {
   background: var(--order-detail-soft);
 }
 
-.production-order-details-summary article:nth-child(1) {
+.production-order-details-summary article.status {
   --order-detail-accent: #0f766e;
   --order-detail-soft: #ecfdf5;
 }
 
-.production-order-details-summary article:nth-child(2) {
+.production-order-details-summary article.priority {
   --order-detail-accent: #2563eb;
   --order-detail-soft: #eff6ff;
 }
 
-.production-order-details-summary article:nth-child(3),
-.production-order-details-summary article:nth-child(4) {
+.production-order-details-summary article.quantity {
   --order-detail-accent: #0284c7;
   --order-detail-soft: #f0f9ff;
 }
 
-.production-order-details-summary article:nth-child(5) {
+.production-order-details-summary article.time-spent {
+  --order-detail-accent: #b45309;
+  --order-detail-soft: #fffbeb;
+}
+
+.production-order-details-summary article.scrap {
   --order-detail-accent: #dc2626;
   --order-detail-soft: #fff1f2;
 }
 
-.production-order-details-summary article:nth-child(6),
-.production-order-details-summary article:nth-child(7) {
+.production-order-details-summary article.work-center,
+.production-order-details-summary article.station {
   --order-detail-accent: #7c3aed;
   --order-detail-soft: #f5f3ff;
 }
 
-.production-order-details-summary article:nth-child(8) {
+.production-order-details-summary article.due {
   --order-detail-accent: #c2410c;
   --order-detail-soft: #fff7ed;
 }
@@ -8834,6 +8838,40 @@ body.work-center-map-expanded .logged-workspace {
   font-weight: 950;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.production-order-details-summary article.quantity > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.production-order-details-summary article.quantity > div > span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  border: 1px solid color-mix(in srgb, var(--order-detail-accent) 18%, transparent);
+  border-radius: 6px;
+  padding: 5px 7px;
+  background: rgba(255, 255, 255, 0.72);
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.production-order-details-summary article.quantity small {
+  color: var(--order-detail-accent);
+  font-size: 0.58rem;
+  font-weight: 950;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.production-order-details-summary article.quantity strong {
+  font-size: 0.9rem;
+}
+
+.production-order-details-summary article.time-spent strong {
+  font-variant-numeric: tabular-nums;
 }
 
 .production-order-details-table-wrap {
@@ -8986,6 +9024,13 @@ body.work-center-map-expanded .logged-workspace {
 .production-order-details-empty {
   color: #64748b;
   font-weight: 850;
+}
+
+.production-order-details-piece-time {
+  color: #111827;
+  font-variant-numeric: tabular-nums;
+  font-weight: 900;
+  white-space: nowrap;
 }
 
 .production-order-details-empty {

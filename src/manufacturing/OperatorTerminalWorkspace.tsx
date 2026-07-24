@@ -880,6 +880,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
     loading: false,
     error: '',
     pieces: [],
+    timeSpentMs: 0,
   });
   const [snapshot, setSnapshot] = React.useState<OperatorTerminalSnapshot | null>(null);
   const [terminalMessage, setTerminalMessage] = React.useState('');
@@ -1162,7 +1163,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
   const openOrderDetails = async () => {
     if (!currentOrder) return;
     setOrderDetailsOpen(true);
-    setOrderDetails({ loading: true, error: '', pieces: [] });
+    setOrderDetails({ loading: true, error: '', pieces: [], timeSpentMs: 0 });
     try {
       const [
         { data: serialData, error: serialError },
@@ -1170,6 +1171,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
         { data: qualityInspectionData, error: qualityInspectionError },
         { data: qualityMeasurementData, error: qualityMeasurementError },
         { data: qualityDocumentData, error: qualityDocumentError },
+        { data: statusCycleData, error: statusCycleError },
       ] = await Promise.all([
         supabase
           .from('mes_production_serials')
@@ -1201,6 +1203,11 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
           .eq('organization_id', organizationId)
           .eq('production_order_id', currentOrder.id)
           .order('uploaded_at', { ascending: false }),
+        supabase
+          .from('mes_station_status_cycles')
+          .select('serial_number, started_at, ended_at')
+          .eq('organization_id', organizationId)
+          .eq('production_order_id', currentOrder.id),
       ]);
 
       if (serialError) throw serialError;
@@ -1208,6 +1215,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
       if (qualityInspectionError) throw qualityInspectionError;
       if (qualityMeasurementError) throw qualityMeasurementError;
       if (qualityDocumentError) throw qualityDocumentError;
+      if (statusCycleError) throw statusCycleError;
 
       const serialRows = (serialData ?? []) as ProductionOrderDetailSerialRow[];
       const traceabilityRows = (traceabilityData ?? []) as ProductionOrderDetailTraceabilityRow[];
@@ -1221,6 +1229,15 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
       const qualityInspectionBySerial = new Map<string, ProductionOrderDetailQualityInspectionRow>();
       const qualityMeasurementsBySerial = new Map<string, ProductionOrderDetailQualityMeasurementRow[]>();
       const qualityDocumentsBySerial = new Map<string, ProductionOrderDetailQualityDocumentRow[]>();
+      const timeSpentBySerial = new Map<string, number>();
+
+      (statusCycleData ?? []).forEach((cycle) => {
+        const serialNumber = cycle.serial_number?.trim().toLowerCase() ?? '';
+        if (!serialNumber) return;
+        const startedAt = new Date(cycle.started_at).getTime();
+        const endedAt = cycle.ended_at ? new Date(cycle.ended_at).getTime() : Date.now();
+        timeSpentBySerial.set(serialNumber, (timeSpentBySerial.get(serialNumber) ?? 0) + Math.max(0, endedAt - startedAt));
+      });
 
       traceabilityRows.forEach((traceability) => {
         const serialNumber = traceability.serial_number?.trim().toLowerCase();
@@ -1263,6 +1280,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
           serialNumber: serial?.serial_number || traceability?.serial_number || '',
           status: serial?.result ?? (traceability ? 'good' : 'not-started'),
           reportedAt: serial?.reported_at ?? traceability?.created_at ?? '',
+          timeSpentMs: resolvedSerialKey ? timeSpentBySerial.get(resolvedSerialKey) ?? 0 : 0,
           traceability,
           qualityInspection: resolvedSerialKey ? qualityInspectionBySerial.get(resolvedSerialKey) ?? null : null,
           qualityMeasurements: resolvedSerialKey ? qualityMeasurementsBySerial.get(resolvedSerialKey) ?? [] : [],
@@ -1270,10 +1288,15 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
         };
       });
 
-      setOrderDetails({ loading: false, error: '', pieces });
+      const timeSpentMs = (statusCycleData ?? []).reduce((total, cycle) => {
+        const startedAt = new Date(cycle.started_at).getTime();
+        const endedAt = cycle.ended_at ? new Date(cycle.ended_at).getTime() : Date.now();
+        return total + Math.max(0, endedAt - startedAt);
+      }, 0);
+      setOrderDetails({ loading: false, error: '', pieces, timeSpentMs });
     } catch (error) {
       console.error('Unable to load operator order details', error);
-      setOrderDetails({ loading: false, error: 'Unable to load order details.', pieces: [] });
+      setOrderDetails({ loading: false, error: 'Unable to load order details.', pieces: [], timeSpentMs: 0 });
     }
   };
 

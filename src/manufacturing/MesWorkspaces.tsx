@@ -434,6 +434,7 @@ export type ProductionOrderDetailPiece = {
   serialNumber: string;
   status: 'not-started' | 'good' | 'scrap';
   reportedAt: string;
+  timeSpentMs: number;
   traceability: ProductionOrderDetailTraceabilityRow | null;
   qualityInspection: ProductionOrderDetailQualityInspectionRow | null;
   qualityMeasurements: ProductionOrderDetailQualityMeasurementRow[];
@@ -444,6 +445,7 @@ export type ProductionOrderDetailsState = {
   loading: boolean;
   error: string;
   pieces: ProductionOrderDetailPiece[];
+  timeSpentMs: number;
 };
 
 type ConfirmationState = {
@@ -1530,14 +1532,20 @@ export function ProductionOrderDetailsModal({
           </button>
         </div>
         <div className="production-order-details-summary">
-          <article><span>Status</span><strong>{formatTitleLabel(order.status)}</strong></article>
-          <article><span>Priority</span><strong>{formatTitleLabel(order.priority)}</strong></article>
-          <article><span>Planned</span><strong>{order.plannedQuantity.toLocaleString()}</strong></article>
-          <article><span>Completed</span><strong>{order.completedQuantity.toLocaleString()}</strong></article>
-          <article><span>Scrap</span><strong>{order.scrapQuantity.toLocaleString()}</strong></article>
-          <article><span>Work Center</span><strong>{order.assignedWorkCenter || 'Not assigned'}</strong></article>
-          <article><span>Station</span><strong>{order.assignedStation || 'Not assigned'}</strong></article>
-          <article><span>Due</span><strong>{formatDate(order.dueDate)}</strong></article>
+          <article className="status"><span>Status</span><strong>{formatTitleLabel(order.status)}</strong></article>
+          <article className="priority"><span>Priority</span><strong>{formatTitleLabel(order.priority)}</strong></article>
+          <article className="quantity">
+            <span>Production Quantity</span>
+            <div>
+              <span><small>Planned</small><strong>{order.plannedQuantity.toLocaleString()}</strong></span>
+              <span><small>Completed</small><strong>{order.completedQuantity.toLocaleString()}</strong></span>
+            </div>
+          </article>
+          <article className="time-spent"><span>Time Spent</span><strong>{details.loading ? 'Calculating...' : formatCycleDuration(details.timeSpentMs)}</strong></article>
+          <article className="scrap"><span>Scrap</span><strong>{order.scrapQuantity.toLocaleString()}</strong></article>
+          <article className="work-center"><span>Work Center</span><strong>{order.assignedWorkCenter || 'Not assigned'}</strong></article>
+          <article className="station"><span>Station</span><strong>{order.assignedStation || 'Not assigned'}</strong></article>
+          <article className="due"><span>Due</span><strong>{formatDate(order.dueDate)}</strong></article>
         </div>
         <div className="production-order-details-view-switch" role="tablist" aria-label="Production order detail views">
           <button type="button" className={activeView === 'production' ? 'active' : ''} onClick={() => setActiveView('production')} role="tab" aria-selected={activeView === 'production'}>
@@ -1566,6 +1574,7 @@ export function ProductionOrderDetailsModal({
                   <th>Serial</th>
                   <th>Tool ID</th>
                   <th>Measurements</th>
+                  <th>Time Spent</th>
                   <th>Reported</th>
                 </tr>
               </thead>
@@ -1589,13 +1598,14 @@ export function ProductionOrderDetailsModal({
                           <span className="production-order-details-no-measurement">Not captured</span>
                         )}
                       </td>
+                      <td><strong className="production-order-details-piece-time">{formatCycleDuration(piece.timeSpentMs)}</strong></td>
                       <td>{piece.reportedAt ? formatDate(toLocalIsoDate(piece.reportedAt)) : '-'}</td>
                     </tr>
                   );
                 })}
                 {!details.pieces.length ? (
                   <tr>
-                    <td colSpan={6}>
+                    <td colSpan={7}>
                       <div className="production-order-details-empty">No pieces found for this order.</div>
                     </td>
                   </tr>
@@ -2603,6 +2613,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
     loading: false,
     error: '',
     pieces: [],
+    timeSpentMs: 0,
   });
   const orderRowRefs = React.useRef<Record<string, HTMLTableRowElement | null>>({});
   const pendingScrollOrderNumberRef = React.useRef('');
@@ -3309,7 +3320,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
   const openOrderDetails = async () => {
     if (!selectedOrder) return;
     setOrderDetailsOpen(true);
-    setOrderDetails({ loading: true, error: '', pieces: [] });
+    setOrderDetails({ loading: true, error: '', pieces: [], timeSpentMs: 0 });
     try {
       const [
         { data: serialData, error: serialError },
@@ -3317,6 +3328,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
         { data: qualityInspectionData, error: qualityInspectionError },
         { data: qualityMeasurementData, error: qualityMeasurementError },
         { data: qualityDocumentData, error: qualityDocumentError },
+        { data: statusCycleData, error: statusCycleError },
       ] = await Promise.all([
         supabase
           .from('mes_production_serials')
@@ -3348,6 +3360,11 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
           .eq('organization_id', organizationId)
           .eq('production_order_id', selectedOrder.id)
           .order('uploaded_at', { ascending: false }),
+        supabase
+          .from('mes_station_status_cycles')
+          .select('serial_number, started_at, ended_at')
+          .eq('organization_id', organizationId)
+          .eq('production_order_id', selectedOrder.id),
       ]);
 
       if (serialError) throw serialError;
@@ -3355,6 +3372,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
       if (qualityInspectionError) throw qualityInspectionError;
       if (qualityMeasurementError) throw qualityMeasurementError;
       if (qualityDocumentError) throw qualityDocumentError;
+      if (statusCycleError) throw statusCycleError;
 
       const serialRows = (serialData ?? []) as ProductionOrderDetailSerialRow[];
       const traceabilityRows = (traceabilityData ?? []) as ProductionOrderDetailTraceabilityRow[];
@@ -3368,6 +3386,15 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
       const qualityInspectionBySerial = new Map<string, ProductionOrderDetailQualityInspectionRow>();
       const qualityMeasurementsBySerial = new Map<string, ProductionOrderDetailQualityMeasurementRow[]>();
       const qualityDocumentsBySerial = new Map<string, ProductionOrderDetailQualityDocumentRow[]>();
+      const timeSpentBySerial = new Map<string, number>();
+
+      (statusCycleData ?? []).forEach((cycle) => {
+        const serialNumber = normalizeProductionOrderDetailSerial(cycle.serial_number ?? '');
+        if (!serialNumber) return;
+        const startedAt = new Date(cycle.started_at).getTime();
+        const endedAt = cycle.ended_at ? new Date(cycle.ended_at).getTime() : Date.now();
+        timeSpentBySerial.set(serialNumber, (timeSpentBySerial.get(serialNumber) ?? 0) + Math.max(0, endedAt - startedAt));
+      });
 
       traceabilityRows.forEach((traceability) => {
         const serialNumber = traceability.serial_number?.trim().toLowerCase();
@@ -3410,6 +3437,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
           serialNumber: serial?.serial_number || traceability?.serial_number || '',
           status: serial?.result ?? (traceability ? 'good' : 'not-started'),
           reportedAt: serial?.reported_at ?? traceability?.created_at ?? '',
+          timeSpentMs: resolvedSerialKey ? timeSpentBySerial.get(resolvedSerialKey) ?? 0 : 0,
           traceability,
           qualityInspection: resolvedSerialKey ? qualityInspectionBySerial.get(resolvedSerialKey) ?? null : null,
           qualityMeasurements: resolvedSerialKey ? qualityMeasurementsBySerial.get(resolvedSerialKey) ?? [] : [],
@@ -3417,10 +3445,15 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
         };
       });
 
-      setOrderDetails({ loading: false, error: '', pieces });
+      const timeSpentMs = (statusCycleData ?? []).reduce((total, cycle) => {
+        const startedAt = new Date(cycle.started_at).getTime();
+        const endedAt = cycle.ended_at ? new Date(cycle.ended_at).getTime() : Date.now();
+        return total + Math.max(0, endedAt - startedAt);
+      }, 0);
+      setOrderDetails({ loading: false, error: '', pieces, timeSpentMs });
     } catch (error) {
       console.error('Unable to load production order details', error);
-      setOrderDetails({ loading: false, error: 'Unable to load order details.', pieces: [] });
+      setOrderDetails({ loading: false, error: 'Unable to load order details.', pieces: [], timeSpentMs: 0 });
     }
   };
 
