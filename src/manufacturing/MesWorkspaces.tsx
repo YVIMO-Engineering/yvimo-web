@@ -1975,6 +1975,341 @@ function getPendingWorkReport(
   };
 }
 
+type DailyProductionReportEventRow = {
+  id: string;
+  production_order_id: string | null;
+  work_center_code: string;
+  station_code: string;
+  event_type: string;
+  quantity: number | null;
+  reason: string | null;
+  comment: string | null;
+  payload: Record<string, unknown> | null;
+  created_at: string;
+};
+
+type DailyProductionReportItem = {
+  id: string;
+  timestamp: string;
+  eventType: string;
+  category: 'production' | 'scrap' | 'quality' | 'completion' | 'correction';
+  orderNumber: string;
+  clientName: string;
+  partName: string;
+  partNumber: string;
+  serialNumber: string;
+  quantity: number;
+  result: string;
+  shift: string;
+  inspections: Array<{ inspection: string; status: string }>;
+};
+
+type DailyProductionReportMachine = {
+  key: string;
+  stationCode: string;
+  stationName: string;
+  workCenterCode: string;
+  goodQuantity: number;
+  scrapQuantity: number;
+  inspectionCount: number;
+  orderCount: number;
+  items: DailyProductionReportItem[];
+};
+
+type DailyProductionReport = {
+  dateRange: MesOrderDateRange;
+  generatedAt: string;
+  goodQuantity: number;
+  scrapQuantity: number;
+  inspectionCount: number;
+  orderCount: number;
+  machineCount: number;
+  machines: DailyProductionReportMachine[];
+};
+
+function getDailyProductionEventCategory(eventType: string): DailyProductionReportItem['category'] {
+  if (eventType === 'production-scrap') return 'scrap';
+  if (eventType === 'quality-inspection-saved' || eventType === 'quality-inspection-skipped') return 'quality';
+  if (eventType === 'measurement-corrected') return 'correction';
+  if (eventType === 'manufacturing-completed' || eventType === 'operation-completed') return 'completion';
+  return 'production';
+}
+
+function getDailyProductionEventLabel(item: DailyProductionReportItem) {
+  if (item.category === 'production') return 'Good produced';
+  if (item.category === 'scrap') return 'Scrap reported';
+  if (item.eventType === 'quality-inspection-skipped') return 'Inspection skipped';
+  if (item.category === 'quality') return 'Quality inspection';
+  if (item.category === 'correction') return 'Measurement corrected';
+  return item.eventType === 'manufacturing-completed' ? 'Manufacturing completed' : 'Order completed';
+}
+
+function buildDailyProductionReport(
+  dateRange: MesOrderDateRange,
+  rows: DailyProductionReportEventRow[],
+  orders: ProductionOrder[],
+  stationOptionsByWorkCenter: Record<string, MesOrderDropdownOption[]>,
+): DailyProductionReport {
+  const orderById = new Map(orders.map((order) => [order.id, order]));
+  const machineMap = new Map<string, DailyProductionReportMachine>();
+
+  rows.forEach((row) => {
+    const order = row.production_order_id ? orderById.get(row.production_order_id) ?? null : null;
+    const payload = row.payload ?? {};
+    const payloadText = (key: string) => typeof payload[key] === 'string' ? String(payload[key]) : '';
+    const category = getDailyProductionEventCategory(row.event_type);
+    const rawInspections = Array.isArray(payload.inspections) ? payload.inspections : [];
+    const inspections = rawInspections.flatMap((inspection) => {
+      if (!inspection || typeof inspection !== 'object') return [];
+      const entry = inspection as Record<string, unknown>;
+      if (typeof entry.inspection !== 'string') return [];
+      return [{ inspection: entry.inspection, status: typeof entry.status === 'string' ? entry.status : 'pending' }];
+    });
+    const stationCode = row.station_code || order?.assignedStation || 'UNASSIGNED';
+    const workCenterCode = row.work_center_code || order?.assignedWorkCenter || 'UNASSIGNED';
+    const stationOption = stationOptionsByWorkCenter[workCenterCode]?.find((station) => station.value === stationCode);
+    const machineKey = `${workCenterCode}::${stationCode}`;
+    const machine = machineMap.get(machineKey) ?? {
+      key: machineKey,
+      stationCode,
+      stationName: stationOption?.label ?? stationCode,
+      workCenterCode,
+      goodQuantity: 0,
+      scrapQuantity: 0,
+      inspectionCount: 0,
+      orderCount: 0,
+      items: [],
+    };
+    const quantity = Math.max(1, row.quantity ?? 1);
+    const item: DailyProductionReportItem = {
+      id: row.id,
+      timestamp: row.created_at,
+      eventType: row.event_type,
+      category,
+      orderNumber: order?.orderNumber || payloadText('order_number') || 'Unassigned',
+      clientName: order?.clientName || payloadText('client_name') || 'Unassigned',
+      partName: order?.partName || payloadText('part_name') || 'N/A',
+      partNumber: order?.partNumber || payloadText('part_number') || 'N/A',
+      serialNumber: payloadText('serial_number') || 'N/A',
+      quantity,
+      result: payloadText('result') || row.reason || (category === 'production' ? 'GOOD' : category === 'scrap' ? 'SCRAP' : ''),
+      shift: payloadText('shift') || 'N/A',
+      inspections,
+    };
+    machine.items.push(item);
+    if (category === 'production') machine.goodQuantity += quantity;
+    if (category === 'scrap') machine.scrapQuantity += quantity;
+    if (category === 'quality') machine.inspectionCount += quantity;
+    machineMap.set(machineKey, machine);
+  });
+
+  const machines = Array.from(machineMap.values())
+    .map((machine) => ({
+      ...machine,
+      orderCount: new Set(machine.items.map((item) => item.orderNumber).filter((orderNumber) => orderNumber !== 'Unassigned')).size,
+      items: [...machine.items].sort((left, right) => new Date(left.timestamp).getTime() - new Date(right.timestamp).getTime()),
+    }))
+    .sort((left, right) => left.stationName.localeCompare(right.stationName));
+
+  return {
+    dateRange,
+    generatedAt: new Date().toISOString(),
+    goodQuantity: machines.reduce((total, machine) => total + machine.goodQuantity, 0),
+    scrapQuantity: machines.reduce((total, machine) => total + machine.scrapQuantity, 0),
+    inspectionCount: machines.reduce((total, machine) => total + machine.inspectionCount, 0),
+    orderCount: new Set(machines.flatMap((machine) => machine.items.map((item) => item.orderNumber)).filter((orderNumber) => orderNumber !== 'Unassigned')).size,
+    machineCount: machines.length,
+    machines,
+  };
+}
+
+function getDailyProductionPeriodLabel(dateRange: MesOrderDateRange) {
+  return dateRange.from === dateRange.to
+    ? formatDate(dateRange.from)
+    : `${formatDate(dateRange.from)} – ${formatDate(dateRange.to)}`;
+}
+
+function DailyProductionReportModal({ report, onClose }: { report: DailyProductionReport; onClose: () => void }) {
+  const [downloadingPdf, setDownloadingPdf] = React.useState(false);
+  const downloadPdf = async () => {
+    if (downloadingPdf) return;
+    setDownloadingPdf(true);
+    try {
+      const { default: jsPDF } = await import('jspdf');
+      const pdf = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'letter' });
+      const margin = 38;
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      let cursorY = margin;
+      const ensureSpace = (height: number) => {
+        if (cursorY + height <= pageHeight - margin) return;
+        pdf.addPage();
+        cursorY = margin;
+      };
+
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(20);
+      pdf.setTextColor(15, 23, 42);
+      pdf.text('Daily Production Report', margin, cursorY);
+      cursorY += 19;
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(10);
+      pdf.setTextColor(71, 85, 105);
+      pdf.text(`${getDailyProductionPeriodLabel(report.dateRange)} · Generated ${formatTimestamp(report.generatedAt)}`, margin, cursorY);
+      cursorY += 24;
+      const summaryCards: Array<{
+        label: string;
+        value: number;
+        unit: string;
+        fill: [number, number, number];
+        border: [number, number, number];
+        text: [number, number, number];
+      }> = [
+        { label: 'GOOD PRODUCED', value: report.goodQuantity, unit: 'pieces', fill: [236, 253, 245], border: [16, 185, 129], text: [4, 120, 87] },
+        { label: 'SCRAP', value: report.scrapQuantity, unit: 'pieces', fill: [255, 241, 242], border: [239, 68, 68], text: [185, 28, 28] },
+        { label: 'INSPECTIONS', value: report.inspectionCount, unit: 'records', fill: [239, 246, 255], border: [59, 130, 246], text: [29, 78, 216] },
+        { label: 'ORDERS WORKED', value: report.orderCount, unit: 'production orders', fill: [245, 243, 255], border: [139, 92, 246], text: [109, 40, 217] },
+        { label: 'MACHINES ACTIVE', value: report.machineCount, unit: 'stations', fill: [255, 247, 237], border: [255, 138, 31], text: [194, 65, 12] },
+      ];
+      const summaryGap = 8;
+      const summaryWidth = (pageWidth - (margin * 2) - (summaryGap * (summaryCards.length - 1))) / summaryCards.length;
+      const summaryHeight = 58;
+      summaryCards.forEach((card, index) => {
+        const cardX = margin + (index * (summaryWidth + summaryGap));
+        pdf.setFillColor(...card.fill);
+        pdf.setDrawColor(...card.border);
+        pdf.setLineWidth(0.8);
+        pdf.roundedRect(cardX, cursorY, summaryWidth, summaryHeight, 5, 5, 'FD');
+        pdf.setTextColor(...card.text);
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(7.5);
+        pdf.text(card.label, cardX + 10, cursorY + 15);
+        pdf.setFontSize(16);
+        pdf.text(String(card.value), cardX + 10, cursorY + 36);
+        pdf.setFontSize(7);
+        pdf.text(card.unit.toUpperCase(), cardX + 10, cursorY + 50);
+      });
+      cursorY += summaryHeight + 26;
+
+      report.machines.forEach((machine, machineIndex) => {
+        if (machineIndex > 0) {
+          pdf.addPage();
+          cursorY = margin;
+        }
+        const headerWidth = pageWidth - (margin * 2);
+        pdf.setFillColor(255, 247, 237);
+        pdf.setDrawColor(255, 138, 31);
+        pdf.roundedRect(margin, cursorY - 12, headerWidth, 31, 5, 5, 'FD');
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(12);
+        pdf.setTextColor(194, 65, 12);
+        pdf.text(machine.stationName, margin + 12, cursorY + 7);
+        pdf.setFontSize(9);
+        pdf.text(
+          `${machine.goodQuantity} good · ${machine.scrapQuantity} scrap · ${machine.inspectionCount} inspections · ${machine.orderCount} orders`,
+          margin + headerWidth - 12,
+          cursorY + 7,
+          { align: 'right' },
+        );
+        cursorY += 34;
+        pdf.setFontSize(9);
+        pdf.setTextColor(83, 100, 118);
+        pdf.text('TIME', margin, cursorY);
+        pdf.text('ACTIVITY', margin + 72, cursorY);
+        pdf.text('ORDER / CLIENT', margin + 178, cursorY);
+        pdf.text('PART / SERIAL', margin + 320, cursorY);
+        pdf.text('RESULT / DETAILS', margin + 500, cursorY);
+        cursorY += 12;
+
+        machine.items.forEach((item) => {
+          const inspectionDetail = item.inspections.map((inspection) => `${inspection.inspection}: ${inspection.status}`).join(', ');
+          const detail = inspectionDetail || item.result || `Qty ${item.quantity}`;
+          const detailLines = pdf.splitTextToSize(detail, 205) as string[];
+          const rowHeight = Math.max(28, (detailLines.length * 9) + 9);
+          ensureSpace(rowHeight);
+          pdf.setDrawColor(226, 232, 240);
+          pdf.line(margin, cursorY + rowHeight - 5, pageWidth - margin, cursorY + rowHeight - 5);
+          pdf.setFont('helvetica', 'normal');
+          pdf.setFontSize(9);
+          pdf.setTextColor(51, 65, 85);
+          pdf.text(formatTimestamp(item.timestamp), margin, cursorY + 9);
+          pdf.setFont('helvetica', 'bold');
+          pdf.setTextColor(item.category === 'scrap' ? 185 : item.category === 'quality' ? 37 : 4, item.category === 'scrap' ? 28 : item.category === 'quality' ? 99 : 120, item.category === 'scrap' ? 28 : item.category === 'quality' ? 235 : 87);
+          pdf.text(getDailyProductionEventLabel(item), margin + 72, cursorY + 9);
+          pdf.setFont('helvetica', 'normal');
+          pdf.setTextColor(51, 65, 85);
+          pdf.text(`${item.orderNumber} · ${item.clientName}`, margin + 178, cursorY + 9);
+          pdf.text(`${item.partName} · ${item.serialNumber}`, margin + 320, cursorY + 9);
+          pdf.text(detailLines, margin + 500, cursorY + 9);
+          cursorY += rowHeight;
+        });
+      });
+
+      pdf.save(`daily-production-report-${report.dateRange.from}-to-${report.dateRange.to}.pdf`);
+    } catch (error) {
+      console.error('Unable to download daily production report PDF', error);
+    } finally {
+      setDownloadingPdf(false);
+    }
+  };
+
+  const modalContent = (
+    <div className="mes-modal-backdrop daily-production-report-backdrop" role="presentation">
+      <section className="daily-production-report-modal" role="dialog" aria-modal="true" aria-labelledby="daily-production-report-title">
+        <header className="daily-production-report-header">
+          <span><Factory size={23} /></span>
+          <div>
+            <p className="eyebrow">Production Orders</p>
+            <h3 id="daily-production-report-title">Daily Production Report</h3>
+            <small>{getDailyProductionPeriodLabel(report.dateRange)} · Generated {formatTimestamp(report.generatedAt)}</small>
+          </div>
+          <div className="daily-production-report-actions">
+            <button type="button" disabled={downloadingPdf} onClick={() => void downloadPdf()}><Download size={17} />{downloadingPdf ? 'Generating PDF' : 'Download PDF'}</button>
+            <button type="button" aria-label="Close daily production report" onClick={onClose}><X size={18} /></button>
+          </div>
+        </header>
+        <div className="daily-production-report-kpis">
+          <article className="good"><span>Good produced</span><strong>{report.goodQuantity.toLocaleString()}</strong><em>pieces</em></article>
+          <article className="scrap"><span>Scrap</span><strong>{report.scrapQuantity.toLocaleString()}</strong><em>pieces</em></article>
+          <article className="quality"><span>Inspections</span><strong>{report.inspectionCount.toLocaleString()}</strong><em>records</em></article>
+          <article className="orders"><span>Orders worked</span><strong>{report.orderCount.toLocaleString()}</strong><em>production orders</em></article>
+          <article className="machines"><span>Machines active</span><strong>{report.machineCount.toLocaleString()}</strong><em>stations</em></article>
+        </div>
+        <div className="daily-production-report-machines">
+          {report.machines.length ? report.machines.map((machine) => (
+            <article className="daily-production-machine" key={machine.key}>
+              <header>
+                <div><strong>{machine.stationName}</strong><span>{machine.workCenterCode}</span></div>
+                <p><b>{machine.goodQuantity}</b> good <b>{machine.scrapQuantity}</b> scrap <b>{machine.inspectionCount}</b> inspections <b>{machine.orderCount}</b> orders</p>
+              </header>
+              <div className="daily-production-table">
+                <div className="daily-production-table-head"><span>Time</span><span>Activity</span><span>Order</span><span>Client</span><span>Part / Serial</span><span>Result / Inspection details</span></div>
+                {machine.items.map((item) => (
+                  <div className="daily-production-table-row" key={item.id}>
+                    <time>{formatTimestamp(item.timestamp)}</time>
+                    <span><i className={item.category}>{getDailyProductionEventLabel(item)}</i></span>
+                    <strong>{item.orderNumber}</strong>
+                    <span>{item.clientName}</span>
+                    <span><b>{item.partName}</b><small>{item.serialNumber}</small></span>
+                    <span>
+                      {item.inspections.length
+                        ? item.inspections.map((inspection) => <small key={`${item.id}-${inspection.inspection}`}><b>{inspection.inspection}</b>{formatTitleLabel(inspection.status)}</small>)
+                        : <b>{item.result || `Qty ${item.quantity}`}</b>}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </article>
+          )) : (
+            <div className="daily-production-report-empty"><CheckCircle2 size={30} /><strong>No activity recorded</strong><span>No production or inspection events were found for the selected period.</span></div>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+  return typeof document === 'undefined' ? modalContent : createPortal(modalContent, document.body);
+}
+
 function PendingWorkReportModal({ report, onClose }: { report: PendingWorkReport; onClose: () => void }) {
   const [copied, setCopied] = React.useState(false);
   const [downloadingPdf, setDownloadingPdf] = React.useState(false);
@@ -2170,6 +2505,8 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
   const [confirmation, setConfirmation] = React.useState<ConfirmationState | null>(null);
   const [jobQueueSummary, setJobQueueSummary] = React.useState<JobQueueSummary | null>(null);
   const [pendingWorkReport, setPendingWorkReport] = React.useState<PendingWorkReport | null>(null);
+  const [dailyProductionReport, setDailyProductionReport] = React.useState<DailyProductionReport | null>(null);
+  const [dailyProductionReportLoading, setDailyProductionReportLoading] = React.useState(false);
   const [orderDetailsOpen, setOrderDetailsOpen] = React.useState(false);
   const [orderDetails, setOrderDetails] = React.useState<ProductionOrderDetailsState>({
     loading: false,
@@ -2473,6 +2810,47 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
 
   const openPendingWorkReport = () => {
     setPendingWorkReport(getPendingWorkReport(orders, stationOptionsByWorkCenter, workCenterOptions));
+  };
+
+  const openDailyProductionReport = async () => {
+    if (dailyProductionReportLoading) return;
+    setDailyProductionReportLoading(true);
+    const reportDateRange = kpiDateRange.from <= kpiDateRange.to
+      ? { ...kpiDateRange }
+      : { from: kpiDateRange.to, to: kpiDateRange.from };
+    const rangeStart = new Date(`${reportDateRange.from}T00:00:00`);
+    const rangeEnd = new Date(`${reportDateRange.to}T00:00:00`);
+    rangeEnd.setDate(rangeEnd.getDate() + 1);
+    try {
+      const { data, error } = await supabase
+        .from('mes_operator_terminal_events')
+        .select('id, production_order_id, work_center_code, station_code, event_type, quantity, reason, comment, payload, created_at')
+        .eq('organization_id', organizationId)
+        .in('event_type', [
+          'production-good',
+          'production-scrap',
+          'quality-inspection-saved',
+          'quality-inspection-skipped',
+          'measurement-corrected',
+          'manufacturing-completed',
+          'operation-completed',
+        ])
+        .gte('created_at', rangeStart.toISOString())
+        .lt('created_at', rangeEnd.toISOString())
+        .order('created_at', { ascending: true });
+      if (error) throw error;
+      setDailyProductionReport(buildDailyProductionReport(
+        reportDateRange,
+        (data ?? []) as DailyProductionReportEventRow[],
+        orders,
+        stationOptionsByWorkCenter,
+      ));
+    } catch (error) {
+      console.error('Unable to load daily production report', error);
+      setDailyProductionReport(buildDailyProductionReport(reportDateRange, [], orders, stationOptionsByWorkCenter));
+    } finally {
+      setDailyProductionReportLoading(false);
+    }
   };
 
   const updateOrder = (orderNumber: string, action: string) => {
@@ -2939,7 +3317,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
   };
 
   React.useEffect(() => {
-    if (!formMode && !confirmation && !jobQueueSummary && !pendingWorkReport && !orderDetailsOpen) return undefined;
+    if (!formMode && !confirmation && !jobQueueSummary && !pendingWorkReport && !dailyProductionReport && !orderDetailsOpen) return undefined;
     const previousBodyOverflow = document.body.style.overflow;
     const previousDocumentOverflow = document.documentElement.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -2948,7 +3326,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
       document.body.style.overflow = previousBodyOverflow;
       document.documentElement.style.overflow = previousDocumentOverflow;
     };
-  }, [formMode, confirmation, jobQueueSummary, pendingWorkReport, orderDetailsOpen]);
+  }, [formMode, confirmation, jobQueueSummary, pendingWorkReport, dailyProductionReport, orderDetailsOpen]);
 
   return (
     <section className="mes-workspace-panel production-orders-workspace">
@@ -2979,6 +3357,9 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
             </button>
             <button className="production-orders-pending-report-action" type="button" onClick={openPendingWorkReport}>
               <FileText size={16} /> Pending Work Report
+            </button>
+            <button className="production-orders-daily-report-action" type="button" disabled={dailyProductionReportLoading} onClick={() => void openDailyProductionReport()}>
+              <Factory size={16} /> {dailyProductionReportLoading ? 'Loading Report' : 'Daily Production Report'}
             </button>
           </div>
         </div>
@@ -3208,6 +3589,9 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
       </div>
       {pendingWorkReport ? (
         <PendingWorkReportModal report={pendingWorkReport} onClose={() => setPendingWorkReport(null)} />
+      ) : null}
+      {dailyProductionReport ? (
+        <DailyProductionReportModal report={dailyProductionReport} onClose={() => setDailyProductionReport(null)} />
       ) : null}
       {orderDetailsOpen && selectedOrder ? (
         <ProductionOrderDetailsModal
@@ -5270,7 +5654,7 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
           { align: 'right' },
         );
         cursorY += 29;
-        pdf.setFontSize(8);
+          pdf.setFontSize(9);
         pdf.setTextColor(83, 100, 118);
         pdf.text('STATUS', margin, cursorY);
         pdf.text('LAST CYCLE STARTED', margin + 100, cursorY);

@@ -4,7 +4,8 @@
   }
 
   .production-orders-header-controls .production-orders-create,
-  .production-orders-header-controls .production-orders-pending-report-action {
+  .production-orders-header-controls .production-orders-pending-report-action,
+  .production-orders-header-controls .production-orders-daily-report-action {
     justify-content: center;
     width: 100%;
   }

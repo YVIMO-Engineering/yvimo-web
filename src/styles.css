@@ -9626,6 +9626,357 @@ body.work-center-map-expanded .logged-workspace {
   color: #07111c;
 }
 
+.mes-modal-backdrop.daily-production-report-backdrop {
+  z-index: 3600;
+  display: grid;
+  place-items: center;
+  padding: calc(var(--header-height, 96px) + 20px) 28px 24px calc(var(--sidebar-width, 86px) + 28px);
+  background: rgba(7, 17, 28, 0.68);
+}
+
+.daily-production-report-modal {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 16px;
+  width: min(94vw, 1640px);
+  max-height: calc(100vh - var(--header-height, 96px) - 44px);
+  overflow: hidden;
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  border-top: 4px solid #10b981;
+  border-radius: 11px;
+  padding: 20px 22px;
+  background: #ffffff;
+  box-shadow: 0 24px 60px rgba(7, 17, 28, 0.32);
+}
+
+.daily-production-report-header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  border-bottom: 1px solid #dce4eb;
+  padding-bottom: 15px;
+}
+
+.daily-production-report-header > span {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  border-radius: 10px;
+  background: #ecfdf5;
+  color: #059669;
+}
+
+.daily-production-report-header .eyebrow {
+  margin: 0 0 3px;
+  color: #059669;
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+}
+
+.daily-production-report-header h3 {
+  margin: 0;
+  color: #07111c;
+  font-size: clamp(1.55rem, 2vw, 2.1rem);
+}
+
+.daily-production-report-header small {
+  display: block;
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 0.76rem;
+}
+
+.daily-production-report-actions {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.daily-production-report-actions button {
+  display: inline-flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid rgba(16, 185, 129, 0.45);
+  border-radius: 8px;
+  padding: 0 15px;
+  background: #ecfdf5;
+  color: #047857;
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.daily-production-report-actions button:last-child {
+  width: 42px;
+  padding: 0;
+  border-color: #d8e0e8;
+  background: #f8fafc;
+  color: #17202a;
+}
+
+.daily-production-report-actions button:disabled {
+  cursor: wait;
+  opacity: 0.64;
+}
+
+.daily-production-report-kpis {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.daily-production-report-kpis article {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  border: 1px solid #d8e0e8;
+  border-left: 4px solid #10b981;
+  border-radius: 8px;
+  padding: 13px 15px;
+  background: #f8fafc;
+}
+
+.daily-production-report-kpis article.good {
+  border-color: rgba(16, 185, 129, 0.42);
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.daily-production-report-kpis article.scrap {
+  border-color: rgba(239, 68, 68, 0.4);
+  border-left-color: #ef4444;
+  background: #fff1f2;
+  color: #b91c1c;
+}
+
+.daily-production-report-kpis article.quality {
+  border-color: rgba(59, 130, 246, 0.36);
+  border-left-color: #3b82f6;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.daily-production-report-kpis article.orders {
+  border-color: rgba(139, 92, 246, 0.34);
+  border-left-color: #8b5cf6;
+  background: #f5f3ff;
+  color: #6d28d9;
+}
+
+.daily-production-report-kpis article.machines {
+  border-color: rgba(255, 138, 31, 0.38);
+  border-left-color: #ff8a1f;
+  background: #fff7ed;
+  color: #c2410c;
+}
+
+.daily-production-report-kpis span,
+.daily-production-report-kpis em {
+  overflow: hidden;
+  font-size: 0.68rem;
+  font-style: normal;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.daily-production-report-kpis strong {
+  color: currentColor;
+  font-size: 1.65rem;
+  line-height: 1;
+}
+
+.daily-production-report-machines {
+  display: grid;
+  grid-auto-rows: max-content;
+  align-content: start;
+  gap: 14px;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding-right: 6px;
+}
+
+.daily-production-machine {
+  min-height: max-content;
+  flex-shrink: 0;
+  overflow: hidden;
+  border: 1px solid #d8e0e8;
+  border-radius: 9px;
+  background: #ffffff;
+}
+
+.daily-production-machine > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid rgba(255, 138, 31, 0.35);
+  padding: 13px 16px;
+  background: #fff7ed;
+}
+
+.daily-production-machine > header div {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+}
+
+.daily-production-machine > header strong {
+  color: #c2410c;
+  font-size: 1.08rem;
+}
+
+.daily-production-machine > header span,
+.daily-production-machine > header p {
+  margin: 0;
+  color: #526578;
+  font-size: 0.8rem;
+}
+
+.daily-production-machine > header p b {
+  color: #c2410c;
+}
+
+.daily-production-table {
+  min-width: 980px;
+}
+
+.daily-production-table-head,
+.daily-production-table-row {
+  display: grid;
+  grid-template-columns: 120px 145px 100px 150px minmax(180px, 0.85fr) minmax(250px, 1.15fr);
+  align-items: center;
+  gap: 10px;
+}
+
+.daily-production-table-head {
+  min-height: 44px;
+  padding: 0 14px;
+  background: #f3f7fa;
+  color: #526578;
+  font-size: 0.74rem;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.daily-production-table-row {
+  min-height: 64px;
+  border-top: 1px solid #e3e9ef;
+  padding: 11px 14px;
+  color: #26384a;
+  font-size: 0.86rem;
+  line-height: 1.35;
+}
+
+.daily-production-table-row time {
+  color: #526578;
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+.daily-production-table-row i {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  border-radius: 7px;
+  padding: 0 11px;
+  background: #ecfdf5;
+  color: #047857;
+  font-style: normal;
+  font-size: 0.8rem;
+  font-weight: 850;
+}
+
+.daily-production-table-row i.scrap {
+  border-color: rgba(239, 68, 68, 0.38);
+  background: #fff1f2;
+  color: #b91c1c;
+}
+
+.daily-production-table-row i.quality {
+  border-color: rgba(59, 130, 246, 0.34);
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.daily-production-table-row i.completion,
+.daily-production-table-row i.correction {
+  border-color: rgba(139, 92, 246, 0.34);
+  background: #f5f3ff;
+  color: #6d28d9;
+}
+
+.daily-production-table-row > span {
+  min-width: 0;
+}
+
+.daily-production-table-row > span b,
+.daily-production-table-row > span small {
+  display: block;
+}
+
+.daily-production-table-row > span small {
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 0.76rem;
+  line-height: 1.3;
+}
+
+.daily-production-table-row > span:last-child small {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px dotted #d8e0e8;
+  padding: 5px 0;
+}
+
+.daily-production-report-empty {
+  display: grid;
+  min-height: 280px;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  border: 1px dashed rgba(16, 185, 129, 0.4);
+  border-radius: 9px;
+  background: #f8fffc;
+  color: #64748b;
+  text-align: center;
+}
+
+.daily-production-report-empty svg,
+.daily-production-report-empty strong {
+  color: #059669;
+}
+
+@media (max-width: 1050px) {
+  .daily-production-report-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .daily-production-report-header {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .daily-production-report-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+  }
+
+  .daily-production-machine {
+    overflow-x: auto;
+  }
+}
+
 @media (max-width: 900px) {
   .mes-modal-backdrop.production-order-details-backdrop {
     --production-order-details-top-gap: 24px;

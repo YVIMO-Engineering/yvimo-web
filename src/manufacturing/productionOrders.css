@@ -70,6 +70,37 @@
   transform: translateY(-1px);
 }
 
+.production-orders-heading .production-orders-daily-report-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 38px;
+  border: 1px solid rgba(16, 185, 129, 0.42);
+  border-radius: 8px;
+  padding: 0 14px;
+  background: #ecfdf5;
+  color: #047857;
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 900;
+  cursor: pointer;
+  transition: border-color 0.16s ease, background 0.16s ease, transform 0.16s ease;
+}
+
+.production-orders-heading .production-orders-daily-report-action:hover,
+.production-orders-heading .production-orders-daily-report-action:focus-visible {
+  border-color: rgba(5, 150, 105, 0.7);
+  background: #d1fae5;
+  transform: translateY(-1px);
+}
+
+.production-orders-heading .production-orders-daily-report-action:disabled {
+  cursor: wait;
+  opacity: 0.66;
+  transform: none;
+}
+
 .production-orders-overview {
   display: grid;
   grid-template-columns: repeat(3, minmax(170px, 0.65fr)) minmax(280px, 1.35fr);
