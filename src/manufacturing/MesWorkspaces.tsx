@@ -5447,8 +5447,8 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
   const capabilityColorTriggerRef = React.useRef<HTMLSpanElement | null>(null);
   const capabilityColorPickerRef = React.useRef<HTMLDivElement | null>(null);
 
-  const loadWorkCenters = React.useCallback(async () => {
-    setWorkCentersLoading(true);
+  const loadWorkCenters = React.useCallback(async (silent = false) => {
+    if (!silent) setWorkCentersLoading(true);
     setWorkCentersError('');
 
     const [{ data: workCenterRows, error: workCenterError }, { data: stationRows, error: stationError }, { data: productionOrderRows, error: productionOrderError }, { data: productionEventRows, error: productionEventError }, { data: statusCycleRows, error: statusCycleError }] = await Promise.all([
@@ -5461,6 +5461,7 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
 
     if (workCenterError || stationError || productionOrderError || productionEventError || statusCycleError) {
       setWorkCentersError(workCenterError?.message ?? stationError?.message ?? productionOrderError?.message ?? productionEventError?.message ?? statusCycleError?.message ?? 'Could not load Work Centers.');
+      if (silent) return;
       setWorkCenters([]);
       setProductionOrders([]);
       setProductionEvents([]);
@@ -5500,6 +5501,13 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
 
   React.useEffect(() => {
     void loadWorkCenters();
+  }, [loadWorkCenters]);
+
+  React.useEffect(() => {
+    const reconciliationTimer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void loadWorkCenters(true);
+    }, 15000);
+    return () => window.clearInterval(reconciliationTimer);
   }, [loadWorkCenters]);
 
   React.useEffect(() => {
