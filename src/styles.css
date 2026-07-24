@@ -16932,12 +16932,15 @@ body.work-center-map-expanded .logged-workspace {
 .station-cycle-machine > header span { color: #9a4a00; font-size: .72rem; font-weight: 760; }
 .station-cycle-machine-summary { border-bottom: 1px solid #dce4ec; }
 .station-cycle-summary-head,
-.station-cycle-summary-row { display: grid; grid-template-columns: .9fr 1.15fr 1.15fr .7fr 130px; align-items: center; gap: 14px; padding: 10px 16px; }
+.station-cycle-summary-row { display: grid; grid-template-columns: 160px minmax(120px, 1fr) minmax(120px, 1fr) minmax(90px, .8fr) minmax(105px, .9fr) minmax(120px, 1fr) 90px 130px; align-items: center; column-gap: 16px; row-gap: 12px; padding: 10px 20px; }
 .station-cycle-summary-head { background: #f5f8fb; color: #526477; font-size: .67rem; font-weight: 780; letter-spacing: .055em; text-transform: uppercase; }
-.station-cycle-summary-head span:last-child,
-.station-cycle-summary-row > strong { text-align: right; }
+.station-cycle-summary-head span:nth-last-child(2),
+.station-cycle-summary-row > strong { text-align: center; }
 .station-cycle-summary-row { min-height: 45px; border-top: 1px solid #e4eaf0; }
 .station-cycle-summary-row time { color: #34475a; font-size: .76rem; }
+.station-cycle-summary-row > span:not(:first-child) { overflow: hidden; color: #34475a; font-size: .76rem; text-overflow: ellipsis; white-space: nowrap; }
+.station-cycle-summary-row > span:nth-child(4),
+.station-cycle-summary-row > span:nth-child(5) { color: #111827; font-weight: 800; }
 .station-cycle-summary-row > strong { color: #162434; font-size: .82rem; font-variant-numeric: tabular-nums; }
 .station-cycle-summary-row > button { min-height: 32px; border: 1px solid #ffad68; border-radius: 7px; padding: 0 10px; background: #fff7ed; color: #9a4a00; font: inherit; font-size: .68rem; font-weight: 760; cursor: pointer; }
 .station-cycle-summary-row > button:hover { border-color: #ff7a00; background: #ffead5; }
@@ -16958,17 +16961,20 @@ body.work-center-map-expanded .logged-workspace {
 .station-cycle-empty { margin: 0; padding: 18px 16px; color: #607080; }
 
 .station-cycle-detail-backdrop { z-index: 110; padding: 80px 24px 24px !important; }
-.station-cycle-detail-modal { display: flex; flex-direction: column; gap: 0; width: min(900px, calc(100vw - 48px)); max-height: calc(100dvh - 120px); padding: 0; overflow: hidden; }
+.station-cycle-detail-modal { display: flex; flex-direction: column; gap: 0; width: min(1240px, calc(100vw - 48px)); max-height: calc(100dvh - 120px); padding: 0; overflow: hidden; }
 .station-cycle-detail-modal > header { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 20px 22px; border-bottom: 1px solid #dce4ec; }
 .station-cycle-detail-modal > header h3 { margin: 3px 0; }
 .station-cycle-detail-modal > header small { color: #607080; font-weight: 650; }
 .station-cycle-detail-modal > header button { display: grid; place-items: center; width: 42px; height: 42px; border: 1px solid #d6dee7; border-radius: 9px; background: #f7f9fb; color: #253547; cursor: pointer; }
 .station-cycle-detail-table { overflow-y: auto; }
 .station-cycle-detail-head,
-.station-cycle-detail-row { display: grid; grid-template-columns: .45fr 1.2fr 1.2fr .75fr; align-items: center; gap: 14px; padding: 12px 18px; }
+.station-cycle-detail-row { display: grid; grid-template-columns: 55px minmax(130px, 1.1fr) minmax(130px, 1.1fr) minmax(90px, .8fr) minmax(110px, .9fr) minmax(130px, 1fr) 90px; align-items: center; gap: 12px; padding: 12px 18px; }
 .station-cycle-detail-head { background: #f5f8fb; color: #526477; font-size: .67rem; font-weight: 780; letter-spacing: .055em; text-transform: uppercase; }
 .station-cycle-detail-row { min-height: 50px; border-top: 1px solid #e4eaf0; font-size: .78rem; }
 .station-cycle-detail-row time { color: #34475a; }
+.station-cycle-detail-row > span { overflow: hidden; color: #34475a; text-overflow: ellipsis; white-space: nowrap; }
+.station-cycle-detail-row > span:nth-child(4),
+.station-cycle-detail-row > span:nth-child(5) { color: #111827; font-weight: 800; }
 .station-cycle-detail-row strong:last-child { font-variant-numeric: tabular-nums; }
 
 @media (max-width: 900px) {
