@@ -8769,6 +8769,36 @@ body.work-center-map-expanded .logged-workspace {
   cursor: pointer;
 }
 
+.production-order-details-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.production-order-details-header-actions button.generate-pdf {
+  display: inline-flex;
+  width: auto;
+  min-width: 132px;
+  gap: 7px;
+  padding: 0 12px;
+  border-color: #9ebeff;
+  background: #eff5ff;
+  color: #235fce;
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 850;
+}
+
+.production-order-details-header-actions button.generate-pdf:hover {
+  border-color: #2f81f7;
+  background: #e2edff;
+}
+
+.production-order-details-header-actions button.generate-pdf:disabled {
+  cursor: wait;
+  opacity: 0.62;
+}
+
 .production-order-details-summary {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

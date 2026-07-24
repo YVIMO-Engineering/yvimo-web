@@ -1494,6 +1494,7 @@ export function ProductionOrderDetailsModal({
   const [activeView, setActiveView] = React.useState<'production' | 'quality' | 'damage'>('production');
   const [preview, setPreview] = React.useState<ProductionOrderDetailPreview | null>(null);
   const [previewError, setPreviewError] = React.useState('');
+  const [pdfGenerating, setPdfGenerating] = React.useState(false);
   const qualityPieces = details.pieces.filter((piece) => getProductionOrderDetailQualityInspection(piece) || getProductionOrderDetailQualityMeasurements(piece).length > 0 || getProductionOrderDetailQualityDocuments(piece).length > 0);
   const damagePieces = details.pieces.filter(hasProductionOrderDetailDamage);
   const openQualityDocumentPreview = async (document: ProductionOrderDetailQualityDocumentRow) => {
@@ -1517,6 +1518,173 @@ export function ProductionOrderDetailsModal({
       setPreviewError(error instanceof Error && error.message ? error.message : 'Unable to open document.');
     }
   };
+  const generateOrderDetailsPdf = async () => {
+    if (pdfGenerating || details.loading || details.error) return;
+    setPdfGenerating(true);
+    try {
+      const { default: jsPDF } = await import('jspdf');
+      const pdf = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'letter' });
+      const margin = 36;
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const contentWidth = pageWidth - (margin * 2);
+      let cursorY = margin;
+      const ensureSpace = (height: number) => {
+        if (cursorY + height <= pageHeight - margin) return;
+        pdf.addPage();
+        cursorY = margin;
+      };
+      const addSectionTitle = (title: string, subtitle: string) => {
+        ensureSpace(34);
+        pdf.setFillColor(255, 247, 237);
+        pdf.setDrawColor(255, 122, 0);
+        pdf.roundedRect(margin, cursorY - 12, contentWidth, 28, 4, 4, 'FD');
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(11);
+        pdf.setTextColor(194, 65, 12);
+        pdf.text(title, margin + 10, cursorY + 5);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(8);
+        pdf.setTextColor(120, 74, 35);
+        pdf.text(subtitle, pageWidth - margin - 10, cursorY + 5, { align: 'right' });
+        cursorY += 28;
+      };
+      const drawTable = (headers: string[], widths: number[], rows: string[][]) => {
+        const totalWidth = widths.reduce((sum, width) => sum + width, 0);
+        const scale = contentWidth / totalWidth;
+        const columnWidths = widths.map((width) => width * scale);
+        ensureSpace(24);
+        pdf.setFillColor(238, 242, 246);
+        pdf.rect(margin, cursorY, contentWidth, 22, 'F');
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(7);
+        pdf.setTextColor(82, 97, 117);
+        let x = margin;
+        headers.forEach((header, index) => {
+          pdf.text(header.toUpperCase(), x + 5, cursorY + 14);
+          x += columnWidths[index];
+        });
+        cursorY += 22;
+        const tableRows = rows.length ? rows : [['No records available', ...headers.slice(1).map(() => '')]];
+        tableRows.forEach((row) => {
+          const wrappedCells = row.map((cell, index) => pdf.splitTextToSize(cell || '-', Math.max(20, columnWidths[index] - 10)) as string[]);
+          const rowHeight = Math.max(24, Math.max(...wrappedCells.map((lines) => lines.length)) * 9 + 10);
+          ensureSpace(rowHeight + 2);
+          pdf.setDrawColor(226, 232, 240);
+          pdf.line(margin, cursorY + rowHeight, margin + contentWidth, cursorY + rowHeight);
+          pdf.setFont('helvetica', 'normal');
+          pdf.setFontSize(7.5);
+          pdf.setTextColor(23, 32, 42);
+          x = margin;
+          wrappedCells.forEach((lines, index) => {
+            pdf.text(lines, x + 5, cursorY + 13);
+            x += columnWidths[index];
+          });
+          cursorY += rowHeight;
+        });
+        cursorY += 14;
+      };
+
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(20);
+      pdf.setTextColor(7, 17, 28);
+      pdf.text('Production Order Details', margin, cursorY);
+      cursorY += 22;
+      pdf.setFontSize(15);
+      pdf.text(order.orderNumber, margin, cursorY);
+      cursorY += 15;
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(9);
+      pdf.setTextColor(64, 81, 98);
+      pdf.text(`${order.partNumber} / ${order.partName} / ${order.clientName?.trim() || 'Unassigned client'}`, margin, cursorY);
+      pdf.text(`Generated ${formatTimestamp(new Date().toISOString())}`, pageWidth - margin, cursorY, { align: 'right' });
+      cursorY += 24;
+
+      addSectionTitle('ORDER SUMMARY', 'Execution and planning overview');
+      const summaryItems = [
+        ['Status', formatTitleLabel(order.status)],
+        ['Priority', formatTitleLabel(order.priority)],
+        ['Planned', order.plannedQuantity.toLocaleString()],
+        ['Completed', order.completedQuantity.toLocaleString()],
+        ['Scrap', order.scrapQuantity.toLocaleString()],
+        ['Time Spent', formatCycleDuration(details.timeSpentMs)],
+        ['Work Center', order.assignedWorkCenter || 'Not assigned'],
+        ['Station', order.assignedStation || 'Not assigned'],
+        ['Due', formatDate(order.dueDate)],
+      ];
+      const summaryColumnWidth = contentWidth / 3;
+      summaryItems.forEach(([label, value], index) => {
+        const column = index % 3;
+        if (column === 0 && index > 0) cursorY += 30;
+        const x = margin + (column * summaryColumnWidth);
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(7);
+        pdf.setTextColor(2, 132, 199);
+        pdf.text(label.toUpperCase(), x, cursorY);
+        pdf.setFontSize(10);
+        pdf.setTextColor(7, 17, 28);
+        pdf.text(value, x, cursorY + 13);
+      });
+      cursorY += 48;
+
+      addSectionTitle('PRODUCTION', `${details.pieces.length} piece${details.pieces.length === 1 ? '' : 's'}`);
+      drawTable(
+        ['Piece', 'Status', 'Serial', 'Tool ID', 'Measurements', 'Time Spent', 'Reported'],
+        [45, 70, 130, 85, 210, 85, 95],
+        details.pieces.map((piece) => [
+          String(piece.pieceSequence),
+          piece.status === 'not-started' ? 'Not started' : formatTitleLabel(piece.status),
+          piece.serialNumber || '-',
+          piece.toolId || '-',
+          getProductionOrderDetailMeasurements(piece.traceability).map((measurement) => `${measurement.label}: ${measurement.value}`).join('; ') || 'Not captured',
+          formatCycleDuration(piece.timeSpentMs),
+          piece.reportedAt ? formatTimestamp(piece.reportedAt) : '-',
+        ]),
+      );
+
+      addSectionTitle('QUALITY', `${qualityPieces.length} piece${qualityPieces.length === 1 ? '' : 's'} with quality records`);
+      drawTable(
+        ['Piece', 'Result', 'Serial', 'Tool ID', 'Quality Records', 'Documents'],
+        [45, 70, 125, 80, 250, 150],
+        qualityPieces.map((piece) => {
+          const inspection = getProductionOrderDetailQualityInspection(piece);
+          const measurements = getProductionOrderDetailQualityMeasurements(piece);
+          const documents = getProductionOrderDetailQualityDocuments(piece);
+          return [
+            String(piece.pieceSequence),
+            getProductionOrderDetailQualityLabel(inspection?.result ?? null),
+            piece.serialNumber || '-',
+            piece.toolId || '-',
+            measurements.map((measurement) => `${measurement.inspection_name}: ${measurement.measured_value} (${formatTitleLabel(measurement.result)})`).join('; ') || 'No measurements',
+            documents.map((document) => `${document.file_name}${document.inspection_name ? ` [${document.inspection_name}]` : ''}`).join('; ') || 'No documents',
+          ];
+        }),
+      );
+
+      addSectionTitle('DAMAGE & EVIDENCE', `${damagePieces.length} piece${damagePieces.length === 1 ? '' : 's'} with damage or evidence`);
+      drawTable(
+        ['Piece', 'Serial', 'Tool ID', 'Damage Codes', 'Evidence', 'Reported'],
+        [45, 130, 85, 190, 170, 100],
+        damagePieces.map((piece) => {
+          const damageCodes = getProductionOrderDetailDamageCodes(piece.traceability);
+          return [
+            String(piece.pieceSequence),
+            piece.serialNumber || '-',
+            piece.toolId || '-',
+            damageCodes.map((code) => formatTitleLabel(code.replace(/^damage:/, 'damage '))).join(', ') || 'No damage codes',
+            piece.traceability?.damage_image_url ? 'Evidence image available in Order Details' : 'No image',
+            piece.reportedAt ? formatTimestamp(piece.reportedAt) : '-',
+          ];
+        }),
+      );
+
+      pdf.save(`production-order-details-${order.orderNumber.replace(/[^a-z0-9-_]/gi, '-')}.pdf`);
+    } catch (error) {
+      console.error('Unable to generate Production Order details PDF', error);
+    } finally {
+      setPdfGenerating(false);
+    }
+  };
 
   const modalContent = (
     <div className="mes-modal-backdrop production-order-details-backdrop" role="presentation">
@@ -1527,9 +1695,14 @@ export function ProductionOrderDetailsModal({
             <h3 id="production-order-details-title">{order.orderNumber}</h3>
             <span>{order.partNumber} / {order.partName} / {order.clientName?.trim() || 'Unassigned client'}</span>
           </div>
-          <button type="button" aria-label="Close order details" onClick={onClose}>
-            <X size={18} />
-          </button>
+          <div className="production-order-details-header-actions">
+            <button className="generate-pdf" type="button" disabled={pdfGenerating || details.loading || Boolean(details.error)} onClick={() => void generateOrderDetailsPdf()}>
+              <Download size={17} />{pdfGenerating ? 'Generating PDF' : 'Generate PDF'}
+            </button>
+            <button type="button" aria-label="Close order details" onClick={onClose}>
+              <X size={18} />
+            </button>
+          </div>
         </div>
         <div className="production-order-details-summary">
           <article className="status"><span>Status</span><strong>{formatTitleLabel(order.status)}</strong></article>
