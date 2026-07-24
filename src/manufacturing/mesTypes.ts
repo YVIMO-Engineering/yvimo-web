@@ -4,7 +4,7 @@ export type ProductionOrderPriority = 'low' | 'normal' | 'high' | 'expedite';
 
 export type ProductionOrderManufacturingType = 'multi-step' | 'single-operation';
 
-export type QualityPieceType = 'hobs' | 'shaper' | 'shavers' | 'skiving';
+export type QualityPieceType = 'hobs' | 'shaper' | 'shavers' | 'skiving' | 'wheel';
 
 export type QualityMeasurementUnit = 'microns' | 'tenths';
 

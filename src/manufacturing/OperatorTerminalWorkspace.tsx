@@ -111,6 +111,7 @@ const operatorTerminalSpanish: Record<string, string> = {
   'Order Details': 'Detalles de orden',
   'Part Traceability': 'Trazabilidad de pieza',
   'Sharpening capture': 'Captura de afilado',
+  'Wheel capture': 'Captura de rueda',
   'Job metadata': 'Datos del trabajo',
   'Client': 'Cliente',
   'Select customer': 'Seleccionar cliente',
@@ -120,6 +121,7 @@ const operatorTerminalSpanish: Record<string, string> = {
   'Part': 'Pieza',
   'Tool ID': 'Tool ID',
   'Serial Number': 'Número de serie',
+  'Search part, serial, or status': 'Buscar pieza, serie o estado',
   'Dimensions': 'Dimensiones',
   'Dimensions unit': 'Unidad de dimensiones',
   'Inches': 'Pulgadas',
@@ -482,7 +484,7 @@ function getTraceabilityDamageCodes(form: TraceabilityFormState, reportType: 'go
 }
 
 type OperatorTraceabilityTemplate = {
-  id: 'hobs' | 'shapers' | 'shavers';
+  id: 'hobs' | 'shapers' | 'shavers' | 'wheel';
   beforeFields: Array<{
     key: Extract<TraceabilityTextField, 'beforeHeight' | 'beforeNotch' | 'beforeToothLength'>;
     label: string;
@@ -521,8 +523,17 @@ const shaversTraceabilityTemplate: OperatorTraceabilityTemplate = {
   afterToothLabel: 'After Sharpening',
 };
 
+const wheelTraceabilityTemplate: OperatorTraceabilityTemplate = {
+  id: 'wheel',
+  beforeFields: [],
+  showToothDamage: false,
+  photoLabel: '',
+  afterToothLabel: '',
+};
+
 function getTraceabilityTemplateForPart(partName = '') {
   const normalizedPartName = partName.trim().toLowerCase();
+  if (/\b(wheel|wheels)\b/.test(normalizedPartName)) return wheelTraceabilityTemplate;
   if (/\b(shaver|shavers)\b/.test(normalizedPartName)) return shaversTraceabilityTemplate;
   if (/\b(shaper|tallador|talladores)\b/.test(normalizedPartName)) return shapersTraceabilityTemplate;
   return hobsTraceabilityTemplate;
@@ -721,6 +732,7 @@ function PartPickerModal({
   onEdit: (serial: OperatorProductionSerial) => void;
 }) {
   const [query, setQuery] = React.useState('');
+  const isWheelOrder = /\b(wheel|wheels)\b/i.test(order?.partName ?? '');
   const normalizedQuery = query.trim().toLowerCase();
   const filteredSerials = normalizedQuery
     ? serials.filter((serial) => [
@@ -742,10 +754,10 @@ function PartPickerModal({
         <p className="quality-order-modal-copy">{order ? `${order.partName} / ${order.partNumber}` : t('Select a planned piece for this operation.')}</p>
         <label className="quality-serial-search quality-order-search">
           <Search size={17} />
-          <input autoFocus type="search" value={query} placeholder={t('Search part, tool, serial, or status')} onChange={(event) => setQuery(event.target.value)} />
+          <input autoFocus type="search" value={query} placeholder={t(isWheelOrder ? 'Search part, serial, or status' : 'Search part, tool, serial, or status')} onChange={(event) => setQuery(event.target.value)} />
         </label>
-        <div className="operator-terminal-part-picker-header" aria-hidden="true">
-          <span>{t('Part')}</span><span>{t('Tool ID')}</span><span>{t('Serial Number')}</span><span>{t('Status')}</span><span></span>
+        <div className={`operator-terminal-part-picker-header ${isWheelOrder ? 'wheel' : ''}`} aria-hidden="true">
+          <span>{t('Part')}</span>{!isWheelOrder ? <span>{t('Tool ID')}</span> : null}<span>{t('Serial Number')}</span><span>{t('Status')}</span><span></span>
         </div>
         <div className="operator-terminal-part-picker-list">
           {loading ? <div className="operator-terminal-part-picker-empty">{t('Loading pieces...')}</div> : null}
@@ -753,11 +765,11 @@ function PartPickerModal({
             const reported = Boolean(serial.result);
             return (
               <article
-                className={['operator-terminal-part-picker-row', serial.pieceSequence === activePieceSequence ? 'active' : '', reported ? 'reported' : ''].filter(Boolean).join(' ')}
+                className={['operator-terminal-part-picker-row', isWheelOrder ? 'wheel' : '', serial.pieceSequence === activePieceSequence ? 'active' : '', reported ? 'reported' : ''].filter(Boolean).join(' ')}
                 key={serial.id}
               >
                 <strong>{serial.pieceSequence}</strong>
-                <span>{serial.toolId || '-'}</span>
+                {!isWheelOrder ? <span>{serial.toolId || '-'}</span> : null}
                 <span>{serial.serialNumber}</span>
                 <em className={reported ? `reported ${serial.result}` : 'available'}>{t(reported ? serial.result ?? '' : 'available')}</em>
                 {reported ? (
@@ -1055,7 +1067,10 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
     const reportedSequence = selectedProductionSerial?.pieceSequence ?? Math.max(1, completedQty + 1);
     const isShaperTemplate = traceabilityTemplate.id === 'shapers';
     const isShaverTemplate = traceabilityTemplate.id === 'shavers';
-    const templateDamageCodes = isShaverTemplate
+    const isWheelTemplate = traceabilityTemplate.id === 'wheel';
+    const templateDamageCodes = isWheelTemplate
+      ? (reportType === 'scrap' && reason ? [`scrap:${reason}`] : [])
+      : isShaverTemplate
       ? [
           ...(traceabilityForm.shaverDamage ? ['damage:yes'] : []),
           ...(reportType === 'scrap' && reason ? [`scrap:${reason}`] : []),
@@ -1064,17 +1079,17 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
         ? (reportType === 'scrap' && reason ? [`scrap:${reason}`] : [])
         : getTraceabilityDamageCodes(traceabilityForm, reportType, reason);
     return {
-      template_id: isShaverTemplate ? 'shaver-sharpening' : isShaperTemplate ? 'shaper-sharpening' : templateId,
+      template_id: isWheelTemplate ? 'wheel' : isShaverTemplate ? 'shaver-sharpening' : isShaperTemplate ? 'shaper-sharpening' : templateId,
       part_label: `Piece ${reportedSequence}`,
-      tool_id: traceabilityForm.toolId.trim() || null,
+      tool_id: isWheelTemplate ? null : traceabilityForm.toolId.trim() || null,
       serial_number: serialNumber,
       dimensions_unit: dimensionUnit,
-      before_notch: isShaperTemplate || isShaverTemplate ? null : parseTraceabilityNumber(traceabilityForm.beforeNotch),
-      before_tooth_length: isShaperTemplate || isShaverTemplate ? null : parseTraceabilityNumber(traceabilityForm.beforeToothLength),
+      before_notch: isShaperTemplate || isShaverTemplate || isWheelTemplate ? null : parseTraceabilityNumber(traceabilityForm.beforeNotch),
+      before_tooth_length: isShaperTemplate || isShaverTemplate || isWheelTemplate ? null : parseTraceabilityNumber(traceabilityForm.beforeToothLength),
       damage_codes: templateDamageCodes,
       damage_image_url: null,
-      stock_to_remove: isShaverTemplate ? null : parseTraceabilityNumber(traceabilityForm.stockToRemove),
-      after_tooth_length: isShaperTemplate || isShaverTemplate ? null : parseTraceabilityNumber(traceabilityForm.afterToothLength),
+      stock_to_remove: isShaverTemplate || isWheelTemplate ? null : parseTraceabilityNumber(traceabilityForm.stockToRemove),
+      after_tooth_length: isShaperTemplate || isShaverTemplate || isWheelTemplate ? null : parseTraceabilityNumber(traceabilityForm.afterToothLength),
       payload: {
         report_type: reportType,
         traceability_template: traceabilityTemplate.id,
@@ -2195,7 +2210,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
             <div className="operator-terminal-trace-heading">
               <div>
                 <p className="eyebrow">{t('Part Traceability')}</p>
-                <h3>{t('Sharpening capture')}</h3>
+                <h3>{t(traceabilityTemplate.id === 'wheel' ? 'Wheel capture' : 'Sharpening capture')}</h3>
               </div>
             </div>
             {hasAssignedOrder ? (
@@ -2209,7 +2224,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
                 <button type="button" onClick={cancelMeasurementCorrection}>{t('Cancel Correction')}</button>
               </div>
             ) : null}
-            <div className="operator-terminal-form-grid">
+            <div className={`operator-terminal-form-grid ${traceabilityTemplate.id === 'wheel' ? 'wheel' : ''}`}>
               <button
                 className="operator-terminal-part-reference operator-terminal-part-reference-button"
                 type="button"
@@ -2218,16 +2233,16 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
                 <span>{t('Part')}</span>
                 <strong>{activePartSequence.toLocaleString()}</strong>
               </button>
-              <label>{t('Tool ID')}<input value={traceabilityForm.toolId} onChange={(event) => setTraceField('toolId', event.target.value)} /></label>
+              {traceabilityTemplate.id !== 'wheel' ? <label>{t('Tool ID')}<input value={traceabilityForm.toolId} onChange={(event) => setTraceField('toolId', event.target.value)} /></label> : null}
               <label>{t('Serial Number')}<input required value={traceabilityForm.serialNumber} onChange={(event) => setTraceField('serialNumber', event.target.value)} /></label>
-              <div className="operator-terminal-unit-switch" role="group" aria-label={t('Dimensions unit')}>
+              {traceabilityTemplate.id !== 'wheel' ? <div className="operator-terminal-unit-switch" role="group" aria-label={t('Dimensions unit')}>
                 <span>{t('Dimensions')}</span>
                 <div>
                   <button className={dimensionUnit === 'in' ? 'active' : ''} type="button" onClick={() => setDimensionUnit('in')}>{t('Inches')}</button>
                   <button className={dimensionUnit === 'mm' ? 'active' : ''} type="button" onClick={() => setDimensionUnit('mm')}>{t('Millimeters')}</button>
                 </div>
-              </div>
-              {traceabilityTemplate.id !== 'shavers' ? (
+              </div> : null}
+              {traceabilityTemplate.id !== 'shavers' && traceabilityTemplate.id !== 'wheel' ? (
                 <fieldset>
                   <legend>{t('Before Sharpening')}</legend>
                   {traceabilityTemplate.beforeFields.map((field) => (
@@ -2241,7 +2256,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
                   ))}
                 </fieldset>
               ) : null}
-              {traceabilityTemplate.showToothDamage ? (
+              {traceabilityTemplate.id === 'wheel' ? null : traceabilityTemplate.showToothDamage ? (
                 <fieldset>
                   <legend>{t('Tooth Damage')}</legend>
                   <div className="operator-terminal-damage-capture">
@@ -2265,13 +2280,13 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
                   </button>
                 </fieldset>
               )}
-              {traceabilityTemplate.id !== 'shavers' ? (
+              {traceabilityTemplate.id !== 'shavers' && traceabilityTemplate.id !== 'wheel' ? (
                 <fieldset>
                   <legend>{t('Sharpening Data')}</legend>
                   <label>{t('Stock to Remove')}<span className="operator-terminal-measure-field"><input placeholder="0.000" inputMode="decimal" value={traceabilityForm.stockToRemove} onChange={(event) => setTraceField('stockToRemove', event.target.value)} /><em>{dimensionUnit}</em></span></label>
                 </fieldset>
               ) : null}
-              <fieldset>
+              {traceabilityTemplate.id !== 'wheel' ? <fieldset>
                 <legend>{t('After Sharpening')}</legend>
                 {traceabilityTemplate.id === 'shavers' ? (
                   <div className="operator-terminal-shaver-after-grid">
@@ -2287,7 +2302,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
                 ) : (
                   <label>{t(traceabilityTemplate.afterToothLabel)}<span className="operator-terminal-measure-field"><input placeholder="0.000" inputMode="decimal" value={traceabilityForm.afterToothLength} onChange={(event) => setTraceField('afterToothLength', event.target.value)} /><em>{dimensionUnit}</em></span></label>
                 )}
-              </fieldset>
+              </fieldset> : null}
             </div>
             {correctionSerial ? (
               <div className="operator-terminal-correction-actions">

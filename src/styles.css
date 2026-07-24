@@ -14263,6 +14263,14 @@ body.work-center-map-expanded .logged-workspace {
   grid-column: span 4;
 }
 
+.operator-terminal-form-grid.wheel .operator-terminal-part-reference {
+  grid-column: span 2;
+}
+
+.operator-terminal-form-grid.wheel > label {
+  grid-column: span 10;
+}
+
 .operator-terminal-part-reference {
   display: grid;
   grid-column: span 1;
@@ -14567,6 +14575,11 @@ body.work-center-map-expanded .logged-workspace {
   font-weight: 950;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+}
+
+.operator-terminal-part-picker-header.wheel,
+.operator-terminal-part-picker-row.wheel {
+  grid-template-columns: 74px minmax(170px, 1.2fr) 100px 94px;
 }
 
 .operator-terminal-part-picker-list {

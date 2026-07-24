@@ -7,6 +7,7 @@ export const qualityPieceTypeLabels: Record<QualityPieceType, string> = {
   shaper: 'Shaper',
   shavers: 'Shavers',
   skiving: 'Skiving',
+  wheel: 'Wheel',
 };
 
 export const qualityInspectionsByPieceType: Record<QualityPieceType, string[]> = {
@@ -26,6 +27,7 @@ export const qualityInspectionsByPieceType: Record<QualityPieceType, string[]> =
     'Flatness',
   ],
   skiving: [qualityReportOnlyInspection, 'Face Step', 'Face Rake', 'Roughness', 'Runout', 'Profile', 'Lead'],
+  wheel: [qualityReportOnlyInspection],
 };
 
 export const qualityPieceTypes = Object.keys(qualityPieceTypeLabels) as QualityPieceType[];
