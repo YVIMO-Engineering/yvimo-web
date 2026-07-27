@@ -23524,16 +23524,17 @@ body.work-center-map-expanded .logged-workspace {
 }
 
 .academy-lesson-page.live-session.theater .academy-lesson-header h1 {
-  max-width: min(920px, 68vw);
+  max-width: min(1040px, 72vw);
   font-size: clamp(30px, 2.8vw, 46px);
 }
 
 .academy-lesson-page.live-session.theater .academy-lesson-header > p:not(.eyebrow) {
-  max-width: min(800px, 70vw);
-  margin-top: 10px;
-  padding: 10px 14px;
-  font-size: 13px;
-  line-height: 1.5;
+  width: min(1180px, 82vw);
+  max-width: none;
+  margin-top: 18px;
+  padding: 16px 22px;
+  font-size: 14px;
+  line-height: 1.6;
 }
 
 .academy-lesson-page.theater .academy-lesson-header,
@@ -23545,24 +23546,40 @@ body.work-center-map-expanded .logged-workspace {
 
 .academy-lesson-page.theater .academy-lesson-header {
   position: relative;
-  margin-bottom: 10px;
-  padding-top: 6px;
+  margin-bottom: 30px;
+  padding-top: 10px;
+  padding-right: clamp(14px, 2vw, 28px);
+  text-align: center;
 }
 
 .academy-lesson-page.theater .academy-lesson-header .eyebrow {
-  margin-bottom: 6px;
+  margin-right: auto;
+  margin-bottom: 10px;
+  margin-left: auto;
 }
 
 .academy-lesson-page.theater .academy-lesson-header h1 {
   max-width: min(920px, 68vw);
+  margin-right: auto;
+  margin-left: auto;
   font-size: clamp(30px, 2.8vw, 46px);
+  text-align: center;
 }
 
 .academy-lesson-page.theater .academy-lesson-header p:not(.eyebrow) {
   max-width: min(760px, 70vw);
-  margin-top: 6px;
+  margin-right: auto;
+  margin-left: auto;
   font-size: 14px;
-  line-height: 1.35;
+  line-height: 1.55;
+}
+
+.academy-lesson-page.live-session.theater .academy-lesson-header > p:not(.eyebrow) {
+  border: 1px solid rgba(255, 138, 31, 0.18);
+  border-top: 3px solid var(--orange);
+  border-radius: 12px;
+  background: #fff3e7;
+  text-align: left;
 }
 
 .academy-lesson-toolbar {
@@ -24139,6 +24156,278 @@ body.work-center-map-expanded .logged-workspace {
   height: 100%;
   border: 0;
   object-fit: contain;
+}
+
+.academy-yvimo-player {
+  position: relative;
+  isolation: isolate;
+  border-color: rgba(255, 138, 31, 0.3);
+  background: #090d12;
+  box-shadow:
+    0 24px 60px rgba(20, 25, 31, 0.18),
+    0 0 0 1px rgba(255, 138, 31, 0.06);
+  cursor: pointer;
+}
+
+.academy-yvimo-player:focus-visible {
+  outline: 3px solid rgba(255, 138, 31, 0.42);
+  outline-offset: 3px;
+}
+
+.academy-yvimo-player::after {
+  position: absolute;
+  inset: auto 0 0;
+  z-index: 1;
+  height: 34%;
+  background: linear-gradient(transparent, rgba(3, 7, 11, 0.88));
+  content: "";
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 180ms ease;
+}
+
+.academy-yvimo-player.controls-visible::after {
+  opacity: 1;
+}
+
+.academy-video-center-play {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  width: 72px;
+  height: 72px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 50%;
+  padding: 0 0 0 4px;
+  background: var(--orange);
+  box-shadow: 0 14px 38px rgba(255, 120, 15, 0.38);
+  color: #fff;
+  cursor: pointer;
+  transform: translate(-50%, -50%);
+  transition: transform 160ms ease, background 160ms ease;
+}
+
+.academy-video-center-play:hover {
+  background: #ff7410;
+  transform: translate(-50%, -50%) scale(1.06);
+}
+
+.academy-video-controls {
+  position: absolute;
+  right: 20px;
+  bottom: 14px;
+  left: 20px;
+  z-index: 4;
+  color: #fff;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(8px);
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.academy-yvimo-player.controls-visible .academy-video-controls,
+.academy-yvimo-player:focus-within .academy-video-controls {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.academy-video-timeline {
+  position: relative;
+  height: 18px;
+  margin-bottom: 3px;
+}
+
+.academy-video-timeline::before,
+.academy-video-buffered,
+.academy-video-played {
+  position: absolute;
+  top: 8px;
+  left: 0;
+  height: 4px;
+  border-radius: 999px;
+  pointer-events: none;
+}
+
+.academy-video-timeline::before {
+  right: 0;
+  background: rgba(255, 255, 255, 0.25);
+  content: "";
+}
+
+.academy-video-buffered {
+  background: rgba(255, 255, 255, 0.48);
+}
+
+.academy-video-played {
+  z-index: 1;
+  background: linear-gradient(90deg, #ff7212, var(--orange));
+  box-shadow: 0 0 14px rgba(255, 138, 31, 0.45);
+}
+
+.academy-video-timeline input {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  width: 100%;
+  height: 18px;
+  margin: 0;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.academy-video-timeline input::-webkit-slider-runnable-track {
+  height: 4px;
+  background: transparent;
+}
+
+.academy-video-timeline input::-webkit-slider-thumb {
+  width: 14px;
+  height: 14px;
+  border: 3px solid #fff;
+  border-radius: 50%;
+  margin-top: -5px;
+  appearance: none;
+  background: var(--orange);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+.academy-video-timeline input::-moz-range-track {
+  height: 4px;
+  background: transparent;
+}
+
+.academy-video-timeline input::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border: 3px solid #fff;
+  border-radius: 50%;
+  background: var(--orange);
+}
+
+.academy-video-control-row,
+.academy-video-control-group,
+.academy-video-volume {
+  display: flex;
+  align-items: center;
+}
+
+.academy-video-control-row {
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.academy-video-control-group {
+  min-width: 0;
+  gap: 3px;
+}
+
+.academy-video-control-row button {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border: 0;
+  border-radius: 10px;
+  padding: 0;
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+  transition: color 140ms ease, background 140ms ease, transform 140ms ease;
+}
+
+.academy-video-control-row button:hover,
+.academy-video-control-row button:focus-visible {
+  outline: none;
+  background: rgba(255, 138, 31, 0.18);
+  color: #ff9a43;
+  transform: translateY(-1px);
+}
+
+.academy-video-control-row button small {
+  position: absolute;
+  font-size: 7px;
+  font-weight: 950;
+}
+
+.academy-video-volume {
+  gap: 1px;
+}
+
+.academy-video-volume input {
+  width: 76px;
+  height: 4px;
+  appearance: none;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    var(--orange) 0 var(--academy-volume),
+    rgba(255, 255, 255, 0.35) var(--academy-volume) 100%
+  );
+  cursor: pointer;
+}
+
+.academy-video-volume input::-webkit-slider-thumb {
+  width: 11px;
+  height: 11px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  appearance: none;
+  background: var(--orange);
+}
+
+.academy-video-volume input::-moz-range-thumb {
+  width: 8px;
+  height: 8px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: var(--orange);
+}
+
+.academy-video-time {
+  margin-left: 8px;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.academy-video-time i {
+  color: rgba(255, 255, 255, 0.45);
+  font-style: normal;
+}
+
+@media (max-width: 640px) {
+  .academy-video-controls {
+    right: 10px;
+    bottom: 7px;
+    left: 10px;
+  }
+
+  .academy-video-center-play {
+    width: 58px;
+    height: 58px;
+  }
+
+  .academy-video-control-row button {
+    width: 34px;
+    height: 34px;
+  }
+
+  .academy-video-volume input {
+    display: none;
+  }
+
+  .academy-video-time {
+    margin-left: 3px;
+    font-size: 11px;
+  }
 }
 
 .academy-video-placeholder,
@@ -28603,6 +28892,10 @@ body.work-center-map-expanded .logged-workspace {
   .academy-lesson-page.theater .academy-lesson-header h1,
   .academy-lesson-page.theater .academy-lesson-header p:not(.eyebrow) {
     max-width: 100%;
+  }
+
+  .academy-lesson-page.live-session.theater .academy-lesson-header > p:not(.eyebrow) {
+    width: 100%;
   }
 
   .academy-lesson-page.theater .academy-player-layout {

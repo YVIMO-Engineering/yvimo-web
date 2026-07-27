@@ -1,4 +1,13 @@
 import React from 'react';
+import {
+  Maximize,
+  Pause,
+  Play,
+  RotateCcw,
+  RotateCw,
+  Volume2,
+  VolumeX,
+} from 'lucide-react';
 import type { VideoProvider } from '../../academy/types';
 import { fetchR2Playback } from '../../academy/r2VideoApi';
 
@@ -130,33 +139,16 @@ export function VideoPlayer({
       );
     }
     return (
-      <div className="academy-video-frame">
-        <video
-          controls
-          controlsList="nodownload noplaybackrate noremoteplayback"
-          disablePictureInPicture
-          disableRemotePlayback
-          playsInline
-          preload="metadata"
-          title={title}
-          src={r2Playback.url}
-          onContextMenu={(event) => event.preventDefault()}
-          onError={() => {
-            setR2PlaybackState('error');
-            setR2PlaybackMessage('The secure playback URL expired or the video could not be decoded.');
-          }}
-          onPlay={(event) => {
-            const video = event.currentTarget;
-            if (progressTimer.current) window.clearInterval(progressTimer.current);
-            progressTimer.current = window.setInterval(() => handleProgress(video), 10000);
-          }}
-          onPause={(event) => handleProgress(event.currentTarget)}
-          onEnded={(event) => {
-            handleProgress(event.currentTarget);
-            onComplete?.();
-          }}
-        />
-      </div>
+      <YvimoVideoPlayer
+        src={r2Playback.url}
+        title={title}
+        onError={() => {
+          setR2PlaybackState('error');
+          setR2PlaybackMessage('The secure playback URL expired or the video could not be decoded.');
+        }}
+        onProgress={handleProgress}
+        onComplete={onComplete}
+      />
     );
   }
 
@@ -319,6 +311,237 @@ export function VideoPlayer({
         <span>{getProviderLabel(provider)}</span>
         <strong>{title}</strong>
         <p>Player integration prepared for this provider.</p>
+      </div>
+    </div>
+  );
+}
+
+function formatVideoTime(value: number) {
+  if (!Number.isFinite(value) || value < 0) return '0:00';
+  const totalSeconds = Math.floor(value);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return hours > 0
+    ? `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+    : `${minutes}:${String(seconds).padStart(2, '0')}`;
+}
+
+function YvimoVideoPlayer({
+  src,
+  title,
+  onError,
+  onProgress,
+  onComplete,
+}: {
+  src: string;
+  title: string;
+  onError: () => void;
+  onProgress: (video: HTMLVideoElement) => void;
+  onComplete?: () => void;
+}) {
+  const frameRef = React.useRef<HTMLDivElement>(null);
+  const videoRef = React.useRef<HTMLVideoElement>(null);
+  const progressTimer = React.useRef<number | null>(null);
+  const controlsTimer = React.useRef<number | null>(null);
+  const [isPlaying, setIsPlaying] = React.useState(false);
+  const [isMuted, setIsMuted] = React.useState(false);
+  const [volume, setVolume] = React.useState(1);
+  const [currentTime, setCurrentTime] = React.useState(0);
+  const [duration, setDuration] = React.useState(0);
+  const [buffered, setBuffered] = React.useState(0);
+  const [showControls, setShowControls] = React.useState(true);
+
+  const revealControls = React.useCallback(() => {
+    setShowControls(true);
+    if (controlsTimer.current) window.clearTimeout(controlsTimer.current);
+    if (videoRef.current && !videoRef.current.paused) {
+      controlsTimer.current = window.setTimeout(() => setShowControls(false), 2600);
+    }
+  }, []);
+
+  React.useEffect(() => () => {
+    if (progressTimer.current) window.clearInterval(progressTimer.current);
+    if (controlsTimer.current) window.clearTimeout(controlsTimer.current);
+  }, []);
+
+  const togglePlayback = React.useCallback(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (video.paused) void video.play();
+    else video.pause();
+  }, []);
+
+  const skip = React.useCallback((seconds: number) => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.currentTime = Math.min(Math.max(video.currentTime + seconds, 0), video.duration || 0);
+    setCurrentTime(video.currentTime);
+  }, []);
+
+  const toggleMute = React.useCallback(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.muted = !video.muted;
+    setIsMuted(video.muted);
+  }, []);
+
+  const toggleFullscreen = React.useCallback(async () => {
+    if (!frameRef.current) return;
+    if (document.fullscreenElement) await document.exitFullscreen();
+    else await frameRef.current.requestFullscreen();
+  }, []);
+
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === ' ' || event.key.toLowerCase() === 'k') {
+      event.preventDefault();
+      togglePlayback();
+    } else if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      skip(-10);
+    } else if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      skip(10);
+    } else if (event.key.toLowerCase() === 'm') {
+      event.preventDefault();
+      toggleMute();
+    } else if (event.key.toLowerCase() === 'f') {
+      event.preventDefault();
+      void toggleFullscreen();
+    }
+    revealControls();
+  };
+
+  const updateBuffered = (video: HTMLVideoElement) => {
+    if (!video.duration || video.buffered.length === 0) {
+      setBuffered(0);
+      return;
+    }
+    setBuffered((video.buffered.end(video.buffered.length - 1) / video.duration) * 100);
+  };
+
+  const playedPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
+
+  return (
+    <div
+      ref={frameRef}
+      className={`academy-video-frame academy-yvimo-player${showControls ? ' controls-visible' : ''}`}
+      tabIndex={0}
+      aria-label={`${title} video player`}
+      onKeyDown={handleKeyDown}
+      onMouseMove={revealControls}
+      onMouseLeave={() => isPlaying && setShowControls(false)}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) togglePlayback();
+      }}
+    >
+      <video
+        ref={videoRef}
+        disablePictureInPicture
+        disableRemotePlayback
+        playsInline
+        preload="metadata"
+        title={title}
+        src={src}
+        onContextMenu={(event) => event.preventDefault()}
+        onClick={togglePlayback}
+        onError={onError}
+        onLoadedMetadata={(event) => {
+          setDuration(event.currentTarget.duration);
+          updateBuffered(event.currentTarget);
+        }}
+        onDurationChange={(event) => setDuration(event.currentTarget.duration)}
+        onProgress={(event) => updateBuffered(event.currentTarget)}
+        onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
+        onPlay={(event) => {
+          setIsPlaying(true);
+          revealControls();
+          if (progressTimer.current) window.clearInterval(progressTimer.current);
+          progressTimer.current = window.setInterval(() => onProgress(event.currentTarget), 10000);
+        }}
+        onPause={(event) => {
+          setIsPlaying(false);
+          setShowControls(true);
+          onProgress(event.currentTarget);
+          if (progressTimer.current) window.clearInterval(progressTimer.current);
+        }}
+        onEnded={(event) => {
+          setIsPlaying(false);
+          setShowControls(true);
+          onProgress(event.currentTarget);
+          onComplete?.();
+        }}
+      />
+
+      {!isPlaying && (
+        <button className="academy-video-center-play" type="button" onClick={togglePlayback} aria-label="Play video">
+          <Play size={32} fill="currentColor" />
+        </button>
+      )}
+
+      <div className="academy-video-controls" onClick={(event) => event.stopPropagation()}>
+        <div className="academy-video-timeline">
+          <div className="academy-video-buffered" style={{ width: `${buffered}%` }} />
+          <div className="academy-video-played" style={{ width: `${playedPercent}%` }} />
+          <input
+            type="range"
+            min="0"
+            max={duration || 0}
+            step="0.1"
+            value={Math.min(currentTime, duration || 0)}
+            aria-label="Video progress"
+            onChange={(event) => {
+              const nextTime = Number(event.target.value);
+              if (videoRef.current) videoRef.current.currentTime = nextTime;
+              setCurrentTime(nextTime);
+            }}
+          />
+        </div>
+
+        <div className="academy-video-control-row">
+          <div className="academy-video-control-group">
+            <button type="button" onClick={togglePlayback} aria-label={isPlaying ? 'Pause video' : 'Play video'}>
+              {isPlaying ? <Pause size={21} fill="currentColor" /> : <Play size={21} fill="currentColor" />}
+            </button>
+            <button type="button" onClick={() => skip(-10)} aria-label="Go back 10 seconds">
+              <RotateCcw size={20} />
+              <small>10</small>
+            </button>
+            <button type="button" onClick={() => skip(10)} aria-label="Go forward 10 seconds">
+              <RotateCw size={20} />
+              <small>10</small>
+            </button>
+            <div className="academy-video-volume">
+              <button type="button" onClick={toggleMute} aria-label={isMuted ? 'Unmute video' : 'Mute video'}>
+                {isMuted || volume === 0 ? <VolumeX size={21} /> : <Volume2 size={21} />}
+              </button>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                value={isMuted ? 0 : volume}
+                aria-label="Volume"
+                style={{ '--academy-volume': `${(isMuted ? 0 : volume) * 100}%` } as React.CSSProperties}
+                onChange={(event) => {
+                  const nextVolume = Number(event.target.value);
+                  if (videoRef.current) {
+                    videoRef.current.volume = nextVolume;
+                    videoRef.current.muted = nextVolume === 0;
+                  }
+                  setVolume(nextVolume);
+                  setIsMuted(nextVolume === 0);
+                }}
+              />
+            </div>
+            <span className="academy-video-time">
+              {formatVideoTime(currentTime)} <i>/</i> {formatVideoTime(duration)}
+            </span>
+          </div>
+          <button type="button" onClick={() => void toggleFullscreen()} aria-label="Enter full screen">
+            <Maximize size={21} />
+          </button>
+        </div>
       </div>
     </div>
   );
