@@ -52,6 +52,7 @@ import type { Session, User } from '@supabase/supabase-js';
 import { createSessionSupabaseClient, supabase } from './lib/supabaseClient';
 import { AcademyActivityPage, AcademyCatalogPage, AcademyCertificatesPage, AcademyCoursePage, AcademyHomePage, AcademyLessonPage, AcademyProgressPage, AcademyTrackPage } from './pages/AcademyPages';
 import { ProductionOrdersWorkspace, TraceabilityWorkspace, WorkCentersWorkspace } from './manufacturing/MesWorkspaces';
+import { InventoryWorkspace } from './manufacturing/InventoryWorkspace';
 import { OperatorTerminalWorkspace } from './manufacturing/OperatorTerminalWorkspace';
 import { QualityOperationsWorkspace, type QualityContextTab } from './manufacturing/QualityOperationsWorkspace';
 import { SupplierOperationsWorkspace, type SupplierContextTab } from './manufacturing/SupplierOperationsWorkspace';
@@ -1256,6 +1257,7 @@ Object.assign(translations.es, {
   'Work Centers': 'Centros de trabajo',
   'Operator Terminal': 'Terminal de operador',
   'Production Events': 'Eventos de producci\u00f3n',
+  'Inventory': 'Inventario',
   'Quality Checks': 'Revisiones de calidad',
   'Downtime Events': 'Eventos de paro',
   Clients: 'Clientes',
@@ -3187,11 +3189,12 @@ function LoggedDashboardPage({
       tone: 'green',
     },
     {
-      label: 'Production Events',
-      description: 'Timeline of execution events such as order started, quantity added, downtime started, quality check completed, and order completed.',
-      icon: GitBranch,
-      path: '/workspace/manufacturing-ops/mes/events',
-      implemented: false,
+      label: 'Inventory',
+      description: 'Track materials, components, work in progress, and finished goods across manufacturing locations.',
+      icon: PackageCheck,
+      path: '/workspace/manufacturing-ops/mes/inventory',
+      implemented: true,
+      tone: 'blue',
     },
     {
       label: 'Downtime Events',
@@ -3393,6 +3396,7 @@ function LoggedDashboardPage({
   const isClientsOperationsPage = activePath === '/workspace/manufacturing-ops/mes/clients' || activePath.startsWith('/workspace/manufacturing-ops/mes/clients/');
   const isCompactMesApplicationPage = activePath === '/workspace/manufacturing-ops/mes/orders'
     || activePath === '/workspace/manufacturing-ops/mes/work-centers'
+    || activePath === '/workspace/manufacturing-ops/mes/inventory'
     || activePath === '/workspace/manufacturing-ops/mes/traceability';
   const supplierContextTabs: Array<{
     value: SupplierContextTab;
@@ -3476,6 +3480,9 @@ function LoggedDashboardPage({
     }
     if (activePath === '/workspace/manufacturing-ops/mes/work-centers') {
       return <WorkCentersWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} />;
+    }
+    if (activePath === '/workspace/manufacturing-ops/mes/inventory') {
+      return <InventoryWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} />;
     }
     if (isOperatorTerminalPage) {
       return <OperatorTerminalWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} languageCode={languageCode} t={t} />;
