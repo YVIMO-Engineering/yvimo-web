@@ -8158,9 +8158,13 @@ type TraceabilityEventTone =
   | 'waiting-inspection'
   | 'order-completed'
   | 'quality-inspection'
+  | 'inventory-received'
+  | 'inventory-consumed'
   | 'adjustment';
 
 function getTraceabilityEventTone(eventType: string): TraceabilityEventTone {
+  if (eventType === 'inventory-received') return 'inventory-received';
+  if (eventType === 'inventory-consumed') return 'inventory-consumed';
   if (eventType === 'job-started') return 'job-started';
   if (eventType === 'job-resumed') return 'job-resumed';
   if (eventType === 'job-paused') return 'job-paused';
@@ -8175,6 +8179,8 @@ function getTraceabilityEventTone(eventType: string): TraceabilityEventTone {
 
 function renderTraceabilityEventIcon(eventType: string) {
   const iconProps = { size: 19, strokeWidth: 2.6 };
+  if (eventType === 'inventory-received') return <Plus {...iconProps} />;
+  if (eventType === 'inventory-consumed') return <Minus {...iconProps} />;
   if (eventType === 'job-started') return <Activity {...iconProps} />;
   if (eventType === 'job-resumed') return <RadioTower {...iconProps} />;
   if (eventType === 'job-paused') return <Timer {...iconProps} />;
@@ -8202,12 +8208,21 @@ function getTraceabilityEventLabel(eventType: string) {
     'quality-inspection-saved': 'Quality Inspection Saved',
     'quality-inspection-skipped': 'Quality Inspection Skipped',
     'measurement-corrected': 'Measurement Corrected',
+    'inventory-received': 'Inventory Received',
+    'inventory-consumed': 'Inventory Consumed',
     adjustment: 'Adjustment',
   };
   return eventLabels[eventType] ?? formatTitleLabel(eventType);
 }
 
 function getTraceabilityEventSummary(event: TraceabilityOperatorEventRow) {
+  if (event.event_type === 'inventory-received' || event.event_type === 'inventory-consumed') {
+    const itemTitle = typeof event.payload?.inventory_item_title === 'string' ? event.payload.inventory_item_title : 'Inventory item';
+    const previousQuantity = event.payload?.previous_quantity;
+    const newQuantity = event.payload?.new_quantity;
+    const action = event.event_type === 'inventory-received' ? 'received' : 'consumed';
+    return `${itemTitle}: 1 unit ${action} (${String(previousQuantity ?? '?')} → ${String(newQuantity ?? '?')})`;
+  }
   if (event.event_type === 'production-scrap') {
     return `${event.quantity || 1} scrap part${(event.quantity || 1) === 1 ? '' : 's'} reported`;
   }
@@ -8420,7 +8435,7 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
           )
         `)
         .eq('organization_id', organizationId)
-        .in('event_type', ['production-scrap', 'downtime-started', 'downtime-ended', 'job-paused', 'job-started', 'job-resumed', 'manufacturing-completed', 'operation-completed', 'adjustment', 'quality-inspection-saved', 'quality-inspection-skipped', 'measurement-corrected'])
+        .in('event_type', ['production-scrap', 'downtime-started', 'downtime-ended', 'job-paused', 'job-started', 'job-resumed', 'manufacturing-completed', 'operation-completed', 'adjustment', 'quality-inspection-saved', 'quality-inspection-skipped', 'measurement-corrected', 'inventory-received', 'inventory-consumed'])
         .order('created_at', { ascending: false })
         .limit(300),
       supabase
@@ -8517,7 +8532,7 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
         filter: `organization_id=eq.${organizationId}`,
       }, (payload) => {
         const newEvent = payload.new as Partial<{ id: string; event_type: string }>;
-        if (newEvent.event_type && !['production-scrap', 'downtime-started', 'downtime-ended', 'job-paused', 'job-started', 'job-resumed', 'manufacturing-completed', 'operation-completed', 'adjustment', 'quality-inspection-saved', 'quality-inspection-skipped', 'measurement-corrected'].includes(newEvent.event_type)) return;
+        if (newEvent.event_type && !['production-scrap', 'downtime-started', 'downtime-ended', 'job-paused', 'job-started', 'job-resumed', 'manufacturing-completed', 'operation-completed', 'adjustment', 'quality-inspection-saved', 'quality-inspection-skipped', 'measurement-corrected', 'inventory-received', 'inventory-consumed'].includes(newEvent.event_type)) return;
         const eventId = typeof newEvent.id === 'string' ? newEvent.id : '';
         if (eventId) markCaptureAsNew(`event-${eventId}`);
         void loadTraceability(true);
@@ -8941,6 +8956,7 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
             const qualityDocumentCount = getTraceabilityQualityDocumentCount(event);
             const correctionComparison = event.event_type === 'measurement-corrected' ? getTraceabilityCorrectionComparison(event) : null;
             const isQualityEvent = isTraceabilityQualityEvent(event.event_type);
+            const isInventoryEvent = event.event_type === 'inventory-received' || event.event_type === 'inventory-consumed';
             const showEventQuantity = !isQualityEvent && event.event_type !== 'measurement-corrected';
             const qualityStatusConfig = {
               ok: { label: 'OK', icon: CheckCircle2 },
@@ -8964,17 +8980,27 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
                     </div>
                     {renderTraceabilityCaptureTime(event.created_at, getTraceabilityEventShift(event))}
                   </div>
-                  <div className="traceability-event-detail-grid">
-                    <span><b>Order Number</b>{order?.order_number ?? 'Unassigned order'}</span>
-                    <span><b>Part Name</b>{order?.part_name ?? 'N/A'}</span>
-                    <span><b>Client</b>{eventClientName || 'Unassigned client'}</span>
-                    {showEventQuantity ? <span><b>Quantity</b>{event.quantity || 'N/A'}</span> : null}
-                  </div>
+                  {isInventoryEvent ? (
+                    <div className="traceability-event-detail-grid">
+                      <span><b>Inventory Item</b>{String(event.payload?.inventory_item_title ?? 'N/A')}</span>
+                      <span><b>Section</b>{String(event.payload?.inventory_section_name ?? 'N/A')}</span>
+                      <span><b>Previous Quantity</b>{String(event.payload?.previous_quantity ?? 'N/A')}</span>
+                      <span><b>New Quantity</b>{String(event.payload?.new_quantity ?? 'N/A')}</span>
+                    </div>
+                  ) : (
+                    <div className="traceability-event-detail-grid">
+                      <span><b>Order Number</b>{order?.order_number ?? 'Unassigned order'}</span>
+                      <span><b>Part Name</b>{order?.part_name ?? 'N/A'}</span>
+                      <span><b>Client</b>{eventClientName || 'Unassigned client'}</span>
+                      {showEventQuantity ? <span><b>Quantity</b>{event.quantity || 'N/A'}</span> : null}
+                    </div>
+                  )}
                   <div className="mes-event-meta traceability-capture-meta">
                     <span><Factory size={15} /><b>Work Center</b>{event.work_center_code || 'No work center'}</span>
-                    <span><RadioTower size={15} /><b>Station</b>{event.station_code || 'No station'}</span>
+                    {!isInventoryEvent ? <span><RadioTower size={15} /><b>Station</b>{event.station_code || 'No station'}</span> : null}
                     {!isQualityEvent ? <span><AlertTriangle size={15} /><b>Reason</b>{event.reason || 'No reason entered'}</span> : null}
-                    {!isQualityEvent ? <span><Activity size={15} /><b>Status</b>{order?.status ? formatTraceabilityStatus(order.status) : 'Unknown'}</span> : null}
+                    {!isQualityEvent && !isInventoryEvent ? <span><Activity size={15} /><b>Status</b>{order?.status ? formatTraceabilityStatus(order.status) : 'Unknown'}</span> : null}
+                    {isInventoryEvent ? <span><Database size={15} /><b>Minimum</b>{String(event.payload?.minimum_quantity ?? 'N/A')}</span> : null}
                   </div>
                   {isQualityEvent ? (
                     <div className="traceability-quality-summary">

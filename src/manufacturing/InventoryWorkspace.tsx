@@ -53,6 +53,7 @@ export function InventoryWorkspace({ onNavigate, organizationId, organizationNam
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
   const [reportGenerating, setReportGenerating] = React.useState(false);
+  const [adjustingItemIds, setAdjustingItemIds] = React.useState<Set<string>>(new Set());
   const [message, setMessage] = React.useState('');
 
   const loadInventory = React.useCallback(async () => {
@@ -207,6 +208,30 @@ export function InventoryWorkspace({ onNavigate, organizationId, organizationNam
     }
     setDeleteCandidate(null);
     await loadInventory();
+  };
+
+  const adjustInventoryQuantity = async (item: InventoryItem, delta: 1 | -1) => {
+    if (adjustingItemIds.has(item.id) || (delta < 0 && item.quantity <= 0)) return;
+    setAdjustingItemIds((current) => new Set(current).add(item.id));
+    setMessage('');
+    const { data, error } = await supabase.rpc('mes_adjust_inventory_quantity', {
+      p_inventory_item_id: item.id,
+      p_organization_id: organizationId,
+      p_delta: delta,
+    });
+    setAdjustingItemIds((current) => {
+      const next = new Set(current);
+      next.delete(item.id);
+      return next;
+    });
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+    const nextQuantity = Number(data);
+    setItems((current) => current.map((candidate) => candidate.id === item.id
+      ? { ...candidate, quantity: Number.isFinite(nextQuantity) ? nextQuantity : candidate.quantity + delta }
+      : candidate));
   };
 
   const downloadInventoryReport = async () => {
@@ -489,6 +514,13 @@ export function InventoryWorkspace({ onNavigate, organizationId, organizationNam
                             </span>
                           </div>
                           <p>{item.description || 'No description provided.'}</p>
+                          <div className="inventory-quick-adjust">
+                            <span><small>Quick update</small><strong>{adjustingItemIds.has(item.id) ? 'Updating...' : 'Adjust stock by one unit'}</strong></span>
+                            <div>
+                              <button type="button" disabled={adjustingItemIds.has(item.id) || item.quantity <= 0} aria-label={`Remove one ${item.title}`} onClick={() => { void adjustInventoryQuantity(item, -1); }}>−</button>
+                              <button className="add" type="button" disabled={adjustingItemIds.has(item.id)} aria-label={`Add one ${item.title}`} onClick={() => { void adjustInventoryQuantity(item, 1); }}>+</button>
+                            </div>
+                          </div>
                           <div className="inventory-station-list">
                             <small>Used by stations</small>
                             <div>{linkedStations.length ? linkedStations.map((station) => <span key={station.id}>{station.code} · {station.name}</span>) : <em>No stations assigned</em>}</div>

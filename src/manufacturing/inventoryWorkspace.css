@@ -78,6 +78,16 @@
 .inventory-card-title > span.healthy { border-color: #b9e5c8; background: #ecf9f0; color: #168044; }
 .inventory-card-title > span.low strong, .inventory-card-title > span.minimum strong, .inventory-card-title > span.healthy strong { color: inherit; }
 .inventory-card-body > p { min-height: 38px; margin: 0; color: #627083; font-size: .78rem; line-height: 1.5; }
+.inventory-quick-adjust { display: flex; align-items: center; justify-content: space-between; gap: 9px; border-top: 1px solid #edf1f5; padding-top: 10px; }
+.inventory-quick-adjust > span small, .inventory-quick-adjust > span strong { display: block; }
+.inventory-quick-adjust > span small { color: #78879a; font-size: .58rem; font-weight: 900; letter-spacing: .05em; text-transform: uppercase; }
+.inventory-quick-adjust > span strong { margin-top: 2px; color: #52657a; font-size: .66rem; }
+.inventory-quick-adjust > div { display: flex; gap: 6px; }
+.inventory-quick-adjust button { display: grid; width: 36px; height: 34px; place-items: center; border: 1px solid #d3dde7; border-radius: 8px; background: #f5f8fb; color: #4b5e72; font-size: 1.2rem; font-weight: 900; }
+.inventory-quick-adjust button:hover { border-color: #e3a562; background: #fff5eb; color: #ba5600; }
+.inventory-quick-adjust button.add { border-color: #b9e2c6; background: #eef9f1; color: #197f43; }
+.inventory-quick-adjust button.add:hover { border-color: #67bd82; background: #ddf5e5; }
+.inventory-quick-adjust button:disabled { opacity: .4; cursor: not-allowed; }
 .inventory-station-list { padding-top: 10px; border-top: 1px solid #edf1f5; }
 .inventory-station-list > small { color: #78879a; font-size: .62rem; font-weight: 900; letter-spacing: .05em; text-transform: uppercase; }
 .inventory-station-list > div { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }

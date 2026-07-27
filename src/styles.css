@@ -18079,6 +18079,18 @@ body.work-center-map-expanded .logged-workspace {
   --traceability-event-glow: rgba(124, 58, 237, 0.25);
 }
 
+.traceability-event-row.event-tone-inventory-received {
+  --traceability-event-color: #0f9f8f;
+  --traceability-event-soft: rgba(15, 159, 143, 0.11);
+  --traceability-event-glow: rgba(15, 159, 143, 0.27);
+}
+
+.traceability-event-row.event-tone-inventory-consumed {
+  --traceability-event-color: #4f46e5;
+  --traceability-event-soft: rgba(79, 70, 229, 0.11);
+  --traceability-event-glow: rgba(79, 70, 229, 0.27);
+}
+
 .traceability-event-row.event-tone-adjustment {
   --traceability-event-color: #be185d;
   --traceability-event-soft: rgba(190, 24, 93, 0.1);
