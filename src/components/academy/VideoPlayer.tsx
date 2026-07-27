@@ -1,11 +1,13 @@
 import React from 'react';
 import type { VideoProvider } from '../../academy/types';
+import { fetchR2Playback } from '../../academy/r2VideoApi';
 
 type VideoPlayerProps = {
   provider: VideoProvider | null;
   videoId?: string | null;
   videoUrl?: string | null;
   title: string;
+  recordingId?: string;
   onProgress?: (progressSeconds: number, durationSeconds: number | null) => void;
   onComplete?: () => void;
 };
@@ -26,6 +28,8 @@ function getProviderLabel(provider: VideoProvider | null) {
       return 'YouTube';
     case 'cloudflare_stream':
       return 'Cloudflare Stream';
+    case 'cloudflare_r2':
+      return 'Cloudflare R2';
     case 'mux':
       return 'Mux';
     case 'vimeo':
@@ -46,11 +50,15 @@ export function VideoPlayer({
   videoId,
   videoUrl,
   title,
+  recordingId,
   onProgress,
   onComplete,
 }: VideoPlayerProps) {
   const progressTimer = React.useRef<number | null>(null);
   const [sharePointPlaybackError, setSharePointPlaybackError] = React.useState(false);
+  const [r2Playback, setR2Playback] = React.useState<{ url: string; expiresAt: string } | null>(null);
+  const [r2PlaybackState, setR2PlaybackState] = React.useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  const [r2PlaybackMessage, setR2PlaybackMessage] = React.useState('');
 
   React.useEffect(() => {
     return () => {
@@ -63,6 +71,33 @@ export function VideoPlayer({
   React.useEffect(() => {
     setSharePointPlaybackError(false);
   }, [provider, videoUrl]);
+
+  const loadR2Playback = React.useCallback(async () => {
+    if (provider !== 'cloudflare_r2' || !recordingId) return;
+    setR2PlaybackState('loading');
+    setR2PlaybackMessage('');
+    try {
+      const playback = await fetchR2Playback(recordingId);
+      setR2Playback({ url: playback.playbackUrl, expiresAt: playback.expiresAt });
+      setR2PlaybackState('ready');
+    } catch (caught) {
+      setR2Playback(null);
+      setR2PlaybackState('error');
+      setR2PlaybackMessage(caught instanceof Error ? caught.message : 'Private video playback is unavailable.');
+    }
+  }, [provider, recordingId]);
+
+  React.useEffect(() => {
+    if (provider !== 'cloudflare_r2' || !recordingId) return;
+    void loadR2Playback();
+  }, [loadR2Playback, provider, recordingId]);
+
+  React.useEffect(() => {
+    if (!r2Playback) return;
+    const refreshIn = Math.max(new Date(r2Playback.expiresAt).getTime() - Date.now() - 5 * 60 * 1000, 30_000);
+    const timer = window.setTimeout(() => void loadR2Playback(), refreshIn);
+    return () => window.clearTimeout(timer);
+  }, [loadR2Playback, r2Playback]);
 
   const handleProgress = React.useCallback(
     (video: HTMLVideoElement) => {
@@ -77,6 +112,53 @@ export function VideoPlayer({
     },
     [onComplete, onProgress],
   );
+
+  if (provider === 'cloudflare_r2') {
+    if (r2PlaybackState === 'loading' || r2PlaybackState === 'idle') {
+      return <VideoStatus provider={provider} title="Preparing private video..." detail="Requesting secure temporary playback access." />;
+    }
+    if (!r2Playback || r2PlaybackState === 'error') {
+      return (
+        <div className="academy-video-frame academy-video-placeholder">
+          <div>
+            <span>{getProviderLabel(provider)}</span>
+            <strong>Playback unavailable</strong>
+            <p>{r2PlaybackMessage || 'The private video could not be loaded.'}</p>
+            <button type="button" onClick={() => void loadR2Playback()}>Retry playback</button>
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div className="academy-video-frame">
+        <video
+          controls
+          controlsList="nodownload noplaybackrate noremoteplayback"
+          disablePictureInPicture
+          disableRemotePlayback
+          playsInline
+          preload="metadata"
+          title={title}
+          src={r2Playback.url}
+          onContextMenu={(event) => event.preventDefault()}
+          onError={() => {
+            setR2PlaybackState('error');
+            setR2PlaybackMessage('The secure playback URL expired or the video could not be decoded.');
+          }}
+          onPlay={(event) => {
+            const video = event.currentTarget;
+            if (progressTimer.current) window.clearInterval(progressTimer.current);
+            progressTimer.current = window.setInterval(() => handleProgress(video), 10000);
+          }}
+          onPause={(event) => handleProgress(event.currentTarget)}
+          onEnded={(event) => {
+            handleProgress(event.currentTarget);
+            onComplete?.();
+          }}
+        />
+      </div>
+    );
+  }
 
   if (provider === 'youtube') {
     const embedUrl = getYouTubeEmbedUrl(videoId);
@@ -237,6 +319,18 @@ export function VideoPlayer({
         <span>{getProviderLabel(provider)}</span>
         <strong>{title}</strong>
         <p>Player integration prepared for this provider.</p>
+      </div>
+    </div>
+  );
+}
+
+function VideoStatus({ provider, title, detail }: { provider: VideoProvider | null; title: string; detail: string }) {
+  return (
+    <div className="academy-video-frame academy-video-placeholder">
+      <div>
+        <span>{getProviderLabel(provider)}</span>
+        <strong>{title}</strong>
+        <p>{detail}</p>
       </div>
     </div>
   );

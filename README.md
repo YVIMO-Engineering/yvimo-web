@@ -127,3 +127,64 @@ npm install
 npm run dev
 npm run build
 ```
+
+## Private Academy videos with Cloudflare R2
+
+Recorded live sessions can use the `cloudflare_r2` provider. The video file is
+uploaded directly from the browser to a private R2 bucket using a 15-minute
+presigned PUT URL. Playback uses a three-hour presigned GET URL after YVIMO
+authentication and Academy rank authorization.
+
+Server-only environment variables:
+
+```bash
+CLOUDFLARE_ACCOUNT_ID=
+R2_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com
+R2_BUCKET_NAME=yvimo-course-videos
+R2_ACCESS_KEY_ID=
+R2_SECRET_ACCESS_KEY=
+
+# Optional; defaults to 2 GiB.
+R2_MAX_VIDEO_BYTES=2147483648
+```
+
+Never prefix the R2 variables with `VITE_`. The Vite browser bundle must not
+receive them. Vercel must be redeployed after adding or changing these values.
+
+Apply this migration manually in the Supabase SQL editor:
+
+```text
+supabase/sql/079_add_cloudflare_r2_academy_recordings.sql
+```
+
+The R2 bucket must remain private. Configure this CORS policy in Cloudflare:
+
+```json
+[
+  {
+    "AllowedOrigins": [
+      "http://localhost:5173",
+      "https://yvimo.com",
+      "https://www.yvimo.com"
+    ],
+    "AllowedMethods": ["GET", "HEAD", "PUT"],
+    "AllowedHeaders": ["*"],
+    "ExposeHeaders": [
+      "ETag",
+      "Content-Length",
+      "Content-Range",
+      "Accept-Ranges"
+    ],
+    "MaxAgeSeconds": 3600
+  }
+]
+```
+
+Add the exact active Vercel production domain and any preview domain used for
+upload testing. Prefer explicit preview origins instead of a broad wildcard.
+
+Use browser-compatible MP4 files with H.264 video, AAC audio, and Fast Start.
+No transcoding is performed. Expired unclaimed uploads are represented in
+`academy_recording_uploads`; canceled uploads are deleted immediately when
+possible. A scheduled cleanup for expired rows remains recommended as a
+defense-in-depth maintenance task.

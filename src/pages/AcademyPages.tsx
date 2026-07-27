@@ -119,6 +119,13 @@ import type {
   SimulationTaskConfig,
 } from '../academy/types';
 import { VideoPlayer } from '../components/academy/VideoPlayer';
+import {
+  cleanupR2Upload,
+  cleanupQueuedR2Objects,
+  deleteR2Recording,
+  uploadRecordingToR2,
+  type VerifiedR2Upload,
+} from '../academy/r2VideoApi';
 import { exportElementScreenshotToSinglePagePdf } from '../lib/screenshotPdfExport';
 
 type AcademyUser = {
@@ -2858,6 +2865,7 @@ export function AcademyCoursePage({ user, navigateTo, courseSlug, t = defaultT, 
     videoUrl: string;
     durationSeconds: number | null;
     status: AcademyLessonStatus;
+    verifiedUploadId?: string | null;
   }) => {
     if (!bundle) return;
     try {
@@ -2867,6 +2875,9 @@ export function AcademyCoursePage({ user, navigateTo, courseSlug, t = defaultT, 
         ...input,
         orderIndex: editingLiveSession?.order_index ?? liveSessions.length,
       });
+      if (input.videoProvider === 'cloudflare_r2' && input.verifiedUploadId && editingLiveSession?.id) {
+        void cleanupQueuedR2Objects(editingLiveSession.id);
+      }
       setEditingLiveSession(undefined);
       await loadCourse();
     } catch (caught) {
@@ -2879,7 +2890,8 @@ export function AcademyCoursePage({ user, navigateTo, courseSlug, t = defaultT, 
   const handleDeleteLiveSession = async (session: AcademyLesson) => {
     if (!window.confirm(t(`Delete "${session.title}"?`))) return;
     try {
-      await deleteAcademyLiveSession(session.id);
+      if (session.video_provider === 'cloudflare_r2') await deleteR2Recording(session.id);
+      else await deleteAcademyLiveSession(session.id);
       await loadCourse();
     } catch (caught) {
       setMessage(getReadableErrorMessage(caught, 'Live session could not be deleted.'));
@@ -3042,6 +3054,7 @@ export function AcademyCoursePage({ user, navigateTo, courseSlug, t = defaultT, 
       {editingLiveSession !== undefined ? (
         <LiveSessionEditor
           session={editingLiveSession}
+          courseId={bundle.course.id}
           onCancel={() => setEditingLiveSession(undefined)}
           onSave={handleSaveLiveSession}
           t={t}
@@ -3114,13 +3127,15 @@ function LiveSessionsBlock({
   );
 }
 
-function LiveSessionEditor({ session, onCancel, onSave, t = defaultT }: {
+function LiveSessionEditor({ session, courseId, onCancel, onSave, t = defaultT }: {
   session: AcademyLesson | null;
+  courseId: string;
   onCancel: () => void;
   onSave: (input: {
     title: string; slug: string; description: string;
     videoProvider: AcademyLesson['video_provider']; videoId: string; videoUrl: string;
     durationSeconds: number | null; status: AcademyLessonStatus;
+    verifiedUploadId?: string | null;
   }) => Promise<void>;
   t?: AcademyTranslator;
 }) {
@@ -3131,6 +3146,15 @@ function LiveSessionEditor({ session, onCancel, onSave, t = defaultT }: {
   const [status, setStatus] = React.useState<AcademyLessonStatus>(session?.status ?? 'published');
   const [saveBusy, setSaveBusy] = React.useState(false);
   const [saveMessage, setSaveMessage] = React.useState<{ tone: 'error' | 'info'; text: string } | null>(null);
+  const [r2File, setR2File] = React.useState<File | null>(null);
+  const [r2Upload, setR2Upload] = React.useState<VerifiedR2Upload | null>(null);
+  const [r2UploadBusy, setR2UploadBusy] = React.useState(false);
+  const [r2UploadStage, setR2UploadStage] = React.useState<'idle' | 'uploading' | 'verifying' | 'ready' | 'failed'>(
+    session?.video_provider === 'cloudflare_r2' && session.video_status === 'ready' ? 'ready' : 'idle',
+  );
+  const [r2UploadProgress, setR2UploadProgress] = React.useState(
+    session?.video_provider === 'cloudflare_r2' && session.video_status === 'ready' ? 100 : 0,
+  );
   const deriveVideoId = (provider: AcademyLesson['video_provider'], value: string) => {
     const trimmed = value.trim();
     if (!trimmed || provider === 'sharepoint') return null;
@@ -3167,6 +3191,7 @@ function LiveSessionEditor({ session, onCancel, onSave, t = defaultT }: {
         videoUrl,
         durationSeconds: session?.duration_seconds ?? null,
         status,
+        verifiedUploadId: r2Upload?.uploadId ?? null,
       });
     } catch (caught) {
       setSaveMessage({
@@ -3176,12 +3201,58 @@ function LiveSessionEditor({ session, onCancel, onSave, t = defaultT }: {
       setSaveBusy(false);
     }
   };
+  const uploadR2Video = async () => {
+    if (!r2File || r2UploadBusy) return;
+    setR2UploadBusy(true);
+    setSaveMessage(null);
+    setR2UploadStage('uploading');
+    setR2UploadProgress(0);
+    try {
+      const verified = await uploadRecordingToR2(courseId, r2File, (progress) => {
+        setR2UploadStage(progress.stage);
+        setR2UploadProgress(progress.percent);
+      });
+      setR2Upload(verified);
+      setR2UploadStage('ready');
+      setR2UploadProgress(100);
+    } catch (caught) {
+      setR2UploadStage('failed');
+      setSaveMessage({ tone: 'error', text: getReadableErrorMessage(caught, t('Video upload failed.')) });
+    } finally {
+      setR2UploadBusy(false);
+    }
+  };
+  const discardR2Upload = async () => {
+    if (r2Upload) {
+      try {
+        await cleanupR2Upload(r2Upload.uploadId);
+      } catch {
+        // Expired unclaimed uploads are also eligible for scheduled cleanup.
+      }
+    }
+    setR2Upload(null);
+    setR2File(null);
+    setR2UploadStage(session?.video_provider === 'cloudflare_r2' ? 'ready' : 'idle');
+    setR2UploadProgress(0);
+  };
+  const cancelEditor = async () => {
+    if (r2UploadBusy) return;
+    if (r2Upload && !window.confirm(t('Discard this verified upload and close the editor?'))) return;
+    await discardR2Upload();
+    onCancel();
+  };
+  const changeProvider = async (nextProvider: AcademyLesson['video_provider']) => {
+    if (r2Upload && !window.confirm(t('Changing provider will discard the uploaded R2 video. Continue?'))) return;
+    await discardR2Upload();
+    setVideoProvider(nextProvider);
+    setSaveMessage(null);
+  };
   return (
     <div className="academy-editor-backdrop" role="presentation">
       <section className="academy-activity-editor academy-live-editor" role="dialog" aria-modal="true">
         <div className="academy-editor-heading">
           <div><p className="eyebrow">{t('Live session staff tools')}</p><h2>{t(session ? 'Edit recording' : 'Add recording')}</h2></div>
-          <button type="button" onClick={onCancel}><X size={18} /></button>
+          <button type="button" onClick={() => void cancelEditor()} disabled={r2UploadBusy || saveBusy}><X size={18} /></button>
         </div>
         <div className="academy-editor-grid">
           <label className="academy-editor-wide">
@@ -3190,14 +3261,67 @@ function LiveSessionEditor({ session, onCancel, onSave, t = defaultT }: {
             {generatedSlug ? <span className="academy-editor-help">{t('Recording URL')}: /live-sessions/{generatedSlug}</span> : null}
           </label>
           <label>{t('Video provider')}
-            <select value={videoProvider ?? ''} onChange={(event) => setVideoProvider(event.target.value as AcademyLesson['video_provider'])}>
+            <select value={videoProvider ?? ''} onChange={(event) => void changeProvider(event.target.value as AcademyLesson['video_provider'])}>
               <option value="youtube">YouTube</option><option value="vimeo">Vimeo</option>
               <option value="mux">Mux</option><option value="cloudflare_stream">Cloudflare Stream</option>
+              <option value="cloudflare_r2">Cloudflare R2 (Private)</option>
               <option value="sharepoint">SharePoint / OneDrive</option>
               <option value="local">Direct / local</option><option value="supabase">Supabase</option>
             </select>
           </label>
           <label>{t('Status')}<select value={status} onChange={(event) => setStatus(event.target.value as AcademyLessonStatus)}><option value="published">{t('Published')}</option><option value="draft">{t('Draft')}</option><option value="archived">{t('Archived')}</option></select></label>
+          {videoProvider === 'cloudflare_r2' ? (
+            <div className="academy-editor-wide academy-r2-upload">
+              <div className="academy-r2-upload-heading">
+                <div>
+                  <strong>{t(session?.video_provider === 'cloudflare_r2' ? 'Private R2 video' : 'Upload private MP4')}</strong>
+                  <span>{t('H.264/AAC MP4 with Fast Start is recommended. Maximum 2 GB by default.')}</span>
+                </div>
+                {session?.video_provider === 'cloudflare_r2' && !r2File ? (
+                  <span className="academy-r2-current"><CheckCircle2 size={15} />{session.video_filename ?? t('Current video ready')}</span>
+                ) : null}
+              </div>
+              <label className="academy-r2-file-picker">
+                <input
+                  type="file"
+                  accept="video/mp4,.mp4"
+                  disabled={r2UploadBusy || Boolean(r2Upload)}
+                  onChange={(event) => {
+                    const file = event.target.files?.[0] ?? null;
+                    setR2File(file);
+                    setR2UploadStage('idle');
+                    setR2UploadProgress(0);
+                    setSaveMessage(null);
+                  }}
+                />
+                <FileUp size={20} />
+                <span>
+                  <strong>{r2File?.name ?? t('Choose MP4 video')}</strong>
+                  <em>{r2File ? formatFileSize(r2File.size) : t('The video uploads directly to the private R2 bucket.')}</em>
+                </span>
+              </label>
+              {r2File ? (
+                <div className="academy-r2-upload-actions">
+                  <button type="button" onClick={() => void uploadR2Video()} disabled={r2UploadBusy || Boolean(r2Upload)}>
+                    <FileUp size={16} />
+                    {t(r2UploadStage === 'failed' ? 'Retry upload' : r2UploadBusy ? 'Uploading...' : r2Upload ? 'Verified' : 'Upload video')}
+                  </button>
+                  {r2Upload ? <button type="button" onClick={() => void discardR2Upload()}>{t('Replace video')}</button> : null}
+                </div>
+              ) : null}
+              {r2UploadStage !== 'idle' ? (
+                <div className={`academy-r2-progress ${r2UploadStage}`}>
+                  <div><span style={{ width: `${r2UploadProgress}%` }} /></div>
+                  <strong>
+                    {r2UploadStage === 'uploading' ? `${t('Uploading...')} ${r2UploadProgress}%`
+                      : r2UploadStage === 'verifying' ? t('Verifying video...')
+                        : r2UploadStage === 'ready' ? t('Upload completed and verified')
+                          : t('Upload failed')}
+                  </strong>
+                </div>
+              ) : null}
+            </div>
+          ) : (
           <label className="academy-editor-wide">
             {t(videoProvider === 'sharepoint' ? 'SharePoint embed code or Anyone link' : 'Video URL')}
             {videoProvider === 'sharepoint' ? (
@@ -3213,6 +3337,7 @@ function LiveSessionEditor({ session, onCancel, onSave, t = defaultT }: {
               <input value={videoUrl} onChange={(event) => setVideoUrl(event.target.value)} />
             )}
           </label>
+          )}
           <label className="academy-editor-wide">{t('Description')}<textarea value={description} onChange={(event) => setDescription(event.target.value)} /></label>
         </div>
         {saveMessage ? (
@@ -3222,10 +3347,19 @@ function LiveSessionEditor({ session, onCancel, onSave, t = defaultT }: {
           </div>
         ) : null}
         <div className="academy-editor-actions">
-          <button type="button" onClick={onCancel} disabled={saveBusy}>{t('Cancel')}</button>
+          <button type="button" onClick={() => void cancelEditor()} disabled={saveBusy || r2UploadBusy}>{t('Cancel')}</button>
           <button
             type="button"
-            disabled={saveBusy || !title.trim() || (!videoUrl.trim() && !session?.video_id)}
+            disabled={
+              saveBusy
+              || r2UploadBusy
+              || !title.trim()
+              || (
+                videoProvider === 'cloudflare_r2'
+                  ? !(r2Upload || (session?.video_provider === 'cloudflare_r2' && session.video_status === 'ready'))
+                  : (!videoUrl.trim() && !session?.video_id)
+              )
+            }
             onClick={() => void handleSave()}
           >
             {saveBusy ? <Clock3 size={16} /> : <Save size={16} />}
@@ -4876,6 +5010,7 @@ export function AcademyLessonPage({
           <div className="academy-player-column">
             <VideoPlayer
               provider={lesson.video_provider}
+              recordingId={liveSession ? lesson.id : undefined}
               videoId={lesson.video_id}
               videoUrl={lesson.video_url}
               title={lesson.title}

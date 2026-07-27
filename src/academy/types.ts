@@ -1,6 +1,7 @@
 export type VideoProvider =
   | 'youtube'
   | 'cloudflare_stream'
+  | 'cloudflare_r2'
   | 'mux'
   | 'vimeo'
   | 'sharepoint'
@@ -128,6 +129,13 @@ export type AcademyLesson = {
   video_provider: VideoProvider | null;
   video_id: string | null;
   video_url: string | null;
+  video_object_key: string | null;
+  video_filename: string | null;
+  video_mime_type: string | null;
+  video_size_bytes: number | null;
+  video_duration_seconds: number | null;
+  video_status: 'pending' | 'uploading' | 'verifying' | 'ready' | 'failed' | null;
+  video_uploaded_at: string | null;
   duration_seconds: number | null;
   order_index: number;
   is_preview: boolean;

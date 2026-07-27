@@ -22291,7 +22291,8 @@ body.work-center-map-expanded .logged-workspace {
   margin-top: 1px;
 }
 
-.academy-video-placeholder a {
+.academy-video-placeholder a,
+.academy-video-placeholder button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -22304,6 +22305,8 @@ body.work-center-map-expanded .logged-workspace {
   color: #ffffff;
   font-weight: 900;
   text-decoration: none;
+  border: 0;
+  cursor: pointer;
 }
 
 .academy-video-frame video::-webkit-media-controls-picture-in-picture-button {
@@ -22318,6 +22321,129 @@ body.work-center-map-expanded .logged-workspace {
   display: none !important;
   opacity: 0 !important;
   pointer-events: none !important;
+}
+
+.academy-r2-upload {
+  display: grid;
+  gap: 12px;
+  border: 1px solid rgba(255, 138, 31, 0.24);
+  border-radius: 12px;
+  padding: 15px;
+  background: #fffaf5;
+}
+
+.academy-r2-upload-heading,
+.academy-r2-upload-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.academy-r2-upload-heading > div {
+  display: grid;
+  gap: 4px;
+}
+
+.academy-r2-upload-heading span,
+.academy-r2-file-picker em {
+  color: var(--ink-soft);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 750;
+}
+
+.academy-r2-current {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  padding: 7px 9px;
+  background: #dff6e8;
+  color: #258053 !important;
+  font-weight: 900 !important;
+}
+
+.academy-r2-file-picker {
+  display: flex !important;
+  align-items: center;
+  gap: 11px !important;
+  min-height: 72px;
+  border: 1px dashed rgba(255, 138, 31, 0.46);
+  border-radius: 10px;
+  padding: 12px !important;
+  background: #ffffff;
+  cursor: pointer;
+}
+
+.academy-r2-file-picker input {
+  display: none;
+}
+
+.academy-r2-file-picker > span {
+  display: grid;
+  gap: 4px;
+}
+
+.academy-r2-upload-actions {
+  justify-content: flex-start;
+}
+
+.academy-r2-upload-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 38px;
+  border: 0;
+  border-radius: 9px;
+  padding: 8px 12px;
+  background: var(--orange);
+  color: #ffffff;
+  cursor: pointer;
+  font-weight: 900;
+}
+
+.academy-r2-upload-actions button + button {
+  border: 1px solid var(--line);
+  background: #ffffff;
+  color: var(--ink);
+}
+
+.academy-r2-progress {
+  display: grid;
+  gap: 7px;
+}
+
+.academy-r2-progress > div {
+  overflow: hidden;
+  height: 9px;
+  border-radius: 999px;
+  background: #e8edf2;
+}
+
+.academy-r2-progress > div span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--orange);
+  transition: width 180ms ease;
+}
+
+.academy-r2-progress strong {
+  color: var(--ink-soft);
+  font-size: 12px;
+}
+
+.academy-r2-progress.ready strong {
+  color: #258053;
+}
+
+.academy-r2-progress.ready > div span {
+  background: #258053;
+}
+
+.academy-r2-progress.failed strong {
+  color: var(--red);
 }
 
 @media (max-width: 760px) {

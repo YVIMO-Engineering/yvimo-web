@@ -91,6 +91,7 @@ export type AcademyLiveSessionInput = {
   durationSeconds?: number | null;
   orderIndex?: number;
   status: AcademyLesson['status'];
+  verifiedUploadId?: string | null;
 };
 
 function shouldTranslate(languageCode?: string | null) {
@@ -262,6 +263,21 @@ export async function saveAcademyLiveSession(input: AcademyLiveSessionInput, cli
     status: input.status,
     content_group: 'live_session' as AcademyLessonContentGroup,
   };
+  if (input.videoProvider === 'cloudflare_r2') {
+    if (!input.verifiedUploadId && !input.id) throw new Error('Upload and verify the R2 video before saving.');
+    const { data, error } = await client.rpc('claim_academy_r2_recording', {
+      target_upload_id: input.verifiedUploadId,
+      target_course_id: input.courseId,
+      target_lesson_id: input.id ?? null,
+      target_slug: generatedSlug,
+      target_title: input.title.trim(),
+      target_description: input.description?.trim() || '',
+      target_status: input.status,
+      target_order_index: input.orderIndex ?? 0,
+    }).single<AcademyLesson>();
+    if (error) throw error;
+    return data;
+  }
   const query = input.id
     ? client.from('academy_lessons').update(payload).eq('id', input.id)
     : client.from('academy_lessons').insert(payload);
