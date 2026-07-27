@@ -752,6 +752,16 @@
   font-weight: 820;
 }
 
+.production-order-serial-table .mes-order-dropdown {
+  min-width: 260px;
+}
+
+.production-order-serial-missing {
+  color: #94a3b8;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
 .production-order-serial-empty {
   padding: 18px;
   color: #526175;

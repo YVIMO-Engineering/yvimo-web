@@ -110,6 +110,7 @@ type ProductionSerialAssignmentDraft = {
   pieceSequence: number;
   toolId: string;
   serialNumber: string;
+  assignedStation: string;
 };
 
 const productionOrderPartNameOptions: Array<{ value: ProductionOrderPartNameOption; label: string; pieceType?: QualityPieceType }> = [
@@ -219,6 +220,7 @@ type ProductionSerialInsertRow = {
   piece_sequence: number;
   tool_id: string | null;
   serial_number: string;
+  assigned_station: string | null;
   result: null;
   ready_for_quality: false;
   reported_at: null;
@@ -229,6 +231,7 @@ type ProductionSerialAssignmentRow = {
   piece_sequence: number;
   tool_id: string | null;
   serial_number: string;
+  assigned_station?: string | null;
 };
 
 type TraceabilityCaptureRow = {
@@ -1017,7 +1020,7 @@ function createSerialAssignmentDrafts(quantity: number, currentDrafts: Productio
   return Array.from({ length: nextQuantity }, (_, index) => {
     const pieceSequence = index + 1;
     const currentDraft = currentDrafts.find((draft) => draft.pieceSequence === pieceSequence);
-    return currentDraft ?? { pieceSequence, toolId: '', serialNumber: '' };
+    return currentDraft ?? { pieceSequence, toolId: '', serialNumber: '', assignedStation: '' };
   });
 }
 
@@ -2772,6 +2775,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
   const [assignSerialsEnabled, setAssignSerialsEnabled] = React.useState(false);
   const [serialAssignmentDrafts, setSerialAssignmentDrafts] = React.useState<ProductionSerialAssignmentDraft[]>([]);
   const [serialAssignmentModalOpen, setSerialAssignmentModalOpen] = React.useState(false);
+  const [stationAssignmentModalOpen, setStationAssignmentModalOpen] = React.useState(false);
   const [tableMessage, setTableMessage] = React.useState<string | null>('Loading production orders...');
   const [ordersLoaded, setOrdersLoaded] = React.useState(false);
   const [savingOrder, setSavingOrder] = React.useState(false);
@@ -3195,7 +3199,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
     try {
       const { data, error } = await supabase
         .from('mes_production_serials')
-        .select('piece_sequence, tool_id, serial_number')
+        .select('piece_sequence, tool_id, serial_number, assigned_station')
         .eq('organization_id', organizationId)
         .eq('production_order_id', selectedOrder.id)
         .order('piece_sequence', { ascending: true });
@@ -3207,6 +3211,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
         pieceSequence: serial.piece_sequence,
         toolId: serial.tool_id ?? '',
         serialNumber: serial.serial_number ?? '',
+        assignedStation: serial.assigned_station ?? '',
       }))));
     } catch (error) {
       console.error('Unable to load Production Order serial assignments', error);
@@ -3222,6 +3227,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
     setAssignSerialsEnabled(false);
     setSerialAssignmentDrafts([]);
     setSerialAssignmentModalOpen(false);
+    setStationAssignmentModalOpen(false);
   };
 
   const setProductionOrderPartNameOption = (nextOptionValue: ProductionOrderPartNameOption) => {
@@ -3268,7 +3274,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
     }
   };
 
-  const setSerialAssignmentField = (pieceSequence: number, field: 'toolId' | 'serialNumber', value: string) => {
+  const setSerialAssignmentField = (pieceSequence: number, field: 'toolId' | 'serialNumber' | 'assignedStation', value: string) => {
     setSerialAssignmentDrafts((currentDrafts) => createSerialAssignmentDrafts(Number(formState.plannedQuantity) || 0, currentDrafts)
       .map((draft) => draft.pieceSequence === pieceSequence ? { ...draft, [field]: value } : draft));
   };
@@ -3294,6 +3300,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
   const saveOrderForm = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setOrderFormError('');
+    const normalizedSerialDrafts = createSerialAssignmentDrafts(Number(formState.plannedQuantity) || 0, serialAssignmentDrafts);
     if (!formState.orderNumber.trim() || !formState.customerId || !formState.clientName.trim() || !formState.partNumber.trim() || !formState.partName.trim() || !formState.assignedWorkCenter.trim()) {
       setOrderFormError('Complete Order Number, Client, Part Number, Part Name, and Work Center before saving.');
       return;
@@ -3302,7 +3309,18 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
       setOrderFormError('Select a Station for this Single Operation order.');
       return;
     }
-    const normalizedSerialDrafts = createSerialAssignmentDrafts(Number(formState.plannedQuantity) || 0, serialAssignmentDrafts);
+    if (formState.manufacturingType === 'multi-step') {
+      if (!assignSerialsEnabled || !normalizedSerialDrafts.length) {
+        setOrderFormError('Assign the serialized pieces and their Stations for this Multi-step order.');
+        setStationAssignmentModalOpen(true);
+        return;
+      }
+      if (normalizedSerialDrafts.some((draft) => !draft.assignedStation.trim())) {
+        setOrderFormError('Select a Station for every serialized piece in this Multi-step order.');
+        setStationAssignmentModalOpen(true);
+        return;
+      }
+    }
     const isWheelOrder = formState.pieceType === 'wheel';
     if (assignSerialsEnabled) {
       if (!normalizedSerialDrafts.length) {
@@ -3348,7 +3366,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
             if (assignSerialsEnabled) {
               const { data: existingSerialsData, error: existingSerialsError } = await supabase
                 .from('mes_production_serials')
-                .select('id, piece_sequence, tool_id, serial_number')
+                .select('id, piece_sequence, tool_id, serial_number, assigned_station')
                 .eq('organization_id', organizationId)
                 .eq('production_order_id', selectedOrder.id)
                 .abortSignal(controller.signal);
@@ -3362,6 +3380,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
                     .update({
                       tool_id: isWheelOrder ? null : draft.toolId.trim(),
                       serial_number: draft.serialNumber.trim(),
+                      assigned_station: formState.manufacturingType === 'multi-step' ? draft.assignedStation.trim() : null,
                     })
                     .eq('organization_id', organizationId)
                     .eq('id', existingSerial.id)
@@ -3377,6 +3396,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
                     piece_sequence: draft.pieceSequence,
                     tool_id: isWheelOrder ? null : draft.toolId.trim(),
                     serial_number: draft.serialNumber.trim(),
+                    assigned_station: formState.manufacturingType === 'multi-step' ? draft.assignedStation.trim() : null,
                     result: null,
                     ready_for_quality: false,
                     reported_at: null,
@@ -3440,6 +3460,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
               piece_sequence: draft.pieceSequence,
               tool_id: isWheelOrder ? null : draft.toolId.trim(),
               serial_number: draft.serialNumber.trim(),
+              assigned_station: formState.manufacturingType === 'multi-step' ? draft.assignedStation.trim() : null,
               result: null,
               ready_for_quality: false,
               reported_at: null,
@@ -4071,7 +4092,10 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
                   value={formState.assignedWorkCenter}
                   placeholder="Select work center"
                   options={workCenterOptions}
-                  onChange={(assignedWorkCenter) => setFormState((current) => ({ ...current, assignedWorkCenter, assignedStation: '' }))}
+                  onChange={(assignedWorkCenter) => {
+                    setFormState((current) => ({ ...current, assignedWorkCenter, assignedStation: '' }));
+                    setSerialAssignmentDrafts((currentDrafts) => currentDrafts.map((draft) => ({ ...draft, assignedStation: '' })));
+                  }}
                 />
                 {workCenterOptionsMessage ? <small className="mes-form-field-note">{workCenterOptionsMessage}</small> : null}
               </label>
@@ -4185,12 +4209,21 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
                       key={type.value}
                       role="radio"
                       aria-checked={formState.manufacturingType === type.value}
-                      onClick={() => setFormState((current) => ({
-                        ...current,
-                        manufacturingType: type.value,
-                        assignedStation: type.value === 'multi-step' ? '' : current.assignedStation,
-                        productionFlow: type.value === 'single-operation' ? '' : current.productionFlow || productionFlowOptions[0]?.id || '',
-                      }))}
+                      onClick={() => {
+                        setFormState((current) => ({
+                          ...current,
+                          manufacturingType: type.value,
+                          assignedStation: type.value === 'multi-step' ? '' : current.assignedStation,
+                          productionFlow: '',
+                        }));
+                        if (type.value === 'multi-step') {
+                          setAssignSerialsEnabled(true);
+                          setSerialAssignmentDrafts((currentDrafts) => createSerialAssignmentDrafts(Number(formState.plannedQuantity) || 0, currentDrafts));
+                          setStationAssignmentModalOpen(true);
+                        } else {
+                          setStationAssignmentModalOpen(false);
+                        }
+                      }}
                     >
                       {type.value === 'multi-step' ? <Factory size={18} /> : <RadioTower size={18} />}
                       <span>{type.label}</span>
@@ -4199,17 +4232,16 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
                   ))}
                 </div>
               </fieldset>
-              <label className="mes-order-form-wide">
-                {formState.manufacturingType === 'multi-step' ? 'Production Flow' : 'Station'}
-                {formState.manufacturingType === 'multi-step' ? (
-                  <MesOrderDropdown
-                    id="production-order-flow"
-                    value={formState.productionFlow}
-                    options={productionFlowOptions.map((flow) => ({ value: flow.id, label: flow.name }))}
-                    placement="bottom"
-                    onChange={(productionFlow) => setFormState((current) => ({ ...current, productionFlow }))}
-                  />
-                ) : (
+              {formState.manufacturingType === 'multi-step' ? (
+                <div className="production-order-serial-assignment mes-order-form-wide">
+                  <div className="production-order-serial-summary">
+                    <span>{serialAssignmentDrafts.filter((draft) => draft.serialNumber.trim() && draft.assignedStation.trim()).length} of {serialAssignmentDrafts.length} pieces assigned to a station</span>
+                    <button type="button" onClick={() => setStationAssignmentModalOpen(true)}>Assign stations</button>
+                  </div>
+                </div>
+              ) : (
+                <label className="mes-order-form-wide">
+                  Station
                   <>
                     <MesOrderDropdown
                       id="production-order-station"
@@ -4222,8 +4254,8 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
                     />
                     {formState.assignedWorkCenter && selectedWorkCenterStationOptions.length === 0 ? <small className="mes-form-field-note">No stations configured for this Work Center yet.</small> : null}
                   </>
-                )}
-              </label>
+                </label>
+              )}
               {orderFormError ? <div className="mes-order-form-error mes-order-form-wide" role="alert"><AlertTriangle size={16} />{orderFormError}</div> : null}
               <div className="mes-order-form-actions">
                 <button type="button" onClick={closeOrderForm}>Cancel</button>
@@ -4272,6 +4304,47 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
             </div>
             <div className="mes-order-form-actions">
               <button type="button" onClick={() => setSerialAssignmentModalOpen(false)}>Done</button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+      {formMode && stationAssignmentModalOpen ? (
+        <div className="mes-modal-backdrop production-order-serial-backdrop" role="presentation">
+          <section className="mes-order-modal production-order-serial-modal" role="dialog" aria-modal="true" aria-labelledby="production-order-station-title">
+            <div className="production-order-serial-modal-heading">
+              <div>
+                <p className="eyebrow">Multi-step Order</p>
+                <h3 id="production-order-station-title">Assign Stations to Pieces</h3>
+              </div>
+              <button type="button" aria-label="Close station assignments" onClick={() => setStationAssignmentModalOpen(false)}><CircleX size={18} /></button>
+            </div>
+            <div className="production-order-serial-table-wrap">
+              <table className="production-order-serial-table">
+                <thead><tr><th>Part</th><th>Serial Number</th><th>Station</th></tr></thead>
+                <tbody>
+                  {serialAssignmentDrafts.map((draft) => (
+                    <tr key={draft.pieceSequence}>
+                      <td>{draft.pieceSequence}</td>
+                      <td>{draft.serialNumber.trim() || <span className="production-order-serial-missing">Serial pending</span>}</td>
+                      <td>
+                        <MesOrderDropdown
+                          id={`production-order-piece-station-${draft.pieceSequence}`}
+                          value={draft.assignedStation}
+                          placeholder={formState.assignedWorkCenter ? 'Select station' : 'Select work center first'}
+                          options={selectedWorkCenterStationOptions}
+                          disabled={!formState.assignedWorkCenter}
+                          placement="bottom"
+                          onChange={(assignedStation) => setSerialAssignmentField(draft.pieceSequence, 'assignedStation', assignedStation)}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {!serialAssignmentDrafts.length ? <div className="production-order-serial-empty">Set a Planned Quantity greater than zero to assign pieces.</div> : null}
+            </div>
+            <div className="mes-order-form-actions">
+              <button type="button" onClick={() => setStationAssignmentModalOpen(false)}>Done</button>
             </div>
           </section>
         </div>
