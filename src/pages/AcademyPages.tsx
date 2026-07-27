@@ -1,6 +1,7 @@
 import React from 'react';
 import {
   Activity,
+  AlertTriangle,
   ArrowRight,
   ArrowLeft,
   Award,
@@ -49,11 +50,14 @@ import {
 } from 'lucide-react';
 import {
   canAccessLesson,
+  canAccessAcademyLiveSessions,
   canManageAcademyActivities,
+  canManageAcademyLiveSessions,
   completeAcademyActivity,
   createCertificateForCourse,
   createCertificateForTrack,
   deleteAcademyActivity,
+  deleteAcademyLiveSession,
   enrollInFreeCourse,
   fetchActivitiesForCourse,
   fetchActivityAttempt,
@@ -64,6 +68,7 @@ import {
   fetchCertificatesForUser,
   fetchCourseBundle,
   fetchLessonBySlug,
+  fetchLiveSessionsForCourse,
   fetchLessonNote,
   fetchLessonProgressForLesson,
   fetchLessonProgressForCourse,
@@ -83,6 +88,7 @@ import {
   resetLessonProgress,
   saveLessonNote,
   saveAcademyActivity,
+  saveAcademyLiveSession,
   updateLessonProgress,
   uploadLessonSubmission,
   type AcademyCourseBundle,
@@ -98,6 +104,7 @@ import type {
   AcademyCourse,
   AcademyEnrollment,
   AcademyLesson,
+  AcademyLessonStatus,
   AcademyLessonProgress,
   AcademyLessonProgressState,
   AcademyLessonResource,
@@ -2710,6 +2717,10 @@ export function AcademyCoursePage({ user, navigateTo, courseSlug, t = defaultT, 
   const [loading, setLoading] = React.useState(true);
   const [message, setMessage] = React.useState<string | null>(null);
   const [editingActivity, setEditingActivity] = React.useState<{ lesson: AcademyLesson; activity: AcademyActivity | null } | null>(null);
+  const [liveSessions, setLiveSessions] = React.useState<AcademyLesson[]>([]);
+  const [canAccessLiveSessions, setCanAccessLiveSessions] = React.useState(false);
+  const [canManageLiveSessions, setCanManageLiveSessions] = React.useState(false);
+  const [editingLiveSession, setEditingLiveSession] = React.useState<AcademyLesson | null | undefined>(undefined);
 
   const loadCourse = React.useCallback(async () => {
     setLoading(true);
@@ -2720,15 +2731,20 @@ export function AcademyCoursePage({ user, navigateTo, courseSlug, t = defaultT, 
       setBundle(nextBundle);
 
       if (nextBundle && user) {
-        const [nextEnrollment, nextProgress, nextSummary, nextAdmin, nextStaff, nextCertificate, nextActivities] = await Promise.all([
+        const [nextEnrollment, nextProgress, nextSummary, nextAdmin, nextStaff, nextLiveAccess, nextLiveManager, nextCertificate, nextActivities] = await Promise.all([
           getEnrollmentStatus(user.id, nextBundle.course.id),
           fetchLessonProgressForCourse(user.id, nextBundle.course.id),
           getCourseProgressSummary(user.id, nextBundle.course.id),
           isAdminUser(user.id),
           canManageAcademyActivities(user.id),
+          canAccessAcademyLiveSessions(user.id),
+          canManageAcademyLiveSessions(user.id),
           fetchCertificateForCourse(user.id, nextBundle.course.id),
           fetchActivitiesForCourse(nextBundle.course.id),
         ]);
+        const nextLiveSessions = nextLiveAccess
+          ? await fetchLiveSessionsForCourse(nextBundle.course.id, nextLiveManager)
+          : [];
         const nextActivityAttempts = await fetchActivityAttemptsForCourse(
           user.id,
           nextActivities.map((activityItem) => activityItem.id),
@@ -2741,6 +2757,9 @@ export function AcademyCoursePage({ user, navigateTo, courseSlug, t = defaultT, 
         setAdmin(nextAdmin);
         setCanManageActivities(nextStaff);
         setCertificate(nextCertificate);
+        setCanAccessLiveSessions(nextLiveAccess);
+        setCanManageLiveSessions(nextLiveManager);
+        setLiveSessions(nextLiveSessions);
       } else {
         setEnrollment(null);
         setProgress([]);
@@ -2750,6 +2769,9 @@ export function AcademyCoursePage({ user, navigateTo, courseSlug, t = defaultT, 
         setCourseProgress(0);
         setAdmin(false);
         setCanManageActivities(false);
+        setCanAccessLiveSessions(false);
+        setCanManageLiveSessions(false);
+        setLiveSessions([]);
       }
     } catch (caught) {
       setMessage(getAcademyDatabaseErrorMessage());
@@ -2824,6 +2846,43 @@ export function AcademyCoursePage({ user, navigateTo, courseSlug, t = defaultT, 
       await loadCourse();
     } catch (caught) {
       setMessage(getReadableErrorMessage(caught, 'Activity could not be deleted.'));
+    }
+  };
+
+  const handleSaveLiveSession = async (input: {
+    title: string;
+    slug: string;
+    description: string;
+    videoProvider: AcademyLesson['video_provider'];
+    videoId: string;
+    videoUrl: string;
+    durationSeconds: number | null;
+    status: AcademyLessonStatus;
+  }) => {
+    if (!bundle) return;
+    try {
+      await saveAcademyLiveSession({
+        id: editingLiveSession?.id,
+        courseId: bundle.course.id,
+        ...input,
+        orderIndex: editingLiveSession?.order_index ?? liveSessions.length,
+      });
+      setEditingLiveSession(undefined);
+      await loadCourse();
+    } catch (caught) {
+      const errorMessage = getReadableErrorMessage(caught, 'Live session could not be saved.');
+      setMessage(errorMessage);
+      throw caught instanceof Error ? caught : new Error(errorMessage);
+    }
+  };
+
+  const handleDeleteLiveSession = async (session: AcademyLesson) => {
+    if (!window.confirm(t(`Delete "${session.title}"?`))) return;
+    try {
+      await deleteAcademyLiveSession(session.id);
+      await loadCourse();
+    } catch (caught) {
+      setMessage(getReadableErrorMessage(caught, 'Live session could not be deleted.'));
     }
   };
 
@@ -2958,6 +3017,18 @@ export function AcademyCoursePage({ user, navigateTo, courseSlug, t = defaultT, 
             />
           ) : null}
         </div>
+        {canAccessLiveSessions ? (
+          <LiveSessionsBlock
+            sessions={liveSessions}
+            canManage={canManageLiveSessions}
+            courseSlug={bundle.course.slug}
+            navigateTo={navigateTo}
+            onAdd={() => setEditingLiveSession(null)}
+            onEdit={(session) => setEditingLiveSession(session)}
+            onDelete={handleDeleteLiveSession}
+            t={t}
+          />
+        ) : null}
       </section>
       {editingActivity ? (
         <ActivityEditor
@@ -2968,7 +3039,201 @@ export function AcademyCoursePage({ user, navigateTo, courseSlug, t = defaultT, 
           t={t}
         />
       ) : null}
+      {editingLiveSession !== undefined ? (
+        <LiveSessionEditor
+          session={editingLiveSession}
+          onCancel={() => setEditingLiveSession(undefined)}
+          onSave={handleSaveLiveSession}
+          t={t}
+        />
+      ) : null}
     </AcademyShell>
+  );
+}
+
+function LiveSessionsBlock({
+  sessions, canManage, courseSlug, navigateTo, onAdd, onEdit, onDelete, t = defaultT,
+}: {
+  sessions: AcademyLesson[];
+  canManage: boolean;
+  courseSlug: string;
+  navigateTo: (path: string) => void;
+  onAdd: () => void;
+  onEdit: (session: AcademyLesson) => void;
+  onDelete: (session: AcademyLesson) => void;
+  t?: AcademyTranslator;
+}) {
+  return (
+    <article className="academy-module academy-live-sessions">
+      <div className="academy-exclusive-label">
+        <img src="/assets/academy/badges/license-enterprise.png" alt="" />
+        <div>
+          <strong>{t('Enterprise')}</strong>
+          <span>{t('Rank Exclusive Access')}</span>
+          <em>{t('Premium Academy benefit')}</em>
+        </div>
+      </div>
+      <div className="academy-module-header">
+        <Radar size={20} />
+        <div>
+          <h2>{t('Live Sessions Recordings')}</h2>
+          <p>{t('Rewatch exclusive live classes, workshops, and mentor sessions.')}</p>
+        </div>
+        {canManage ? (
+          <button className="academy-live-add" type="button" onClick={onAdd}>
+            <Plus size={15} />{t('Add recording')}
+          </button>
+        ) : null}
+      </div>
+      <div className="academy-lesson-list">
+        {sessions.map((session) => (
+          <div className="academy-live-session-item" key={session.id}>
+            <button
+              className="academy-lesson-row"
+              type="button"
+              onClick={() => navigateTo(`/academy/${courseSlug}/live-sessions/${session.slug}`)}
+            >
+              <span className="academy-lesson-icon"><PlayCircle size={18} /></span>
+              <span>
+                <strong>{session.title}</strong>
+                <em>{formatDuration(session.duration_seconds) || t('Recorded live session')}{session.status !== 'published' ? ` · ${t('Draft')}` : ''}</em>
+              </span>
+              <ArrowRight size={16} />
+            </button>
+            {canManage ? (
+              <div className="academy-activity-staff-actions">
+                <button type="button" onClick={() => onEdit(session)} title={t('Edit recording')}><Pencil size={15} /></button>
+                <button type="button" onClick={() => onDelete(session)} title={t('Delete recording')}><Trash2 size={15} /></button>
+              </div>
+            ) : null}
+          </div>
+        ))}
+        {sessions.length === 0 ? <p className="academy-live-empty">{t('No live session recordings have been published yet.')}</p> : null}
+      </div>
+    </article>
+  );
+}
+
+function LiveSessionEditor({ session, onCancel, onSave, t = defaultT }: {
+  session: AcademyLesson | null;
+  onCancel: () => void;
+  onSave: (input: {
+    title: string; slug: string; description: string;
+    videoProvider: AcademyLesson['video_provider']; videoId: string; videoUrl: string;
+    durationSeconds: number | null; status: AcademyLessonStatus;
+  }) => Promise<void>;
+  t?: AcademyTranslator;
+}) {
+  const [title, setTitle] = React.useState(session?.title ?? '');
+  const [description, setDescription] = React.useState(session?.description ?? '');
+  const [videoProvider, setVideoProvider] = React.useState<AcademyLesson['video_provider']>(session?.video_provider ?? 'youtube');
+  const [videoUrl, setVideoUrl] = React.useState(session?.video_url ?? '');
+  const [status, setStatus] = React.useState<AcademyLessonStatus>(session?.status ?? 'published');
+  const [saveBusy, setSaveBusy] = React.useState(false);
+  const [saveMessage, setSaveMessage] = React.useState<{ tone: 'error' | 'info'; text: string } | null>(null);
+  const deriveVideoId = (provider: AcademyLesson['video_provider'], value: string) => {
+    const trimmed = value.trim();
+    if (!trimmed || provider === 'sharepoint') return null;
+    try {
+      const url = new URL(trimmed);
+      if (provider === 'youtube') {
+        if (url.hostname === 'youtu.be') return url.pathname.split('/').filter(Boolean)[0] ?? null;
+        return url.searchParams.get('v') ?? url.pathname.match(/\/(?:embed|shorts)\/([^/?]+)/)?.[1] ?? null;
+      }
+      if (provider === 'vimeo') return url.pathname.split('/').filter(Boolean).pop() ?? null;
+    } catch {
+      if (provider === 'youtube' || provider === 'vimeo') return trimmed;
+    }
+    return null;
+  };
+  const generatedSlug = title
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+  const handleSave = async () => {
+    if (saveBusy) return;
+    setSaveBusy(true);
+    setSaveMessage({ tone: 'info', text: t('Saving recording...') });
+    try {
+      await onSave({
+        title,
+        slug: session?.slug ?? generatedSlug,
+        description,
+        videoProvider,
+        videoId: deriveVideoId(videoProvider, videoUrl) ?? session?.video_id ?? '',
+        videoUrl,
+        durationSeconds: session?.duration_seconds ?? null,
+        status,
+      });
+    } catch (caught) {
+      setSaveMessage({
+        tone: 'error',
+        text: getReadableErrorMessage(caught, t('Live session could not be saved.')),
+      });
+      setSaveBusy(false);
+    }
+  };
+  return (
+    <div className="academy-editor-backdrop" role="presentation">
+      <section className="academy-activity-editor academy-live-editor" role="dialog" aria-modal="true">
+        <div className="academy-editor-heading">
+          <div><p className="eyebrow">{t('Live session staff tools')}</p><h2>{t(session ? 'Edit recording' : 'Add recording')}</h2></div>
+          <button type="button" onClick={onCancel}><X size={18} /></button>
+        </div>
+        <div className="academy-editor-grid">
+          <label className="academy-editor-wide">
+            {t('Title')}
+            <input value={title} onChange={(event) => setTitle(event.target.value)} />
+            {generatedSlug ? <span className="academy-editor-help">{t('Recording URL')}: /live-sessions/{generatedSlug}</span> : null}
+          </label>
+          <label>{t('Video provider')}
+            <select value={videoProvider ?? ''} onChange={(event) => setVideoProvider(event.target.value as AcademyLesson['video_provider'])}>
+              <option value="youtube">YouTube</option><option value="vimeo">Vimeo</option>
+              <option value="mux">Mux</option><option value="cloudflare_stream">Cloudflare Stream</option>
+              <option value="sharepoint">SharePoint / OneDrive</option>
+              <option value="local">Direct / local</option><option value="supabase">Supabase</option>
+            </select>
+          </label>
+          <label>{t('Status')}<select value={status} onChange={(event) => setStatus(event.target.value as AcademyLessonStatus)}><option value="published">{t('Published')}</option><option value="draft">{t('Draft')}</option><option value="archived">{t('Archived')}</option></select></label>
+          <label className="academy-editor-wide">
+            {t(videoProvider === 'sharepoint' ? 'SharePoint iframe or embed URL' : 'Video URL')}
+            {videoProvider === 'sharepoint' ? (
+              <>
+                <textarea
+                  value={videoUrl}
+                  onChange={(event) => setVideoUrl(event.target.value)}
+                  placeholder={t('Paste the complete SharePoint iframe code or its embed.aspx URL')}
+                />
+                <span className="academy-editor-help">{t('The iframe src will be extracted automatically. Only SharePoint and OneDrive domains are accepted.')}</span>
+              </>
+            ) : (
+              <input value={videoUrl} onChange={(event) => setVideoUrl(event.target.value)} />
+            )}
+          </label>
+          <label className="academy-editor-wide">{t('Description')}<textarea value={description} onChange={(event) => setDescription(event.target.value)} /></label>
+        </div>
+        {saveMessage ? (
+          <div className={`academy-editor-message ${saveMessage.tone}`} role={saveMessage.tone === 'error' ? 'alert' : 'status'}>
+            {saveMessage.tone === 'error' ? <AlertTriangle size={17} /> : <Clock3 size={17} />}
+            <span>{saveMessage.text}</span>
+          </div>
+        ) : null}
+        <div className="academy-editor-actions">
+          <button type="button" onClick={onCancel} disabled={saveBusy}>{t('Cancel')}</button>
+          <button
+            type="button"
+            disabled={saveBusy || !title.trim() || (!videoUrl.trim() && !session?.video_id)}
+            onClick={() => void handleSave()}
+          >
+            {saveBusy ? <Clock3 size={16} /> : <Save size={16} />}
+            {t(saveBusy ? 'Saving...' : 'Save recording')}
+          </button>
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -4155,7 +4420,8 @@ export function AcademyLessonPage({
   lessonSlug,
   t = defaultT,
   languageCode = 'en',
-}: AcademyPageProps & { courseSlug: string; lessonSlug: string }) {
+  liveSession = false,
+}: AcademyPageProps & { courseSlug: string; lessonSlug: string; liveSession?: boolean }) {
   const [bundle, setBundle] = React.useState<AcademyCourseBundle | null>(null);
   const [lesson, setLesson] = React.useState<AcademyLesson | null>(null);
   const [access, setAccess] = React.useState<LessonAccessResult | null>(null);
@@ -4211,7 +4477,7 @@ export function AcademyLessonPage({
         }
 
         const admin = userId ? await isAdminUser(userId) : false;
-        const nextLesson = admin
+        const nextLesson = admin || liveSession
           ? await fetchPlayableLessonBySlug(nextBundle.course.id, lessonSlug, languageCode)
           : await fetchLessonBySlug(nextBundle.course.id, lessonSlug, languageCode);
         if (!active) return;
@@ -4229,7 +4495,7 @@ export function AcademyLessonPage({
           if (nextAccess.allowed) {
             const [playableLesson, nextProgress, nextNote, nextCertificate, nextResources, nextSubmissions] = await Promise.all([
               fetchPlayableLessonBySlug(nextBundle.course.id, lessonSlug, languageCode),
-              fetchLessonProgressForLesson(userId, nextLesson.id),
+              liveSession ? Promise.resolve(null) : fetchLessonProgressForLesson(userId, nextLesson.id),
               fetchLessonNote(userId, nextLesson.id),
               fetchCertificateForCourse(userId, nextBundle.course.id),
               fetchLessonResources(nextLesson.id),
@@ -4262,7 +4528,7 @@ export function AcademyLessonPage({
     return () => {
       active = false;
     };
-  }, [courseSlug, languageCode, lessonSlug, userId]);
+  }, [courseSlug, languageCode, lessonSlug, liveSession, userId]);
 
   const persistProgress = React.useCallback(
     async (progressSeconds: number, durationSeconds: number | null) => {
@@ -4559,7 +4825,11 @@ export function AcademyLessonPage({
   const allowed = access?.allowed ?? false;
   const completed = lessonProgress?.completed ?? false;
   const certificateIssued = Boolean(courseCertificate);
-  const lessonPageClassName = theaterMode ? 'academy-lesson-page theater' : 'academy-lesson-page';
+  const lessonPageClassName = [
+    'academy-lesson-page',
+    theaterMode ? 'theater' : '',
+    liveSession ? 'live-session' : '',
+  ].filter(Boolean).join(' ');
   const playerLayoutClassName = user ? 'academy-player-layout' : 'academy-player-layout no-notes';
   const notesCharacterCount = getLessonNotePlainText(notes).length;
   const notesToolbarItems = [
@@ -4595,7 +4865,7 @@ export function AcademyLessonPage({
             </button>
           ) : null}
         </div>
-        <p className="eyebrow">{access?.isPreview ? t('Preview lesson') : t('Lesson')}</p>
+        <p className="eyebrow">{liveSession ? t('Enterprise live session recording') : access?.isPreview ? t('Preview lesson') : t('Lesson')}</p>
         <h1>{lesson.title}</h1>
         {lesson.description ? <p>{lesson.description}</p> : null}
       </section>
@@ -4609,14 +4879,14 @@ export function AcademyLessonPage({
               videoId={lesson.video_id}
               videoUrl={lesson.video_url}
               title={lesson.title}
-              onProgress={(progressSeconds, durationSeconds) => {
+              onProgress={liveSession ? undefined : (progressSeconds, durationSeconds) => {
                 persistProgress(progressSeconds, durationSeconds).catch(() => undefined);
               }}
               onComplete={() => {
-                if (!completedOnce.current) markComplete().catch(() => undefined);
+                if (!liveSession && !completedOnce.current) markComplete().catch(() => undefined);
               }}
             />
-            {user ? (
+            {user && !liveSession ? (
               <div className="academy-lesson-actions">
                 {completed ? (
                   <div className="academy-completed-box" role="status">

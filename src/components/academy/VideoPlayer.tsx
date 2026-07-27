@@ -30,6 +30,8 @@ function getProviderLabel(provider: VideoProvider | null) {
       return 'Mux';
     case 'vimeo':
       return 'Vimeo';
+    case 'sharepoint':
+      return 'SharePoint / OneDrive';
     case 'local':
       return 'Local video';
     case 'supabase':
@@ -101,6 +103,44 @@ export function VideoPlayer({
             src={embedUrl}
             allow="autoplay; fullscreen; picture-in-picture"
             allowFullScreen
+          />
+        ) : (
+          <VideoUnavailable provider={provider} />
+        )}
+      </div>
+    );
+  }
+
+  if (provider === 'sharepoint') {
+    let embedUrl: string | null = null;
+    try {
+      if (videoUrl) {
+        const parsed = new URL(videoUrl);
+        const hostname = parsed.hostname.toLowerCase();
+        if (
+          parsed.protocol === 'https:'
+          && (
+            hostname === 'onedrive.live.com'
+            || hostname.endsWith('.sharepoint.com')
+            || hostname.endsWith('.sharepoint-df.com')
+          )
+        ) {
+          embedUrl = parsed.toString();
+        }
+      }
+    } catch {
+      embedUrl = null;
+    }
+
+    return (
+      <div className="academy-video-frame">
+        {embedUrl ? (
+          <iframe
+            title={title}
+            src={embedUrl}
+            allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
+            allowFullScreen
+            referrerPolicy="strict-origin-when-cross-origin"
           />
         ) : (
           <VideoUnavailable provider={provider} />

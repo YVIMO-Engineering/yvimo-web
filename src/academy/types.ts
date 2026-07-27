@@ -3,12 +3,14 @@ export type VideoProvider =
   | 'cloudflare_stream'
   | 'mux'
   | 'vimeo'
+  | 'sharepoint'
   | 'local'
   | 'supabase';
 
 export type AcademyCourseStatus = 'draft' | 'published' | 'archived';
 export type AcademyLessonType = 'video' | 'text' | 'quiz' | 'assignment';
 export type AcademyLessonStatus = 'draft' | 'published' | 'archived';
+export type AcademyLessonContentGroup = 'curriculum' | 'live_session';
 export type AcademyAccessType = 'free' | 'manual' | 'paid' | 'corporate' | 'trial' | 'admin';
 export type AcademyEnrollmentStatus = 'active' | 'inactive' | 'expired' | 'revoked';
 export type AcademyLessonProgressState = 'not_started' | 'in_progress' | 'completed';
@@ -130,6 +132,7 @@ export type AcademyLesson = {
   order_index: number;
   is_preview: boolean;
   status: AcademyLessonStatus;
+  content_group: AcademyLessonContentGroup;
   created_at: string;
   updated_at: string;
 };

@@ -5269,6 +5269,10 @@ function App() {
     academyPathParts[0] === 'academy' && academyPathParts[2] === 'lessons'
       ? academyPathParts[3]
       : undefined;
+  const academyLiveSessionSlug =
+    academyPathParts[0] === 'academy' && academyPathParts[2] === 'live-sessions'
+      ? academyPathParts[3]
+      : undefined;
   const academyActivityId =
     academyPathParts[0] === 'academy' && academyPathParts[2] === 'activities'
       ? academyPathParts[3]
@@ -6133,12 +6137,13 @@ function App() {
             languageCode={language}
             onUserProfileRefresh={refreshAuthProfile}
           />
-        ) : academyCourseSlug && academyLessonSlug ? (
+        ) : academyCourseSlug && (academyLessonSlug || academyLiveSessionSlug) ? (
           <AcademyLessonPage
             user={authUser}
             navigateTo={navigateTo}
             courseSlug={academyCourseSlug}
-            lessonSlug={academyLessonSlug}
+            lessonSlug={academyLessonSlug ?? academyLiveSessionSlug ?? ''}
+            liveSession={Boolean(academyLiveSessionSlug)}
             t={t}
             languageCode={language}
           />

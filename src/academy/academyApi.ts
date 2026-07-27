@@ -12,6 +12,7 @@ import type {
   AcademyActivityConfig,
   AcademyActivityType,
   AcademyLesson,
+  AcademyLessonContentGroup,
   AcademyLessonNote,
   AcademyLessonProgress,
   AcademyLessonResource,
@@ -76,6 +77,20 @@ export type AcademyActivityInput = {
   isPublished: boolean;
   orderIndex?: number;
   configJson: AcademyActivityConfig;
+};
+
+export type AcademyLiveSessionInput = {
+  id?: string;
+  courseId: string;
+  slug: string;
+  title: string;
+  description?: string | null;
+  videoProvider?: AcademyLesson['video_provider'];
+  videoId?: string | null;
+  videoUrl?: string | null;
+  durationSeconds?: number | null;
+  orderIndex?: number;
+  status: AcademyLesson['status'];
 };
 
 function shouldTranslate(languageCode?: string | null) {
@@ -152,7 +167,116 @@ export async function canManageAcademyActivities(userId: string | null, client: 
 
   const role = data?.role?.trim().toLowerCase();
   const tier = data?.subscription_tier?.trim().toLowerCase();
-  return role === 'admin' || role === 'owner' || tier === 'owner' || tier === 'instructor' || tier === 'enterprise-admin';
+  return role === 'admin'
+    || role === 'owner'
+    || role === 'mentor'
+    || tier === 'owner'
+    || tier === 'instructor'
+    || tier === 'enterprise-admin';
+}
+
+export async function canAccessAcademyLiveSessions(userId: string | null, client: AcademyClient = supabase) {
+  if (!userId) return false;
+  const { data } = await client
+    .from('profiles')
+    .select('role, subscription_tier')
+    .eq('id', userId)
+    .maybeSingle<{ role: string | null; subscription_tier: string | null }>();
+  const role = data?.role?.trim().toLowerCase();
+  const tier = data?.subscription_tier?.trim().toLowerCase();
+  return role === 'admin'
+    || role === 'owner'
+    || role === 'mentor'
+    || ['enterprise', 'beta tester', 'instructor', 'owner', 'enterprise-admin'].includes(tier ?? '');
+}
+
+export const canManageAcademyLiveSessions = canManageAcademyActivities;
+
+function normalizeSharePointEmbed(value?: string | null) {
+  const raw = value?.trim() ?? '';
+  if (!raw) return null;
+  const iframeMatch = raw.match(/<iframe[^>]+src=(["'])(.*?)\1/i);
+  const candidate = (iframeMatch?.[2] ?? raw).replace(/&amp;/g, '&');
+  try {
+    const url = new URL(candidate);
+    const hostname = url.hostname.toLowerCase();
+    const allowedHost = hostname === 'onedrive.live.com'
+      || hostname.endsWith('.sharepoint.com')
+      || hostname.endsWith('.sharepoint-df.com');
+    if (url.protocol !== 'https:' || !allowedHost) {
+      throw new Error('Only secure SharePoint or OneDrive embed URLs are allowed.');
+    }
+    return url.toString();
+  } catch (caught) {
+    if (caught instanceof Error && caught.message.startsWith('Only secure')) throw caught;
+    throw new Error('Paste a valid SharePoint/OneDrive iframe or embed URL.');
+  }
+}
+
+export async function fetchLiveSessionsForCourse(
+  courseId: string,
+  includeDrafts = false,
+  client: AcademyClient = supabase,
+) {
+  let query = client
+    .from('academy_lessons')
+    .select('*')
+    .eq('course_id', courseId)
+    .eq('content_group', 'live_session')
+    .order('order_index', { ascending: true });
+  if (!includeDrafts) query = query.eq('status', 'published');
+  const { data, error } = await query.returns<AcademyLesson[]>();
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function saveAcademyLiveSession(input: AcademyLiveSessionInput, client: AcademyClient = supabase) {
+  const { data: sessionData } = await client.auth.getSession();
+  const userId = sessionData.session?.user.id ?? null;
+  if (!await canManageAcademyLiveSessions(userId, client)) {
+    throw new Error('Only Admin, Owner, or Instructor users can manage live sessions.');
+  }
+  const normalizedVideoUrl = input.videoProvider === 'sharepoint'
+    ? normalizeSharePointEmbed(input.videoUrl)
+    : input.videoUrl?.trim() || null;
+  const generatedSlug = (input.slug || input.title)
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+  const payload = {
+    course_id: input.courseId,
+    module_id: null,
+    slug: generatedSlug,
+    title: input.title.trim(),
+    description: input.description?.trim() || null,
+    lesson_type: 'video' as const,
+    video_provider: input.videoProvider ?? null,
+    video_id: input.videoId?.trim() || null,
+    video_url: normalizedVideoUrl,
+    duration_seconds: input.durationSeconds ?? null,
+    order_index: input.orderIndex ?? 0,
+    is_preview: false,
+    status: input.status,
+    content_group: 'live_session' as AcademyLessonContentGroup,
+  };
+  const query = input.id
+    ? client.from('academy_lessons').update(payload).eq('id', input.id)
+    : client.from('academy_lessons').insert(payload);
+  const { data, error } = await query.select('*').single<AcademyLesson>();
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteAcademyLiveSession(id: string, client: AcademyClient = supabase) {
+  const { data: sessionData } = await client.auth.getSession();
+  if (!await canManageAcademyLiveSessions(sessionData.session?.user.id ?? null, client)) {
+    throw new Error('Only Admin, Owner, or Instructor users can manage live sessions.');
+  }
+  const { error } = await client.from('academy_lessons').delete().eq('id', id).eq('content_group', 'live_session');
+  if (error) throw error;
 }
 
 function isMissingAcademyActivitiesTable(error: { code?: string; message?: string } | null) {
@@ -411,11 +535,12 @@ export async function canAccessLesson(
   client: AcademyClient = supabase,
 ): Promise<LessonAccessResult> {
   const admin = userId ? await isAdminUser(userId, client) : false;
+  const liveSessionAccess = await canAccessAcademyLiveSessions(userId, client);
   const [{ data: course, error: courseError }, { data: lesson, error: lessonError }] =
     await Promise.all([
       client.from('academy_courses').select('*').eq('id', courseId).maybeSingle<AcademyCourse>(),
       client
-        .from(admin ? 'academy_lessons' : 'academy_lesson_catalog')
+        .from(admin || liveSessionAccess ? 'academy_lessons' : 'academy_lesson_catalog')
         .select('*')
         .eq('id', lessonId)
         .maybeSingle<AcademyLesson>(),
@@ -438,6 +563,17 @@ export async function canAccessLesson(
       allowed: true,
       reason: 'Admin access granted.',
       isPreview: lesson.is_preview,
+      enrollmentStatus: null,
+    };
+  }
+
+  if (lesson.content_group === 'live_session') {
+    return {
+      allowed: liveSessionAccess && course.status === 'published' && lesson.status === 'published',
+      reason: liveSessionAccess
+        ? 'Enterprise access granted.'
+        : 'This recording requires Enterprise Rank Exclusive Access.',
+      isPreview: false,
       enrollmentStatus: null,
     };
   }
