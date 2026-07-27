@@ -22291,6 +22291,35 @@ body.work-center-map-expanded .logged-workspace {
   margin-top: 1px;
 }
 
+.academy-video-placeholder a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  min-height: 38px;
+  border-radius: 9px;
+  margin: 12px auto 0;
+  padding: 8px 13px;
+  background: var(--orange);
+  color: #ffffff;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.academy-video-frame video::-webkit-media-controls-picture-in-picture-button {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+.academy-video-frame video::-webkit-media-controls-overlay-enclosure {
+  display: none !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
 @media (max-width: 760px) {
   .academy-live-sessions {
     grid-template-columns: 1fr;

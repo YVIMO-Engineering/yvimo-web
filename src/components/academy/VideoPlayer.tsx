@@ -50,6 +50,7 @@ export function VideoPlayer({
   onComplete,
 }: VideoPlayerProps) {
   const progressTimer = React.useRef<number | null>(null);
+  const [sharePointPlaybackError, setSharePointPlaybackError] = React.useState(false);
 
   React.useEffect(() => {
     return () => {
@@ -58,6 +59,10 @@ export function VideoPlayer({
       }
     };
   }, []);
+
+  React.useEffect(() => {
+    setSharePointPlaybackError(false);
+  }, [provider, videoUrl]);
 
   const handleProgress = React.useCallback(
     (video: HTMLVideoElement) => {
@@ -113,6 +118,7 @@ export function VideoPlayer({
 
   if (provider === 'sharepoint') {
     let embedUrl: string | null = null;
+    let sharedVideoUrl: string | null = null;
     try {
       if (videoUrl) {
         const parsed = new URL(videoUrl);
@@ -125,7 +131,12 @@ export function VideoPlayer({
             || hostname.endsWith('.sharepoint-df.com')
           )
         ) {
-          embedUrl = parsed.toString();
+          if (parsed.pathname.toLowerCase().includes('/embed.aspx')) {
+            embedUrl = parsed.toString();
+          } else {
+            parsed.searchParams.set('download', '1');
+            sharedVideoUrl = parsed.toString();
+          }
         }
       }
     } catch {
@@ -142,6 +153,38 @@ export function VideoPlayer({
             allowFullScreen
             referrerPolicy="strict-origin-when-cross-origin"
           />
+        ) : sharedVideoUrl && !sharePointPlaybackError ? (
+          <video
+            controls
+            controlsList="nodownload noplaybackrate noremoteplayback"
+            disablePictureInPicture
+            disableRemotePlayback
+            playsInline
+            preload="metadata"
+            title={title}
+            src={sharedVideoUrl}
+            onContextMenu={(event) => event.preventDefault()}
+            onError={() => setSharePointPlaybackError(true)}
+            onPlay={(event) => {
+              const video = event.currentTarget;
+              if (progressTimer.current) window.clearInterval(progressTimer.current);
+              progressTimer.current = window.setInterval(() => handleProgress(video), 10000);
+            }}
+            onPause={(event) => handleProgress(event.currentTarget)}
+            onEnded={(event) => {
+              handleProgress(event.currentTarget);
+              onComplete?.();
+            }}
+          />
+        ) : videoUrl && sharePointPlaybackError ? (
+          <div className="academy-video-placeholder">
+            <div>
+              <span>{getProviderLabel(provider)}</span>
+              <strong>SharePoint blocked direct playback</strong>
+              <p>The anonymous link is valid, but SharePoint did not return a browser-playable video stream.</p>
+              <a href={videoUrl} target="_blank" rel="noreferrer">Open recording in SharePoint</a>
+            </div>
+          </div>
         ) : (
           <VideoUnavailable provider={provider} />
         )}
@@ -155,9 +198,13 @@ export function VideoPlayer({
         {videoUrl ? (
           <video
             controls
+            controlsList="nodownload noplaybackrate noremoteplayback"
+            disablePictureInPicture
+            disableRemotePlayback
             preload="metadata"
             title={title}
             src={videoUrl}
+            onContextMenu={(event) => event.preventDefault()}
             onPlay={(event) => {
               const video = event.currentTarget;
               if (progressTimer.current) window.clearInterval(progressTimer.current);

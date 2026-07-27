@@ -3199,15 +3199,15 @@ function LiveSessionEditor({ session, onCancel, onSave, t = defaultT }: {
           </label>
           <label>{t('Status')}<select value={status} onChange={(event) => setStatus(event.target.value as AcademyLessonStatus)}><option value="published">{t('Published')}</option><option value="draft">{t('Draft')}</option><option value="archived">{t('Archived')}</option></select></label>
           <label className="academy-editor-wide">
-            {t(videoProvider === 'sharepoint' ? 'SharePoint iframe or embed URL' : 'Video URL')}
+            {t(videoProvider === 'sharepoint' ? 'SharePoint embed code or Anyone link' : 'Video URL')}
             {videoProvider === 'sharepoint' ? (
               <>
                 <textarea
                   value={videoUrl}
                   onChange={(event) => setVideoUrl(event.target.value)}
-                  placeholder={t('Paste the complete SharePoint iframe code or its embed.aspx URL')}
+                  placeholder={t('Paste the SharePoint iframe, embed.aspx URL, or Anyone can view link')}
                 />
-                <span className="academy-editor-help">{t('The iframe src will be extracted automatically. Only SharePoint and OneDrive domains are accepted.')}</span>
+                <span className="academy-editor-help">{t('YVIMO detects the format automatically. Anyone links keep their anonymous access token.')}</span>
               </>
             ) : (
               <input value={videoUrl} onChange={(event) => setVideoUrl(event.target.value)} />
