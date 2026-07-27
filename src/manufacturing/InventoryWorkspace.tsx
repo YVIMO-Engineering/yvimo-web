@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertTriangle, ArrowLeft, Boxes, ChevronDown, ChevronUp, CircleX, Download, Eye, EyeOff, ImagePlus, PackagePlus, Pencil, Plus, Search, Trash2, Warehouse } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Boxes, ChevronDown, ChevronUp, CircleX, Download, Eye, EyeOff, ImagePlus, PackagePlus, Pencil, Plus, Search, Trash2, Warehouse, ZoomIn } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import './inventoryWorkspace.css';
 
@@ -49,6 +49,7 @@ export function InventoryWorkspace({ onNavigate, organizationId, organizationNam
   const [itemImagePreview, setItemImagePreview] = React.useState('');
   const [editingItem, setEditingItem] = React.useState<InventoryItem | null>(null);
   const [deleteCandidate, setDeleteCandidate] = React.useState<InventoryItem | null>(null);
+  const [imagePreviewItem, setImagePreviewItem] = React.useState<InventoryItem | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
   const [reportGenerating, setReportGenerating] = React.useState(false);
@@ -473,6 +474,7 @@ export function InventoryWorkspace({ onNavigate, organizationId, organizationNam
                     return (
                       <article className="inventory-card" key={item.id}>
                         <div className="inventory-card-actions">
+                          <button type="button" disabled={!item.image_url} aria-label={`View image for ${item.title}`} onClick={() => setImagePreviewItem(item)}><ZoomIn size={15} /></button>
                           <button type="button" aria-label={`Edit ${item.title}`} onClick={() => openEditItemModal(item)}><Pencil size={15} /></button>
                           <button className="danger" type="button" aria-label={`Delete ${item.title}`} onClick={() => setDeleteCandidate(item)}><Trash2 size={15} /></button>
                         </div>
@@ -561,6 +563,21 @@ export function InventoryWorkspace({ onNavigate, organizationId, organizationNam
             <div className="mes-confirm-actions">
               <button type="button" onClick={() => setDeleteCandidate(null)}>Cancel</button>
               <button className="danger" type="button" disabled={saving} onClick={() => { void deleteItem(); }}>{saving ? 'Deleting...' : 'Delete item'}</button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+      {imagePreviewItem?.image_url ? (
+        <div className="mes-modal-backdrop inventory-modal-backdrop" role="presentation" onMouseDown={(event) => {
+          if (event.target === event.currentTarget) setImagePreviewItem(null);
+        }}>
+          <section className="inventory-image-preview-modal" role="dialog" aria-modal="true" aria-labelledby="inventory-image-preview-title">
+            <div className="inventory-modal-heading">
+              <div><p className="eyebrow">Inventory Item</p><h3 id="inventory-image-preview-title">{imagePreviewItem.title}</h3></div>
+              <button type="button" aria-label="Close image preview" onClick={() => setImagePreviewItem(null)}><CircleX size={19} /></button>
+            </div>
+            <div className="inventory-image-preview-stage">
+              <img src={imagePreviewItem.image_url} alt={imagePreviewItem.title} />
             </div>
           </section>
         </div>
