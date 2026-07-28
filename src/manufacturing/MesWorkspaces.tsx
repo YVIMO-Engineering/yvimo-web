@@ -1981,10 +1981,17 @@ export function ProductionOrderDetailsModal({
 type PendingWorkReportLine = {
   key: string;
   quantity: number;
-  partLabel: string;
+  orderBreakdown: Array<{ orderId: string; orderNumber: string; quantity: number; category: PendingWorkCategory; partLabel: string }>;
+  partLabels: string[];
   clientName: string;
-  category: PendingWorkCategory;
+  categories: PendingWorkCategory[];
   orders: ProductionOrder[];
+};
+
+type PendingWorkReportSerialRow = {
+  production_order_id: string;
+  assigned_station: string | null;
+  result: 'good' | 'scrap' | null;
 };
 
 type PendingWorkCategory = 'manufacturing' | 'inspection' | 'quotation';
@@ -2010,8 +2017,8 @@ type PendingWorkReport = {
 
 const pendingWorkCategories: PendingWorkCategory[] = ['manufacturing', 'inspection', 'quotation'];
 
-function getPendingWorkStationLabel(order: ProductionOrder, stationOptionsByWorkCenter: Record<string, MesOrderDropdownOption[]>) {
-  if (order.assignedStation) return getProductionOrderStationLabel(stationOptionsByWorkCenter, order.assignedWorkCenter, order.assignedStation);
+function getPendingWorkStationLabel(order: ProductionOrder, stationOptionsByWorkCenter: Record<string, MesOrderDropdownOption[]>, stationCode = order.assignedStation) {
+  if (stationCode) return getProductionOrderStationLabel(stationOptionsByWorkCenter, order.assignedWorkCenter, stationCode);
   return 'Unassigned station';
 }
 
@@ -2070,7 +2077,18 @@ function getPendingWorkCategoryLabel(category: PendingWorkCategory) {
 function getVisiblePendingWorkReport(report: PendingWorkReport, visibleCategories: Set<PendingWorkCategory>): PendingWorkReport {
   const stations = report.stations
     .map((station) => {
-      const lines = station.lines.filter((line) => visibleCategories.has(line.category));
+      const lines = station.lines
+        .map((line) => {
+          const orderBreakdown = line.orderBreakdown.filter((order) => visibleCategories.has(order.category));
+          return {
+            ...line,
+            quantity: orderBreakdown.reduce((total, order) => total + order.quantity, 0),
+            orderBreakdown,
+            partLabels: Array.from(new Set(orderBreakdown.map((order) => order.partLabel))),
+            categories: Array.from(new Set(orderBreakdown.map((order) => order.category))),
+          };
+        })
+        .filter((line) => line.quantity > 0);
       return {
         ...station,
         lines,
@@ -2080,18 +2098,20 @@ function getVisiblePendingWorkReport(report: PendingWorkReport, visibleCategorie
     .filter((station) => station.totalQuantity > 0);
   const subtotals = stations.reduce<Record<PendingWorkCategory, number>>((totals, station) => {
     station.lines.forEach((line) => {
-      totals[line.category] += line.quantity;
+      line.orderBreakdown.forEach((order) => {
+        totals[order.category] += order.quantity;
+      });
     });
     return totals;
   }, { manufacturing: 0, inspection: 0, quotation: 0 });
   const totalQuantity = subtotals.manufacturing + subtotals.inspection + subtotals.quotation;
-  const totalOrders = new Set(stations.flatMap((station) => station.lines.flatMap((line) => line.orders.map((order) => order.id)))).size;
+  const totalOrders = new Set(stations.flatMap((station) => station.lines.flatMap((line) => line.orderBreakdown.map((order) => order.orderId)))).size;
   const reportLines = [
     `Pending Work Report - ${new Date(report.generatedAt).toLocaleString()}`,
     '',
     ...stations.flatMap((station) => [
       station.label,
-      ...station.lines.map((line) => `- ${line.quantity} ${formatPendingWorkPartDisplay(line.partLabel)} ${line.clientName} (${getPendingWorkCategoryLabel(line.category)})`),
+      ...station.lines.map((line) => `- ${line.clientName}: ${line.quantity} pieces — ${line.orderBreakdown.map((order) => `Order ${order.orderNumber} (${order.quantity} ${formatPendingWorkPartDisplay(order.partLabel)}, ${getPendingWorkCategoryLabel(order.category)})`).join(', ')}`),
       '',
     ]),
     `Total pending = ${totalQuantity} pieces`,
@@ -2117,16 +2137,57 @@ function getPendingWorkReport(
   orders: ProductionOrder[],
   stationOptionsByWorkCenter: Record<string, MesOrderDropdownOption[]>,
   workCenterOptions: MesOrderDropdownOption[],
+  serialRows: PendingWorkReportSerialRow[] = [],
 ): PendingWorkReport {
   const reportWorkCenterCode = getPendingWorkReportWorkCenterCode(orders, workCenterOptions, stationOptionsByWorkCenter);
   const reportMachineOptions = stationOptionsByWorkCenter[reportWorkCenterCode] ?? [];
   const reportMachineCodes = new Set(reportMachineOptions.map((machine) => machine.value));
-  const reportOrders = orders.filter((order) => (
-    !['completed', 'cancelled'].includes(order.status)
-      && order.assignedWorkCenter === reportWorkCenterCode
-      && reportMachineCodes.has(order.assignedStation)
-  ));
+  const serialsByOrder = new Map<string, PendingWorkReportSerialRow[]>();
+  serialRows.forEach((serial) => serialsByOrder.set(serial.production_order_id, [
+    ...(serialsByOrder.get(serial.production_order_id) ?? []),
+    serial,
+  ]));
+  const reportOrders = orders.filter((order) => {
+    if (['completed', 'cancelled'].includes(order.status) || order.assignedWorkCenter !== reportWorkCenterCode) return false;
+    if (order.manufacturingType === 'multi-step') return true;
+    return reportMachineCodes.has(order.assignedStation);
+  });
   const pendingEntries = reportOrders.flatMap((order) => {
+    if (order.manufacturingType === 'multi-step') {
+      const orderSerials = serialsByOrder.get(order.id) ?? [];
+      const manufacturingTarget = order.status === 'waiting-inspection'
+        ? 0
+        : Math.max(0, order.plannedQuantity - order.completedQuantity - order.scrapQuantity);
+      const inspectionTarget = order.status === 'waiting-inspection'
+        ? Math.max(0, order.completedQuantity || order.plannedQuantity - order.scrapQuantity)
+        : 0;
+      const createStationEntries = (
+        target: number,
+        category: 'manufacturing' | 'inspection',
+        includeSerial: (serial: PendingWorkReportSerialRow) => boolean,
+      ) => {
+        if (!target) return [];
+        const quantitiesByStation = new Map<string, number>();
+        orderSerials.filter(includeSerial).forEach((serial) => {
+          const stationCode = reportMachineCodes.has(serial.assigned_station ?? '') ? serial.assigned_station ?? '' : '';
+          quantitiesByStation.set(stationCode, (quantitiesByStation.get(stationCode) ?? 0) + 1);
+        });
+        const representedQuantity = Array.from(quantitiesByStation.values()).reduce((total, quantity) => total + quantity, 0);
+        if (representedQuantity < target) {
+          quantitiesByStation.set('', (quantitiesByStation.get('') ?? 0) + target - representedQuantity);
+        }
+        let remainingQuantity = target;
+        return Array.from(quantitiesByStation.entries()).flatMap(([stationCode, quantity]) => {
+          const includedQuantity = Math.min(quantity, remainingQuantity);
+          remainingQuantity -= includedQuantity;
+          return includedQuantity > 0 ? [{ order, stationCode, category, quantity: includedQuantity }] : [];
+        });
+      };
+      return [
+        ...createStationEntries(manufacturingTarget, 'manufacturing', (serial) => !serial.result),
+        ...createStationEntries(inspectionTarget, 'inspection', (serial) => serial.result === 'good'),
+      ];
+    }
     const manufacturingQuantity = order.status === 'waiting-inspection'
       ? 0
       : Math.max(0, order.plannedQuantity - order.completedQuantity - order.scrapQuantity);
@@ -2135,15 +2196,15 @@ function getPendingWorkReport(
       : 0;
     const quotationQuantity = 0;
     return [
-      { order, category: 'manufacturing' as const, quantity: manufacturingQuantity },
-      { order, category: 'inspection' as const, quantity: inspectionQuantity },
-      { order, category: 'quotation' as const, quantity: quotationQuantity },
+      { order, stationCode: order.assignedStation, category: 'manufacturing' as const, quantity: manufacturingQuantity },
+      { order, stationCode: order.assignedStation, category: 'inspection' as const, quantity: inspectionQuantity },
+      { order, stationCode: order.assignedStation, category: 'quotation' as const, quantity: quotationQuantity },
     ].filter((entry) => entry.quantity > 0);
   });
   const stationMap = new Map<string, PendingWorkReportStation>();
 
-  pendingEntries.forEach(({ order, category, quantity }) => {
-    const stationLabel = getPendingWorkStationLabel(order, stationOptionsByWorkCenter);
+  pendingEntries.forEach(({ order, stationCode, category, quantity }) => {
+    const stationLabel = getPendingWorkStationLabel(order, stationOptionsByWorkCenter, stationCode);
     const station = stationMap.get(stationLabel) ?? {
       key: stationLabel,
       label: stationLabel,
@@ -2152,8 +2213,9 @@ function getPendingWorkReport(
       runningOrder: null,
     };
     const partLabel = getPendingWorkPartLabel(order.partName, quantity);
+    const canonicalPartLabel = getPendingWorkPartLabel(order.partName, 2);
     const clientName = getPendingWorkClientLabel(order.clientName ?? '');
-    const lineKey = `${category}::${partLabel.toLowerCase()}::${clientName.toLowerCase()}`;
+    const lineKey = clientName.toLowerCase();
     const existingLine = station.lines.find((line) => line.key === lineKey);
 
     station.totalQuantity += quantity;
@@ -2161,13 +2223,17 @@ function getPendingWorkReport(
     if (existingLine) {
       existingLine.quantity += quantity;
       existingLine.orders.push(order);
+      existingLine.orderBreakdown.push({ orderId: order.id, orderNumber: order.orderNumber, quantity, category, partLabel });
+      if (!existingLine.partLabels.includes(canonicalPartLabel)) existingLine.partLabels.push(canonicalPartLabel);
+      if (!existingLine.categories.includes(category)) existingLine.categories.push(category);
     } else {
       station.lines.push({
         key: lineKey,
         quantity,
-        partLabel,
+        orderBreakdown: [{ orderId: order.id, orderNumber: order.orderNumber, quantity, category, partLabel }],
+        partLabels: [canonicalPartLabel],
         clientName,
-        category,
+        categories: [category],
         orders: [order],
       });
     }
@@ -2177,7 +2243,7 @@ function getPendingWorkReport(
   const stations = Array.from(stationMap.values())
     .map((station) => ({
       ...station,
-      lines: [...station.lines].sort((first, second) => first.category.localeCompare(second.category) || second.quantity - first.quantity || first.partLabel.localeCompare(second.partLabel)),
+      lines: [...station.lines].sort((first, second) => second.quantity - first.quantity || first.clientName.localeCompare(second.clientName)),
     }))
     .sort((first, second) => second.totalQuantity - first.totalQuantity || first.label.localeCompare(second.label));
   const totalQuantity = stations.reduce((total, station) => total + station.totalQuantity, 0);
@@ -2203,7 +2269,7 @@ function getPendingWorkReport(
     '',
     ...stations.flatMap((station) => [
       station.label,
-      ...station.lines.map((line) => `- ${line.quantity} ${formatPendingWorkPartDisplay(line.partLabel)} ${line.clientName} (${getPendingWorkCategoryLabel(line.category)})`),
+      ...station.lines.map((line) => `- ${line.clientName}: ${line.quantity} pieces — ${line.orderBreakdown.map((order) => `Order ${order.orderNumber} (${order.quantity} ${formatPendingWorkPartDisplay(order.partLabel)}, ${getPendingWorkCategoryLabel(order.category)})`).join(', ')}`),
       '',
     ]),
     `Total pending = ${totalQuantity} pieces`,
@@ -2761,8 +2827,27 @@ function PendingWorkReportModal({ report, onClose }: { report: PendingWorkReport
                         <li key={line.key}>
                           <b>{line.quantity.toLocaleString()}</b>
                           <span>
-                            <strong className={`pending-work-report-part-badge ${getPendingWorkPartTone(line.partLabel)}`}>{formatPendingWorkPartDisplay(line.partLabel)}</strong>
-                            <i className={`pending-work-report-category-badge ${line.category}`}>{getPendingWorkCategoryLabel(line.category)}</i>
+                            <small className="pending-work-report-order-list">
+                              {line.orderBreakdown.map((order) => (
+                                <i className="pending-work-report-order-badge" key={`${order.orderNumber}-${order.category}`}>
+                                  Order {order.orderNumber} · {order.quantity}
+                                </i>
+                              ))}
+                            </small>
+                            <small className="pending-work-report-badge-list">
+                              {line.partLabels.map((partLabel) => (
+                                <strong className={`pending-work-report-part-badge ${getPendingWorkPartTone(partLabel)}`} key={partLabel}>
+                                  {formatPendingWorkPartDisplay(partLabel)}
+                                </strong>
+                              ))}
+                            </small>
+                            <small className="pending-work-report-badge-list">
+                              {line.categories.map((category) => (
+                                <i className={`pending-work-report-category-badge ${category}`} key={category}>
+                                  {getPendingWorkCategoryLabel(category)}
+                                </i>
+                              ))}
+                            </small>
                             <em>{line.clientName}</em>
                           </span>
                         </li>
@@ -3133,8 +3218,24 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
     }, selectedOrder.id));
   };
 
-  const openPendingWorkReport = () => {
-    setPendingWorkReport(getPendingWorkReport(orders, stationOptionsByWorkCenter, workCenterOptions));
+  const openPendingWorkReport = async () => {
+    const activeOrderIds = orders
+      .filter((order) => !['completed', 'cancelled'].includes(order.status))
+      .map((order) => order.id);
+    let serialRows: PendingWorkReportSerialRow[] = [];
+    if (activeOrderIds.length) {
+      const { data, error } = await supabase
+        .from('mes_production_serials')
+        .select('production_order_id, assigned_station, result')
+        .eq('organization_id', organizationId)
+        .in('production_order_id', activeOrderIds);
+      if (error) {
+        console.error('Unable to load multi-step serials for pending work report', error);
+      } else {
+        serialRows = (data ?? []) as PendingWorkReportSerialRow[];
+      }
+    }
+    setPendingWorkReport(getPendingWorkReport(orders, stationOptionsByWorkCenter, workCenterOptions, serialRows));
   };
 
   const openDailyProductionReport = async () => {
@@ -3809,7 +3910,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
             <button className="mes-primary-action production-orders-create" type="button" onClick={openCreateOrderForm}>
               <Plus size={16} /> Add Production Order
             </button>
-            <button className="production-orders-pending-report-action" type="button" onClick={openPendingWorkReport}>
+            <button className="production-orders-pending-report-action" type="button" onClick={() => void openPendingWorkReport()}>
               <FileText size={16} /> Pending Work Report
             </button>
             <button className="production-orders-daily-report-action" type="button" disabled={dailyProductionReportLoading} onClick={() => void openDailyProductionReport()}>

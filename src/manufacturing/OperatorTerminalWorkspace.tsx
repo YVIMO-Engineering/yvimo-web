@@ -848,7 +848,7 @@ function SwitchOrderModal({
           <input autoFocus type="search" value={query} placeholder={t('Search order, part, or client')} onChange={(event) => setQuery(event.target.value)} />
         </label>
         <div className="quality-order-switch-header" aria-hidden="true">
-          <span>{t('Work Order / Part')}</span><span>{t('Manufacturing Status')}</span><span>{t('Manufacturing Progress')}</span>
+          <span>{t('Work Order / Part')}</span><span>{t('Client')}</span><span>{t('Manufacturing Status')}</span><span>{t('Manufacturing Progress')}</span>
         </div>
         <div className="quality-order-switch-list operator-terminal-order-picker-list">
           {filteredOrders.map((order) => (
@@ -863,6 +863,7 @@ function SwitchOrderModal({
                 <strong>{order.orderNumber}</strong>
                 <span>{order.partName} / {order.partNumber}</span>
               </div>
+              <span className="operator-terminal-order-client">{order.clientName || t('Unassigned')}</span>
               <em className={`quality-picker-status quality-picker-status-${order.status}`}>{t(order.status)}</em>
               <b>
                 <span>{t('Manufactured')}</span>
@@ -909,6 +910,8 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
   const [correctionLoading, setCorrectionLoading] = React.useState(false);
   const [selectedWorkCenterCode, setSelectedWorkCenterCode] = React.useState('');
   const [selectedStationCode, setSelectedStationCode] = React.useState('');
+  const selectedStationCodeRef = React.useRef('');
+  selectedStationCodeRef.current = selectedStationCode;
   const [selectedOrderId, setSelectedOrderId] = React.useState('');
   const [dimensionUnit, setDimensionUnit] = React.useState<'in' | 'mm'>('in');
   const templateId = 'sharpening';
@@ -941,6 +944,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
       operator: snapshot?.station?.operator ?? 'Carlos Mota',
       shift: snapshot?.station?.shift ?? 'A / Day',
       processStep: snapshot?.station?.processStep ?? 'Ready',
+      currentJob: snapshot?.station?.currentJob ?? '',
     }];
   const stationCode = stationOptions.some((station) => station.code === selectedStationCode)
     ? selectedStationCode
@@ -950,10 +954,16 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
   const stationOperator = selectedStation?.operator ?? snapshot?.station?.operator ?? 'Carlos Mota';
   const stationImageUrl = selectedStation?.imageUrl ?? snapshot?.station?.imageUrl ?? '';
   const stationOrders = snapshot
-    ? snapshot.activeOrders.filter((order) => order.assignedStation === stationCode && order.assignedWorkCenter === workCenterCode)
+    ? snapshot.activeOrders.filter((order) => (
+      order.assignedWorkCenter === workCenterCode
+      && (order.manufacturingType === 'multi-step'
+        ? snapshot.multiStepStationsByOrder[order.id]?.includes(stationCode)
+        : order.assignedStation === stationCode)
+    ))
     : [fallbackCurrentOrder];
-  const currentOrder = stationOrders.find((order) => order.id === selectedOrderId)
+  const currentOrder = stationOrders.find((order) => order.orderNumber === selectedStation?.currentJob)
     ?? stationOrders.find((order) => order.status === 'running')
+    ?? stationOrders.find((order) => order.id === selectedOrderId)
     ?? stationOrders.find((order) => order.status === 'paused')
     ?? stationOrders.find((order) => order.status === 'released')
     ?? stationOrders.find((order) => order.status === 'completed')
@@ -1004,6 +1014,15 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
   React.useEffect(() => {
     setModal(null);
     setTerminalMessage('');
+  }, [stationCode]);
+
+  React.useEffect(() => {
+    setProductionSerials([]);
+    setSelectedProductionSerialId('');
+    setCorrectionSerial(null);
+    setCorrectionTraceability(null);
+    setTraceabilityForm(initialTraceabilityForm);
+    setEvents([]);
   }, [stationCode]);
 
   const jobQueueSummary: JobQueueSummary = {
@@ -1386,6 +1405,12 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
         currentOrder: resolvedOrder,
         activeOrders,
         queuedOrders: activeOrders.filter((candidate) => candidate.id !== resolvedOrder.id),
+        station: current.station?.code === stationCode
+          ? { ...current.station, currentJob: resolvedOrder.orderNumber, status: 'idle', processStep: 'Awaiting operator start' }
+          : current.station,
+        stationOptions: current.stationOptions.map((station) => station.code === stationCode
+          ? { ...station, currentJob: resolvedOrder.orderNumber, status: 'idle', processStep: 'Awaiting operator start' }
+          : station),
       };
     });
   };
@@ -1453,6 +1478,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
 
   const operatorSnapshotRealtimeTables = React.useMemo(() => ([
     { table: 'mes_production_orders', filter: `organization_id=eq.${organizationId}` },
+    { table: 'mes_production_serials', filter: `organization_id=eq.${organizationId}` },
     { table: 'mes_work_centers', filter: `organization_id=eq.${organizationId}` },
     { table: 'mes_work_center_stations', filter: `organization_id=eq.${organizationId}` },
     { table: 'mes_operator_terminal_events', filter: `organization_id=eq.${organizationId}` },
@@ -1477,8 +1503,17 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
         queuedOrders: nextSnapshot.queuedOrders.map(resolveOrderReportedCounts),
       };
       const storedOrderId = loadActiveOrderId(organizationId);
-      const restoredOrder = normalizedSnapshot.activeOrders.find((order) => order.id === storedOrderId)
-        ?? normalizedSnapshot.currentOrder;
+      const preferredStationCode = selectedStationCodeRef.current;
+      const isOrderAvailableAtPreferredStation = (order: ProductionOrder) => !preferredStationCode
+        || (order.manufacturingType === 'multi-step'
+          ? normalizedSnapshot.multiStepStationsByOrder[order.id]?.includes(preferredStationCode)
+          : order.assignedStation === preferredStationCode);
+      const eligibleOrders = normalizedSnapshot.activeOrders.filter(isOrderAvailableAtPreferredStation);
+      const restoredOrder = eligibleOrders.find((order) => order.id === storedOrderId)
+        ?? eligibleOrders.find((order) => order.status === 'running')
+        ?? eligibleOrders.find((order) => order.status === 'paused')
+        ?? eligibleOrders.find((order) => order.status === 'released')
+        ?? (!preferredStationCode ? normalizedSnapshot.currentOrder : null);
       const restoredSnapshot = restoredOrder
         ? {
             ...normalizedSnapshot,
@@ -1490,7 +1525,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
       setTerminalMessage(normalizedSnapshot.activeOrders.length ? '' : 'No single-operation production orders are assigned yet.');
       setSelectedOrderId(restoredOrder?.id ?? '');
       setSelectedWorkCenterCode(restoredOrder?.assignedWorkCenter ?? normalizedSnapshot.workCenter?.code ?? normalizedSnapshot.workCenterOptions[0]?.code ?? '');
-      setSelectedStationCode(restoredOrder?.assignedStation ?? normalizedSnapshot.station?.code ?? '');
+      setSelectedStationCode(preferredStationCode || restoredOrder?.assignedStation || normalizedSnapshot.station?.code || '');
       if (restoredOrder) applyOrder(restoredOrder);
     } catch (error) {
       console.error('Unable to load Operator Terminal snapshot', error);
@@ -1634,7 +1669,11 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
         nextSerials,
         { data: traceabilityData, error: traceabilityError },
       ] = await Promise.all([
-        fetchOperatorProductionSerials({ orderId: currentOrder.id, organizationId }),
+        fetchOperatorProductionSerials({
+          orderId: currentOrder.id,
+          organizationId,
+          stationCode: currentOrder.manufacturingType === 'multi-step' ? stationCode : undefined,
+        }),
         supabase
           .from('mes_operator_terminal_traceability')
           .select('id, production_order_id, template_id, part_label, tool_id, serial_number, dimensions_unit, before_notch, before_tooth_length, damage_codes, stock_to_remove, after_tooth_length, payload, created_at')
@@ -1660,7 +1699,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
     } finally {
       setProductionSerialsLoading(false);
     }
-  }, [applyProductionSerial, correctionSerial, currentOrder?.id, hasSupabaseOrder, organizationId, reconcileReportedCounts, selectedProductionSerialId]);
+  }, [applyProductionSerial, correctionSerial, currentOrder?.id, currentOrder?.manufacturingType, hasSupabaseOrder, organizationId, reconcileReportedCounts, selectedProductionSerialId, stationCode]);
 
   React.useEffect(() => {
     void loadProductionSerials();
@@ -1676,14 +1715,18 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
   React.useEffect(() => {
     if (!snapshot) return;
     const stationActiveOrders = snapshot.activeOrders.filter((order) => (
-      order.assignedStation === stationCode
-      && order.assignedWorkCenter === workCenterCode
+      order.assignedWorkCenter === workCenterCode
+      && (order.manufacturingType === 'multi-step'
+        ? snapshot.multiStepStationsByOrder[order.id]?.includes(stationCode)
+        : order.assignedStation === stationCode)
     ));
-    const nextOrder = stationActiveOrders.find((order) => order.status === 'running')
+    const nextOrder = stationActiveOrders.find((order) => order.orderNumber === selectedStation?.currentJob)
+      ?? stationActiveOrders.find((order) => order.status === 'running')
       ?? stationActiveOrders.find((order) => order.status === 'paused')
       ?? stationActiveOrders.find((order) => order.status === 'released');
 
     if (nextOrder) {
+      setSelectedOrderId(nextOrder.id);
       applyOrder(nextOrder);
       setTerminalMessage('');
       return;
@@ -1694,7 +1737,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
     setState('not-started');
     setEvents([]);
     setTerminalMessage('');
-  }, [applyOrder, snapshot, stationCode, workCenterCode]);
+  }, [applyOrder, selectedStation?.currentJob, snapshot, stationCode, workCenterCode]);
 
   React.useEffect(() => {
     if (!currentOrder || productionSerials.some((serial) => !serial.result)) return;
@@ -1703,6 +1746,75 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
       serialNumber: `${currentOrder.partNumber}-SN-${String(currentOrder.completedQuantity + currentOrder.scrapQuantity + 1).padStart(4, '0')}`,
     }));
   }, [currentOrder, productionSerials]);
+
+  const finishMultiStepStationWork = async (reportedOrder: ProductionOrder) => {
+    if (reportedOrder.manufacturingType !== 'multi-step') return false;
+    const globalReportedQuantity = reportedOrder.completedQuantity + reportedOrder.scrapQuantity;
+    if (globalReportedQuantity >= reportedOrder.plannedQuantity) return false;
+    const nextStationOrder = stationOrders.find((order) => order.id !== reportedOrder.id && order.status === 'paused')
+      ?? stationOrders.find((order) => order.id !== reportedOrder.id && order.status === 'released')
+      ?? null;
+    const pausedOrder = await setOperatorTerminalState({
+      orderId: reportedOrder.id,
+      organizationId,
+      stationCode,
+      shift: selectedShift,
+      state: 'paused',
+      reason: 'All pieces assigned to this station were reported',
+      comment: `Station ${stationCode} completed its assigned Multi-step pieces`,
+    });
+    setSnapshot((current) => {
+      if (!current) return current;
+      const remainingStations = (current.multiStepStationsByOrder[reportedOrder.id] ?? []).filter((code) => code !== stationCode);
+      return {
+        ...current,
+        currentOrder: current.currentOrder?.id === reportedOrder.id ? pausedOrder : current.currentOrder,
+        activeOrders: current.activeOrders.map((order) => order.id === reportedOrder.id ? pausedOrder : order),
+        queuedOrders: current.queuedOrders.map((order) => order.id === reportedOrder.id ? pausedOrder : order),
+        multiStepStationsByOrder: {
+          ...current.multiStepStationsByOrder,
+          [reportedOrder.id]: remainingStations,
+        },
+      };
+    });
+    setProductionSerials([]);
+    setSelectedProductionSerialId('');
+    setEvents([]);
+    clearTraceabilityMeasurements();
+
+    if (nextStationOrder) {
+      const switchedOrder = await switchOperatorActiveOrder({
+        orderId: nextStationOrder.id,
+        organizationId,
+        stationCode,
+        shift: selectedShift,
+        comment: `Station ${stationCode} completed order ${reportedOrder.orderNumber} and advanced to ${nextStationOrder.orderNumber}`,
+      });
+      const nextOrder = switchedOrder.status === 'paused'
+        ? switchedOrder
+        : await setOperatorTerminalState({
+            orderId: switchedOrder.id,
+            organizationId,
+            stationCode,
+            shift: selectedShift,
+            state: 'paused',
+            reason: 'Automatically queued after previous station work completed',
+            comment: 'Awaiting explicit operator Resume',
+          });
+      setSelectedOrderId(nextOrder.id);
+      applyOrder(nextOrder);
+      syncSwitchedOrder(nextOrder);
+      setState('paused');
+      setTerminalMessage('Previous station work completed. Press Resume when ready for the next order.');
+      showToast(`Station work completed; ${nextOrder.orderNumber} is ready`);
+    } else {
+      setSelectedOrderId('');
+      setState('not-started');
+      setTerminalMessage('All pieces assigned to this station were completed.');
+      showToast('All pieces assigned to this station were completed');
+    }
+    return true;
+  };
 
   const reportGood = async () => {
     if (!currentOrder) return;
@@ -1736,10 +1848,13 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
       if (nextAvailableSerial) {
         applyProductionSerial(nextAvailableSerial);
       } else {
-        setTraceField('serialNumber', suggestNextSerialNumber(serialNumber, order.partNumber, order.completedQuantity + order.scrapQuantity + 1));
+        const stationWorkCompleted = await finishMultiStepStationWork(order);
+        if (!stationWorkCompleted) {
+          setTraceField('serialNumber', suggestNextSerialNumber(serialNumber, order.partNumber, order.completedQuantity + order.scrapQuantity + 1));
+        }
       }
       clearTraceabilityMeasurements();
-      void loadProductionSerials();
+      if (nextAvailableSerial || order.manufacturingType !== 'multi-step') void loadProductionSerials();
     } catch (error) {
       console.error('Unable to report good production', error);
       const message = getOperatorReportErrorMessage(error);
@@ -1846,10 +1961,13 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
           if (nextAvailableSerial) {
             applyProductionSerial(nextAvailableSerial);
           } else {
-            setTraceField('serialNumber', suggestNextSerialNumber(serialNumber, order.partNumber, order.completedQuantity + order.scrapQuantity + 1));
+            const stationWorkCompleted = await finishMultiStepStationWork(order);
+            if (!stationWorkCompleted) {
+              setTraceField('serialNumber', suggestNextSerialNumber(serialNumber, order.partNumber, order.completedQuantity + order.scrapQuantity + 1));
+            }
           }
           clearTraceabilityMeasurements();
-          void loadProductionSerials();
+          if (nextAvailableSerial || order.manufacturingType !== 'multi-step') void loadProductionSerials();
         } catch (error) {
           console.error('Unable to report scrap', error);
           const message = getOperatorReportErrorMessage(error);
@@ -2262,6 +2380,10 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
                     <span>{t('Order Number')}</span>
                     <strong>{currentOrder.orderNumber}</strong>
                   </button>
+                  <article className={`operator-terminal-order-type ${currentOrder.manufacturingType === 'multi-step' ? 'multi-step' : 'single-operation'}`}>
+                    <span>{t('Manufacturing Type')}</span>
+                    <strong>{t(currentOrder.manufacturingType === 'multi-step' ? 'Multi-step' : 'Single')}</strong>
+                  </article>
                   <article><span>{t('Part Name')}</span><strong>{currentOrder.partName}</strong></article>
                   <article><span>{t('Client')}</span><strong>{currentOrder.clientName || '-'}</strong></article>
                   <article><span>{t('Due Date')}</span><strong>{currentOrder.dueDate}</strong></article>
@@ -2369,6 +2491,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
             </div>
           </section>
 
+          {!isQuantityComplete ? (
           <section className={`operator-terminal-traceability ${!hasAssignedOrder ? 'disabled' : ''}`}>
             <div className="operator-terminal-trace-heading">
               <div>
@@ -2483,6 +2606,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
               </div>
             )}
           </section>
+          ) : null}
         </main>
       </div>
 
@@ -2507,7 +2631,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
       ) : null}
       {modal === 'switch-order' ? (
         <SwitchOrderModal
-          orders={(snapshot?.activeOrders ?? stationOrders).filter((order) => ['released', 'running', 'paused'].includes(order.status))}
+          orders={stationOrders.filter((order) => ['released', 'running', 'paused'].includes(order.status))}
           currentOrderId={currentOrder?.id ?? null}
           loading={switchOrderLoading}
           t={t}

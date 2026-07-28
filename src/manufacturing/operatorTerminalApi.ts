@@ -32,6 +32,7 @@ type StationRow = {
   status: string;
   operator: string;
   process_step: string;
+  current_job: string | null;
 };
 
 type WorkCenterRow = {
@@ -169,6 +170,7 @@ export type OperatorTerminalSnapshot = {
   currentOrder: ProductionOrder | null;
   activeOrders: ProductionOrder[];
   queuedOrders: ProductionOrder[];
+  multiStepStationsByOrder: Record<string, string[]>;
   workCenterOptions: Array<{ id: string; code: string; name: string }>;
   stationOptions: Array<{
     id: string;
@@ -182,6 +184,7 @@ export type OperatorTerminalSnapshot = {
     operator: string;
     shift: string;
     processStep: string;
+    currentJob: string;
   }>;
   station: {
     id: string;
@@ -193,6 +196,7 @@ export type OperatorTerminalSnapshot = {
     operator: string;
     shift: string;
     processStep: string;
+    currentJob: string;
   } | null;
   workCenter: {
     id: string;
@@ -230,7 +234,6 @@ export async function fetchOperatorTerminalSnapshot(organizationId: string, clie
     .from('mes_production_orders')
     .select('*')
     .eq('organization_id', organizationId)
-    .eq('manufacturing_type', 'single-operation')
     .in('status', ['released', 'running', 'paused'])
     .order('status', { ascending: false })
     .order('due_date', { ascending: true });
@@ -238,6 +241,36 @@ export async function fetchOperatorTerminalSnapshot(organizationId: string, clie
   if (ordersError) throw ordersError;
 
   const orders = ((ordersData ?? []) as ProductionOrderRow[]).map(mapProductionOrderRow);
+  const multiStepOrderIds = orders.filter((order) => order.manufacturingType === 'multi-step').map((order) => order.id);
+  const multiStepStationsByOrder: Record<string, string[]> = {};
+  if (multiStepOrderIds.length) {
+    const { data: serialStationData, error: serialStationError } = await client
+      .from('mes_production_serials')
+      .select('production_order_id, assigned_station, result, reported_at')
+      .eq('organization_id', organizationId)
+      .in('production_order_id', multiStepOrderIds);
+    if (serialStationError) throw serialStationError;
+    (serialStationData ?? []).forEach((serial) => {
+      if (!serial.assigned_station || serial.result) return;
+      const stations = multiStepStationsByOrder[serial.production_order_id] ?? [];
+      if (!stations.includes(serial.assigned_station)) stations.push(serial.assigned_station);
+      multiStepStationsByOrder[serial.production_order_id] = stations;
+    });
+    orders
+      .filter((order) => (
+        order.manufacturingType === 'multi-step'
+        && order.completedQuantity + order.scrapQuantity >= order.plannedQuantity
+        && !(multiStepStationsByOrder[order.id]?.length)
+      ))
+      .forEach((order) => {
+        const lastReportedSerial = (serialStationData ?? [])
+          .filter((serial) => serial.production_order_id === order.id && serial.assigned_station && serial.reported_at)
+          .sort((first, second) => new Date(second.reported_at).getTime() - new Date(first.reported_at).getTime())[0];
+        if (lastReportedSerial?.assigned_station) {
+          multiStepStationsByOrder[order.id] = [lastReportedSerial.assigned_station];
+        }
+      });
+  }
   const currentOrder = orders.find((order) => order.status === 'running')
     ?? orders.find((order) => order.status === 'paused')
     ?? orders[0]
@@ -247,7 +280,7 @@ export async function fetchOperatorTerminalSnapshot(organizationId: string, clie
 
   const [{ data: workCentersData, error: workCentersError }, { data: stationsData, error: stationsError }] = await Promise.all([
     client.from('mes_work_centers').select('id, code, name').eq('organization_id', organizationId).order('name', { ascending: true }),
-    client.from('mes_work_center_stations').select('id, work_center_id, code, name, type, image_url, status, operator, process_step').eq('organization_id', organizationId).order('name', { ascending: true }),
+    client.from('mes_work_center_stations').select('id, work_center_id, code, name, type, image_url, status, operator, process_step, current_job').eq('organization_id', organizationId).order('name', { ascending: true }),
   ]);
 
   if (workCentersError) throw workCentersError;
@@ -265,6 +298,7 @@ export async function fetchOperatorTerminalSnapshot(organizationId: string, clie
     currentOrder,
     activeOrders: orders,
     queuedOrders: currentOrder ? orders.filter((order) => order.id !== currentOrder.id) : orders,
+    multiStepStationsByOrder,
     workCenterOptions: workCenters.map((option) => ({ id: option.id, code: option.code, name: option.name })),
     stationOptions: stations.map((option) => ({
       id: option.id,
@@ -278,6 +312,7 @@ export async function fetchOperatorTerminalSnapshot(organizationId: string, clie
       operator: option.operator,
       shift: 'A / Day',
       processStep: option.process_step,
+      currentJob: option.current_job ?? '',
     })),
     workCenter: workCenter ? { id: workCenter.id, code: workCenter.code, name: workCenter.name } : null,
     station: station ? {
@@ -290,6 +325,7 @@ export async function fetchOperatorTerminalSnapshot(organizationId: string, clie
       operator: station.operator,
       shift: 'A / Day',
       processStep: station.process_step,
+      currentJob: station.current_job ?? '',
     } : null,
   };
 }
@@ -365,15 +401,18 @@ export async function fetchOperatorProductionSerials(
   input: {
     orderId: string;
     organizationId: string;
+    stationCode?: string;
   },
   client: OperatorClient = supabase,
 ): Promise<OperatorProductionSerial[]> {
-  const { data, error } = await client
+  let query = client
     .from('mes_production_serials')
     .select('id, production_order_id, piece_sequence, tool_id, serial_number, result, ready_for_quality, traceability_id, reported_at')
     .eq('organization_id', input.organizationId)
     .eq('production_order_id', input.orderId)
     .order('piece_sequence', { ascending: true });
+  if (input.stationCode) query = query.eq('assigned_station', input.stationCode);
+  const { data, error } = await query;
 
   if (error) throw error;
   return ((data ?? []) as ProductionSerialRow[]).map(mapProductionSerialRow);
