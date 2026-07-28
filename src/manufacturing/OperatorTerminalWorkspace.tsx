@@ -1881,6 +1881,10 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
           showToast(order.status === 'waiting-inspection' ? 'Manufacturing completed; waiting for Quality inspection' : 'Operation completed');
         } catch (error) {
           console.error('Unable to complete operation', error);
+          const message = error && typeof error === 'object' && 'message' in error && typeof error.message === 'string'
+            ? error.message
+            : 'Could not sync completion';
+          setTerminalMessage(message);
           showToast('Could not sync completion');
         } finally {
           setSyncPending(false);

@@ -220,7 +220,7 @@ type ProductionSerialInsertRow = {
   piece_sequence: number;
   tool_id: string | null;
   serial_number: string;
-  assigned_station: string | null;
+  assigned_station?: string | null;
   result: null;
   ready_for_quality: false;
   reported_at: null;
@@ -2776,6 +2776,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
   const [serialAssignmentDrafts, setSerialAssignmentDrafts] = React.useState<ProductionSerialAssignmentDraft[]>([]);
   const [serialAssignmentModalOpen, setSerialAssignmentModalOpen] = React.useState(false);
   const [stationAssignmentModalOpen, setStationAssignmentModalOpen] = React.useState(false);
+  const [serialStationColumnAvailable, setSerialStationColumnAvailable] = React.useState(true);
   const [tableMessage, setTableMessage] = React.useState<string | null>('Loading production orders...');
   const [ordersLoaded, setOrdersLoaded] = React.useState(false);
   const [savingOrder, setSavingOrder] = React.useState(false);
@@ -3194,15 +3195,32 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
     setAssignSerialsEnabled(false);
     setSerialAssignmentDrafts(createSerialAssignmentDrafts(selectedOrder.plannedQuantity));
     setSerialAssignmentModalOpen(false);
+    setSerialStationColumnAvailable(true);
     setFormMode('edit');
 
     try {
-      const { data, error } = await supabase
+      let { data, error } = await supabase
         .from('mes_production_serials')
         .select('piece_sequence, tool_id, serial_number, assigned_station')
         .eq('organization_id', organizationId)
         .eq('production_order_id', selectedOrder.id)
         .order('piece_sequence', { ascending: true });
+      const missingAssignedStationColumn = Boolean(error && (
+        error.code === '42703'
+        || error.code === 'PGRST204'
+        || error.message?.includes('assigned_station')
+      ));
+      if (missingAssignedStationColumn) {
+        const fallbackResponse = await supabase
+          .from('mes_production_serials')
+          .select('piece_sequence, tool_id, serial_number')
+          .eq('organization_id', organizationId)
+          .eq('production_order_id', selectedOrder.id)
+          .order('piece_sequence', { ascending: true });
+        data = fallbackResponse.data as typeof data;
+        error = fallbackResponse.error;
+        setSerialStationColumnAvailable(false);
+      }
       if (error) throw error;
       const serialRows = (data ?? []) as ProductionSerialAssignmentRow[];
       if (!serialRows.length) return;
@@ -3215,7 +3233,16 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
       }))));
     } catch (error) {
       console.error('Unable to load Production Order serial assignments', error);
-      setOrderFormError('Existing Tool IDs and Serial Numbers could not be loaded. Try opening Edit again.');
+      const supabaseError = error as { code?: string; message?: string; details?: string; hint?: string };
+      const errorDetails = [
+        supabaseError.code ? `[${supabaseError.code}]` : '',
+        supabaseError.message ?? '',
+        supabaseError.details ?? '',
+        supabaseError.hint ?? '',
+      ].filter(Boolean).join(' ');
+      setOrderFormError(errorDetails
+        ? `Existing Tool IDs and Serial Numbers could not be loaded: ${errorDetails}`
+        : 'Existing Tool IDs and Serial Numbers could not be loaded. Try opening Edit again.');
     }
   };
 
@@ -3228,6 +3255,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
     setSerialAssignmentDrafts([]);
     setSerialAssignmentModalOpen(false);
     setStationAssignmentModalOpen(false);
+    setSerialStationColumnAvailable(true);
   };
 
   const setProductionOrderPartNameOption = (nextOptionValue: ProductionOrderPartNameOption) => {
@@ -3309,6 +3337,10 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
       setOrderFormError('Select a Station for this Single Operation order.');
       return;
     }
+    if (formState.manufacturingType === 'multi-step' && !serialStationColumnAvailable) {
+      setOrderFormError('Multi-step Station assignments require database migration 080_assign_production_serials_to_stations.sql.');
+      return;
+    }
     if (formState.manufacturingType === 'multi-step') {
       if (!assignSerialsEnabled || !normalizedSerialDrafts.length) {
         setOrderFormError('Assign the serialized pieces and their Stations for this Multi-step order.');
@@ -3380,7 +3412,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
                     .update({
                       tool_id: isWheelOrder ? null : draft.toolId.trim(),
                       serial_number: draft.serialNumber.trim(),
-                      assigned_station: formState.manufacturingType === 'multi-step' ? draft.assignedStation.trim() : null,
+                      ...(serialStationColumnAvailable ? { assigned_station: formState.manufacturingType === 'multi-step' ? draft.assignedStation.trim() : null } : {}),
                     })
                     .eq('organization_id', organizationId)
                     .eq('id', existingSerial.id)
@@ -3396,7 +3428,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
                     piece_sequence: draft.pieceSequence,
                     tool_id: isWheelOrder ? null : draft.toolId.trim(),
                     serial_number: draft.serialNumber.trim(),
-                    assigned_station: formState.manufacturingType === 'multi-step' ? draft.assignedStation.trim() : null,
+                    ...(serialStationColumnAvailable ? { assigned_station: formState.manufacturingType === 'multi-step' ? draft.assignedStation.trim() : null } : {}),
                     result: null,
                     ready_for_quality: false,
                     reported_at: null,
@@ -3460,7 +3492,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
               piece_sequence: draft.pieceSequence,
               tool_id: isWheelOrder ? null : draft.toolId.trim(),
               serial_number: draft.serialNumber.trim(),
-              assigned_station: formState.manufacturingType === 'multi-step' ? draft.assignedStation.trim() : null,
+              ...(serialStationColumnAvailable ? { assigned_station: formState.manufacturingType === 'multi-step' ? draft.assignedStation.trim() : null } : {}),
               result: null,
               ready_for_quality: false,
               reported_at: null,
