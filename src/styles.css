@@ -13617,6 +13617,56 @@ body.work-center-map-expanded .logged-workspace {
   color: #07111c;
 }
 
+.operator-terminal-availability-controls {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+  border-top: 1px solid rgba(83, 101, 120, 0.14);
+  padding-top: 8px;
+}
+
+.operator-terminal-availability-controls button {
+  display: inline-flex;
+  width: 100%;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 7px;
+  font-size: 0.76rem;
+  font-weight: 950;
+  cursor: pointer;
+  box-shadow: 0 6px 14px rgba(7, 17, 28, 0.14);
+}
+
+.operator-terminal-availability-controls button.maintenance {
+  background: #f2b632;
+  color: #3d2800;
+}
+
+.operator-terminal-availability-controls button.offline {
+  background: #64748b;
+  color: #ffffff;
+}
+
+.operator-terminal-availability-controls button.maintenance.active {
+  background: #d99000;
+  color: #ffffff;
+  box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.18), 0 6px 14px rgba(217, 119, 6, 0.2);
+}
+
+.operator-terminal-availability-controls button.offline.active {
+  background: #334155;
+  color: #ffffff;
+  box-shadow: 0 0 0 3px rgba(71, 85, 105, 0.16), 0 6px 14px rgba(71, 85, 105, 0.2);
+}
+
+.operator-terminal-availability-controls button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 .operator-terminal-station-card dl {
   display: grid;
   gap: 5px;
@@ -13938,6 +13988,26 @@ body.work-center-map-expanded .logged-workspace {
 .operator-terminal-hold-overlay.setup svg,
 .operator-terminal-hold-overlay.setup strong {
   color: #c4b5fd;
+}
+
+.operator-terminal-hold-overlay.maintenance {
+  border-color: rgba(217, 119, 6, 0.72);
+  background: rgba(55, 31, 8, 0.97);
+}
+
+.operator-terminal-hold-overlay.maintenance svg,
+.operator-terminal-hold-overlay.maintenance strong {
+  color: #fbbf24;
+}
+
+.operator-terminal-hold-overlay.offline {
+  border-color: rgba(100, 116, 139, 0.72);
+  background: rgba(15, 23, 42, 0.98);
+}
+
+.operator-terminal-hold-overlay.offline svg,
+.operator-terminal-hold-overlay.offline strong {
+  color: #cbd5e1;
 }
 
 .operator-action {
@@ -18089,6 +18159,18 @@ body.work-center-map-expanded .logged-workspace {
   --traceability-event-color: #4f46e5;
   --traceability-event-soft: rgba(79, 70, 229, 0.11);
   --traceability-event-glow: rgba(79, 70, 229, 0.27);
+}
+
+.traceability-event-row.event-tone-maintenance {
+  --traceability-event-color: #d97706;
+  --traceability-event-soft: rgba(217, 119, 6, 0.12);
+  --traceability-event-glow: rgba(217, 119, 6, 0.28);
+}
+
+.traceability-event-row.event-tone-offline {
+  --traceability-event-color: #475569;
+  --traceability-event-soft: rgba(71, 85, 105, 0.12);
+  --traceability-event-glow: rgba(71, 85, 105, 0.28);
 }
 
 .traceability-event-row.event-tone-adjustment {

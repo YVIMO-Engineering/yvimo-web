@@ -1,6 +1,6 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { Activity, AlertTriangle, ArrowLeft, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleHelp, CircleX, Copy, Database, Download, Eye, Factory, Frown, FileText, ImagePlus, Maximize2, Meh, Minimize2, Minus, Pencil, Plus, RadioTower, Ruler, Search, Smile, Timer, X } from 'lucide-react';
+import { Activity, AlertTriangle, ArrowLeft, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleHelp, CircleX, Copy, Database, Download, Eye, Factory, Frown, FileText, ImagePlus, Maximize2, Meh, Minimize2, Minus, Pencil, Plus, Power, RadioTower, Ruler, Search, Smile, Timer, Wrench, X } from 'lucide-react';
 import { GoogleWorkCentersMap } from '../components/maps/GoogleWorkCentersMap';
 import { resolveGooglePlacesAddressMatch, searchGooglePlacesAddressMatches, type GooglePlacesAddressMatch } from '../lib/maps/googlePlacesAddressLookup';
 import { supabase } from '../lib/supabaseClient';
@@ -8192,11 +8192,15 @@ type TraceabilityEventTone =
   | 'quality-inspection'
   | 'inventory-received'
   | 'inventory-consumed'
+  | 'maintenance'
+  | 'offline'
   | 'adjustment';
 
 function getTraceabilityEventTone(eventType: string): TraceabilityEventTone {
   if (eventType === 'inventory-received') return 'inventory-received';
   if (eventType === 'inventory-consumed') return 'inventory-consumed';
+  if (eventType === 'maintenance-started' || eventType === 'maintenance-ended') return 'maintenance';
+  if (eventType === 'station-offline' || eventType === 'station-online') return 'offline';
   if (eventType === 'job-started') return 'job-started';
   if (eventType === 'job-resumed') return 'job-resumed';
   if (eventType === 'job-paused') return 'job-paused';
@@ -8213,6 +8217,8 @@ function renderTraceabilityEventIcon(eventType: string) {
   const iconProps = { size: 19, strokeWidth: 2.6 };
   if (eventType === 'inventory-received') return <Plus {...iconProps} />;
   if (eventType === 'inventory-consumed') return <Minus {...iconProps} />;
+  if (eventType === 'maintenance-started' || eventType === 'maintenance-ended') return <Wrench {...iconProps} />;
+  if (eventType === 'station-offline' || eventType === 'station-online') return <Power {...iconProps} />;
   if (eventType === 'job-started') return <Activity {...iconProps} />;
   if (eventType === 'job-resumed') return <RadioTower {...iconProps} />;
   if (eventType === 'job-paused') return <Timer {...iconProps} />;
@@ -8242,12 +8248,20 @@ function getTraceabilityEventLabel(eventType: string) {
     'measurement-corrected': 'Measurement Corrected',
     'inventory-received': 'Inventory Received',
     'inventory-consumed': 'Inventory Consumed',
+    'maintenance-started': 'Maintenance Started',
+    'maintenance-ended': 'Maintenance Completed',
+    'station-offline': 'Station Offline',
+    'station-online': 'Station Online',
     adjustment: 'Adjustment',
   };
   return eventLabels[eventType] ?? formatTitleLabel(eventType);
 }
 
 function getTraceabilityEventSummary(event: TraceabilityOperatorEventRow) {
+  if (event.event_type === 'maintenance-started') return 'Station entered Maintenance from Operator Terminal';
+  if (event.event_type === 'maintenance-ended') return 'Maintenance was completed and the station returned to Idle';
+  if (event.event_type === 'station-offline') return 'Station was taken Offline from Operator Terminal';
+  if (event.event_type === 'station-online') return 'Station returned Online and is ready for production';
   if (event.event_type === 'inventory-received' || event.event_type === 'inventory-consumed') {
     const itemTitle = typeof event.payload?.inventory_item_title === 'string' ? event.payload.inventory_item_title : 'Inventory item';
     const previousQuantity = event.payload?.previous_quantity;
@@ -8467,7 +8481,7 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
           )
         `)
         .eq('organization_id', organizationId)
-        .in('event_type', ['production-scrap', 'downtime-started', 'downtime-ended', 'job-paused', 'job-started', 'job-resumed', 'manufacturing-completed', 'operation-completed', 'adjustment', 'quality-inspection-saved', 'quality-inspection-skipped', 'measurement-corrected', 'inventory-received', 'inventory-consumed'])
+        .in('event_type', ['production-scrap', 'downtime-started', 'downtime-ended', 'job-paused', 'job-started', 'job-resumed', 'manufacturing-completed', 'operation-completed', 'adjustment', 'quality-inspection-saved', 'quality-inspection-skipped', 'measurement-corrected', 'inventory-received', 'inventory-consumed', 'maintenance-started', 'maintenance-ended', 'station-offline', 'station-online'])
         .order('created_at', { ascending: false })
         .limit(300),
       supabase
@@ -8564,7 +8578,7 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
         filter: `organization_id=eq.${organizationId}`,
       }, (payload) => {
         const newEvent = payload.new as Partial<{ id: string; event_type: string }>;
-        if (newEvent.event_type && !['production-scrap', 'downtime-started', 'downtime-ended', 'job-paused', 'job-started', 'job-resumed', 'manufacturing-completed', 'operation-completed', 'adjustment', 'quality-inspection-saved', 'quality-inspection-skipped', 'measurement-corrected', 'inventory-received', 'inventory-consumed'].includes(newEvent.event_type)) return;
+        if (newEvent.event_type && !['production-scrap', 'downtime-started', 'downtime-ended', 'job-paused', 'job-started', 'job-resumed', 'manufacturing-completed', 'operation-completed', 'adjustment', 'quality-inspection-saved', 'quality-inspection-skipped', 'measurement-corrected', 'inventory-received', 'inventory-consumed', 'maintenance-started', 'maintenance-ended', 'station-offline', 'station-online'].includes(newEvent.event_type)) return;
         const eventId = typeof newEvent.id === 'string' ? newEvent.id : '';
         if (eventId) markCaptureAsNew(`event-${eventId}`);
         void loadTraceability(true);

@@ -682,6 +682,30 @@ export async function setOperatorStationSetup(
   if (eventError) throw eventError;
 }
 
+export async function setOperatorStationAvailability(
+  input: {
+    organizationId: string;
+    workCenterCode: string;
+    stationCode: string;
+    status: 'maintenance' | 'offline' | 'idle';
+    shift?: string;
+    reason?: string;
+    comment?: string;
+  },
+  client: OperatorClient = supabase,
+): Promise<void> {
+  const { error } = await client.rpc('mes_operator_set_station_availability', {
+    p_organization_id: input.organizationId,
+    p_work_center_code: input.workCenterCode,
+    p_station_code: input.stationCode,
+    p_status: input.status,
+    p_reason: input.reason ?? null,
+    p_comment: input.comment ?? null,
+    p_shift: input.shift ?? null,
+  });
+  if (error) throw error;
+}
+
 export async function switchOperatorActiveOrder(
   input: {
     orderId: string;
