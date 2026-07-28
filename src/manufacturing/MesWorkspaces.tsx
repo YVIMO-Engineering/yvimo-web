@@ -1992,6 +1992,24 @@ type PendingWorkReportSerialRow = {
   production_order_id: string;
   assigned_station: string | null;
   result: 'good' | 'scrap' | null;
+  serial_number?: string;
+  reported_at?: string | null;
+};
+
+type PendingWorkMachineSnapshot = {
+  station: string;
+  stationCode: string;
+  status: string;
+  stateDurationMs: number;
+  stateSince: string;
+  currentJob: string;
+  lastProducedPart: {
+    partType: string;
+    orderNumber: string;
+    clientName: string;
+    serialNumber: string;
+    producedAt: string;
+  } | null;
 };
 
 type PendingWorkCategory = 'manufacturing' | 'inspection' | 'quotation';
@@ -2011,7 +2029,7 @@ type PendingWorkReport = {
   totalMachines: number;
   subtotals: Record<PendingWorkCategory, number>;
   stations: PendingWorkReportStation[];
-  machineStatuses: Array<{ station: string; status: string }>;
+  machineStatuses: PendingWorkMachineSnapshot[];
   text: string;
 };
 
@@ -2084,7 +2102,7 @@ function getVisiblePendingWorkReport(report: PendingWorkReport, visibleCategorie
             ...line,
             quantity: orderBreakdown.reduce((total, order) => total + order.quantity, 0),
             orderBreakdown,
-            partLabels: Array.from(new Set(orderBreakdown.map((order) => order.partLabel))),
+            partLabels: Array.from(new Set(orderBreakdown.map((order) => getPendingWorkPartLabel(order.partLabel, 2)))),
             categories: Array.from(new Set(orderBreakdown.map((order) => order.category))),
           };
         })
@@ -2111,7 +2129,7 @@ function getVisiblePendingWorkReport(report: PendingWorkReport, visibleCategorie
     '',
     ...stations.flatMap((station) => [
       station.label,
-      ...station.lines.map((line) => `- ${line.clientName}: ${line.quantity} pieces — ${line.orderBreakdown.map((order) => `Order ${order.orderNumber} (${order.quantity} ${formatPendingWorkPartDisplay(order.partLabel)}, ${getPendingWorkCategoryLabel(order.category)})`).join(', ')}`),
+      ...station.lines.map((line) => `- ${line.clientName.toUpperCase()}: ${line.quantity} pieces — ${line.orderBreakdown.map((order) => `Order ${order.orderNumber} (${order.quantity} ${formatPendingWorkPartDisplay(order.partLabel)}, ${getPendingWorkCategoryLabel(order.category)})`).join(', ')}`),
       '',
     ]),
     `Total pending = ${totalQuantity} pieces`,
@@ -2120,7 +2138,11 @@ function getVisiblePendingWorkReport(report: PendingWorkReport, visibleCategorie
     `Quotation pending = ${subtotals.quotation} pieces`,
     '',
     'Machine Status',
-    ...report.machineStatuses.map((item) => `${item.station} = ${item.status}`),
+    ...report.machineStatuses.map((item) => [
+      `${item.station} = ${formatTitleLabel(item.status)} for ${formatCycleDuration(item.stateDurationMs)}${item.stateSince ? ` (since ${formatTimestamp(item.stateSince)})` : ''}`,
+      `  Current job: ${item.currentJob || 'None'}`,
+      `  Last produced: ${item.lastProducedPart ? `${item.lastProducedPart.partType} | Order ${item.lastProducedPart.orderNumber} | ${item.lastProducedPart.clientName} | Serial ${item.lastProducedPart.serialNumber || '-'} | ${formatTimestamp(item.lastProducedPart.producedAt)}` : 'None'}`,
+    ].join('\n')),
   ];
 
   return {
@@ -2138,6 +2160,7 @@ function getPendingWorkReport(
   stationOptionsByWorkCenter: Record<string, MesOrderDropdownOption[]>,
   workCenterOptions: MesOrderDropdownOption[],
   serialRows: PendingWorkReportSerialRow[] = [],
+  machineSnapshots: PendingWorkMachineSnapshot[] = [],
 ): PendingWorkReport {
   const reportWorkCenterCode = getPendingWorkReportWorkCenterCode(orders, workCenterOptions, stationOptionsByWorkCenter);
   const reportMachineOptions = stationOptionsByWorkCenter[reportWorkCenterCode] ?? [];
@@ -2251,25 +2274,21 @@ function getPendingWorkReport(
     ...totals,
     [entry.category]: totals[entry.category] + entry.quantity,
   }), { manufacturing: 0, inspection: 0, quotation: 0 });
-  const machineStatuses = reportMachineOptions.map((machine) => {
-    const runningOrder = reportOrders.find((order) => (
-      order.status === 'running'
-      && order.assignedWorkCenter === reportWorkCenterCode
-      && order.assignedStation === machine.value
-    )) ?? null;
-    return {
-      station: getProductionOrderStationLabel(stationOptionsByWorkCenter, reportWorkCenterCode, machine.value),
-      status: runningOrder
-        ? `Running ${formatPendingWorkPartDisplay(getPendingWorkPartLabel(runningOrder.partName, 2))} ${getPendingWorkClientLabel(runningOrder.clientName ?? '')}`
-        : 'No running order',
-    };
+  const machineStatuses = reportMachineOptions.map((machine) => machineSnapshots.find((snapshot) => snapshot.stationCode === machine.value) ?? {
+    station: getProductionOrderStationLabel(stationOptionsByWorkCenter, reportWorkCenterCode, machine.value),
+    stationCode: machine.value,
+    status: 'idle',
+    stateDurationMs: 0,
+    stateSince: '',
+    currentJob: '',
+    lastProducedPart: null,
   });
   const reportLines = [
     `Pending Work Report - ${new Date().toLocaleString()}`,
     '',
     ...stations.flatMap((station) => [
       station.label,
-      ...station.lines.map((line) => `- ${line.clientName}: ${line.quantity} pieces — ${line.orderBreakdown.map((order) => `Order ${order.orderNumber} (${order.quantity} ${formatPendingWorkPartDisplay(order.partLabel)}, ${getPendingWorkCategoryLabel(order.category)})`).join(', ')}`),
+      ...station.lines.map((line) => `- ${line.clientName.toUpperCase()}: ${line.quantity} pieces — ${line.orderBreakdown.map((order) => `Order ${order.orderNumber} (${order.quantity} ${formatPendingWorkPartDisplay(order.partLabel)}, ${getPendingWorkCategoryLabel(order.category)})`).join(', ')}`),
       '',
     ]),
     `Total pending = ${totalQuantity} pieces`,
@@ -2278,7 +2297,11 @@ function getPendingWorkReport(
     `Quotation pending = ${subtotals.quotation} pieces`,
     '',
     'Machine Status',
-    ...machineStatuses.map((item) => `${item.station} = ${item.status}`),
+    ...machineStatuses.map((item) => [
+      `${item.station} = ${formatTitleLabel(item.status)} for ${formatCycleDuration(item.stateDurationMs)}${item.stateSince ? ` (since ${formatTimestamp(item.stateSince)})` : ''}`,
+      `  Current job: ${item.currentJob || 'None'}`,
+      `  Last produced: ${item.lastProducedPart ? `${item.lastProducedPart.partType} | Order ${item.lastProducedPart.orderNumber} | ${item.lastProducedPart.clientName} | Serial ${item.lastProducedPart.serialNumber || '-'} | ${formatTimestamp(item.lastProducedPart.producedAt)}` : 'None'}`,
+    ].join('\n')),
   ];
 
   return {
@@ -2698,7 +2721,15 @@ function DailyProductionReportModal({ report, onClose }: { report: DailyProducti
   return typeof document === 'undefined' ? modalContent : createPortal(modalContent, document.body);
 }
 
-function PendingWorkReportModal({ report, onClose }: { report: PendingWorkReport; onClose: () => void }) {
+function PendingWorkReportModal({
+  report,
+  onClose,
+  onSelectOrder,
+}: {
+  report: PendingWorkReport;
+  onClose: () => void;
+  onSelectOrder: (orderNumber: string) => void;
+}) {
   const [copied, setCopied] = React.useState(false);
   const [downloadingPdf, setDownloadingPdf] = React.useState(false);
   const [visibleCategories, setVisibleCategories] = React.useState<Set<PendingWorkCategory>>(() => new Set(pendingWorkCategories));
@@ -2729,43 +2760,175 @@ function PendingWorkReportModal({ report, onClose }: { report: PendingWorkReport
     setDownloadingPdf(true);
     try {
       const { default: jsPDF } = await import('jspdf');
-      const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' });
-      const margin = 42;
+      const pdf = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'letter' });
+      const margin = 36;
       const pageWidth = pdf.internal.pageSize.getWidth();
       const pageHeight = pdf.internal.pageSize.getHeight();
-      const lineHeight = 14;
+      const contentWidth = pageWidth - (margin * 2);
       let cursorY = margin;
+      const ensureSpace = (height: number) => {
+        if (cursorY + height <= pageHeight - margin) return;
+        pdf.addPage();
+        cursorY = margin;
+      };
+      const sectionTitle = (title: string, detail: string) => {
+        ensureSpace(34);
+        pdf.setFillColor(255, 247, 237);
+        pdf.setDrawColor(255, 122, 0);
+        pdf.roundedRect(margin, cursorY, contentWidth, 28, 4, 4, 'FD');
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(10);
+        pdf.setTextColor(194, 65, 12);
+        pdf.text(title, margin + 10, cursorY + 18);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(7.5);
+        pdf.text(detail, pageWidth - margin - 10, cursorY + 18, { align: 'right' });
+        cursorY += 38;
+      };
+      const statusColors = (status: string) => {
+        if (status === 'running') return { fill: [255, 237, 213] as const, border: [253, 186, 116] as const, text: [194, 65, 12] as const };
+        if (status === 'idle') return { fill: [209, 250, 229] as const, border: [110, 231, 183] as const, text: [4, 120, 87] as const };
+        if (status === 'setup') return { fill: [237, 233, 254] as const, border: [196, 181, 253] as const, text: [109, 40, 217] as const };
+        if (status === 'down') return { fill: [254, 226, 226] as const, border: [252, 165, 165] as const, text: [185, 28, 28] as const };
+        if (status === 'maintenance') return { fill: [254, 243, 199] as const, border: [252, 211, 77] as const, text: [161, 98, 7] as const };
+        return { fill: [226, 232, 240] as const, border: [148, 163, 184] as const, text: [51, 65, 85] as const };
+      };
+
       pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(18);
-      pdf.text('Pending Work Report', margin, cursorY);
-      cursorY += 22;
+      pdf.setFontSize(8);
+      pdf.setTextColor(255, 122, 0);
+      pdf.text('YVIMO / PRODUCTION ORDERS', margin, cursorY + 10);
+      pdf.setFontSize(20);
+      pdf.setTextColor(7, 17, 28);
+      pdf.text('Pending Work Report', margin, cursorY + 36);
       pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(10);
-      pdf.text(`Generated ${formatTimestamp(visibleReport.generatedAt)}`, margin, cursorY);
-      cursorY += 24;
-      pdf.setFont('helvetica', 'bold');
-      pdf.text(`Total pending: ${visibleReport.totalQuantity} pieces`, margin, cursorY);
-      cursorY += 16;
-      pdf.text(`Open orders: ${visibleReport.totalOrders}`, margin, cursorY);
-      cursorY += 16;
-      pdf.text(`Machines: ${visibleReport.totalMachines}`, margin, cursorY);
-      cursorY += 16;
-      pdf.text(`Manufacturing pending: ${visibleReport.subtotals.manufacturing}`, margin, cursorY);
-      cursorY += 16;
-      pdf.text(`Inspection pending: ${visibleReport.subtotals.inspection}`, margin, cursorY);
-      cursorY += 16;
-      pdf.text(`Quotation pending: ${visibleReport.subtotals.quotation}`, margin, cursorY);
-      cursorY += 22;
-      pdf.setFont('courier', 'normal');
-      pdf.setFontSize(9);
-      const textLines = pdf.splitTextToSize(visibleReport.text || 'No pending work found.', pageWidth - margin * 2) as string[];
-      textLines.forEach((line) => {
-        if (cursorY > pageHeight - margin) {
-          pdf.addPage();
-          cursorY = margin;
-        }
-        pdf.text(line, margin, cursorY);
-        cursorY += lineHeight;
+      pdf.setFontSize(8);
+      pdf.setTextColor(82, 97, 117);
+      pdf.text(`Generated ${formatTimestamp(visibleReport.generatedAt)}`, pageWidth - margin, cursorY + 34, { align: 'right' });
+      pdf.setDrawColor(226, 232, 240);
+      pdf.line(margin, cursorY + 48, pageWidth - margin, cursorY + 48);
+      cursorY += 62;
+
+      const kpis = [
+        ['TOTAL PENDING', visibleReport.totalQuantity, [255, 247, 237], [194, 65, 12]],
+        ['MANUFACTURING', visibleReport.subtotals.manufacturing, [239, 246, 255], [37, 99, 235]],
+        ['INSPECTION', visibleReport.subtotals.inspection, [240, 253, 250], [15, 118, 110]],
+        ['QUOTATION', visibleReport.subtotals.quotation, [245, 243, 255], [124, 58, 237]],
+      ] as const;
+      const kpiGap = 10;
+      const kpiWidth = (contentWidth - (kpiGap * 3)) / 4;
+      kpis.forEach(([label, value, fill, text], index) => {
+        const x = margin + index * (kpiWidth + kpiGap);
+        pdf.setFillColor(...fill);
+        pdf.setDrawColor(...text);
+        pdf.roundedRect(x, cursorY, kpiWidth, 50, 5, 5, 'FD');
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(7);
+        pdf.setTextColor(...text);
+        pdf.text(label, x + 10, cursorY + 15);
+        pdf.setFontSize(18);
+        pdf.text(String(value), x + 10, cursorY + 38);
+        pdf.setFontSize(7);
+        pdf.text('PIECES', x + kpiWidth - 10, cursorY + 37, { align: 'right' });
+      });
+      cursorY += 64;
+
+      sectionTitle('PENDING WORK', `${visibleReport.totalOrders} open orders`);
+      visibleReport.stations.forEach((station) => {
+        ensureSpace(34);
+        pdf.setFillColor(248, 250, 252);
+        pdf.setDrawColor(203, 213, 225);
+        pdf.roundedRect(margin, cursorY, contentWidth, 24, 4, 4, 'FD');
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(9);
+        pdf.setTextColor(15, 23, 42);
+        pdf.text(station.label, margin + 9, cursorY + 16);
+        pdf.setTextColor(194, 65, 12);
+        pdf.text(`${station.totalQuantity} PENDING`, pageWidth - margin - 9, cursorY + 16, { align: 'right' });
+        cursorY += 30;
+        station.lines.forEach((line) => {
+          const orderText = line.orderBreakdown.map((order) => `${order.orderNumber} (${order.quantity})`).join(', ');
+          const rowHeight = Math.max(27, (pdf.splitTextToSize(orderText, 250) as string[]).length * 8 + 11);
+          ensureSpace(rowHeight + 2);
+          pdf.setDrawColor(226, 232, 240);
+          pdf.line(margin, cursorY + rowHeight, pageWidth - margin, cursorY + rowHeight);
+          pdf.setFont('helvetica', 'bold');
+          pdf.setFontSize(11);
+          pdf.setTextColor(255, 107, 0);
+          pdf.text(String(line.quantity), margin + 8, cursorY + 17);
+          pdf.setFontSize(8);
+          pdf.setTextColor(15, 23, 42);
+          pdf.text(line.clientName.toUpperCase(), margin + 50, cursorY + 17);
+          pdf.setFont('helvetica', 'normal');
+          pdf.setFontSize(7.2);
+          pdf.setTextColor(51, 65, 85);
+          pdf.text(pdf.splitTextToSize(orderText, 250), margin + 180, cursorY + 13);
+          pdf.setFont('helvetica', 'bold');
+          pdf.setTextColor(37, 99, 235);
+          pdf.text(line.partLabels.map(formatPendingWorkPartDisplay).join(' / '), margin + 445, cursorY + 17);
+          pdf.setTextColor(71, 85, 105);
+          pdf.text(line.categories.map(getPendingWorkCategoryLabel).join(' / '), margin + 555, cursorY + 17);
+          cursorY += rowHeight;
+        });
+        cursorY += 10;
+      });
+
+      pdf.addPage();
+      cursorY = margin;
+      sectionTitle('MACHINE STATUS', `${visibleReport.machineStatuses.length} machine snapshots`);
+      const cardGap = 10;
+      const cardWidth = (contentWidth - cardGap) / 2;
+      const cardHeight = 112;
+      visibleReport.machineStatuses.forEach((machine, index) => {
+        if (index % 2 === 0) ensureSpace(cardHeight + 10);
+        const x = margin + (index % 2) * (cardWidth + cardGap);
+        const y = cursorY;
+        const palette = statusColors(machine.status);
+        pdf.setFillColor(255, 255, 255);
+        pdf.setDrawColor(203, 213, 225);
+        pdf.roundedRect(x, y, cardWidth, cardHeight, 5, 5, 'FD');
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(10);
+        pdf.setTextColor(15, 23, 42);
+        pdf.text(machine.station, x + 10, y + 17);
+        const statusLabel = formatTitleLabel(machine.status).toUpperCase();
+        const pillWidth = Math.max(46, pdf.getTextWidth(statusLabel) + 14);
+        pdf.setFillColor(...palette.fill);
+        pdf.setDrawColor(...palette.border);
+        pdf.roundedRect(x + cardWidth - pillWidth - 10, y + 7, pillWidth, 16, 8, 8, 'FD');
+        pdf.setFontSize(6.5);
+        pdf.setTextColor(...palette.text);
+        pdf.text(statusLabel, x + cardWidth - 10 - pillWidth / 2, y + 18, { align: 'center' });
+
+        pdf.setFillColor(...palette.fill);
+        pdf.setDrawColor(...palette.border);
+        pdf.roundedRect(x + 8, y + 29, cardWidth - 16, 27, 4, 4, 'FD');
+        pdf.setFontSize(6);
+        pdf.setTextColor(...palette.text);
+        pdf.text('CURRENT STATE', x + 15, y + 40);
+        pdf.setFontSize(10);
+        pdf.text(formatCycleDuration(machine.stateDurationMs), x + cardWidth - 15, y + 43, { align: 'right' });
+        pdf.setFontSize(5.8);
+        pdf.text(machine.stateSince ? `Since ${formatTimestamp(machine.stateSince)}` : 'Snapshot at generation', x + cardWidth - 15, y + 52, { align: 'right' });
+
+        pdf.setFontSize(6);
+        pdf.setTextColor(100, 116, 139);
+        pdf.text('CURRENT JOB', x + 10, y + 69);
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(8);
+        pdf.setTextColor(15, 23, 42);
+        pdf.text(machine.currentJob || 'No active job', x + cardWidth - 10, y + 69, { align: 'right' });
+        pdf.setFontSize(6);
+        pdf.setTextColor(100, 116, 139);
+        pdf.text('LAST PRODUCED PART', x + 10, y + 83);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(6.6);
+        pdf.setTextColor(30, 41, 59);
+        const lastProduced = machine.lastProducedPart
+          ? `${machine.lastProducedPart.partType} | Order ${machine.lastProducedPart.orderNumber} | ${machine.lastProducedPart.clientName} | Serial ${machine.lastProducedPart.serialNumber || '-'} | ${formatTimestamp(machine.lastProducedPart.producedAt)}`
+          : 'No production reported';
+        pdf.text(pdf.splitTextToSize(lastProduced, cardWidth - 20), x + 10, y + 95);
+        if (index % 2 === 1 || index === visibleReport.machineStatuses.length - 1) cursorY += cardHeight + 10;
       });
       pdf.save(`pending-work-report-${visibleReport.generatedAt.slice(0, 10)}.pdf`);
     } catch (error) {
@@ -2829,9 +2992,15 @@ function PendingWorkReportModal({ report, onClose }: { report: PendingWorkReport
                           <span>
                             <small className="pending-work-report-order-list">
                               {line.orderBreakdown.map((order) => (
-                                <i className="pending-work-report-order-badge" key={`${order.orderNumber}-${order.category}`}>
-                                  Order {order.orderNumber} · {order.quantity}
-                                </i>
+                                <button
+                                  className="pending-work-report-order-badge"
+                                  type="button"
+                                  key={`${order.orderNumber}-${order.category}`}
+                                  onClick={() => onSelectOrder(order.orderNumber)}
+                                >
+                                  <span>Order {order.orderNumber}</span>
+                                  <em>{order.quantity.toLocaleString()}</em>
+                                </button>
                               ))}
                             </small>
                             <small className="pending-work-report-badge-list">
@@ -2848,7 +3017,7 @@ function PendingWorkReportModal({ report, onClose }: { report: PendingWorkReport
                                 </i>
                               ))}
                             </small>
-                            <em>{line.clientName}</em>
+                            <em>{line.clientName.toUpperCase()}</em>
                           </span>
                         </li>
                       ))}
@@ -2871,8 +3040,34 @@ function PendingWorkReportModal({ report, onClose }: { report: PendingWorkReport
             </div>
             <div className="pending-work-report-status-list">
               {visibleReport.machineStatuses.length ? visibleReport.machineStatuses.map((item) => (
-                <span key={item.station}><b>{item.station}</b>{item.status}</span>
-              )) : <span><b>All machines</b>No running pending orders</span>}
+                <article className={`pending-work-report-machine-card machine-status-${item.status}`} key={item.stationCode}>
+                  <div className="pending-work-report-machine-heading">
+                    <b>{item.station}</b>
+                    <i className={`status-${item.status}`}>{formatTitleLabel(item.status)}</i>
+                  </div>
+                  <div className="pending-work-report-machine-state">
+                    <span>Current state</span>
+                    <strong>{formatCycleDuration(item.stateDurationMs)}</strong>
+                    <small>{item.stateSince ? `Since ${formatTimestamp(item.stateSince)}` : 'Snapshot at report generation'}</small>
+                  </div>
+                  <div className="pending-work-report-machine-job">
+                    <span>Current job</span>
+                    <strong>{item.currentJob || 'No active job'}</strong>
+                  </div>
+                  <div className="pending-work-report-machine-last">
+                    <span>Last produced part</span>
+                    {item.lastProducedPart ? (
+                      <dl>
+                        <div><dt>Part</dt><dd>{item.lastProducedPart.partType}</dd></div>
+                        <div><dt>Order</dt><dd>{item.lastProducedPart.orderNumber}</dd></div>
+                        <div><dt>Client</dt><dd>{item.lastProducedPart.clientName}</dd></div>
+                        <div><dt>Serial</dt><dd>{item.lastProducedPart.serialNumber || '-'}</dd></div>
+                        <div><dt>Produced</dt><dd>{formatTimestamp(item.lastProducedPart.producedAt)}</dd></div>
+                      </dl>
+                    ) : <em>No production reported</em>}
+                  </div>
+                </article>
+              )) : <div><b>All machines</b>No machine snapshots available</div>}
             </div>
           </aside>
         </div>
@@ -3219,23 +3414,80 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
   };
 
   const openPendingWorkReport = async () => {
-    const activeOrderIds = orders
-      .filter((order) => !['completed', 'cancelled'].includes(order.status))
-      .map((order) => order.id);
     let serialRows: PendingWorkReportSerialRow[] = [];
-    if (activeOrderIds.length) {
-      const { data, error } = await supabase
+    let machineSnapshots: PendingWorkMachineSnapshot[] = [];
+    const generatedAt = new Date();
+    const [
+      { data: serialData, error: serialError },
+      { data: stationData, error: stationError },
+      { data: cycleData, error: cycleError },
+    ] = await Promise.all([
+      supabase
         .from('mes_production_serials')
-        .select('production_order_id, assigned_station, result')
+        .select('production_order_id, assigned_station, result, serial_number, reported_at')
+        .eq('organization_id', organizationId),
+      supabase
+        .from('mes_work_center_stations')
+        .select('code, name, status, current_job')
+        .eq('organization_id', organizationId),
+      supabase
+        .from('mes_station_status_cycles')
+        .select('station_code, status, started_at, ended_at')
         .eq('organization_id', organizationId)
-        .in('production_order_id', activeOrderIds);
-      if (error) {
-        console.error('Unable to load multi-step serials for pending work report', error);
-      } else {
-        serialRows = (data ?? []) as PendingWorkReportSerialRow[];
-      }
+        .is('ended_at', null),
+    ]);
+    if (serialError) {
+      console.error('Unable to load serials for pending work report', serialError);
+    } else {
+      serialRows = (serialData ?? []) as PendingWorkReportSerialRow[];
     }
-    setPendingWorkReport(getPendingWorkReport(orders, stationOptionsByWorkCenter, workCenterOptions, serialRows));
+    if (stationError || cycleError) {
+      console.error('Unable to load machine snapshots for pending work report', stationError ?? cycleError);
+    } else {
+      const orderById = new Map(orders.map((order) => [order.id, order]));
+      machineSnapshots = (stationData ?? []).map((station) => {
+        const activeCycle = (cycleData ?? []).find((cycle) => cycle.station_code === station.code);
+        const lastSerial = [...serialRows]
+          .filter((serial) => {
+            if (!serial.reported_at) return false;
+            const order = orderById.get(serial.production_order_id);
+            return (serial.assigned_station || order?.assignedStation) === station.code;
+          })
+          .sort((first, second) => new Date(second.reported_at ?? 0).getTime() - new Date(first.reported_at ?? 0).getTime())[0];
+        const lastOrder = lastSerial ? orderById.get(lastSerial.production_order_id) : null;
+        const stateSince = activeCycle?.started_at ?? '';
+        return {
+          station: station.name || station.code,
+          stationCode: station.code,
+          status: activeCycle?.status ?? station.status ?? 'idle',
+          stateDurationMs: stateSince ? Math.max(0, generatedAt.getTime() - new Date(stateSince).getTime()) : 0,
+          stateSince,
+          currentJob: station.current_job ?? '',
+          lastProducedPart: lastSerial && lastOrder && lastSerial.reported_at ? {
+            partType: formatPendingWorkPartDisplay(getPendingWorkPartLabel(lastOrder.partName, 1)),
+            orderNumber: lastOrder.orderNumber,
+            clientName: getPendingWorkClientLabel(lastOrder.clientName ?? '').toUpperCase(),
+            serialNumber: lastSerial.serial_number ?? '',
+            producedAt: lastSerial.reported_at,
+          } : null,
+        };
+      });
+    }
+    setPendingWorkReport(getPendingWorkReport(orders, stationOptionsByWorkCenter, workCenterOptions, serialRows, machineSnapshots));
+  };
+
+  const focusPendingWorkOrder = (orderNumber: string) => {
+    const targetOrderIndex = orders.findIndex((order) => order.orderNumber === orderNumber);
+    if (targetOrderIndex < 0) return;
+    skipNextPageResetRef.current = true;
+    setPendingWorkReport(null);
+    setSearchTerm('');
+    setOrderView('all');
+    setClientFilter('all');
+    setSortByPriority(false);
+    setPage(Math.floor(targetOrderIndex / pageSize) + 1);
+    setSelectedOrderNumber(orderNumber);
+    pendingScrollOrderNumberRef.current = orderNumber;
   };
 
   const openDailyProductionReport = async () => {
@@ -4143,7 +4395,11 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
         </aside>
       </div>
       {pendingWorkReport ? (
-        <PendingWorkReportModal report={pendingWorkReport} onClose={() => setPendingWorkReport(null)} />
+        <PendingWorkReportModal
+          report={pendingWorkReport}
+          onClose={() => setPendingWorkReport(null)}
+          onSelectOrder={focusPendingWorkOrder}
+        />
       ) : null}
       {dailyProductionReport ? (
         <DailyProductionReportModal report={dailyProductionReport} onClose={() => setDailyProductionReport(null)} />

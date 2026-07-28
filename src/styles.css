@@ -9580,7 +9580,9 @@ body.work-center-map-expanded .logged-workspace {
   align-items: center;
   min-height: 34px;
   color: #ff6b00;
-  font-size: 1rem;
+  font-size: 1.65rem;
+  font-weight: 950;
+  line-height: 1;
 }
 
 .pending-work-report-station li span {
@@ -9627,13 +9629,52 @@ body.work-center-map-expanded .logged-workspace {
   min-height: 28px;
   border: 1px solid rgba(15, 23, 42, 0.18);
   border-radius: 6px;
-  padding: 0 8px;
+  padding: 0;
   background: #f8fafc;
   color: #334155;
   font-size: 0.75rem;
   font-style: normal;
+  font-family: inherit;
   font-weight: 900;
   white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+}
+
+.pending-work-report-station li span .pending-work-report-order-badge:hover,
+.pending-work-report-station li span .pending-work-report-order-badge:focus-visible {
+  transform: translateY(-1px);
+  border-color: rgba(255, 122, 0, 0.72);
+  box-shadow: 0 6px 14px rgba(255, 122, 0, 0.14);
+  outline: none;
+}
+
+.pending-work-report-station li span .pending-work-report-order-badge > span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 8px;
+  color: #334155;
+  font-size: 0.75rem;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.pending-work-report-station li span .pending-work-report-order-badge > em {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: stretch;
+  min-width: 30px;
+  border-left: 1px solid rgba(15, 23, 42, 0.16);
+  border-radius: 0 5px 5px 0;
+  padding: 0 7px;
+  background: #e2e8f0;
+  color: #0f172a;
+  font-size: 0.78rem;
+  font-style: normal;
+  font-weight: 950;
 }
 
 .pending-work-report-station li span .pending-work-report-part-badge {
@@ -9739,7 +9780,7 @@ body.work-center-map-expanded .logged-workspace {
   padding: 12px;
 }
 
-.pending-work-report-status-list span {
+.pending-work-report-status-list > span {
   display: grid;
   gap: 5px;
   min-width: 0;
@@ -9757,6 +9798,213 @@ body.work-center-map-expanded .logged-workspace {
   color: #2563eb;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.pending-work-report-machine-card {
+  display: grid;
+  gap: 8px;
+  border: 1px solid rgba(37, 99, 235, 0.2);
+  border-radius: 8px;
+  padding: 10px;
+  background: #ffffff;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.05);
+}
+
+.pending-work-report-machine-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.pending-work-report-machine-heading b {
+  color: #0f172a;
+  font-size: 0.92rem;
+}
+
+.pending-work-report-machine-heading i {
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: #e2e8f0;
+  color: #475569;
+  font-size: 0.62rem;
+  font-style: normal;
+  font-weight: 950;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.pending-work-report-machine-heading i.status-running {
+  background: #ffedd5;
+  color: #c2410c;
+}
+
+.pending-work-report-machine-heading i.status-idle {
+  background: #d1fae5;
+  color: #047857;
+}
+
+.pending-work-report-machine-heading i.status-setup {
+  background: #ede9fe;
+  color: #6d28d9;
+}
+
+.pending-work-report-machine-heading i.status-down {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.pending-work-report-machine-heading i.status-maintenance {
+  background: #fef3c7;
+  color: #a16207;
+}
+
+.pending-work-report-machine-heading i.status-offline {
+  background: #cbd5e1;
+  color: #334155;
+}
+
+.pending-work-report-machine-state,
+.pending-work-report-machine-job,
+.pending-work-report-machine-last {
+  border: 1px solid #dbe3ec;
+  border-radius: 7px;
+  padding: 8px;
+  background: #f8fafc;
+}
+
+.pending-work-report-machine-state {
+  --machine-state-border: rgba(245, 158, 11, 0.34);
+  --machine-state-bg: #fffbeb;
+  --machine-state-color: #92400e;
+  --machine-state-muted: #a16207;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3px 8px;
+  border-color: var(--machine-state-border);
+  background: var(--machine-state-bg);
+}
+
+.pending-work-report-machine-card.machine-status-running .pending-work-report-machine-state {
+  --machine-state-border: #fed7aa;
+  --machine-state-bg: #fff7ed;
+  --machine-state-color: #c2410c;
+  --machine-state-muted: #c2410c;
+}
+
+.pending-work-report-machine-card.machine-status-idle .pending-work-report-machine-state {
+  --machine-state-border: #a7f3d0;
+  --machine-state-bg: #ecfdf5;
+  --machine-state-color: #047857;
+  --machine-state-muted: #047857;
+}
+
+.pending-work-report-machine-card.machine-status-setup .pending-work-report-machine-state {
+  --machine-state-border: #ddd6fe;
+  --machine-state-bg: #f5f3ff;
+  --machine-state-color: #6d28d9;
+  --machine-state-muted: #7c3aed;
+}
+
+.pending-work-report-machine-card.machine-status-down .pending-work-report-machine-state {
+  --machine-state-border: #fecaca;
+  --machine-state-bg: #fef2f2;
+  --machine-state-color: #b91c1c;
+  --machine-state-muted: #dc2626;
+}
+
+.pending-work-report-machine-card.machine-status-maintenance .pending-work-report-machine-state {
+  --machine-state-border: #fde68a;
+  --machine-state-bg: #fffbeb;
+  --machine-state-color: #a16207;
+  --machine-state-muted: #ca8a04;
+}
+
+.pending-work-report-machine-card.machine-status-offline .pending-work-report-machine-state {
+  --machine-state-border: #cbd5e1;
+  --machine-state-bg: #f1f5f9;
+  --machine-state-color: #334155;
+  --machine-state-muted: #64748b;
+}
+
+.pending-work-report-machine-state span,
+.pending-work-report-machine-job span,
+.pending-work-report-machine-last > span {
+  color: #64748b;
+  font-size: 0.58rem;
+  font-weight: 950;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.pending-work-report-machine-state > span {
+  color: var(--machine-state-muted);
+}
+
+.pending-work-report-machine-state strong {
+  color: var(--machine-state-color);
+  font-size: 0.9rem;
+}
+
+.pending-work-report-machine-state small {
+  grid-column: 1 / -1;
+  color: var(--machine-state-muted);
+  font-size: 0.62rem;
+  text-align: right;
+}
+
+.pending-work-report-machine-job {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.pending-work-report-machine-job strong {
+  color: #0f172a;
+  font-size: 0.78rem;
+}
+
+.pending-work-report-machine-last {
+  display: grid;
+  gap: 6px;
+}
+
+.pending-work-report-machine-last dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+  margin: 0;
+}
+
+.pending-work-report-machine-last dl div {
+  min-width: 0;
+}
+
+.pending-work-report-machine-last dt {
+  color: #64748b;
+  font-size: 0.52rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.pending-work-report-machine-last dd {
+  margin: 1px 0 0;
+  overflow: hidden;
+  color: #0f172a;
+  font-size: 0.68rem;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pending-work-report-machine-last dl div:last-child {
+  grid-column: 1 / -1;
+}
+
+.pending-work-report-machine-last > em {
+  color: #94a3b8;
+  font-size: 0.7rem;
 }
 
 .pending-work-report-empty {
