@@ -9018,6 +9018,48 @@ body.work-center-map-expanded .logged-workspace {
   color: #047857;
 }
 
+.production-order-details-status.running {
+  background: #dbeafe;
+  color: #1d4ed8;
+  box-shadow: inset 0 0 0 1px #93c5fd;
+}
+
+.production-order-details-status.setup {
+  background: #ede9fe;
+  color: #6d28d9;
+  box-shadow: inset 0 0 0 1px #c4b5fd;
+}
+
+.production-order-details-status.paused {
+  background: #f1f5f9;
+  color: #475569;
+  box-shadow: inset 0 0 0 1px #94a3b8;
+}
+
+.production-order-details-status.machine-paused {
+  background: #f1f5f9;
+  color: #475569;
+  box-shadow: inset 0 0 0 1px #94a3b8;
+}
+
+.production-order-details-status.down {
+  background: #fee2e2;
+  color: #b91c1c;
+  box-shadow: inset 0 0 0 1px #fca5a5;
+}
+
+.production-order-details-status.maintenance {
+  background: #fff7db;
+  color: #9a5800;
+  box-shadow: inset 0 0 0 1px #f59e0b;
+}
+
+.production-order-details-status.offline {
+  background: #e2e8f0;
+  color: #334155;
+  box-shadow: inset 0 0 0 1px #94a3b8;
+}
+
 .production-order-details-status.scrap {
   background: #fee2e2;
   color: #dc2626;

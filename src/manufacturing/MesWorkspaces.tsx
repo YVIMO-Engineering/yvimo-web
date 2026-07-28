@@ -435,7 +435,7 @@ export type ProductionOrderDetailPiece = {
   pieceSequence: number;
   toolId: string;
   serialNumber: string;
-  status: 'not-started' | 'good' | 'scrap';
+  status: 'not-started' | 'setup' | 'running' | 'paused' | 'machine-paused' | 'down' | 'maintenance' | 'offline' | 'good' | 'scrap';
   reportedAt: string;
   timeSpentMs: number;
   traceability: ProductionOrderDetailTraceabilityRow | null;
@@ -519,6 +519,15 @@ const formatTitleLabel = (value: string) => {
   const label = formatLabel(value);
   return `${label.charAt(0).toUpperCase()}${label.slice(1)}`;
 };
+const formatProductionPieceStatus = (status: ProductionOrderDetailPiece['status']) => {
+  if (status === 'not-started') return 'Not started';
+  if (status === 'machine-paused') return 'Machine Paused';
+  if (['setup', 'running', 'paused', 'down', 'maintenance', 'offline'].includes(status)) {
+    return status === 'paused' ? 'Paused' : `Machine ${formatTitleLabel(status)}`;
+  }
+  return formatTitleLabel(status);
+};
+const isProductionWorkCycle = (status: string) => status === 'running' || status === 'setup';
 
 const formatDate = (value: string) =>
   new Intl.DateTimeFormat('en-US', { month: 'short', day: '2-digit', year: 'numeric' }).format(new Date(`${value}T12:00:00`));
@@ -1580,7 +1589,43 @@ export function ProductionOrderDetailsModal({
           pdf.setTextColor(23, 32, 42);
           x = margin;
           wrappedCells.forEach((lines, index) => {
-            pdf.text(lines, x + 5, cursorY + 13);
+            const rawValue = row[index] || '-';
+            const isStatusColumn = ['status', 'result'].includes(headers[index]?.toLowerCase());
+            const normalizedStatus = rawValue.trim().toLowerCase().replace(/^machine\s+/, '');
+            const statusPalette = normalizedStatus === 'running'
+              ? { fill: [219, 234, 254] as const, border: [147, 197, 253] as const, text: [29, 78, 216] as const }
+              : normalizedStatus === 'setup'
+                ? { fill: [237, 233, 254] as const, border: [196, 181, 253] as const, text: [109, 40, 217] as const }
+                : normalizedStatus === 'paused'
+                  ? { fill: [241, 245, 249] as const, border: [148, 163, 184] as const, text: [71, 85, 105] as const }
+                  : normalizedStatus === 'down'
+                    ? { fill: [254, 226, 226] as const, border: [252, 165, 165] as const, text: [185, 28, 28] as const }
+                    : normalizedStatus === 'maintenance'
+                      ? { fill: [255, 247, 219] as const, border: [245, 158, 11] as const, text: [154, 88, 0] as const }
+                      : normalizedStatus === 'offline'
+                        ? { fill: [226, 232, 240] as const, border: [148, 163, 184] as const, text: [51, 65, 85] as const }
+              : normalizedStatus === 'good' || normalizedStatus === 'ok' || normalizedStatus === 'passed'
+                ? { fill: [220, 252, 231] as const, border: [134, 239, 172] as const, text: [4, 120, 87] as const }
+                : normalizedStatus === 'scrap' || normalizedStatus === 'nok' || normalizedStatus === 'failed'
+                  ? { fill: [254, 226, 226] as const, border: [252, 165, 165] as const, text: [220, 38, 38] as const }
+                  : normalizedStatus === 'not started' || normalizedStatus === 'pending'
+                    ? { fill: [226, 232, 240] as const, border: [203, 213, 225] as const, text: [82, 97, 117] as const }
+                    : null;
+            if (isStatusColumn && statusPalette && rawValue !== '-') {
+              pdf.setFont('helvetica', 'bold');
+              pdf.setFontSize(7);
+              const pillWidth = Math.min(columnWidths[index] - 10, Math.max(42, pdf.getTextWidth(rawValue.toUpperCase()) + 16));
+              pdf.setFillColor(...statusPalette.fill);
+              pdf.setDrawColor(...statusPalette.border);
+              pdf.roundedRect(x + 5, cursorY + 5, pillWidth, 15, 7, 7, 'FD');
+              pdf.setTextColor(...statusPalette.text);
+              pdf.text(rawValue.toUpperCase(), x + 5 + (pillWidth / 2), cursorY + 15.5, { align: 'center' });
+              pdf.setFont('helvetica', 'normal');
+              pdf.setFontSize(7.5);
+              pdf.setTextColor(23, 32, 42);
+            } else {
+              pdf.text(lines, x + 5, cursorY + 13);
+            }
             x += columnWidths[index];
           });
           cursorY += rowHeight;
@@ -1633,10 +1678,10 @@ export function ProductionOrderDetailsModal({
       addSectionTitle('PRODUCTION', `${details.pieces.length} piece${details.pieces.length === 1 ? '' : 's'}`);
       drawTable(
         ['Piece', 'Status', 'Serial', 'Tool ID', 'Measurements', 'Time Spent', 'Reported'],
-        [45, 70, 130, 85, 210, 85, 95],
+        [45, 115, 130, 85, 165, 85, 95],
         details.pieces.map((piece) => [
           String(piece.pieceSequence),
-          piece.status === 'not-started' ? 'Not started' : formatTitleLabel(piece.status),
+          formatProductionPieceStatus(piece.status),
           piece.serialNumber || '-',
           piece.toolId || '-',
           getProductionOrderDetailMeasurements(piece.traceability).map((measurement) => `${measurement.label}: ${measurement.value}`).join('; ') || 'Not captured',
@@ -1760,7 +1805,7 @@ export function ProductionOrderDetailsModal({
                   return (
                     <tr key={`${piece.pieceSequence}-${piece.serialNumber || 'pending'}`}>
                       <td><strong>{piece.pieceSequence}</strong></td>
-                      <td><span className={`production-order-details-status ${piece.status}`}>{piece.status === 'not-started' ? 'Not started' : piece.status}</span></td>
+                      <td><span className={`production-order-details-status ${piece.status}`}>{formatProductionPieceStatus(piece.status)}</span></td>
                       <td>{piece.serialNumber || '-'}</td>
                       <td>{piece.toolId || '-'}</td>
                       <td>
@@ -3555,6 +3600,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
         { data: qualityMeasurementData, error: qualityMeasurementError },
         { data: qualityDocumentData, error: qualityDocumentError },
         { data: statusCycleData, error: statusCycleError },
+        { data: stationAssignmentData, error: stationAssignmentError },
       ] = await Promise.all([
         supabase
           .from('mes_production_serials')
@@ -3588,9 +3634,15 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
           .order('uploaded_at', { ascending: false }),
         supabase
           .from('mes_station_status_cycles')
-          .select('serial_number, started_at, ended_at')
+          .select('serial_number, status, started_at, ended_at')
           .eq('organization_id', organizationId)
           .eq('production_order_id', selectedOrder.id),
+        supabase
+          .from('mes_work_center_stations')
+          .select('current_job')
+          .eq('organization_id', organizationId)
+          .eq('code', selectedOrder.assignedStation || '')
+          .maybeSingle(),
       ]);
 
       if (serialError) throw serialError;
@@ -3599,6 +3651,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
       if (qualityMeasurementError) throw qualityMeasurementError;
       if (qualityDocumentError) throw qualityDocumentError;
       if (statusCycleError) throw statusCycleError;
+      if (stationAssignmentError) throw stationAssignmentError;
 
       const serialRows = (serialData ?? []) as ProductionOrderDetailSerialRow[];
       const traceabilityRows = (traceabilityData ?? []) as ProductionOrderDetailTraceabilityRow[];
@@ -3613,10 +3666,16 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
       const qualityMeasurementsBySerial = new Map<string, ProductionOrderDetailQualityMeasurementRow[]>();
       const qualityDocumentsBySerial = new Map<string, ProductionOrderDetailQualityDocumentRow[]>();
       const timeSpentBySerial = new Map<string, number>();
+      const activeStatusBySerial = new Map<string, string>();
+      const serialsWithCycles = new Set<string>();
+      const isActiveStationOrder = stationAssignmentData?.current_job === selectedOrder.orderNumber;
 
       (statusCycleData ?? []).forEach((cycle) => {
         const serialNumber = normalizeProductionOrderDetailSerial(cycle.serial_number ?? '');
         if (!serialNumber) return;
+        serialsWithCycles.add(serialNumber);
+        if (!cycle.ended_at) activeStatusBySerial.set(serialNumber, cycle.status);
+        if (!isProductionWorkCycle(cycle.status) || (!cycle.ended_at && !isActiveStationOrder)) return;
         const startedAt = new Date(cycle.started_at).getTime();
         const endedAt = cycle.ended_at ? new Date(cycle.ended_at).getTime() : Date.now();
         timeSpentBySerial.set(serialNumber, (timeSpentBySerial.get(serialNumber) ?? 0) + Math.max(0, endedAt - startedAt));
@@ -3657,11 +3716,31 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
           ?? traceabilityBySequence.get(pieceSequence)
           ?? null;
         const resolvedSerialKey = normalizeProductionOrderDetailSerial(serial?.serial_number || traceability?.serial_number || '');
+        const activeCycleStatus = activeStatusBySerial.get(resolvedSerialKey);
+        const intermediateStatus: ProductionOrderDetailPiece['status'] = !isActiveStationOrder
+          && selectedOrder.status === 'paused'
+          && serialsWithCycles.has(resolvedSerialKey)
+          ? 'paused'
+          : activeCycleStatus === 'running'
+          ? 'running'
+          : activeCycleStatus === 'setup'
+            ? 'setup'
+            : activeCycleStatus === 'down'
+              ? 'down'
+              : activeCycleStatus === 'maintenance'
+                ? 'maintenance'
+                : activeCycleStatus === 'offline'
+                  ? 'offline'
+                  : activeCycleStatus === 'idle' && selectedOrder.status === 'paused'
+                    ? 'machine-paused'
+                    : selectedOrder.status === 'paused' && serialsWithCycles.has(resolvedSerialKey)
+                      ? 'paused'
+                      : 'not-started';
         return {
           pieceSequence,
           toolId: serial?.tool_id ?? traceability?.tool_id ?? '',
           serialNumber: serial?.serial_number || traceability?.serial_number || '',
-          status: serial?.result ?? (traceability ? 'good' : 'not-started'),
+          status: serial?.result ?? (traceability ? 'good' : intermediateStatus),
           reportedAt: serial?.reported_at ?? traceability?.created_at ?? '',
           timeSpentMs: resolvedSerialKey ? timeSpentBySerial.get(resolvedSerialKey) ?? 0 : 0,
           traceability,
@@ -3672,6 +3751,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
       });
 
       const timeSpentMs = (statusCycleData ?? []).reduce((total, cycle) => {
+        if (!isProductionWorkCycle(cycle.status) || (!cycle.ended_at && !isActiveStationOrder)) return total;
         const startedAt = new Date(cycle.started_at).getTime();
         const endedAt = cycle.ended_at ? new Date(cycle.ended_at).getTime() : Date.now();
         return total + Math.max(0, endedAt - startedAt);

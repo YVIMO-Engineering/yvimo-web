@@ -1228,7 +1228,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
           .order('uploaded_at', { ascending: false }),
         supabase
           .from('mes_station_status_cycles')
-          .select('serial_number, started_at, ended_at')
+          .select('serial_number, status, started_at, ended_at')
           .eq('organization_id', organizationId)
           .eq('production_order_id', currentOrder.id),
       ]);
@@ -1253,10 +1253,15 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
       const qualityMeasurementsBySerial = new Map<string, ProductionOrderDetailQualityMeasurementRow[]>();
       const qualityDocumentsBySerial = new Map<string, ProductionOrderDetailQualityDocumentRow[]>();
       const timeSpentBySerial = new Map<string, number>();
+      const activeStatusBySerial = new Map<string, string>();
+      const serialsWithCycles = new Set<string>();
 
       (statusCycleData ?? []).forEach((cycle) => {
         const serialNumber = cycle.serial_number?.trim().toLowerCase() ?? '';
         if (!serialNumber) return;
+        serialsWithCycles.add(serialNumber);
+        if (!cycle.ended_at) activeStatusBySerial.set(serialNumber, cycle.status);
+        if (cycle.status !== 'running' && cycle.status !== 'setup') return;
         const startedAt = new Date(cycle.started_at).getTime();
         const endedAt = cycle.ended_at ? new Date(cycle.ended_at).getTime() : Date.now();
         timeSpentBySerial.set(serialNumber, (timeSpentBySerial.get(serialNumber) ?? 0) + Math.max(0, endedAt - startedAt));
@@ -1297,11 +1302,27 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
           ?? traceabilityBySequence.get(pieceSequence)
           ?? null;
         const resolvedSerialKey = (serial?.serial_number || traceability?.serial_number || '').trim().toLowerCase();
+        const activeCycleStatus = activeStatusBySerial.get(resolvedSerialKey);
+        const intermediateStatus: ProductionOrderDetailPiece['status'] = activeCycleStatus === 'running'
+          ? 'running'
+          : activeCycleStatus === 'setup'
+            ? 'setup'
+            : activeCycleStatus === 'down'
+              ? 'down'
+              : activeCycleStatus === 'maintenance'
+                ? 'maintenance'
+                : activeCycleStatus === 'offline'
+                  ? 'offline'
+                  : activeCycleStatus === 'idle' && currentOrder.status === 'paused'
+                    ? 'machine-paused'
+                    : currentOrder.status === 'paused' && serialsWithCycles.has(resolvedSerialKey)
+                      ? 'paused'
+                      : 'not-started';
         return {
           pieceSequence,
           toolId: serial?.tool_id ?? traceability?.tool_id ?? '',
           serialNumber: serial?.serial_number || traceability?.serial_number || '',
-          status: serial?.result ?? (traceability ? 'good' : 'not-started'),
+          status: serial?.result ?? (traceability ? 'good' : intermediateStatus),
           reportedAt: serial?.reported_at ?? traceability?.created_at ?? '',
           timeSpentMs: resolvedSerialKey ? timeSpentBySerial.get(resolvedSerialKey) ?? 0 : 0,
           traceability,
@@ -1312,6 +1333,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
       });
 
       const timeSpentMs = (statusCycleData ?? []).reduce((total, cycle) => {
+        if (cycle.status !== 'running' && cycle.status !== 'setup') return total;
         const startedAt = new Date(cycle.started_at).getTime();
         const endedAt = cycle.ended_at ? new Date(cycle.ended_at).getTime() : Date.now();
         return total + Math.max(0, endedAt - startedAt);
