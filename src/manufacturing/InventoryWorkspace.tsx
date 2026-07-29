@@ -350,14 +350,20 @@ export function InventoryWorkspace({ onNavigate, organizationId, organizationNam
         pdf.text(`${sectionItems.length} item${sectionItems.length === 1 ? '' : 's'}`, pageWidth - margin - 11, cursorY + 18, { align: 'right' });
         cursorY += 32;
 
-          const columns = [margin + 8, margin + 130, margin + 205, margin + 290, margin + 390, margin + 470, margin + 540, margin + 595];
+        const columns = [margin + 8, margin + 116, margin + 184, margin + 254, margin + 334, margin + 424, margin + 457, margin + 490, margin + 568];
         const drawTableHeader = () => {
           pdf.setFillColor(241, 245, 249);
           pdf.rect(margin, cursorY, contentWidth, 21, 'F');
           pdf.setFont('helvetica', 'bold');
           pdf.setFontSize(7);
           pdf.setTextColor(82, 97, 117);
-          ['ITEM', 'KEY', 'SUPPLIER KEY', 'APPLICATION / ALIAS', 'SUPPLIER', 'QTY.', 'MIN.', 'STATIONS'].forEach((label, index) => pdf.text(label, columns[index], cursorY + 14));
+          ['ITEM', 'KEY', 'SUPPLIER KEY', 'APPLICATION / ALIAS', 'SUPPLIER', 'QTY.', 'MIN.', 'STATUS', 'STATIONS'].forEach((label, index) => {
+            if (index === 2) {
+              pdf.text(label, columns[index] + 35, cursorY + 14, { align: 'center' });
+            } else {
+              pdf.text(label, columns[index], cursorY + 14);
+            }
+          });
           cursorY += 21;
         };
         drawTableHeader();
@@ -372,37 +378,95 @@ export function InventoryWorkspace({ onNavigate, organizationId, organizationNam
           const linkedStations = itemStations.filter((link) => link.inventory_item_id === item.id)
             .map((link) => stations.find((station) => station.id === link.station_id))
             .filter(Boolean) as Station[];
-          const stationText = linkedStations.map((station) => `${station.code} · ${station.name}`).join(', ') || 'No stations assigned';
-          const itemLines = pdf.splitTextToSize(item.title, 112) as string[];
-          const keyLines = pdf.splitTextToSize(item.item_key, 65) as string[];
-          const supplierKeyLines = pdf.splitTextToSize(item.supplier_key || 'Unknown', 75) as string[];
-          const applicationLines = pdf.splitTextToSize(item.application_alias || 'Unknown', 90) as string[];
-          const supplierLines = pdf.splitTextToSize(item.supplier, 70) as string[];
-          const stationLines = pdf.splitTextToSize(stationText, contentWidth - 603) as string[];
-          const rowHeight = Math.max(29, Math.max(itemLines.length, keyLines.length, supplierKeyLines.length, applicationLines.length, supplierLines.length, stationLines.length) * 9 + 11);
-          if (cursorY + rowHeight > pageHeight - 34) {
+          const status = item.quantity < item.minimum_quantity
+            ? { label: 'Below minimum', fill: [255, 241, 242] as const, border: [239, 68, 68] as const, text: [185, 28, 28] as const }
+            : item.quantity === item.minimum_quantity
+              ? { label: 'At minimum', fill: [255, 248, 219] as const, border: [246, 194, 73] as const, text: [161, 98, 7] as const }
+              : { label: 'In stock', fill: [236, 249, 240] as const, border: [82, 190, 121] as const, text: [22, 128, 68] as const };
+          const itemLines = pdf.splitTextToSize(item.title, 100) as string[];
+          const keyLines = pdf.splitTextToSize(item.item_key, 60) as string[];
+          const supplierKeyLines = pdf.splitTextToSize(item.supplier_key || 'Unknown', 62) as string[];
+          const applicationLines = pdf.splitTextToSize(item.application_alias || 'Unknown', 72) as string[];
+          const supplierLines = pdf.splitTextToSize(item.supplier, 82) as string[];
+          const descriptionLines = pdf.splitTextToSize(item.description || 'No description provided.', contentWidth - 91) as string[];
+          pdf.setFont('helvetica', 'bold');
+          pdf.setFontSize(6.5);
+          const stationPills: Array<{ label: string; x: number; y: number; width: number }> = [];
+          const stationColumnWidth = pageWidth - margin - columns[8] - 8;
+          let pillX = 0;
+          let pillY = 0;
+          (linkedStations.length ? linkedStations.map((station) => `${station.code} · ${station.name}`) : ['No stations assigned']).forEach((label) => {
+            const pillWidth = Math.min(stationColumnWidth, pdf.getTextWidth(label) + 10);
+            if (pillX > 0 && pillX + pillWidth > stationColumnWidth) {
+              pillX = 0;
+              pillY += 15;
+            }
+            stationPills.push({ label, x: pillX, y: pillY, width: pillWidth });
+            pillX += pillWidth + 4;
+          });
+          const stationHeight = pillY + 14;
+          const primaryRowHeight = Math.max(31, Math.max(itemLines.length, keyLines.length, supplierKeyLines.length, applicationLines.length, supplierLines.length) * 9 + 12, stationHeight + 10);
+          const descriptionRowHeight = Math.max(25, descriptionLines.length * 8 + 12);
+          const itemBlockHeight = primaryRowHeight + descriptionRowHeight;
+          if (cursorY + itemBlockHeight > pageHeight - 34) {
             addPage();
             drawTableHeader();
           }
+          const textGroupY = (lineCount: number) => cursorY + ((primaryRowHeight - (((lineCount - 1) * 9) + 8)) / 2) + 7;
+          const singleLineY = textGroupY(1);
+          const stationGroupHeight = pillY + 12;
+          const stationGroupTop = cursorY + ((primaryRowHeight - stationGroupHeight) / 2);
           if (index % 2 === 1) {
             pdf.setFillColor(250, 252, 253);
-            pdf.rect(margin, cursorY, contentWidth, rowHeight, 'F');
+            pdf.rect(margin, cursorY, contentWidth, itemBlockHeight, 'F');
           }
-          pdf.setDrawColor(226, 232, 240);
-          pdf.line(margin, cursorY + rowHeight, pageWidth - margin, cursorY + rowHeight);
           pdf.setFont('helvetica', 'bold');
           pdf.setFontSize(8);
           pdf.setTextColor(23, 32, 42);
-          pdf.text(itemLines, columns[0], cursorY + 13);
+          pdf.text(itemLines, columns[0], textGroupY(itemLines.length));
+          pdf.setFont('helvetica', 'bold');
+          pdf.setTextColor(230, 102, 0);
+          pdf.text(keyLines, columns[1], textGroupY(keyLines.length));
           pdf.setFont('helvetica', 'normal');
-          pdf.text(keyLines, columns[1], cursorY + 13);
-          pdf.text(supplierKeyLines, columns[2], cursorY + 13);
-          pdf.text(applicationLines, columns[3], cursorY + 13);
-          pdf.text(supplierLines, columns[4], cursorY + 13);
-          pdf.text(Number(item.quantity).toLocaleString(), columns[5], cursorY + 13);
-          pdf.text(Number(item.minimum_quantity).toLocaleString(), columns[6], cursorY + 13);
-          pdf.text(stationLines, columns[7], cursorY + 13);
-          cursorY += rowHeight;
+          pdf.setTextColor(23, 32, 42);
+          pdf.text(supplierKeyLines, columns[2] + 35, textGroupY(supplierKeyLines.length), { align: 'center' });
+          pdf.text(applicationLines, columns[3], textGroupY(applicationLines.length));
+          pdf.text(supplierLines, columns[4], textGroupY(supplierLines.length));
+          pdf.text(Number(item.quantity).toLocaleString(), columns[5], singleLineY);
+          pdf.text(Number(item.minimum_quantity).toLocaleString(), columns[6], singleLineY);
+          pdf.setFillColor(...status.fill);
+          pdf.setDrawColor(...status.border);
+          const statusY = cursorY + ((primaryRowHeight - 15) / 2);
+          pdf.roundedRect(columns[7], statusY, 70, 15, 4, 4, 'FD');
+          pdf.setFont('helvetica', 'bold');
+          pdf.setFontSize(6.2);
+          pdf.setTextColor(...status.text);
+          pdf.text(status.label, columns[7] + 35, statusY + 10, { align: 'center' });
+          stationPills.forEach((pill) => {
+            pdf.setFillColor(245, 248, 251);
+            pdf.setDrawColor(207, 220, 234);
+            pdf.roundedRect(columns[8] + pill.x, stationGroupTop + pill.y, pill.width, 12, 5, 5, 'FD');
+            pdf.setFont('helvetica', 'bold');
+            pdf.setFontSize(6.5);
+            pdf.setTextColor(64, 84, 106);
+            pdf.text(pill.label, columns[8] + pill.x + 5, stationGroupTop + 8 + pill.y, { maxWidth: pill.width - 9 });
+          });
+          const descriptionY = cursorY + primaryRowHeight;
+          pdf.setDrawColor(226, 232, 240);
+          pdf.line(margin + 8, descriptionY, pageWidth - margin - 8, descriptionY);
+          pdf.setFont('helvetica', 'bold');
+          pdf.setFontSize(6.5);
+          pdf.setTextColor(100, 116, 139);
+          pdf.text('DESCRIPTION', margin + 8, descriptionY + 14);
+          pdf.setFont('helvetica', 'normal');
+          pdf.setFontSize(7.5);
+          pdf.setTextColor(71, 85, 105);
+          pdf.text(descriptionLines, margin + 79, descriptionY + 14);
+          pdf.setDrawColor(244, 181, 120);
+          pdf.setLineWidth(0.45);
+          pdf.line(margin, cursorY + itemBlockHeight - 0.75, pageWidth - margin, cursorY + itemBlockHeight - 0.75);
+          pdf.setLineWidth(0.2);
+          cursorY += itemBlockHeight;
         });
         cursorY += 15;
       });
