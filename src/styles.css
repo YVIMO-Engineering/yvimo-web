@@ -33588,6 +33588,16 @@ body[data-screenshot-export="academy-track"] .academy-mobile-track-step button {
   font-weight: 850;
 }
 
+.clients-asset-list-name .clients-asset-internal-tool-id {
+  overflow: hidden;
+  color: #2563eb;
+  font-size: 0.72rem;
+  font-style: normal;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .clients-assets-list small {
   color: #f06d00;
   font-size: 0.65rem;
@@ -33692,9 +33702,19 @@ body[data-screenshot-export="academy-track"] .academy-mobile-track-step button {
 
 .clients-asset-identity-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 10px;
   padding: 15px 17px 0;
+}
+
+.clients-asset-identity-grid > .clients-internal-tool-detail {
+  border-left-color: #3b82f6;
+  background: #eff6ff;
+}
+
+.clients-asset-identity-grid > .clients-internal-tool-detail small,
+.clients-asset-identity-grid > .clients-internal-tool-detail b {
+  color: #2563eb;
 }
 
 .clients-asset-identity-grid > span,
@@ -34163,7 +34183,17 @@ body[data-screenshot-export="academy-track"] .academy-mobile-track-step button {
 }
 
 .clients-tool-id-modal {
+  position: relative;
   width: min(100%, 900px);
+}
+
+.clients-tool-id-modal-close {
+  z-index: 4;
+  top: 14px;
+  right: 14px;
+  border-color: #cbd5e1;
+  background: #ffffff;
+  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.1);
 }
 
 .clients-tool-id-link-field {
@@ -34368,6 +34398,12 @@ body[data-screenshot-export="academy-track"] .academy-mobile-track-step button {
   font-size: 0.78rem;
 }
 
+.clients-tool-report-table-scroll th.clients-tool-report-internal-id,
+.clients-tool-report-table-scroll td.clients-tool-report-internal-id,
+.clients-tool-report-table-scroll td.clients-tool-report-internal-id b {
+  color: #2563eb;
+}
+
 .clients-tool-report-table-scroll td em {
   display: inline-flex;
   margin: 2px 5px 2px 0;
@@ -34549,6 +34585,10 @@ body[data-screenshot-export="academy-track"] .academy-mobile-track-step button {
   width: min(1050px, calc(100vw - 32px));
 }
 
+.clients-asset-evidence-preview-backdrop {
+  z-index: 500;
+}
+
 .clients-asset-evidence-preview .supplier-document-preview {
   height: min(72vh, 760px);
 }
@@ -34633,6 +34673,107 @@ body[data-screenshot-export="academy-track"] .academy-mobile-track-step button {
   font-weight: 520;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.clients-tool-drawing-list {
+  display: grid;
+  gap: 7px;
+  margin-top: 4px;
+  border-top: 1px solid #dbe3ec;
+  padding-top: 10px;
+}
+
+.clients-tool-drawing-row {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px 10px;
+  min-height: 45px;
+  border: 1px solid #d9e2ec;
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: #fff;
+}
+
+.clients-tool-drawing-row.pending {
+  border-style: dashed;
+  border-color: #93c5fd;
+  background: #eff6ff;
+}
+
+.clients-tool-drawing-icon {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 6px;
+  background: #fff0df;
+  color: #ea6b00;
+}
+
+.clients-tool-drawing-row b {
+  min-width: 0;
+  overflow: hidden;
+  color: #25384d;
+  font-size: 0.72rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.clients-tool-drawing-row > input {
+  min-height: 32px;
+  padding: 5px 8px;
+  font-size: 0.72rem;
+}
+
+.clients-tool-drawing-row > small {
+  color: #718197;
+  font-size: 0.62rem;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.clients-tool-drawing-row > div {
+  display: flex;
+  gap: 5px;
+}
+
+.clients-tool-drawing-row button {
+  display: grid;
+  width: 31px;
+  height: 31px;
+  place-items: center;
+  border: 1px solid #cfd9e4;
+  border-radius: 7px;
+  background: #f8fafc;
+  color: #476079;
+}
+
+.clients-tool-drawing-row button:hover {
+  border-color: #60a5fa;
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+.clients-tool-drawing-row button.danger:hover {
+  border-color: #fca5a5;
+  background: #fff1f2;
+  color: #dc2626;
+}
+
+.clients-tool-drawing-empty {
+  margin: 0;
+  border: 1px dashed #cbd5e1;
+  border-radius: 7px;
+  padding: 11px;
+  color: #718197;
+  font-size: 0.68rem;
+  font-weight: 750;
+  text-align: center;
+}
+
+.clients-tool-drawing-confirm-backdrop {
+  z-index: 430;
 }
 
 .clients-asset-file-field small {

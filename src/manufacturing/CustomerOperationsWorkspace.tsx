@@ -8,6 +8,7 @@ import {
   ChevronDown,
   Clock3,
   Download,
+  Eye,
   ExternalLink,
   FileText,
   History,
@@ -136,6 +137,7 @@ type CustomerAssetRecord = {
   lastProductionOrderId: string | null;
   assetType: string;
   toolId: string;
+  internalToolId: string;
   toolDefinitionId: string | null;
   serialNumber: string;
   partNumber: string;
@@ -509,6 +511,7 @@ type ProductionSerialToolRow = {
 type CustomerToolDefinition = {
   id: string;
   toolId: string;
+  internalToolId: string;
   partType: string;
   minimumLife: number | null;
   measurementUnit: 'in' | 'mm';
@@ -517,9 +520,30 @@ type CustomerToolDefinition = {
 type CustomerToolDefinitionRow = {
   id: string;
   tool_id: string;
+  internal_tool_id: string;
   part_type: string;
   minimum_life: number | null;
   measurement_unit: 'in' | 'mm';
+};
+
+type CustomerToolDocument = {
+  id: string;
+  toolDefinitionId: string;
+  storageBucket: string;
+  fileName: string;
+  filePath: string;
+  fileType: string;
+  createdAt: string;
+};
+
+type CustomerToolDocumentRow = {
+  id: string;
+  tool_definition_id: string;
+  storage_bucket: string;
+  file_name: string;
+  file_path: string;
+  file_type: string;
+  created_at: string;
 };
 
 type AssetLifeTraceabilityRow = {
@@ -574,6 +598,7 @@ function mapAssetRow(row: CustomerAssetRow): CustomerAssetRecord {
     lastProductionOrderId: row.last_production_order_id,
     assetType: row.asset_type,
     toolId: '',
+    internalToolId: '',
     toolDefinitionId: row.tool_definition_id ?? null,
     serialNumber: row.serial_number,
     partNumber: row.part_number ?? '',
@@ -611,7 +636,7 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
   const [selectedAssetId, setSelectedAssetId] = React.useState<string | null>(restoredAssetView.selectedAssetId);
   const [assetLoading, setAssetLoading] = React.useState(false);
   const [assetError, setAssetError] = React.useState('');
-  const [assetAttachmentPreview, setAssetAttachmentPreview] = React.useState<{ fileName: string; url: string; isPdf: boolean } | null>(null);
+  const [assetAttachmentPreview, setAssetAttachmentPreview] = React.useState<{ fileName: string; url: string; isPdf: boolean; category?: string } | null>(null);
   const [assetFormOpen, setAssetFormOpen] = React.useState(false);
   const [assetEditingId, setAssetEditingId] = React.useState<string | null>(null);
   const [assetForm, setAssetForm] = React.useState<CustomerAssetFormState>(emptyCustomerAssetForm);
@@ -619,8 +644,15 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
   const [toolFormOpen, setToolFormOpen] = React.useState(false);
   const [toolEditingId, setToolEditingId] = React.useState<string | null>(null);
   const [toolEditSearch, setToolEditSearch] = React.useState('');
-  const [toolForm, setToolForm] = React.useState({ toolId: '', partType: 'Hobs', minimumLife: '', measurementUnit: 'in' as 'in' | 'mm' });
+  const [toolForm, setToolForm] = React.useState({ toolId: '', internalToolId: '', partType: 'Hobs', minimumLife: '', measurementUnit: 'in' as 'in' | 'mm' });
   const [toolDrawingFiles, setToolDrawingFiles] = React.useState<File[]>([]);
+  const [toolDocuments, setToolDocuments] = React.useState<CustomerToolDocument[]>([]);
+  const [toolDocumentRenamingId, setToolDocumentRenamingId] = React.useState<string | null>(null);
+  const [toolDocumentRename, setToolDocumentRename] = React.useState('');
+  const [toolDocumentDeleteCandidate, setToolDocumentDeleteCandidate] = React.useState<CustomerToolDocument | null>(null);
+  const [toolUploadMessage, setToolUploadMessage] = React.useState<{ type: 'info' | 'success' | 'error'; text: string } | null>(null);
+  const [toolUpdateMessage, setToolUpdateMessage] = React.useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [toolDrawingUploading, setToolDrawingUploading] = React.useState(false);
   const [toolDrawingDragActive, setToolDrawingDragActive] = React.useState(false);
   const [toolMissingReportOpen, setToolMissingReportOpen] = React.useState(false);
   const [toolMissingReportDownloading, setToolMissingReportDownloading] = React.useState(false);
@@ -669,7 +701,7 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
     setAssetLoading(true);
     setAssetError('');
 
-    const [assetResponse, serviceResponse, attachmentResponse, productionSerialResponse, toolResponse, traceabilityResponse] = await Promise.all([
+    const [assetResponse, serviceResponse, attachmentResponse, productionSerialResponse, toolResponse, toolDocumentResponse, traceabilityResponse] = await Promise.all([
       supabase
         .from('mes_customer_assets')
         .select('*')
@@ -689,17 +721,19 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
         .from('mes_production_serials')
         .select('production_order_id, serial_number, tool_id')
         .eq('organization_id', organizationId),
-      supabase.from('mes_customer_tool_ids').select('id, tool_id, part_type, minimum_life, measurement_unit').eq('organization_id', organizationId).order('tool_id'),
+      supabase.from('mes_customer_tool_ids').select('id, tool_id, internal_tool_id, part_type, minimum_life, measurement_unit').eq('organization_id', organizationId).order('tool_id'),
+      supabase.from('mes_customer_tool_id_documents').select('id, tool_definition_id, storage_bucket, file_name, file_path, file_type, created_at').eq('organization_id', organizationId).order('created_at'),
       supabase.from('mes_operator_terminal_traceability').select('tool_id, serial_number, dimensions_unit, stock_to_remove, after_tooth_length, payload, created_at').eq('organization_id', organizationId).order('created_at', { ascending: false }),
     ]);
 
-    const firstError = assetResponse.error || serviceResponse.error || attachmentResponse.error || productionSerialResponse.error || toolResponse.error || traceabilityResponse.error;
+    const firstError = assetResponse.error || serviceResponse.error || attachmentResponse.error || productionSerialResponse.error || toolResponse.error || toolDocumentResponse.error || traceabilityResponse.error;
     if (firstError) {
       setAssetError(firstError.message);
       setAssets([]);
       setAssetServices([]);
       setAssetAttachments([]);
       setToolDefinitions([]);
+      setToolDocuments([]);
       setAssetLifeTraceability([]);
     } else {
       const toolIdByProductionSerial = new Map(
@@ -717,10 +751,20 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
           toolId: linkedTool?.tool_id ?? (productionOrderId
             ? toolIdByProductionSerial.get(`${productionOrderId}:${asset.serialNumber.trim().toLocaleLowerCase()}`) ?? ''
             : ''),
+          internalToolId: linkedTool?.internal_tool_id ?? '',
         };
       });
       setAssets(nextAssets);
-      setToolDefinitions(((toolResponse.data ?? []) as CustomerToolDefinitionRow[]).map((row) => ({ id: row.id, toolId: row.tool_id, partType: row.part_type, minimumLife: row.minimum_life === null ? null : Number(row.minimum_life), measurementUnit: row.measurement_unit })));
+      setToolDefinitions(((toolResponse.data ?? []) as CustomerToolDefinitionRow[]).map((row) => ({ id: row.id, toolId: row.tool_id, internalToolId: row.internal_tool_id, partType: row.part_type, minimumLife: row.minimum_life === null ? null : Number(row.minimum_life), measurementUnit: row.measurement_unit })));
+      setToolDocuments(((toolDocumentResponse.data ?? []) as CustomerToolDocumentRow[]).map((row) => ({
+        id: row.id,
+        toolDefinitionId: row.tool_definition_id,
+        storageBucket: row.storage_bucket,
+        fileName: row.file_name,
+        filePath: row.file_path,
+        fileType: row.file_type,
+        createdAt: row.created_at,
+      })));
       setAssetLifeTraceability((traceabilityResponse.data ?? []) as AssetLifeTraceabilityRow[]);
       setAssetServices(((serviceResponse.data ?? []) as CustomerAssetServiceRow[]).map((row) => {
         const order = Array.isArray(row.production_order) ? row.production_order[0] : row.production_order;
@@ -763,12 +807,27 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
     if (activeTab === 'assets-equipment') void loadAssets();
   }, [activeTab, loadAssets]);
 
+  React.useEffect(() => {
+    if (toolUploadMessage?.type !== 'success') return undefined;
+    const timeoutId = window.setTimeout(() => {
+      setToolUploadMessage((current) => current?.type === 'success' && current.text === toolUploadMessage.text ? null : current);
+    }, 5000);
+    return () => window.clearTimeout(timeoutId);
+  }, [toolUploadMessage]);
+
+  React.useEffect(() => {
+    if (toolUpdateMessage?.type !== 'success') return undefined;
+    const timeoutId = window.setTimeout(() => setToolUpdateMessage(null), 5000);
+    return () => window.clearTimeout(timeoutId);
+  }, [toolUpdateMessage]);
+
   const assetRealtimeTables = React.useMemo(() => ([
     { table: 'mes_customer_assets', filter: `organization_id=eq.${organizationId}` },
     { table: 'mes_customer_asset_service_events', filter: `organization_id=eq.${organizationId}` },
     { table: 'mes_customer_asset_attachments', filter: `organization_id=eq.${organizationId}` },
     { table: 'mes_operator_terminal_traceability', filter: `organization_id=eq.${organizationId}` },
     { table: 'mes_customer_tool_ids', filter: `organization_id=eq.${organizationId}` },
+    { table: 'mes_customer_tool_id_documents', filter: `organization_id=eq.${organizationId}` },
   ]), [organizationId]);
 
   useSupabaseRealtimeRefresh({
@@ -790,20 +849,29 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
   }, [activeTab, organizationId, assetCustomerFilter, assetSearch, assetToolIdSearch, selectedAssetTypes, selectedAssetId]);
 
   React.useEffect(() => {
-    if (!formMode && !customerToDelete && !assetFormOpen && !toolFormOpen && !toolMissingReportOpen && !assetAttachmentPreview) return undefined;
+    if (!formMode && !customerToDelete && !assetFormOpen && !toolFormOpen && !toolMissingReportOpen && !assetAttachmentPreview && !toolDocumentDeleteCandidate) return undefined;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || saving) return;
+      if (toolDocumentDeleteCandidate) {
+        setToolDocumentDeleteCandidate(null);
+        return;
+      }
+      if (assetAttachmentPreview) {
+        setAssetAttachmentPreview(null);
+        return;
+      }
       setFormMode(null);
       setCustomerToDelete(null);
       setAssetFormOpen(false);
       setToolFormOpen(false);
       setToolMissingReportOpen(false);
+      setToolDocumentDeleteCandidate(null);
       setAssetEditingId(null);
       setAssetAttachmentPreview(null);
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [formMode, customerToDelete, assetFormOpen, toolFormOpen, toolMissingReportOpen, assetAttachmentPreview, saving]);
+  }, [formMode, customerToDelete, assetFormOpen, toolFormOpen, toolMissingReportOpen, assetAttachmentPreview, toolDocumentDeleteCandidate, saving]);
 
   const updateAddressSuggestionPosition = React.useCallback(() => {
     const control = addressLookupControlRef.current;
@@ -952,6 +1020,11 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
     setAssetEditingId(null);
     setToolFormOpen(false);
     setToolEditingId(null);
+    setToolDocumentRenamingId(null);
+    setToolDocumentRename('');
+    setToolDrawingFiles([]);
+    setToolUploadMessage(null);
+    setToolUpdateMessage(null);
     setToolMissingReportOpen(false);
   };
 
@@ -1093,53 +1166,100 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
     }
   };
 
+  const uploadToolDrawings = async (toolDefinitionId: string, files: File[]) => {
+    if (!files.length || toolDrawingUploading) return false;
+    setToolDrawingFiles(files);
+    setToolDrawingUploading(true);
+    setToolUploadMessage({
+      type: 'info',
+      text: files.length === 1 ? 'Uploading drawing...' : `Uploading ${files.length} drawings...`,
+    });
+    try {
+      const uploadedRows = [];
+      for (const [index, file] of files.entries()) {
+        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '-');
+        const filePath = `${organizationId}/tool-ids/${toolDefinitionId}/${Date.now()}-${index}-${safeName}`;
+        const { error: uploadError } = await supabase.storage.from('mes-customer-assets').upload(filePath, file, { contentType: file.type, upsert: false });
+        if (uploadError) throw uploadError;
+        uploadedRows.push({ organization_id: organizationId, tool_definition_id: toolDefinitionId, storage_bucket: 'mes-customer-assets', file_name: file.name, file_path: filePath, file_type: file.type || 'application/pdf' });
+      }
+      const { error: documentError } = await supabase.from('mes_customer_tool_id_documents').insert(uploadedRows);
+      if (documentError) throw documentError;
+      setToolDrawingFiles([]);
+      setToolUploadMessage({
+        type: 'success',
+        text: files.length === 1 ? 'Drawing uploaded.' : `${files.length} drawings uploaded.`,
+      });
+      await loadAssets();
+      return true;
+    } catch (uploadError) {
+      const uploadMessage = uploadError instanceof Error ? uploadError.message : 'The drawings could not be uploaded.';
+      setToolUploadMessage({ type: 'error', text: uploadMessage });
+      return false;
+    } finally {
+      setToolDrawingUploading(false);
+    }
+  };
+
+  const selectToolDrawings = (files: File[]) => {
+    const pdfFiles = files.filter((file) => file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf'));
+    setToolUploadMessage(null);
+    if (!pdfFiles.length) {
+      setToolDrawingFiles([]);
+      setToolUploadMessage({ type: 'error', text: 'Select at least one PDF drawing.' });
+      return;
+    }
+    if (toolEditingId === '') {
+      setToolDrawingFiles([]);
+      setToolUploadMessage({ type: 'error', text: 'Select a Tool ID before uploading drawings.' });
+      return;
+    }
+    if (toolEditingId) {
+      void uploadToolDrawings(toolEditingId, pdfFiles);
+      return;
+    }
+    setToolDrawingFiles(pdfFiles);
+  };
+
   const saveToolDefinition = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const toolFormIsShaver = /shaver/i.test(toolForm.partType);
-    if (saving || !toolForm.toolId.trim() || (!toolFormIsShaver && !toolForm.minimumLife)) return;
+    if (saving || !toolForm.toolId.trim()) return;
     setSaving(true);
     setAssetError('');
+    setToolUpdateMessage(null);
     const existingTool = toolEditingId
       ? toolDefinitions.find((tool) => tool.id === toolEditingId)
       : toolDefinitions.find((tool) => tool.toolId.trim().toLowerCase() === toolForm.toolId.trim().toLowerCase());
     const toolPayload = {
       organization_id: organizationId,
       tool_id: toolForm.toolId.trim(),
+      internal_tool_id: toolForm.internalToolId.trim(),
       part_type: toolForm.partType,
-      minimum_life: toolFormIsShaver ? null : Number(toolForm.minimumLife),
+      minimum_life: toolFormIsShaver || !toolForm.minimumLife.trim() ? null : Number(toolForm.minimumLife),
       measurement_unit: toolForm.measurementUnit,
     };
     const request = existingTool
       ? supabase.from('mes_customer_tool_ids').update(toolPayload).eq('id', existingTool.id).eq('organization_id', organizationId)
       : supabase.from('mes_customer_tool_ids').insert(toolPayload);
-    const { data, error } = await request.select('id, tool_id, part_type, minimum_life, measurement_unit').single();
+    const { data, error } = await request.select('id, tool_id, internal_tool_id, part_type, minimum_life, measurement_unit').single();
     if (error || !data) {
-      setAssetError(error?.message ?? 'The Tool ID could not be saved.');
+      setToolUpdateMessage({ type: 'error', text: error?.message ?? 'The Tool ID could not be saved.' });
       setSaving(false);
       return;
     }
     try {
-      const uploadedRows = [];
-      for (const [index, file] of toolDrawingFiles.entries()) {
-        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '-');
-        const filePath = `${organizationId}/tool-ids/${data.id}/${Date.now()}-${index}-${safeName}`;
-        const { error: uploadError } = await supabase.storage.from('mes-customer-assets').upload(filePath, file, { contentType: file.type, upsert: false });
-        if (uploadError) throw uploadError;
-        uploadedRows.push({ organization_id: organizationId, tool_definition_id: data.id, storage_bucket: 'mes-customer-assets', file_name: file.name, file_path: filePath, file_type: file.type || 'application/pdf' });
-      }
-      if (uploadedRows.length) {
-        const { error: documentError } = await supabase.from('mes_customer_tool_id_documents').insert(uploadedRows);
-        if (documentError) throw documentError;
-      }
-      setToolFormOpen(false);
-      setToolEditingId(null);
-      setToolForm({ toolId: '', partType: 'Hobs', minimumLife: '', measurementUnit: 'in' });
-      setToolDrawingFiles([]);
+      if (toolDrawingFiles.length) await uploadToolDrawings(data.id, toolDrawingFiles);
       await loadAssets();
-    } catch (uploadError) {
-      setAssetError(uploadError instanceof Error ? uploadError.message : 'The Tool ID was saved, but its drawings could not be uploaded.');
-      setToolFormOpen(false);
-      await loadAssets();
+      if (toolEditingId === null) {
+        setToolFormOpen(false);
+        setToolEditingId(null);
+        setToolForm({ toolId: '', internalToolId: '', partType: 'Hobs', minimumLife: '', measurementUnit: 'in' });
+      } else {
+        setToolUpdateMessage({ type: 'success', text: 'Tool ID updated.' });
+      }
+    } catch (updateError) {
+      setToolUpdateMessage({ type: 'error', text: updateError instanceof Error ? updateError.message : 'The Tool ID could not be refreshed.' });
     } finally {
       setSaving(false);
     }
@@ -1221,7 +1341,66 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
       fileName: attachment.fileName,
       url: data.signedUrl,
       isPdf: attachment.fileType === 'application/pdf' || attachment.fileName.toLocaleLowerCase().endsWith('.pdf'),
+      category: 'Asset Evidence',
     });
+  };
+
+  const openToolDocument = async (document: CustomerToolDocument) => {
+    setAssetError('');
+    const { data, error } = await supabase.storage
+      .from(document.storageBucket)
+      .createSignedUrl(document.filePath, 60 * 10);
+    if (error || !data?.signedUrl) {
+      setAssetError(error?.message || 'This drawing could not be opened.');
+      return;
+    }
+    setAssetAttachmentPreview({
+      fileName: document.fileName,
+      url: data.signedUrl,
+      isPdf: true,
+      category: 'Tool Drawing',
+    });
+  };
+
+  const renameToolDocument = async (document: CustomerToolDocument) => {
+    const nextName = toolDocumentRename.trim();
+    if (!nextName || saving) return;
+    setSaving(true);
+    setAssetError('');
+    const { error } = await supabase.from('mes_customer_tool_id_documents')
+      .update({ file_name: nextName })
+      .eq('organization_id', organizationId)
+      .eq('id', document.id);
+    setSaving(false);
+    if (error) {
+      setAssetError(error.message);
+      return;
+    }
+    setToolDocuments((current) => current.map((item) => item.id === document.id ? { ...item, fileName: nextName } : item));
+    setToolDocumentRenamingId(null);
+    setToolDocumentRename('');
+  };
+
+  const deleteToolDocument = async () => {
+    const document = toolDocumentDeleteCandidate;
+    if (!document || saving) return;
+    setSaving(true);
+    setAssetError('');
+    const { error } = await supabase.from('mes_customer_tool_id_documents')
+      .delete()
+      .eq('organization_id', organizationId)
+      .eq('id', document.id);
+    if (error) {
+      setAssetError(error.message);
+      setSaving(false);
+      setToolDocumentDeleteCandidate(null);
+      return;
+    }
+    const storageResult = await supabase.storage.from(document.storageBucket).remove([document.filePath]);
+    setToolDocuments((current) => current.filter((item) => item.id !== document.id));
+    setToolDocumentDeleteCandidate(null);
+    setSaving(false);
+    if (storageResult.error) setAssetError(`The drawing was removed from this Tool ID, but its stored file could not be deleted: ${storageResult.error.message}`);
   };
 
   const openProductionOrder = (orderNumber: string) => {
@@ -1265,7 +1444,7 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
     return assets.filter((asset) => {
       if (assetCustomerFilter !== 'all' && asset.customerId !== assetCustomerFilter) return false;
       if (selectedAssetTypes && !selectedAssetTypes.has(normalizeAssetType(asset.assetType))) return false;
-      if (toolIdQuery && !asset.toolId.toLowerCase().includes(toolIdQuery)) return false;
+      if (toolIdQuery && !`${asset.toolId} ${asset.internalToolId}`.toLowerCase().includes(toolIdQuery)) return false;
       if (!query) return true;
       const customer = customers.find((item) => item.id === asset.customerId);
       return [asset.serialNumber, asset.partNumber, asset.assetType, asset.description, asset.manufacturer, customer?.customerName]
@@ -1405,9 +1584,12 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
       pdf.rect(48, y - 13, 516, 24, 'F');
       pdf.setFont('helvetica', 'bold');
       pdf.text('TOOL ID', 58, y);
-      pdf.text('PART TYPE', 205, y);
-      pdf.text('MISSING DATA', 330, y);
-      pdf.text('SERIALS', 510, y);
+      pdf.setTextColor(37, 99, 235);
+      pdf.text('INTERNAL TOOL ID', 150, y);
+      pdf.setTextColor(7, 17, 28);
+      pdf.text('PART TYPE', 278, y);
+      pdf.text('MISSING DATA', 365, y);
+      pdf.text('SERIALS', 520, y);
       y += 22;
       pdf.setFont('helvetica', 'normal');
       incompleteToolClientGroups.forEach((group) => {
@@ -1423,9 +1605,14 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
         const missing = [!/shaver/i.test(tool.partType) && tool.minimumLife === null ? 'Minimum life' : '', !tool.partType.trim() ? 'Part type' : '', !tool.measurementUnit ? 'Unit' : ''].filter(Boolean).join(', ');
           const linkedSerials = assets.filter((asset) => asset.toolDefinitionId === tool.id && (group.customerId === 'unassigned' || asset.customerId === group.customerId)).length;
           pdf.text(tool.toolId.slice(0, 22), 58, y);
-          pdf.text((tool.partType || 'Not specified').slice(0, 18), 205, y);
-          pdf.text(missing.slice(0, 27), 330, y);
-          pdf.text(String(linkedSerials), 520, y);
+          pdf.setTextColor(37, 99, 235);
+          pdf.setFont('helvetica', 'bold');
+          pdf.text((tool.internalToolId || 'Not specified').slice(0, 24), 150, y);
+          pdf.setTextColor(38, 53, 68);
+          pdf.setFont('helvetica', 'normal');
+          pdf.text((tool.partType || 'Not specified').slice(0, 14), 278, y);
+          pdf.text(missing.slice(0, 23), 365, y);
+          pdf.text(String(linkedSerials), 530, y);
           pdf.setDrawColor(226, 232, 240);
           pdf.line(48, y + 7, 564, y + 7);
           y += 22;
@@ -1491,8 +1678,8 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
             <>
               <button type="button" onClick={openCreateAsset} disabled={!customers.length}><Plus size={16} /> Add Asset</button>
               <span className="clients-tool-header-row">
-                <button type="button" className="secondary" onClick={() => { setToolEditingId(null); setToolEditSearch(''); setToolForm({ toolId: '', partType: 'Hobs', minimumLife: '', measurementUnit: 'in' }); setToolDrawingFiles([]); setAssetError(''); setToolFormOpen(true); }}><Plus size={16} /> Add Tool ID</button>
-                <button type="button" className="secondary" onClick={() => { setToolEditingId(''); setToolEditSearch(''); setToolForm({ toolId: '', partType: 'Hobs', minimumLife: '', measurementUnit: 'in' }); setToolDrawingFiles([]); setAssetError(''); setToolFormOpen(true); }} disabled={!toolDefinitions.length}><Pencil size={16} /> Edit Tool ID</button>
+                <button type="button" className="secondary" onClick={() => { setToolEditingId(null); setToolEditSearch(''); setToolForm({ toolId: '', internalToolId: '', partType: 'Hobs', minimumLife: '', measurementUnit: 'in' }); setToolDrawingFiles([]); setToolUploadMessage(null); setToolUpdateMessage(null); setAssetError(''); setToolFormOpen(true); }}><Plus size={16} /> Add Tool ID</button>
+                <button type="button" className="secondary" onClick={() => { setToolEditingId(''); setToolEditSearch(''); setToolForm({ toolId: '', internalToolId: '', partType: 'Hobs', minimumLife: '', measurementUnit: 'in' }); setToolDrawingFiles([]); setToolUploadMessage(null); setToolUpdateMessage(null); setAssetError(''); setToolFormOpen(true); }} disabled={!toolDefinitions.length}><Search size={16} /> Edit &amp; Look for Tool ID</button>
               </span>
               <button type="button" className="secondary clients-tool-report-action" onClick={() => setToolMissingReportOpen(true)}><FileText size={16} /> Missing Tool ID Data</button>
             </>
@@ -1603,7 +1790,7 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
                 </label>
                 <label className="clients-assets-search clients-assets-tool-search">
                   <span>Search Tool IDs</span>
-                  <div><Search size={16} /><input value={assetToolIdSearch} onChange={(event) => setAssetToolIdSearch(event.target.value)} placeholder="Tool ID" /></div>
+                  <div><Search size={16} /><input value={assetToolIdSearch} onChange={(event) => setAssetToolIdSearch(event.target.value)} placeholder="Tool ID or Internal Tool ID" /></div>
                 </label>
                 <fieldset className="clients-assets-type-filters">
                   <legend>Part Type</legend>
@@ -1668,6 +1855,7 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
                             <span className="clients-asset-list-name">
                               <strong className="clients-asset-type-badge" style={getAssetTypeColors(asset.assetType)}>{asset.assetType}</strong>
                               <b>{asset.toolId || 'Not specified'}</b>
+                              {asset.internalToolId ? <em className="clients-asset-internal-tool-id">{asset.internalToolId}</em> : null}
                             </span>
                             <span><small>Client</small>{customer?.customerName ?? 'Unknown client'}</span>
                             <span><small>Serial Number</small>{asset.serialNumber}</span>
@@ -1698,6 +1886,7 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
                         <span><small>Family / Category</small><b>{selectedAsset.familyCategory || 'Not specified'}</b></span>
                         <span><small>Serial Number</small><b>{selectedAsset.serialNumber}</b></span>
                         <span><small>Tool ID</small><b>{selectedAsset.toolId || 'Not specified'}</b></span>
+                        <span className="clients-internal-tool-detail"><small>Internal Tool ID</small><b>{selectedAsset.internalToolId || 'Not specified'}</b></span>
                       </div>
 
                       <div className="clients-asset-lifecycle">
@@ -1827,11 +2016,11 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
                 </label>
                 <label className="clients-tool-id-link-field">
                   Tool ID
-                  <input autoFocus type="search" value={toolIdSearch} onChange={(event) => setToolIdSearch(event.target.value)} placeholder="Search Tool ID..." />
+                  <input autoFocus type="search" value={toolIdSearch} onChange={(event) => setToolIdSearch(event.target.value)} placeholder="Search Tool ID or Internal Tool ID..." />
                   <CustomerDropdown
                     id="asset-tool-id"
                     value={assetForm.toolDefinitionId}
-                    options={toolDefinitions.filter((tool) => !toolIdSearch || `${tool.toolId} ${tool.partType}`.toLowerCase().includes(toolIdSearch.toLowerCase())).map((tool) => ({ value: tool.id, label: `${tool.toolId} · ${tool.partType}${tool.minimumLife === null && !/shaver/i.test(tool.partType) ? ' · Life not configured' : ''}` }))}
+                    options={toolDefinitions.filter((tool) => !toolIdSearch || `${tool.toolId} ${tool.internalToolId} ${tool.partType}`.toLowerCase().includes(toolIdSearch.toLowerCase())).map((tool) => ({ value: tool.id, label: `${tool.toolId}${tool.internalToolId ? ` · Internal ${tool.internalToolId}` : ''} · ${tool.partType}${tool.minimumLife === null && !/shaver/i.test(tool.partType) ? ' · Life not configured' : ''}` }))}
                     placeholder="Select Tool ID"
                     onChange={(toolDefinitionId) => {
                       const tool = toolDefinitions.find((item) => item.id === toolDefinitionId);
@@ -1913,55 +2102,119 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
       {toolFormOpen ? (
         <div className="mes-modal-backdrop production-order-form-backdrop clients-asset-form-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeDialog(); }}>
           <section className="mes-order-modal clients-asset-modal clients-tool-id-modal" role="dialog" aria-modal="true" aria-labelledby="tool-id-dialog-title">
-            <button className="supplier-modal-close" type="button" onClick={closeDialog} aria-label="Close dialog" disabled={saving}><X size={18} /></button>
+            <button className="supplier-modal-close clients-tool-id-modal-close" type="button" onClick={closeDialog} aria-label="Close dialog" disabled={saving || toolDrawingUploading}><X size={18} /></button>
             <form className="mes-order-form clients-asset-form" onSubmit={saveToolDefinition}>
               <div className="clients-asset-modal-header mes-order-form-wide">
                 <p className="eyebrow">Tool Definition</p>
-                <h3 id="tool-id-dialog-title">{toolEditingId === null ? 'Add Tool ID' : 'Edit Tool ID'}</h3>
-                <p>{toolEditingId === null ? 'Define the shared dimensional limit and drawings used by every serial linked to this Tool ID.' : 'Find an existing Tool ID, then update its shared dimensional parameters or attach additional drawings.'}</p>
+                <h3 id="tool-id-dialog-title">{toolEditingId === null ? 'Add Tool ID' : 'Edit & Look for Tool ID'}</h3>
+                <p>{toolEditingId === null ? 'Define the shared dimensional limit and drawings used by every serial linked to this Tool ID.' : 'Find and review an existing Tool ID, update its shared parameters, or manage its drawings.'}</p>
               </div>
               <div className="clients-asset-form-grid mes-order-form-wide">
                 {toolEditingId !== null ? (
                   <div className="clients-tool-edit-picker mes-order-form-wide">
-                    <label>Search Tool IDs<input type="search" value={toolEditSearch} onChange={(event) => setToolEditSearch(event.target.value)} placeholder="Search Tool ID or part type..." /></label>
+                    <label>Search Tool IDs<input type="search" value={toolEditSearch} onChange={(event) => setToolEditSearch(event.target.value)} placeholder="Search Tool ID, Internal Tool ID, or part type..." /></label>
                     <label>Select Tool ID<CustomerDropdown
                       id="edit-tool-id-picker"
                       value={toolEditingId}
-                      options={toolDefinitions.filter((tool) => !toolEditSearch || `${tool.toolId} ${tool.partType}`.toLowerCase().includes(toolEditSearch.toLowerCase())).map((tool) => ({ value: tool.id, label: `${tool.toolId} · ${tool.partType}${tool.minimumLife === null && !/shaver/i.test(tool.partType) ? ' · Life not configured' : ''}` }))}
+                      options={toolDefinitions.filter((tool) => !toolEditSearch || `${tool.toolId} ${tool.internalToolId} ${tool.partType}`.toLowerCase().includes(toolEditSearch.toLowerCase())).map((tool) => ({ value: tool.id, label: `${tool.toolId}${tool.internalToolId ? ` · Internal ${tool.internalToolId}` : ''} · ${tool.partType}${tool.minimumLife === null && !/shaver/i.test(tool.partType) ? ' · Life not configured' : ''}` }))}
                       placeholder="Choose a Tool ID"
                       onChange={(toolId) => {
                         const tool = toolDefinitions.find((item) => item.id === toolId);
                         setToolEditingId(toolId);
-                        if (tool) setToolForm({ toolId: tool.toolId, partType: tool.partType, minimumLife: tool.minimumLife === null ? '' : String(tool.minimumLife), measurementUnit: tool.measurementUnit });
+                        setToolDocumentRenamingId(null);
+                        setToolDocumentRename('');
+                        setToolDrawingFiles([]);
+                        setToolUploadMessage(null);
+                        setToolUpdateMessage(null);
+                        if (tool) setToolForm({ toolId: tool.toolId, internalToolId: tool.internalToolId, partType: tool.partType, minimumLife: tool.minimumLife === null ? '' : String(tool.minimumLife), measurementUnit: tool.measurementUnit });
                       }}
                     /></label>
                   </div>
                 ) : null}
                 <label>Tool ID<input required autoFocus value={toolForm.toolId} onChange={(event) => setToolForm((current) => ({ ...current, toolId: event.target.value }))} placeholder="e.g. 17864-T-4" /></label>
+                <label>Internal Tool ID <em>Optional</em><input value={toolForm.internalToolId} onChange={(event) => setToolForm((current) => ({ ...current, internalToolId: event.target.value }))} placeholder="Factory Tool ID" /></label>
                 <label>Part Type<CustomerDropdown id="tool-part-type" value={toolForm.partType} options={['Hobs', 'Shaper', 'Shavers', 'Skiving', 'Talladores', 'Other'].map((value) => ({ value, label: value }))} onChange={(partType) => setToolForm((current) => ({ ...current, partType }))} /></label>
                 {/shaver/i.test(toolForm.partType) ? (
                   <label>Maximum Sharpenings<input value={SHAVER_MAX_SHARPENINGS} readOnly /><small>Fixed YVIMO standard for Shavers. Remaining life uses the recorded sharpening number.</small></label>
                 ) : (
-                  <label>Minimum Tool Life<input required type="number" min="0" step="any" value={toolForm.minimumLife} onChange={(event) => setToolForm((current) => ({ ...current, minimumLife: event.target.value }))} placeholder="Minimum usable dimension" /></label>
+                  <label>Minimum Tool Life <em>Optional</em><input type="number" min="0" step="any" value={toolForm.minimumLife} onChange={(event) => setToolForm((current) => ({ ...current, minimumLife: event.target.value }))} placeholder="Minimum usable dimension" /></label>
                 )}
                 <label>Measurement Unit<CustomerDropdown id="tool-measurement-unit" value={toolForm.measurementUnit} options={[{ value: 'in', label: 'Inches' }, { value: 'mm', label: 'Millimeters' }]} onChange={(measurementUnit) => setToolForm((current) => ({ ...current, measurementUnit }))} /></label>
                 <div
                   className={`clients-asset-file-field clients-tool-drawing-drop mes-order-form-wide${toolDrawingDragActive ? ' drag-active' : ''}`}
-                  onDragOver={(event) => { event.preventDefault(); setToolDrawingDragActive(true); }}
+                  onDragOver={(event) => { event.preventDefault(); if (!toolDrawingUploading) setToolDrawingDragActive(true); }}
                   onDragLeave={() => setToolDrawingDragActive(false)}
-                  onDrop={(event) => { event.preventDefault(); setToolDrawingDragActive(false); setToolDrawingFiles(Array.from(event.dataTransfer.files).filter((file) => file.type === 'application/pdf')); }}
+                  onDrop={(event) => { event.preventDefault(); setToolDrawingDragActive(false); if (!toolDrawingUploading) selectToolDrawings(Array.from(event.dataTransfer.files)); }}
                 >
                   <div className="clients-asset-file-heading"><span><FileText size={16} /> Drawings</span><em>Optional</em></div>
                   <div className="clients-asset-file-control">
-                    <input id="tool-drawing-files" type="file" accept="application/pdf" multiple onChange={(event) => setToolDrawingFiles(Array.from(event.target.files ?? []))} />
+                    <input id="tool-drawing-files" type="file" accept="application/pdf" multiple disabled={toolDrawingUploading} onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ''; selectToolDrawings(files); }} />
                     <label htmlFor="tool-drawing-files"><Plus size={15} /> Select drawings</label>
-                    <span>{toolDrawingFiles.length ? `${toolDrawingFiles.length} selected` : 'Drop PDF drawings here or select files'}</span>
+                    <span>{toolDrawingUploading ? 'Uploading selected drawings...' : toolDrawingFiles.length ? `${toolDrawingFiles.length} selected` : 'Drop PDF drawings here or select files'}</span>
                   </div>
                   <small>PDF drawings · drag and drop supported</small>
+                  {toolEditingId || toolDrawingFiles.length ? (
+                    <div className="clients-tool-drawing-list">
+                      {toolEditingId ? toolDocuments.filter((document) => document.toolDefinitionId === toolEditingId).map((document) => (
+                        <div className="clients-tool-drawing-row" key={document.id}>
+                          <span className="clients-tool-drawing-icon"><FileText size={16} /></span>
+                          {toolDocumentRenamingId === document.id ? (
+                            <input
+                              autoFocus
+                              value={toolDocumentRename}
+                              onChange={(event) => setToolDocumentRename(event.target.value)}
+                              onKeyDown={(event) => {
+                                if (event.key === 'Enter') {
+                                  event.preventDefault();
+                                  void renameToolDocument(document);
+                                }
+                                if (event.key === 'Escape') {
+                                  event.stopPropagation();
+                                  setToolDocumentRenamingId(null);
+                                  setToolDocumentRename('');
+                                }
+                              }}
+                              aria-label={`Rename ${document.fileName}`}
+                            />
+                          ) : <b title={document.fileName}>{document.fileName}</b>}
+                          <small>Uploaded {formatAssetDate(document.createdAt)}</small>
+                          <div>
+                            <button type="button" title="Preview drawing" aria-label={`Preview ${document.fileName}`} onClick={() => void openToolDocument(document)}><Eye size={15} /></button>
+                            {toolDocumentRenamingId === document.id ? (
+                              <>
+                                <button type="button" title="Save filename" aria-label={`Save filename for ${document.fileName}`} disabled={saving || !toolDocumentRename.trim()} onClick={() => void renameToolDocument(document)}><Check size={15} /></button>
+                                <button type="button" title="Cancel rename" aria-label={`Cancel renaming ${document.fileName}`} onClick={() => { setToolDocumentRenamingId(null); setToolDocumentRename(''); }}><X size={15} /></button>
+                              </>
+                            ) : (
+                              <button type="button" title="Rename drawing" aria-label={`Rename ${document.fileName}`} onClick={() => { setToolDocumentRenamingId(document.id); setToolDocumentRename(document.fileName); }}><Pencil size={15} /></button>
+                            )}
+                            <button className="danger" type="button" title="Delete drawing" aria-label={`Delete ${document.fileName}`} onClick={() => setToolDocumentDeleteCandidate(document)}><Trash2 size={15} /></button>
+                          </div>
+                        </div>
+                      )) : null}
+                      {toolDrawingFiles.map((file, index) => (
+                        <div className="clients-tool-drawing-row pending" key={`${file.name}:${file.lastModified}:${index}`}>
+                          <span className="clients-tool-drawing-icon"><FileText size={16} /></span>
+                          <b title={file.name}>{file.name}</b>
+                          <small>Ready to upload</small>
+                          <div><button className="danger" type="button" title="Remove pending drawing" aria-label={`Remove ${file.name}`} onClick={() => setToolDrawingFiles((current) => current.filter((_, fileIndex) => fileIndex !== index))}><Trash2 size={15} /></button></div>
+                        </div>
+                      ))}
+                      {toolEditingId && !toolDocuments.some((document) => document.toolDefinitionId === toolEditingId) && !toolDrawingFiles.length
+                        ? <p className="clients-tool-drawing-empty">No drawings uploaded for this Tool ID.</p>
+                        : null}
+                    </div>
+                  ) : null}
+                  {toolUploadMessage ? (
+                    <div className={`quality-document-message ${toolUploadMessage.type}`} role="status">
+                      {toolUploadMessage.text}
+                    </div>
+                  ) : null}
                 </div>
               </div>
               {assetError ? <div className="clients-modal-error" role="alert">{assetError}</div> : null}
-              <div className="mes-order-form-actions"><button type="button" onClick={closeDialog} disabled={saving}>Cancel</button><button type="submit" disabled={saving || toolEditingId === ''}>{toolEditingId === null ? <Plus size={16} /> : <Pencil size={16} />} {saving ? 'Saving...' : toolEditingId === null ? 'Save Tool ID' : 'Update Tool ID'}</button></div>
+              {toolUpdateMessage ? <div className={`quality-document-message ${toolUpdateMessage.type}`} role="status">{toolUpdateMessage.text}</div> : null}
+              <div className="mes-order-form-actions"><button type="button" onClick={closeDialog} disabled={saving || toolDrawingUploading}>Cancel</button><button type="submit" disabled={saving || toolDrawingUploading || toolEditingId === ''}>{toolEditingId === null ? <Plus size={16} /> : <Pencil size={16} />} {saving ? 'Saving...' : toolEditingId === null ? 'Save Tool ID' : 'Update Tool ID'}</button></div>
             </form>
           </section>
         </div>
@@ -1985,13 +2238,13 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
               <div className="clients-assets-section-heading"><span><FileText size={16} /> Tool IDs Requiring Data</span><strong>{incompleteToolDefinitions.length} items</strong></div>
               <div className="clients-tool-report-table-scroll">
                 <table>
-                  <thead><tr><th>Tool ID</th><th>Part Type</th><th>Missing Data</th><th>Unit</th><th>Linked Serials</th></tr></thead>
+                  <thead><tr><th>Tool ID</th><th className="clients-tool-report-internal-id">Internal Tool ID</th><th>Part Type</th><th>Missing Data</th><th>Unit</th><th>Linked Serials</th></tr></thead>
                   <tbody>{incompleteToolClientGroups.map((group) => <React.Fragment key={group.customerId}>
-                    <tr className="clients-tool-report-client-row"><td colSpan={5}><span>{group.customerName}</span><b>{group.tools.length} Tool IDs</b></td></tr>
+                    <tr className="clients-tool-report-client-row"><td colSpan={6}><span>{group.customerName}</span><b>{group.tools.length} Tool IDs</b></td></tr>
                     {group.tools.map((tool) => {
                       const missing = [!/shaver/i.test(tool.partType) && tool.minimumLife === null ? 'Minimum life' : '', !tool.partType.trim() ? 'Part type' : '', !tool.measurementUnit ? 'Measurement unit' : ''].filter(Boolean);
                       const linkedSerials = assets.filter((asset) => asset.toolDefinitionId === tool.id && (group.customerId === 'unassigned' || asset.customerId === group.customerId)).length;
-                      return <tr key={`${group.customerId}:${tool.id}`}><td><b>{tool.toolId}</b></td><td><span className="clients-asset-type-badge" style={getAssetTypeColors(tool.partType)}>{tool.partType || 'Not specified'}</span></td><td>{missing.map((item) => <em key={item}>{item}</em>)}</td><td>{tool.measurementUnit || '—'}</td><td>{linkedSerials}</td></tr>;
+                      return <tr key={`${group.customerId}:${tool.id}`}><td><b>{tool.toolId}</b></td><td className="clients-tool-report-internal-id"><b>{tool.internalToolId || 'Not specified'}</b></td><td><span className="clients-asset-type-badge" style={getAssetTypeColors(tool.partType)}>{tool.partType || 'Not specified'}</span></td><td>{missing.map((item) => <em key={item}>{item}</em>)}</td><td>{tool.measurementUnit || '—'}</td><td>{linkedSerials}</td></tr>;
                     })}
                   </React.Fragment>)}</tbody>
                 </table>
@@ -2002,15 +2255,32 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
         </div>
       ) : null}
 
+      {toolDocumentDeleteCandidate ? (
+        <div className="mes-modal-backdrop clients-tool-drawing-confirm-backdrop" role="presentation">
+          <section className="mes-confirm-modal danger" role="dialog" aria-modal="true" aria-labelledby="delete-tool-drawing-title">
+            <div className="mes-confirm-mark" aria-hidden="true"><Trash2 size={23} /></div>
+            <div>
+              <p className="eyebrow">Tool Drawing</p>
+              <h3 id="delete-tool-drawing-title">Delete Tool ID drawing?</h3>
+              <p><strong>{toolDocumentDeleteCandidate.fileName}</strong> will be permanently removed from this Tool ID and storage.</p>
+            </div>
+            <div className="mes-confirm-actions">
+              <button type="button" disabled={saving} onClick={() => setToolDocumentDeleteCandidate(null)}>Cancel</button>
+              <button className="danger" type="button" disabled={saving} onClick={() => void deleteToolDocument()}>{saving ? 'Deleting...' : 'Delete drawing'}</button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
       {assetAttachmentPreview ? (
-        <div className="supplier-modal-backdrop" role="presentation" onMouseDown={(event) => {
+        <div className="supplier-modal-backdrop clients-asset-evidence-preview-backdrop" role="presentation" onMouseDown={(event) => {
           if (event.target === event.currentTarget) setAssetAttachmentPreview(null);
         }}>
           <div className="supplier-modal clients-asset-evidence-preview" role="dialog" aria-modal="true" aria-labelledby="asset-evidence-preview-title">
             <button className="supplier-modal-close" type="button" onClick={() => setAssetAttachmentPreview(null)} aria-label="Close evidence preview"><X size={18} /></button>
             <div>
               <div className="supplier-modal-header">
-                <span>Asset Evidence</span>
+                <span>{assetAttachmentPreview.category ?? 'Asset Evidence'}</span>
                 <strong id="asset-evidence-preview-title">{assetAttachmentPreview.fileName}</strong>
               </div>
               <div className={`supplier-document-preview ${assetAttachmentPreview.isPdf ? 'pdf' : 'image'}`}>
