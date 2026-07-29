@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   ArrowRight,
   ArrowLeft,
+  BarChart3,
   Blocks,
   Building2,
   Cable,
@@ -53,6 +54,7 @@ import { createSessionSupabaseClient, supabase } from './lib/supabaseClient';
 import { AcademyActivityPage, AcademyCatalogPage, AcademyCertificatesPage, AcademyCoursePage, AcademyHomePage, AcademyLessonPage, AcademyProgressPage, AcademyTrackPage } from './pages/AcademyPages';
 import { ProductionOrdersWorkspace, TraceabilityWorkspace, WorkCentersWorkspace } from './manufacturing/MesWorkspaces';
 import { InventoryWorkspace } from './manufacturing/InventoryWorkspace';
+import { StatisticsWorkspace } from './manufacturing/StatisticsWorkspace';
 import { OperatorTerminalWorkspace } from './manufacturing/OperatorTerminalWorkspace';
 import { QualityOperationsWorkspace, type QualityContextTab } from './manufacturing/QualityOperationsWorkspace';
 import { SupplierOperationsWorkspace, type SupplierContextTab } from './manufacturing/SupplierOperationsWorkspace';
@@ -3197,11 +3199,12 @@ function LoggedDashboardPage({
       tone: 'blue',
     },
     {
-      label: 'Downtime Events',
-      description: 'Track machine stops, reason codes, duration, category, and notes.',
-      icon: RadioTower,
-      path: '/workspace/manufacturing-ops/mes/downtime',
-      implemented: false,
+      label: 'Statistics',
+      description: 'View live production output, weekly trends, scrap, and plant-wide manufacturing performance.',
+      icon: BarChart3,
+      path: '/workspace/manufacturing-ops/mes/statistics',
+      implemented: true,
+      tone: 'blue',
     },
     {
       label: 'Quality Checks',
@@ -3397,6 +3400,7 @@ function LoggedDashboardPage({
   const isCompactMesApplicationPage = activePath === '/workspace/manufacturing-ops/mes/orders'
     || activePath === '/workspace/manufacturing-ops/mes/work-centers'
     || activePath === '/workspace/manufacturing-ops/mes/inventory'
+    || activePath === '/workspace/manufacturing-ops/mes/statistics'
     || activePath === '/workspace/manufacturing-ops/mes/traceability';
   const supplierContextTabs: Array<{
     value: SupplierContextTab;
@@ -3483,6 +3487,9 @@ function LoggedDashboardPage({
     }
     if (activePath === '/workspace/manufacturing-ops/mes/inventory') {
       return <InventoryWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} organizationName={manufacturingOrganization?.name ?? 'Manufacturing Organization'} />;
+    }
+    if (activePath === '/workspace/manufacturing-ops/mes/statistics') {
+      return <StatisticsWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} />;
     }
     if (isOperatorTerminalPage) {
       return <OperatorTerminalWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} languageCode={languageCode} t={t} />;
