@@ -1992,8 +1992,14 @@ type PendingWorkReportSerialRow = {
   production_order_id: string;
   assigned_station: string | null;
   result: 'good' | 'scrap' | null;
+  ready_for_quality: boolean;
   serial_number?: string;
   reported_at?: string | null;
+};
+
+type PendingWorkReportInspectionRow = {
+  production_order_id: string;
+  serial_number: string;
 };
 
 type PendingWorkMachineSnapshot = {
@@ -2160,6 +2166,7 @@ function getPendingWorkReport(
   stationOptionsByWorkCenter: Record<string, MesOrderDropdownOption[]>,
   workCenterOptions: MesOrderDropdownOption[],
   serialRows: PendingWorkReportSerialRow[] = [],
+  inspectionRows: PendingWorkReportInspectionRow[] = [],
   machineSnapshots: PendingWorkMachineSnapshot[] = [],
 ): PendingWorkReport {
   const reportWorkCenterCode = getPendingWorkReportWorkCenterCode(orders, workCenterOptions, stationOptionsByWorkCenter);
@@ -2170,6 +2177,15 @@ function getPendingWorkReport(
     ...(serialsByOrder.get(serial.production_order_id) ?? []),
     serial,
   ]));
+  const inspectedSerials = new Set(inspectionRows.map((inspection) => (
+    `${inspection.production_order_id}:${inspection.serial_number.trim().toLowerCase()}`
+  )));
+  const isPendingInspection = (serial: PendingWorkReportSerialRow) => (
+    serial.result === 'good'
+    && serial.ready_for_quality
+    && Boolean(serial.serial_number?.trim())
+    && !inspectedSerials.has(`${serial.production_order_id}:${serial.serial_number!.trim().toLowerCase()}`)
+  );
   const reportOrders = orders.filter((order) => {
     if (['completed', 'cancelled'].includes(order.status) || order.assignedWorkCenter !== reportWorkCenterCode) return false;
     if (order.manufacturingType === 'multi-step') return true;
@@ -2178,12 +2194,8 @@ function getPendingWorkReport(
   const pendingEntries = reportOrders.flatMap((order) => {
     if (order.manufacturingType === 'multi-step') {
       const orderSerials = serialsByOrder.get(order.id) ?? [];
-      const manufacturingTarget = order.status === 'waiting-inspection'
-        ? 0
-        : Math.max(0, order.plannedQuantity - order.completedQuantity - order.scrapQuantity);
-      const inspectionTarget = order.status === 'waiting-inspection'
-        ? Math.max(0, order.completedQuantity || order.plannedQuantity - order.scrapQuantity)
-        : 0;
+      const manufacturingTarget = Math.max(0, order.plannedQuantity - order.completedQuantity - order.scrapQuantity);
+      const inspectionTarget = order.qualityChecksEnabled ? orderSerials.filter(isPendingInspection).length : 0;
       const createStationEntries = (
         target: number,
         category: 'manufacturing' | 'inspection',
@@ -2208,15 +2220,12 @@ function getPendingWorkReport(
       };
       return [
         ...createStationEntries(manufacturingTarget, 'manufacturing', (serial) => !serial.result),
-        ...createStationEntries(inspectionTarget, 'inspection', (serial) => serial.result === 'good'),
+        ...createStationEntries(inspectionTarget, 'inspection', isPendingInspection),
       ];
     }
-    const manufacturingQuantity = order.status === 'waiting-inspection'
-      ? 0
-      : Math.max(0, order.plannedQuantity - order.completedQuantity - order.scrapQuantity);
-    const inspectionQuantity = order.status === 'waiting-inspection'
-      ? Math.max(0, order.completedQuantity || order.plannedQuantity - order.scrapQuantity)
-      : 0;
+    const orderSerials = serialsByOrder.get(order.id) ?? [];
+    const manufacturingQuantity = Math.max(0, order.plannedQuantity - order.completedQuantity - order.scrapQuantity);
+    const inspectionQuantity = order.qualityChecksEnabled ? orderSerials.filter(isPendingInspection).length : 0;
     const quotationQuantity = 0;
     return [
       { order, stationCode: order.assignedStation, category: 'manufacturing' as const, quantity: manufacturingQuantity },
@@ -3415,16 +3424,22 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
 
   const openPendingWorkReport = async () => {
     let serialRows: PendingWorkReportSerialRow[] = [];
+    let inspectionRows: PendingWorkReportInspectionRow[] = [];
     let machineSnapshots: PendingWorkMachineSnapshot[] = [];
     const generatedAt = new Date();
     const [
       { data: serialData, error: serialError },
+      { data: inspectionData, error: inspectionError },
       { data: stationData, error: stationError },
       { data: cycleData, error: cycleError },
     ] = await Promise.all([
       supabase
         .from('mes_production_serials')
-        .select('production_order_id, assigned_station, result, serial_number, reported_at')
+        .select('production_order_id, assigned_station, result, ready_for_quality, serial_number, reported_at')
+        .eq('organization_id', organizationId),
+      supabase
+        .from('mes_quality_serial_inspections')
+        .select('production_order_id, serial_number')
         .eq('organization_id', organizationId),
       supabase
         .from('mes_work_center_stations')
@@ -3440,6 +3455,11 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
       console.error('Unable to load serials for pending work report', serialError);
     } else {
       serialRows = (serialData ?? []) as PendingWorkReportSerialRow[];
+    }
+    if (inspectionError) {
+      console.error('Unable to load inspections for pending work report', inspectionError);
+    } else {
+      inspectionRows = (inspectionData ?? []) as PendingWorkReportInspectionRow[];
     }
     if (stationError || cycleError) {
       console.error('Unable to load machine snapshots for pending work report', stationError ?? cycleError);
@@ -3473,7 +3493,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
         };
       });
     }
-    setPendingWorkReport(getPendingWorkReport(orders, stationOptionsByWorkCenter, workCenterOptions, serialRows, machineSnapshots));
+    setPendingWorkReport(getPendingWorkReport(orders, stationOptionsByWorkCenter, workCenterOptions, serialRows, inspectionRows, machineSnapshots));
   };
 
   const focusPendingWorkOrder = (orderNumber: string) => {
