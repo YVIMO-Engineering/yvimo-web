@@ -294,11 +294,6 @@ export function InventoryWorkspace({ onNavigate, organizationId, organizationNam
         pdf.addPage();
         drawPageHeader(true);
       };
-      const ensureSpace = (height: number) => {
-        if (cursorY + height <= pageHeight - 34) return;
-        addPage();
-      };
-
       drawPageHeader();
       pdf.setFont('helvetica', 'bold');
       pdf.setFontSize(22);
@@ -336,9 +331,9 @@ export function InventoryWorkspace({ onNavigate, organizationId, organizationNam
       });
       cursorY += 76;
 
-      sections.forEach((section) => {
+      sections.forEach((section, sectionIndex) => {
+        if (sectionIndex > 0) addPage();
         const sectionItems = visibleItems.filter((item) => item.section_id === section.id);
-        ensureSpace(62);
         pdf.setFillColor(255, 247, 237);
         pdf.setDrawColor(255, 138, 31);
         pdf.roundedRect(margin, cursorY, contentWidth, 28, 5, 5, 'FD');
