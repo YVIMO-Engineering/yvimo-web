@@ -21,6 +21,10 @@ type InventoryItem = {
   section_id: string;
   work_center_id: string;
   title: string;
+  item_key: string;
+  supplier_key: string;
+  application_alias: string;
+  supplier: string;
   description: string;
   quantity: number;
   minimum_quantity: number;
@@ -31,7 +35,19 @@ type WorkCenter = { id: string; code: string; name: string };
 type Station = { id: string; code: string; name: string; workCenterId: string; workCenterName: string };
 type ItemStation = { inventory_item_id: string; station_id: string };
 
-const emptyItemForm = { title: '', description: '', quantity: '0', minimumQuantity: '0', sectionId: '', workCenterId: '', stationIds: [] as string[] };
+const emptyItemForm = {
+  title: '',
+  itemKey: '',
+  supplierKey: '',
+  applicationAlias: '',
+  supplier: '',
+  description: '',
+  quantity: '0',
+  minimumQuantity: '0',
+  sectionId: '',
+  workCenterId: '',
+  stationIds: [] as string[],
+};
 
 export function InventoryWorkspace({ onNavigate, organizationId, organizationName }: InventoryWorkspaceProps) {
   const [sections, setSections] = React.useState<InventorySection[]>([]);
@@ -60,7 +76,7 @@ export function InventoryWorkspace({ onNavigate, organizationId, organizationNam
     setLoading(true);
     const [sectionsResponse, itemsResponse, itemStationsResponse, workCentersResponse, stationsResponse] = await Promise.all([
       supabase.from('mes_inventory_sections').select('id, name, description, position').eq('organization_id', organizationId).order('position'),
-      supabase.from('mes_inventory_items').select('id, section_id, work_center_id, title, description, quantity, minimum_quantity, image_url').eq('organization_id', organizationId).order('created_at'),
+      supabase.from('mes_inventory_items').select('id, section_id, work_center_id, title, item_key, supplier_key, application_alias, supplier, description, quantity, minimum_quantity, image_url').eq('organization_id', organizationId).order('created_at'),
       supabase.from('mes_inventory_item_stations').select('inventory_item_id, station_id').eq('organization_id', organizationId),
       supabase.from('mes_work_centers').select('id, code, name').eq('organization_id', organizationId).order('name'),
       supabase.from('mes_work_center_stations').select('id, work_center_id, code, name').eq('organization_id', organizationId).order('name'),
@@ -107,6 +123,10 @@ export function InventoryWorkspace({ onNavigate, organizationId, organizationNam
     setEditingItem(item);
     setItemForm({
       title: item.title,
+      itemKey: item.item_key,
+      supplierKey: item.supplier_key,
+      applicationAlias: item.application_alias,
+      supplier: item.supplier,
       description: item.description,
       quantity: String(item.quantity),
       minimumQuantity: String(item.minimum_quantity),
@@ -139,7 +159,8 @@ export function InventoryWorkspace({ onNavigate, organizationId, organizationNam
 
   const saveItem = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!itemForm.title.trim() || !itemForm.sectionId || !itemForm.workCenterId) return;
+    if (!itemForm.title.trim() || !itemForm.itemKey.trim() || !itemForm.supplier.trim()
+      || !itemForm.sectionId || !itemForm.workCenterId) return;
     setSaving(true);
     setMessage('');
     let imageUrl: string | null = null;
@@ -158,6 +179,10 @@ export function InventoryWorkspace({ onNavigate, organizationId, organizationNam
       section_id: itemForm.sectionId,
       work_center_id: itemForm.workCenterId,
       title: itemForm.title.trim(),
+      item_key: itemForm.itemKey.trim(),
+      supplier_key: itemForm.supplierKey.trim(),
+      application_alias: itemForm.applicationAlias.trim(),
+      supplier: itemForm.supplier.trim(),
       description: itemForm.description.trim(),
       quantity: Math.max(0, Number(itemForm.quantity) || 0),
       minimum_quantity: Math.max(0, Number(itemForm.minimumQuantity) || 0),
@@ -325,14 +350,14 @@ export function InventoryWorkspace({ onNavigate, organizationId, organizationNam
         pdf.text(`${sectionItems.length} item${sectionItems.length === 1 ? '' : 's'}`, pageWidth - margin - 11, cursorY + 18, { align: 'right' });
         cursorY += 32;
 
-        const columns = [margin + 8, margin + 196, margin + 274, margin + 342, margin + 420, margin + 500];
+          const columns = [margin + 8, margin + 130, margin + 205, margin + 290, margin + 390, margin + 470, margin + 540, margin + 595];
         const drawTableHeader = () => {
           pdf.setFillColor(241, 245, 249);
           pdf.rect(margin, cursorY, contentWidth, 21, 'F');
           pdf.setFont('helvetica', 'bold');
           pdf.setFontSize(7);
           pdf.setTextColor(82, 97, 117);
-          ['ITEM', 'QUANTITY', 'MINIMUM', 'STATUS', 'SECTION', 'STATIONS'].forEach((label, index) => pdf.text(label, columns[index], cursorY + 14));
+          ['ITEM', 'KEY', 'SUPPLIER KEY', 'APPLICATION / ALIAS', 'SUPPLIER', 'QTY.', 'MIN.', 'STATIONS'].forEach((label, index) => pdf.text(label, columns[index], cursorY + 14));
           cursorY += 21;
         };
         drawTableHeader();
@@ -347,11 +372,14 @@ export function InventoryWorkspace({ onNavigate, organizationId, organizationNam
           const linkedStations = itemStations.filter((link) => link.inventory_item_id === item.id)
             .map((link) => stations.find((station) => station.id === link.station_id))
             .filter(Boolean) as Station[];
-          const status = item.quantity < item.minimum_quantity ? 'Below minimum' : item.quantity === item.minimum_quantity ? 'At minimum' : 'In stock';
           const stationText = linkedStations.map((station) => `${station.code} · ${station.name}`).join(', ') || 'No stations assigned';
-          const itemLines = pdf.splitTextToSize(item.title, 176) as string[];
-          const stationLines = pdf.splitTextToSize(stationText, contentWidth - 508) as string[];
-          const rowHeight = Math.max(29, Math.max(itemLines.length, stationLines.length) * 9 + 11);
+          const itemLines = pdf.splitTextToSize(item.title, 112) as string[];
+          const keyLines = pdf.splitTextToSize(item.item_key, 65) as string[];
+          const supplierKeyLines = pdf.splitTextToSize(item.supplier_key || 'Unknown', 75) as string[];
+          const applicationLines = pdf.splitTextToSize(item.application_alias || 'Unknown', 90) as string[];
+          const supplierLines = pdf.splitTextToSize(item.supplier, 70) as string[];
+          const stationLines = pdf.splitTextToSize(stationText, contentWidth - 603) as string[];
+          const rowHeight = Math.max(29, Math.max(itemLines.length, keyLines.length, supplierKeyLines.length, applicationLines.length, supplierLines.length, stationLines.length) * 9 + 11);
           if (cursorY + rowHeight > pageHeight - 34) {
             addPage();
             drawTableHeader();
@@ -366,15 +394,14 @@ export function InventoryWorkspace({ onNavigate, organizationId, organizationNam
           pdf.setFontSize(8);
           pdf.setTextColor(23, 32, 42);
           pdf.text(itemLines, columns[0], cursorY + 13);
-          pdf.text(Number(item.quantity).toLocaleString(), columns[1], cursorY + 13);
-          pdf.text(Number(item.minimum_quantity).toLocaleString(), columns[2], cursorY + 13);
-          const statusColor = status === 'Below minimum' ? [185, 28, 28] : status === 'At minimum' ? [161, 98, 7] : [4, 120, 87];
-          pdf.setTextColor(statusColor[0], statusColor[1], statusColor[2]);
-          pdf.text(status, columns[3], cursorY + 13);
-          pdf.setTextColor(71, 85, 105);
           pdf.setFont('helvetica', 'normal');
-          pdf.text(section.name, columns[4], cursorY + 13);
-          pdf.text(stationLines, columns[5], cursorY + 13);
+          pdf.text(keyLines, columns[1], cursorY + 13);
+          pdf.text(supplierKeyLines, columns[2], cursorY + 13);
+          pdf.text(applicationLines, columns[3], cursorY + 13);
+          pdf.text(supplierLines, columns[4], cursorY + 13);
+          pdf.text(Number(item.quantity).toLocaleString(), columns[5], cursorY + 13);
+          pdf.text(Number(item.minimum_quantity).toLocaleString(), columns[6], cursorY + 13);
+          pdf.text(stationLines, columns[7], cursorY + 13);
           cursorY += rowHeight;
         });
         cursorY += 15;
@@ -419,7 +446,7 @@ export function InventoryWorkspace({ onNavigate, organizationId, organizationNam
         .filter(Boolean)
         .map((station) => `${station!.code} ${station!.name}`)
         .join(' ');
-      return `${item.title} ${item.description} ${item.quantity} ${item.minimum_quantity} ${stationText}`
+      return `${item.title} ${item.item_key} ${item.supplier_key} ${item.application_alias} ${item.supplier} ${item.description} ${item.quantity} ${item.minimum_quantity} ${stationText}`
         .toLowerCase().includes(normalizedSearch);
     });
   };
@@ -513,6 +540,12 @@ export function InventoryWorkspace({ onNavigate, organizationId, organizationNam
                               <small>Quantity</small><strong>{item.quantity.toLocaleString()}</strong><em>Min. {item.minimum_quantity.toLocaleString()}</em>
                             </span>
                           </div>
+                          <dl className="inventory-card-details">
+                            <div><dt>Key</dt><dd>{item.item_key}</dd></div>
+                            <div><dt>Supplier key</dt><dd>{item.supplier_key || 'Unknown'}</dd></div>
+                            <div><dt>Application / alias</dt><dd>{item.application_alias || 'Unknown'}</dd></div>
+                            <div><dt>Supplier</dt><dd>{item.supplier}</dd></div>
+                          </dl>
                           <p>{item.description || 'No description provided.'}</p>
                           <div className="inventory-quick-adjust">
                             <span><small>Quick update</small><strong>{adjustingItemIds.has(item.id) ? 'Updating...' : 'Adjust stock by one unit'}</strong></span>
@@ -565,6 +598,14 @@ export function InventoryWorkspace({ onNavigate, organizationId, organizationNam
                   </label>
                   <div className="inventory-item-fields">
                     <label>Title<input value={itemForm.title} onChange={(event) => setItemForm((current) => ({ ...current, title: event.target.value }))} placeholder="Carbide insert" required /></label>
+                    <div className="inventory-identity-fields">
+                      <label>Key<input value={itemForm.itemKey} onChange={(event) => setItemForm((current) => ({ ...current, itemKey: event.target.value }))} placeholder="GMEXCON-002" required /></label>
+                      <label>Supplier key (optional)<input value={itemForm.supplierKey} onChange={(event) => setItemForm((current) => ({ ...current, supplierKey: event.target.value }))} placeholder="Supplier part number" /></label>
+                    </div>
+                    <div className="inventory-identity-fields">
+                      <label>Application / alias (optional)<input value={itemForm.applicationAlias} onChange={(event) => setItemForm((current) => ({ ...current, applicationAlias: event.target.value }))} placeholder="Gleason CBN" /></label>
+                      <label>Supplier<input value={itemForm.supplier} onChange={(event) => setItemForm((current) => ({ ...current, supplier: event.target.value }))} placeholder="Supplier name" required /></label>
+                    </div>
                     <label>Section<select value={itemForm.sectionId} onChange={(event) => setItemForm((current) => ({ ...current, sectionId: event.target.value }))} required>{sections.map((section) => <option value={section.id} key={section.id}>{section.name}</option>)}</select></label>
                     <label>Work center<select value={itemForm.workCenterId} onChange={(event) => setItemForm((current) => ({ ...current, workCenterId: event.target.value, stationIds: [] }))} required>{workCenters.map((workCenter) => <option value={workCenter.id} key={workCenter.id}>{workCenter.code} · {workCenter.name}</option>)}</select></label>
                     <div className="inventory-quantity-fields">
