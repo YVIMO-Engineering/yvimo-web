@@ -99,11 +99,14 @@
 .statistics-day-tooltip > small { color: #e96500; font-size: .76rem; font-weight: 950; letter-spacing: .06em; text-transform: uppercase; }
 .statistics-day-tooltip h4 { margin: 5px 0 14px; color: #17263a; font-size: 1.3rem; }
 .statistics-day-information { display: grid; grid-template-columns: 1fr; gap: 10px; margin: 0; }
-.statistics-day-information > div { display: grid; min-height: 92px; align-content: center; border: 1px solid #d7e1eb; border-left: 4px solid #f97316; border-radius: 9px; padding: 13px 15px; background: #fff; }
+.statistics-day-information > div, .statistics-day-information > button { display: grid; min-height: 92px; align-content: center; border: 1px solid #d7e1eb; border-left: 4px solid #f97316; border-radius: 9px; padding: 13px 15px; background: #fff; text-align: left; }
 .statistics-day-information dt { color: #65768a; font-size: .72rem; font-weight: 900; letter-spacing: .035em; text-transform: uppercase; }
 .statistics-day-information dd { margin: 4px 0 0; color: #17263a; font-size: 1.45rem; font-weight: 950; line-height: 1; text-align: left; }
 .statistics-day-information span { margin-top: 6px; color: #6b7d91; font-size: .66rem; font-weight: 800; }
 .statistics-day-information .target { border-left-color: #8b5cf6; background: #faf8ff; }
+.statistics-edit-target-card { position: relative; width: 100%; color: inherit; font: inherit; cursor: pointer; transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease; }
+.statistics-edit-target-card:hover { border-color: #a78bfa; box-shadow: 0 8px 22px #7c3aed1c; transform: translateY(-1px); }
+.statistics-edit-target-card:focus-visible { outline: 3px solid #8b5cf633; outline-offset: 2px; }
 .statistics-day-information .production, .statistics-day-information .positive { border-left-color: #10b981; background: #f6fdf9; }
 .statistics-day-information .negative { border-left-color: #ef4444; background: #fff8f8; }
 .statistics-day-tooltip p { margin: 12px 0 0; color: #6f8094; font-size: .72rem; line-height: 1.45; }
@@ -111,6 +114,20 @@
 .statistics-chart-footer em { font-style: normal; text-align: right; }
 .statistics-chart-loading { display: grid; min-height: 440px; place-items: center; color: #748397; font-size: .82rem; font-weight: 850; }
 .statistics-message { margin: 12px 16px 0; border: 1px solid #fecaca; border-radius: 8px; padding: 10px 12px; background: #fff1f2; color: #b4232f; font-size: .74rem; font-weight: 800; }
+.statistics-target-modal-backdrop { position: fixed; inset: 0; z-index: 1200; display: grid; place-items: center; padding: 20px; background: #0f172ab3; backdrop-filter: blur(3px); }
+.statistics-target-modal { position: relative; display: grid; width: min(440px, 100%); gap: 9px; border: 1px solid #fdba74; border-top: 5px solid #f97316; border-radius: 15px; padding: 28px; background: #fff; box-shadow: 0 28px 80px #0006; }
+.statistics-target-modal-close { position: absolute; top: 14px; right: 14px; display: grid; width: 38px; height: 38px; place-items: center; border: 1px solid #d6e0e9; border-radius: 9px; background: #f8fafc; color: #475569; }
+.statistics-target-modal-icon { display: grid; width: 46px; height: 46px; place-items: center; border: 1px solid #c4b5fd; border-radius: 11px; background: #f5f3ff; color: #7c3aed; }
+.statistics-target-modal .eyebrow { margin: 5px 0 0; }
+.statistics-target-modal h3 { margin: 0; color: #0f172a; font-size: 1.55rem; }
+.statistics-target-modal > p:not(.eyebrow) { margin: 0 0 8px; color: #64748b; font-size: .82rem; line-height: 1.45; }
+.statistics-target-modal label { display: grid; gap: 7px; }
+.statistics-target-modal label span { color: #475569; font-size: .72rem; font-weight: 950; letter-spacing: .04em; text-transform: uppercase; }
+.statistics-target-modal input { width: 100%; min-height: 56px; border: 2px solid #cbd5e1; border-radius: 10px; padding: 0 14px; background: #f8fafc; color: #0f172a; font: inherit; font-size: 1.35rem; font-weight: 950; }
+.statistics-target-modal input:focus { border-color: #8b5cf6; outline: 3px solid #8b5cf622; }
+.statistics-target-modal > div { display: flex; justify-content: flex-end; gap: 10px; margin-top: 12px; }
+.statistics-target-modal > div button { min-height: 44px; border: 1px solid #cbd5e1; border-radius: 9px; padding: 0 17px; background: #f8fafc; color: #334155; font: inherit; font-size: .78rem; font-weight: 950; }
+.statistics-target-modal > div button[type="submit"] { border-color: #f97316; background: #ff861f; color: #101820; }
 @keyframes statistics-live-pulse { 0% { box-shadow: 0 0 0 0 #10b9814d; } 75%, 100% { box-shadow: 0 0 0 9px #10b98100; } }
 @keyframes statistics-spin { to { transform: rotate(360deg); } }
 @media (max-width: 1180px) {

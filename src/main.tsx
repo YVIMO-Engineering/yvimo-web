@@ -3164,7 +3164,7 @@ function LoggedDashboardPage({
     icon: React.ComponentType<{ size?: number }>;
     path: string;
     implemented: boolean;
-    tone?: 'green' | 'blue' | 'orange';
+    tone?: 'green' | 'blue' | 'orange' | 'purple';
   }> = [
     {
       label: 'Production Orders',
@@ -3204,7 +3204,7 @@ function LoggedDashboardPage({
       icon: BarChart3,
       path: '/workspace/manufacturing-ops/mes/statistics',
       implemented: true,
-      tone: 'blue',
+      tone: 'purple',
     },
     {
       label: 'Quality Checks',
@@ -3381,7 +3381,7 @@ function LoggedDashboardPage({
       ? intelligenceModules
       : mesModules;
   const isManufacturingAppImplemented = (module: { implemented?: boolean }) => module.implemented === true;
-  const getManufacturingAppToneClass = (module: { tone?: 'green' | 'blue' | 'orange' }) => module.tone ? `tone-${module.tone}` : '';
+  const getManufacturingAppToneClass = (module: { tone?: 'green' | 'blue' | 'orange' | 'purple' }) => module.tone ? `tone-${module.tone}` : '';
   const handleManufacturingAppLaunch = (module: { label: string; path: string; implemented?: boolean }) => {
     if (!isManufacturingAppImplemented(module)) {
       setManufacturingUnavailableApp(module.label);

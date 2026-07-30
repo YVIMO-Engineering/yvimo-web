@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowLeft, BarChart3, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
+import { ArrowLeft, BarChart3, ChevronLeft, ChevronRight, RefreshCw, Target, X } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { useSupabaseRealtimeRefresh } from '../lib/useSupabaseRealtimeRefresh';
 import { ProductionMetricCards } from './statistics/ProductionMetricCards';
@@ -20,6 +20,7 @@ type StatisticsWorkspaceProps = {
 };
 
 export function StatisticsWorkspace({ onNavigate, organizationId }: StatisticsWorkspaceProps) {
+  const targetStorageKey = `yvimo:mes-statistics:daily-target:${organizationId}`;
   const today = React.useMemo(() => toLocalDateInput(new Date()), []);
   const [weekAnchor, setWeekAnchor] = React.useState(today);
   const [events, setEvents] = React.useState<ProductionStatisticsEvent[]>([]);
@@ -28,7 +29,33 @@ export function StatisticsWorkspace({ onNavigate, organizationId }: StatisticsWo
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState('');
   const [lastUpdatedAt, setLastUpdatedAt] = React.useState('');
+  const [dailyTarget, setDailyTarget] = React.useState(() => {
+    const stored = Number(window.localStorage.getItem(targetStorageKey));
+    return Number.isFinite(stored) && stored > 0 ? stored : 30;
+  });
+  const [targetDialogOpen, setTargetDialogOpen] = React.useState(false);
+  const [targetDraft, setTargetDraft] = React.useState('30');
   const weekRange = React.useMemo(() => getWeekRange(weekAnchor), [weekAnchor]);
+
+  React.useEffect(() => {
+    const stored = Number(window.localStorage.getItem(targetStorageKey));
+    const nextTarget = Number.isFinite(stored) && stored > 0 ? stored : 30;
+    setDailyTarget(nextTarget);
+    setTargetDraft(String(nextTarget));
+  }, [targetStorageKey]);
+
+  const openTargetDialog = () => {
+    setTargetDraft(String(dailyTarget));
+    setTargetDialogOpen(true);
+  };
+  const saveTarget = (event: React.FormEvent) => {
+    event.preventDefault();
+    const nextTarget = Math.max(1, Math.round(Number(targetDraft)));
+    if (!Number.isFinite(nextTarget)) return;
+    setDailyTarget(nextTarget);
+    window.localStorage.setItem(targetStorageKey, String(nextTarget));
+    setTargetDialogOpen(false);
+  };
 
   const loadStatistics = React.useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -119,21 +146,34 @@ export function StatisticsWorkspace({ onNavigate, organizationId }: StatisticsWo
           <div className="statistics-live-state"><span><i /> Live production</span><small>{lastUpdatedAt ? `Updated ${new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' }).format(new Date(lastUpdatedAt))}` : 'Connecting'}</small></div>
         </section>
 
-        <ProductionMetricCards stats={stats} />
+        <ProductionMetricCards stats={stats} dailyTarget={dailyTarget} />
 
         <section className="statistics-production-panel">
           <div className="statistics-production-heading">
             <div><span className="statistics-heading-icon"><BarChart3 size={22} /></span><span><small>Weekly production trend</small><h3>{weekLabel}</h3></span></div>
-            <div className="statistics-chart-key"><span className="actual"><i /> Production</span><span className="target"><i /> Daily target · 30</span><span className="trend"><i /> Production trend</span></div>
+            <div className="statistics-chart-key"><span className="actual"><i /> Production</span><span className="target"><i /> Daily target · {dailyTarget}</span><span className="trend"><i /> Production trend</span></div>
           </div>
           {error ? <div className="statistics-message error" role="alert">{error}</div> : null}
-          {loading && !events.length ? <div className="statistics-chart-loading">Loading weekly production...</div> : <WeeklyProductionChart stats={stats} selectedDate={selectedDate} onSelectDate={setSelectedDate} />}
+          {loading && !events.length ? <div className="statistics-chart-loading">Loading weekly production...</div> : <WeeklyProductionChart stats={stats} selectedDate={selectedDate} dailyTarget={dailyTarget} onSelectDate={setSelectedDate} onEditTarget={openTargetDialog} />}
           <footer className="statistics-chart-footer">
-            <span>Daily target is temporarily configured at 30 pieces (210 per week).</span>
+            <span>Daily target is configured at {dailyTarget} pieces ({dailyTarget * 7} per week).</span>
             <em>Live updates every 30 seconds and when shop-floor events arrive.</em>
           </footer>
         </section>
       </div>
+      {targetDialogOpen ? (
+        <div className="statistics-target-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setTargetDialogOpen(false); }}>
+          <form className="statistics-target-modal" onSubmit={saveTarget}>
+            <button className="statistics-target-modal-close" type="button" aria-label="Close" onClick={() => setTargetDialogOpen(false)}><X size={20} /></button>
+            <span className="statistics-target-modal-icon"><Target size={24} /></span>
+            <p className="eyebrow">Production target</p>
+            <h3>Change daily target</h3>
+            <p>Set the number of good pieces expected per production day.</p>
+            <label><span>Pieces per day</span><input type="number" min="1" step="1" autoFocus value={targetDraft} onChange={(event) => setTargetDraft(event.target.value)} /></label>
+            <div><button type="button" onClick={() => setTargetDialogOpen(false)}>Cancel</button><button type="submit">Save target</button></div>
+          </form>
+        </div>
+      ) : null}
     </section>
   );
 }

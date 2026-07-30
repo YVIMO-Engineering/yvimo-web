@@ -1,5 +1,5 @@
 import React from 'react';
-import { type DailyProductionStat, getDailyProductionStatus, getProductionCompliance, TEMPORARY_DAILY_TARGET } from './productionStatistics';
+import { type DailyProductionStat, getProductionCompliance } from './productionStatistics';
 
 const buildSmoothPath = (points: Array<{ x: number; y: number }>) => {
   if (!points.length) return '';
@@ -11,20 +11,22 @@ const buildSmoothPath = (points: Array<{ x: number; y: number }>) => {
   }, `M ${points[0].x} ${points[0].y}`);
 };
 
-export function WeeklyProductionChart({ stats, selectedDate, onSelectDate }: {
+export function WeeklyProductionChart({ stats, selectedDate, dailyTarget, onSelectDate, onEditTarget }: {
   stats: DailyProductionStat[];
   selectedDate: string;
+  dailyTarget: number;
   onSelectDate: (date: string) => void;
+  onEditTarget: () => void;
 }) {
   const chart = { width: 1200, height: 620, left: 72, right: 28, top: 38, bottom: 112 };
   const plotWidth = chart.width - chart.left - chart.right;
   const plotHeight = chart.height - chart.top - chart.bottom;
   const slotWidth = plotWidth / 7;
-  const maxValue = Math.max(5, TEMPORARY_DAILY_TARGET * 1.25, ...stats.map((stat) => stat.actualProduction));
+  const maxValue = Math.max(5, dailyTarget * 1.25, ...stats.map((stat) => stat.actualProduction));
   const valueY = (value: number) => chart.top + plotHeight - (value / maxValue * plotHeight);
   const points = stats.map((stat, index) => ({ x: chart.left + slotWidth * index + slotWidth / 2, y: valueY(stat.actualProduction) }));
   const selected = stats.find((stat) => stat.date === selectedDate) ?? stats.find((stat) => stat.isToday) ?? stats[0];
-  const selectedTarget = TEMPORARY_DAILY_TARGET;
+  const selectedTarget = dailyTarget;
   const selectedCompliance = getProductionCompliance(selected.actualProduction, selectedTarget);
   const difference = selectedTarget === null ? null : selected.actualProduction - selectedTarget;
 
@@ -41,16 +43,16 @@ export function WeeklyProductionChart({ stats, selectedDate, onSelectDate }: {
             return <g key={ratio}><line x1={chart.left} x2={chart.width - chart.right} y1={y} y2={y} className="statistics-grid-line" /><text x={chart.left - 13} y={y + 4} textAnchor="end" className="statistics-axis-value">{Math.round(maxValue * ratio)}</text></g>;
           })}
           <g className="statistics-weekly-target">
-            <line x1={chart.left} x2={chart.width - chart.right} y1={valueY(TEMPORARY_DAILY_TARGET)} y2={valueY(TEMPORARY_DAILY_TARGET)} />
-            <rect x={chart.left + 12} y={valueY(TEMPORARY_DAILY_TARGET) - 29} width="120" height="22" rx="7" />
-            <text x={chart.left + 72} y={valueY(TEMPORARY_DAILY_TARGET) - 14} textAnchor="middle">DAILY TARGET · {TEMPORARY_DAILY_TARGET}</text>
+            <line x1={chart.left} x2={chart.width - chart.right} y1={valueY(dailyTarget)} y2={valueY(dailyTarget)} />
+            <rect x={chart.left + 12} y={valueY(dailyTarget) - 29} width="120" height="22" rx="7" />
+            <text x={chart.left + 72} y={valueY(dailyTarget) - 14} textAnchor="middle">DAILY TARGET · {dailyTarget}</text>
           </g>
           {stats.map((stat, index) => {
             const x = chart.left + slotWidth * index + slotWidth / 2;
             const barWidth = Math.min(64, slotWidth * .42);
             const barY = valueY(stat.actualProduction);
             const barHeight = Math.max(stat.actualProduction ? 3 : 0, chart.top + plotHeight - barY);
-            const status = getDailyProductionStatus(stat);
+            const status = stat.isFuture ? 'future' : stat.actualProduction >= dailyTarget ? 'achieved' : stat.isToday ? 'live' : 'below';
             return (
               <g className={`statistics-day-column ${status}${selectedDate === stat.date ? ' selected' : ''}`} key={stat.date} role="button" tabIndex={0}
                 onClick={() => onSelectDate(stat.date)}
@@ -71,11 +73,13 @@ export function WeeklyProductionChart({ stats, selectedDate, onSelectDate }: {
           <line x1={chart.left} x2={chart.width - chart.right} y1={chart.top + plotHeight} y2={chart.top + plotHeight} className="statistics-axis-line" />
         </svg>
       </div>
-      <aside className={`statistics-day-tooltip ${getDailyProductionStatus(selected)}`}>
+      <aside className={`statistics-day-tooltip ${selected.actualProduction >= dailyTarget ? 'achieved' : selected.isToday ? 'live' : 'below'}`}>
         <small>Selected day</small><h4>{selected.dayLabel}, {selected.dateLabel}</h4>
         <dl className="statistics-day-information">
           <div className="production"><dt>Production</dt><dd>{selected.actualProduction}</dd><span>good pieces</span></div>
-          <div className="target"><dt>Daily target</dt><dd>{TEMPORARY_DAILY_TARGET}</dd><span>temporary daily goal</span></div>
+          <button className="target statistics-edit-target-card" type="button" onClick={onEditTarget}>
+            <dt>Daily target</dt><dd>{dailyTarget}</dd><span>Click to change target</span>
+          </button>
           <div className={difference !== null && difference >= 0 ? 'positive' : 'negative'}><dt>Difference</dt><dd>{difference === null ? '—' : `${difference > 0 ? '+' : ''}${difference}`}</dd><span>against target</span></div>
           <div><dt>Compliance</dt><dd>{selectedCompliance === null ? '—' : `${Math.round(selectedCompliance)}%`}</dd><span>weekly progress</span></div>
           <div><dt>Scrap</dt><dd>{selected.scrap}</dd><span>reported pieces</span></div>
