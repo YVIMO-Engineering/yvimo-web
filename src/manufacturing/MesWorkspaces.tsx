@@ -438,6 +438,8 @@ export type ProductionOrderDetailPiece = {
   status: 'not-started' | 'setup' | 'running' | 'paused' | 'machine-paused' | 'down' | 'maintenance' | 'offline' | 'good' | 'scrap';
   reportedAt: string;
   timeSpentMs: number;
+  runningTimeMs: number;
+  setupTimeMs: number;
   traceability: ProductionOrderDetailTraceabilityRow | null;
   qualityInspection: ProductionOrderDetailQualityInspectionRow | null;
   qualityMeasurements: ProductionOrderDetailQualityMeasurementRow[];
@@ -1685,7 +1687,7 @@ export function ProductionOrderDetailsModal({
           piece.serialNumber || '-',
           piece.toolId || '-',
           getProductionOrderDetailMeasurements(piece.traceability).map((measurement) => `${measurement.label}: ${measurement.value}`).join('; ') || 'Not captured',
-          formatCycleDuration(piece.timeSpentMs),
+          `Running ${formatCycleDuration(piece.runningTimeMs)} · Setup ${formatCycleDuration(piece.setupTimeMs)}`,
           piece.reportedAt ? formatTimestamp(piece.reportedAt) : '-',
         ]),
       );
@@ -1819,7 +1821,12 @@ export function ProductionOrderDetailsModal({
                           <span className="production-order-details-no-measurement">Not captured</span>
                         )}
                       </td>
-                      <td><strong className="production-order-details-piece-time">{formatCycleDuration(piece.timeSpentMs)}</strong></td>
+                      <td>
+                        <div className="production-order-details-piece-times">
+                          <span className="running"><small className="production-order-details-time-pill running">Running</small><strong>{formatCycleDuration(piece.runningTimeMs)}</strong></span>
+                          <span className="setup"><small className="production-order-details-time-pill setup">Setup</small><strong>{formatCycleDuration(piece.setupTimeMs)}</strong></span>
+                        </div>
+                      </td>
                       <td>{piece.reportedAt ? formatDate(toLocalIsoDate(piece.reportedAt)) : '-'}</td>
                     </tr>
                   );
@@ -3127,6 +3134,32 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
     pieces: [],
     timeSpentMs: 0,
   });
+  React.useEffect(() => {
+    if (!orderDetailsOpen || orderDetails.loading || orderDetails.error) return undefined;
+    const hasActiveProduction = orderDetails.pieces.some(
+      (piece) => piece.status === 'running' || piece.status === 'setup',
+    );
+    if (!hasActiveProduction) return undefined;
+
+    const intervalId = window.setInterval(() => {
+      setOrderDetails((current) => ({
+        ...current,
+        timeSpentMs: current.timeSpentMs + 1000,
+        pieces: current.pieces.map((piece) => (
+          piece.status === 'running' || piece.status === 'setup'
+            ? {
+                ...piece,
+                timeSpentMs: piece.timeSpentMs + 1000,
+                runningTimeMs: piece.runningTimeMs + (piece.status === 'running' ? 1000 : 0),
+                setupTimeMs: piece.setupTimeMs + (piece.status === 'setup' ? 1000 : 0),
+              }
+            : piece
+        )),
+      }));
+    }, 1000);
+
+    return () => window.clearInterval(intervalId);
+  }, [orderDetailsOpen, orderDetails.loading, orderDetails.error, orderDetails.pieces]);
   const orderRowRefs = React.useRef<Record<string, HTMLTableRowElement | null>>({});
   const pendingScrollOrderNumberRef = React.useRef('');
   const skipNextPageResetRef = React.useRef(restoredViewState.page > 1);
@@ -4007,14 +4040,14 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
           .order('uploaded_at', { ascending: false }),
         supabase
           .from('mes_station_status_cycles')
-          .select('serial_number, status, started_at, ended_at')
+          .select('production_order_id, order_number, station_code, serial_number, status, started_at, ended_at')
           .eq('organization_id', organizationId)
-          .eq('production_order_id', selectedOrder.id),
+          .or(`production_order_id.eq.${selectedOrder.id},order_number.eq.${selectedOrder.orderNumber},ended_at.is.null`),
         supabase
           .from('mes_work_center_stations')
-          .select('current_job')
+          .select('code, current_job')
           .eq('organization_id', organizationId)
-          .eq('code', selectedOrder.assignedStation || '')
+          .eq('current_job', selectedOrder.orderNumber)
           .maybeSingle(),
       ]);
 
@@ -4039,19 +4072,46 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
       const qualityMeasurementsBySerial = new Map<string, ProductionOrderDetailQualityMeasurementRow[]>();
       const qualityDocumentsBySerial = new Map<string, ProductionOrderDetailQualityDocumentRow[]>();
       const timeSpentBySerial = new Map<string, number>();
+      const runningTimeBySerial = new Map<string, number>();
+      const setupTimeBySerial = new Map<string, number>();
       const activeStatusBySerial = new Map<string, string>();
       const serialsWithCycles = new Set<string>();
       const isActiveStationOrder = stationAssignmentData?.current_job === selectedOrder.orderNumber;
+      const relevantStatusCycles = (statusCycleData ?? []).filter((cycle) => (
+        cycle.production_order_id === selectedOrder.id
+        || cycle.order_number === selectedOrder.orderNumber
+        || (!cycle.ended_at && isActiveStationOrder && cycle.station_code === stationAssignmentData?.code)
+      ));
+      const activeFallbackSerial = serialRows.find((serial) => !serial.result)?.serial_number ?? '';
+      const activeFallbackSequence = serialRows.find((serial) => !serial.result)?.piece_sequence ?? 1;
+      let unassignedCycleTimeMs = 0;
+      let unassignedRunningTimeMs = 0;
+      let unassignedSetupTimeMs = 0;
+      let activeUnassignedStatus = '';
 
-      (statusCycleData ?? []).forEach((cycle) => {
-        const serialNumber = normalizeProductionOrderDetailSerial(cycle.serial_number ?? '');
-        if (!serialNumber) return;
+      relevantStatusCycles.forEach((cycle) => {
+        const serialNumber = normalizeProductionOrderDetailSerial(cycle.serial_number || (!cycle.ended_at ? activeFallbackSerial : ''));
+        if (!serialNumber) {
+          if (!cycle.ended_at) activeUnassignedStatus = cycle.status;
+          if (isProductionWorkCycle(cycle.status) && (cycle.ended_at || isActiveStationOrder)) {
+            const startedAt = new Date(cycle.started_at).getTime();
+            const endedAt = cycle.ended_at ? new Date(cycle.ended_at).getTime() : Date.now();
+            const elapsedMs = Math.max(0, endedAt - startedAt);
+            unassignedCycleTimeMs += elapsedMs;
+            if (cycle.status === 'running') unassignedRunningTimeMs += elapsedMs;
+            if (cycle.status === 'setup') unassignedSetupTimeMs += elapsedMs;
+          }
+          return;
+        }
         serialsWithCycles.add(serialNumber);
         if (!cycle.ended_at) activeStatusBySerial.set(serialNumber, cycle.status);
         if (!isProductionWorkCycle(cycle.status) || (!cycle.ended_at && !isActiveStationOrder)) return;
         const startedAt = new Date(cycle.started_at).getTime();
         const endedAt = cycle.ended_at ? new Date(cycle.ended_at).getTime() : Date.now();
-        timeSpentBySerial.set(serialNumber, (timeSpentBySerial.get(serialNumber) ?? 0) + Math.max(0, endedAt - startedAt));
+        const elapsedMs = Math.max(0, endedAt - startedAt);
+        timeSpentBySerial.set(serialNumber, (timeSpentBySerial.get(serialNumber) ?? 0) + elapsedMs);
+        if (cycle.status === 'running') runningTimeBySerial.set(serialNumber, (runningTimeBySerial.get(serialNumber) ?? 0) + elapsedMs);
+        if (cycle.status === 'setup') setupTimeBySerial.set(serialNumber, (setupTimeBySerial.get(serialNumber) ?? 0) + elapsedMs);
       });
 
       traceabilityRows.forEach((traceability) => {
@@ -4089,7 +4149,8 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
           ?? traceabilityBySequence.get(pieceSequence)
           ?? null;
         const resolvedSerialKey = normalizeProductionOrderDetailSerial(serial?.serial_number || traceability?.serial_number || '');
-        const activeCycleStatus = activeStatusBySerial.get(resolvedSerialKey);
+        const activeCycleStatus = activeStatusBySerial.get(resolvedSerialKey)
+          ?? (pieceSequence === activeFallbackSequence ? activeUnassignedStatus : '');
         const intermediateStatus: ProductionOrderDetailPiece['status'] = !isActiveStationOrder
           && selectedOrder.status === 'paused'
           && serialsWithCycles.has(resolvedSerialKey)
@@ -4115,7 +4176,15 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
           serialNumber: serial?.serial_number || traceability?.serial_number || '',
           status: serial?.result ?? (traceability ? 'good' : intermediateStatus),
           reportedAt: serial?.reported_at ?? traceability?.created_at ?? '',
-          timeSpentMs: resolvedSerialKey ? timeSpentBySerial.get(resolvedSerialKey) ?? 0 : 0,
+          timeSpentMs: resolvedSerialKey
+            ? timeSpentBySerial.get(resolvedSerialKey) ?? 0
+            : pieceSequence === activeFallbackSequence ? unassignedCycleTimeMs : 0,
+          runningTimeMs: resolvedSerialKey
+            ? runningTimeBySerial.get(resolvedSerialKey) ?? 0
+            : pieceSequence === activeFallbackSequence ? unassignedRunningTimeMs : 0,
+          setupTimeMs: resolvedSerialKey
+            ? setupTimeBySerial.get(resolvedSerialKey) ?? 0
+            : pieceSequence === activeFallbackSequence ? unassignedSetupTimeMs : 0,
           traceability,
           qualityInspection: resolvedSerialKey ? qualityInspectionBySerial.get(resolvedSerialKey) ?? null : null,
           qualityMeasurements: resolvedSerialKey ? qualityMeasurementsBySerial.get(resolvedSerialKey) ?? [] : [],
@@ -4123,7 +4192,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
         };
       });
 
-      const timeSpentMs = (statusCycleData ?? []).reduce((total, cycle) => {
+      const timeSpentMs = relevantStatusCycles.reduce((total, cycle) => {
         if (!isProductionWorkCycle(cycle.status) || (!cycle.ended_at && !isActiveStationOrder)) return total;
         const startedAt = new Date(cycle.started_at).getTime();
         const endedAt = cycle.ended_at ? new Date(cycle.ended_at).getTime() : Date.now();

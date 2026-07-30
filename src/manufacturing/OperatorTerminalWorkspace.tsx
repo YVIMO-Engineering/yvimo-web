@@ -899,6 +899,32 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
     pieces: [],
     timeSpentMs: 0,
   });
+  React.useEffect(() => {
+    if (!orderDetailsOpen || orderDetails.loading || orderDetails.error) return undefined;
+    const hasActiveProduction = orderDetails.pieces.some(
+      (piece) => piece.status === 'running' || piece.status === 'setup',
+    );
+    if (!hasActiveProduction) return undefined;
+
+    const intervalId = window.setInterval(() => {
+      setOrderDetails((current) => ({
+        ...current,
+        timeSpentMs: current.timeSpentMs + 1000,
+        pieces: current.pieces.map((piece) => (
+          piece.status === 'running' || piece.status === 'setup'
+            ? {
+                ...piece,
+                timeSpentMs: piece.timeSpentMs + 1000,
+                runningTimeMs: piece.runningTimeMs + (piece.status === 'running' ? 1000 : 0),
+                setupTimeMs: piece.setupTimeMs + (piece.status === 'setup' ? 1000 : 0),
+              }
+            : piece
+        )),
+      }));
+    }, 1000);
+
+    return () => window.clearInterval(intervalId);
+  }, [orderDetailsOpen, orderDetails.loading, orderDetails.error, orderDetails.pieces]);
   const [snapshot, setSnapshot] = React.useState<OperatorTerminalSnapshot | null>(null);
   const [terminalMessage, setTerminalMessage] = React.useState('');
   const [syncPending, setSyncPending] = React.useState(false);
@@ -1247,9 +1273,9 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
           .order('uploaded_at', { ascending: false }),
         supabase
           .from('mes_station_status_cycles')
-          .select('serial_number, status, started_at, ended_at')
+          .select('production_order_id, order_number, station_code, serial_number, status, started_at, ended_at')
           .eq('organization_id', organizationId)
-          .eq('production_order_id', currentOrder.id),
+          .or(`production_order_id.eq.${currentOrder.id},order_number.eq.${currentOrder.orderNumber},and(station_code.eq.${stationCode},ended_at.is.null)`),
       ]);
 
       if (serialError) throw serialError;
@@ -1272,18 +1298,45 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
       const qualityMeasurementsBySerial = new Map<string, ProductionOrderDetailQualityMeasurementRow[]>();
       const qualityDocumentsBySerial = new Map<string, ProductionOrderDetailQualityDocumentRow[]>();
       const timeSpentBySerial = new Map<string, number>();
+      const runningTimeBySerial = new Map<string, number>();
+      const setupTimeBySerial = new Map<string, number>();
       const activeStatusBySerial = new Map<string, string>();
       const serialsWithCycles = new Set<string>();
+      const activeFallbackSerial = serialRows.find((serial) => !serial.result)?.serial_number ?? '';
+      const activeFallbackSequence = serialRows.find((serial) => !serial.result)?.piece_sequence ?? 1;
+      let unassignedCycleTimeMs = 0;
+      let unassignedRunningTimeMs = 0;
+      let unassignedSetupTimeMs = 0;
+      let activeUnassignedStatus = '';
+      const relevantStatusCycles = (statusCycleData ?? []).filter((cycle) => (
+        cycle.production_order_id === currentOrder.id
+        || cycle.order_number === currentOrder.orderNumber
+        || (!cycle.ended_at && cycle.station_code === stationCode)
+      ));
 
-      (statusCycleData ?? []).forEach((cycle) => {
-        const serialNumber = cycle.serial_number?.trim().toLowerCase() ?? '';
-        if (!serialNumber) return;
+      relevantStatusCycles.forEach((cycle) => {
+        const serialNumber = (cycle.serial_number || (!cycle.ended_at ? activeFallbackSerial : '')).trim().toLowerCase();
+        if (!serialNumber) {
+          if (!cycle.ended_at) activeUnassignedStatus = cycle.status;
+          if (cycle.status === 'running' || cycle.status === 'setup') {
+            const startedAt = new Date(cycle.started_at).getTime();
+            const endedAt = cycle.ended_at ? new Date(cycle.ended_at).getTime() : Date.now();
+            const elapsedMs = Math.max(0, endedAt - startedAt);
+            unassignedCycleTimeMs += elapsedMs;
+            if (cycle.status === 'running') unassignedRunningTimeMs += elapsedMs;
+            if (cycle.status === 'setup') unassignedSetupTimeMs += elapsedMs;
+          }
+          return;
+        }
         serialsWithCycles.add(serialNumber);
         if (!cycle.ended_at) activeStatusBySerial.set(serialNumber, cycle.status);
         if (cycle.status !== 'running' && cycle.status !== 'setup') return;
         const startedAt = new Date(cycle.started_at).getTime();
         const endedAt = cycle.ended_at ? new Date(cycle.ended_at).getTime() : Date.now();
-        timeSpentBySerial.set(serialNumber, (timeSpentBySerial.get(serialNumber) ?? 0) + Math.max(0, endedAt - startedAt));
+        const elapsedMs = Math.max(0, endedAt - startedAt);
+        timeSpentBySerial.set(serialNumber, (timeSpentBySerial.get(serialNumber) ?? 0) + elapsedMs);
+        if (cycle.status === 'running') runningTimeBySerial.set(serialNumber, (runningTimeBySerial.get(serialNumber) ?? 0) + elapsedMs);
+        if (cycle.status === 'setup') setupTimeBySerial.set(serialNumber, (setupTimeBySerial.get(serialNumber) ?? 0) + elapsedMs);
       });
 
       traceabilityRows.forEach((traceability) => {
@@ -1321,7 +1374,8 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
           ?? traceabilityBySequence.get(pieceSequence)
           ?? null;
         const resolvedSerialKey = (serial?.serial_number || traceability?.serial_number || '').trim().toLowerCase();
-        const activeCycleStatus = activeStatusBySerial.get(resolvedSerialKey);
+        const activeCycleStatus = activeStatusBySerial.get(resolvedSerialKey)
+          ?? (pieceSequence === activeFallbackSequence ? activeUnassignedStatus : '');
         const intermediateStatus: ProductionOrderDetailPiece['status'] = activeCycleStatus === 'running'
           ? 'running'
           : activeCycleStatus === 'setup'
@@ -1343,7 +1397,15 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
           serialNumber: serial?.serial_number || traceability?.serial_number || '',
           status: serial?.result ?? (traceability ? 'good' : intermediateStatus),
           reportedAt: serial?.reported_at ?? traceability?.created_at ?? '',
-          timeSpentMs: resolvedSerialKey ? timeSpentBySerial.get(resolvedSerialKey) ?? 0 : 0,
+          timeSpentMs: resolvedSerialKey
+            ? timeSpentBySerial.get(resolvedSerialKey) ?? 0
+            : pieceSequence === activeFallbackSequence ? unassignedCycleTimeMs : 0,
+          runningTimeMs: resolvedSerialKey
+            ? runningTimeBySerial.get(resolvedSerialKey) ?? 0
+            : pieceSequence === activeFallbackSequence ? unassignedRunningTimeMs : 0,
+          setupTimeMs: resolvedSerialKey
+            ? setupTimeBySerial.get(resolvedSerialKey) ?? 0
+            : pieceSequence === activeFallbackSequence ? unassignedSetupTimeMs : 0,
           traceability,
           qualityInspection: resolvedSerialKey ? qualityInspectionBySerial.get(resolvedSerialKey) ?? null : null,
           qualityMeasurements: resolvedSerialKey ? qualityMeasurementsBySerial.get(resolvedSerialKey) ?? [] : [],
@@ -1351,7 +1413,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
         };
       });
 
-      const timeSpentMs = (statusCycleData ?? []).reduce((total, cycle) => {
+      const timeSpentMs = relevantStatusCycles.reduce((total, cycle) => {
         if (cycle.status !== 'running' && cycle.status !== 'setup') return total;
         const startedAt = new Date(cycle.started_at).getTime();
         const endedAt = cycle.ended_at ? new Date(cycle.ended_at).getTime() : Date.now();
