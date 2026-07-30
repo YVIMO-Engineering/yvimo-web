@@ -151,6 +151,45 @@
   .statistics-chart-key { flex-wrap: wrap; }
   .statistics-chart-footer em { text-align: left; }
 }
+@media (max-height: 900px) and (min-width: 821px) {
+  .statistics-workspace { min-height: 0; }
+  .statistics-content { gap: 7px; padding: 6px 10px 8px; }
+  .statistics-filter-bar { padding: 5px 8px; }
+  .statistics-back,
+  .statistics-week-picker input,
+  .statistics-week-navigation button,
+  .statistics-this-week,
+  .statistics-refresh { min-height: 34px; }
+  .statistics-compact-heading h2 { font-size: 1rem; }
+  .statistics-compact-heading > span { display: none; }
+  .statistics-metric-cards { gap: 8px; }
+  .statistics-metric-cards article { min-height: 62px; padding: 6px 9px; }
+  .statistics-metric-cards small { font-size: .6rem; }
+  .statistics-metric-cards strong { font-size: 1.3rem; }
+  .statistics-metric-cards em { margin-top: 2px; font-size: .59rem; }
+  .statistics-production-heading { padding: 6px 11px; }
+  .statistics-heading-icon { width: 32px; height: 32px; }
+  .statistics-production-chart { min-height: 270px; }
+  .statistics-day-tooltip { margin: 6px 7px 6px 0; padding: 10px; }
+  .statistics-day-tooltip h4 { margin-bottom: 8px; font-size: 1.08rem; }
+  .statistics-day-information { gap: 6px; }
+  .statistics-day-information > div,
+  .statistics-day-information > button { min-height: 62px; padding: 7px 10px; }
+  .statistics-day-information dt { font-size: .62rem; }
+  .statistics-day-information dd { font-size: 1.15rem; }
+  .statistics-day-information span { margin-top: 3px; font-size: .58rem; }
+  .statistics-day-tooltip p { display: none; }
+  .statistics-chart-footer { padding: 4px 11px 5px; }
+}
+@media (max-height: 720px) and (min-width: 821px) {
+  .statistics-filter-bar .statistics-live-state small,
+  .statistics-metric-cards em,
+  .statistics-chart-footer { display: none; }
+  .statistics-metric-cards article { min-height: 52px; }
+  .statistics-production-chart { min-height: 225px; }
+  .statistics-day-information > div,
+  .statistics-day-information > button { min-height: 54px; }
+}
 @media (prefers-color-scheme: dark) {
   .statistics-workspace { background: #101721; color: #e5edf6; }
   .statistics-screen-header, .statistics-filter-bar, .statistics-production-panel, .statistics-metric-cards article { border-color: #314052; background: #17212d; }
