@@ -4,6 +4,8 @@ import { supabase } from '../lib/supabaseClient';
 import { useSupabaseRealtimeRefresh } from '../lib/useSupabaseRealtimeRefresh';
 import { ProductionMetricCards } from './statistics/ProductionMetricCards';
 import { WeeklyProductionChart } from './statistics/WeeklyProductionChart';
+import { ManualAlertDialog, StatisticsAlertHistory, StatisticsAlertSlider } from './statistics/StatisticsAlerts';
+import { buildAutomaticStatisticsAlerts, type StatisticsAlert, type StatisticsAlertType } from './statistics/statisticsAlerts';
 import {
   addDays,
   buildWeeklyProductionStats,
@@ -19,8 +21,17 @@ type StatisticsWorkspaceProps = {
   organizationId: string;
 };
 
+const getAlertAcknowledgementKey = (alert: StatisticsAlert) => {
+  if (['inventory', 'overdue', 'overtime'].includes(alert.type)) {
+    return `incident:${alert.type}:${alert.title.trim().toLowerCase()}`;
+  }
+  return alert.id;
+};
+
 export function StatisticsWorkspace({ onNavigate, organizationId }: StatisticsWorkspaceProps) {
   const targetStorageKey = `yvimo:mes-statistics:daily-target:${organizationId}`;
+  const manualAlertsStorageKey = `yvimo:mes-statistics:manual-alerts:${organizationId}`;
+  const acknowledgedAlertsStorageKey = `yvimo:mes-statistics:acknowledged-alerts:${organizationId}`;
   const today = React.useMemo(() => toLocalDateInput(new Date()), []);
   const [weekAnchor, setWeekAnchor] = React.useState(today);
   const [events, setEvents] = React.useState<ProductionStatisticsEvent[]>([]);
@@ -35,6 +46,14 @@ export function StatisticsWorkspace({ onNavigate, organizationId }: StatisticsWo
   });
   const [targetDialogOpen, setTargetDialogOpen] = React.useState(false);
   const [targetDraft, setTargetDraft] = React.useState('30');
+  const [automaticAlerts, setAutomaticAlerts] = React.useState<StatisticsAlert[]>([]);
+  const [manualAlerts, setManualAlerts] = React.useState<StatisticsAlert[]>(() => {
+    try { return JSON.parse(window.localStorage.getItem(manualAlertsStorageKey) || '[]') as StatisticsAlert[]; } catch { return []; }
+  });
+  const [manualAlertDialogOpen, setManualAlertDialogOpen] = React.useState(false);
+  const [acknowledgedAlertIds, setAcknowledgedAlertIds] = React.useState<string[]>(() => {
+    try { return JSON.parse(window.localStorage.getItem(acknowledgedAlertsStorageKey) || '[]') as string[]; } catch { return []; }
+  });
   const weekRange = React.useMemo(() => getWeekRange(weekAnchor), [weekAnchor]);
 
   React.useEffect(() => {
@@ -43,6 +62,12 @@ export function StatisticsWorkspace({ onNavigate, organizationId }: StatisticsWo
     setDailyTarget(nextTarget);
     setTargetDraft(String(nextTarget));
   }, [targetStorageKey]);
+  React.useEffect(() => {
+    try { setManualAlerts(JSON.parse(window.localStorage.getItem(manualAlertsStorageKey) || '[]') as StatisticsAlert[]); } catch { setManualAlerts([]); }
+  }, [manualAlertsStorageKey]);
+  React.useEffect(() => {
+    try { setAcknowledgedAlertIds(JSON.parse(window.localStorage.getItem(acknowledgedAlertsStorageKey) || '[]') as string[]); } catch { setAcknowledgedAlertIds([]); }
+  }, [acknowledgedAlertsStorageKey]);
 
   const openTargetDialog = () => {
     setTargetDraft(String(dailyTarget));
@@ -95,19 +120,55 @@ export function StatisticsWorkspace({ onNavigate, organizationId }: StatisticsWo
     setLoading(false);
   }, [organizationId, weekRange.from, weekRange.to]);
 
-  React.useEffect(() => { void loadStatistics(); }, [loadStatistics]);
+  const loadAlerts = React.useCallback(async () => {
+    const since = new Date();
+    since.setDate(since.getDate() - 30);
+    const [eventResponse, orderResponse, cycleResponse, inventoryResponse] = await Promise.all([
+      supabase.from('mes_operator_terminal_events')
+        .select('id, event_type, quantity, station_code, reason, comment, payload, created_at')
+        .eq('organization_id', organizationId)
+        .in('event_type', ['downtime-started', 'production-scrap', 'inventory-received', 'inventory-consumed'])
+        .gte('created_at', since.toISOString())
+        .order('created_at', { ascending: false }),
+      supabase.from('mes_production_orders')
+        .select('id, order_number, client_name, status, due_date, planned_quantity')
+        .eq('organization_id', organizationId)
+        .eq('due_date', today)
+        .not('status', 'in', '("completed","cancelled")'),
+      supabase.from('mes_station_status_cycles')
+        .select('id, station_code, order_number, serial_number, started_at')
+        .eq('organization_id', organizationId)
+        .eq('status', 'running')
+        .is('ended_at', null),
+      supabase.from('mes_inventory_items')
+        .select('id, title, quantity, minimum_quantity, updated_at')
+        .eq('organization_id', organizationId),
+    ]);
+    if (eventResponse.error || orderResponse.error || cycleResponse.error || inventoryResponse.error) return;
+    setAutomaticAlerts(buildAutomaticStatisticsAlerts(
+      (eventResponse.data ?? []) as Parameters<typeof buildAutomaticStatisticsAlerts>[0],
+      (orderResponse.data ?? []) as Parameters<typeof buildAutomaticStatisticsAlerts>[1],
+      (cycleResponse.data ?? []) as Parameters<typeof buildAutomaticStatisticsAlerts>[2],
+      (inventoryResponse.data ?? []) as Parameters<typeof buildAutomaticStatisticsAlerts>[3],
+      today,
+    ));
+  }, [organizationId, today]);
+
+  React.useEffect(() => { void loadStatistics(); void loadAlerts(); }, [loadAlerts, loadStatistics]);
   React.useEffect(() => {
-    const intervalId = window.setInterval(() => void loadStatistics(true), 30_000);
+    const intervalId = window.setInterval(() => { void loadStatistics(true); void loadAlerts(); }, 30_000);
     return () => window.clearInterval(intervalId);
-  }, [loadStatistics]);
+  }, [loadAlerts, loadStatistics]);
 
   useSupabaseRealtimeRefresh({
     channelName: `mes-statistics-live:${organizationId}`,
     tables: [
       { table: 'mes_operator_terminal_events', filter: `organization_id=eq.${organizationId}` },
       { table: 'mes_production_orders', filter: `organization_id=eq.${organizationId}` },
+      { table: 'mes_inventory_items', filter: `organization_id=eq.${organizationId}` },
+      { table: 'mes_station_status_cycles', filter: `organization_id=eq.${organizationId}` },
     ],
-    onRefresh: () => loadStatistics(true),
+    onRefresh: () => { void loadStatistics(true); void loadAlerts(); },
     enabled: Boolean(organizationId),
   });
 
@@ -115,6 +176,33 @@ export function StatisticsWorkspace({ onNavigate, organizationId }: StatisticsWo
     () => buildWeeklyProductionStats(weekAnchor, events, targetOrders),
     [events, targetOrders, weekAnchor],
   );
+  const alertHistory = React.useMemo(() => {
+    const byId = new Map<string, StatisticsAlert>();
+    [...automaticAlerts, ...manualAlerts].forEach((alert) => byId.set(alert.id, alert));
+    return [...byId.values()].sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
+  }, [automaticAlerts, manualAlerts]);
+  const activeAlerts = React.useMemo(() => {
+    const acknowledged = new Set(acknowledgedAlertIds);
+    return alertHistory.filter((alert) => !acknowledged.has(alert.id) && !acknowledged.has(getAlertAcknowledgementKey(alert)));
+  }, [acknowledgedAlertIds, alertHistory]);
+  const acknowledgeAlert = (id: string) => {
+    const alert = alertHistory.find((candidate) => candidate.id === id);
+    const acknowledgementKey = alert ? getAlertAcknowledgementKey(alert) : id;
+    setAcknowledgedAlertIds((current) => {
+      const next = [...new Set([id, acknowledgementKey, ...current])].slice(0, 500);
+      window.localStorage.setItem(acknowledgedAlertsStorageKey, JSON.stringify(next));
+      return next;
+    });
+  };
+  const createManualAlert = (type: StatisticsAlertType, title: string, message: string) => {
+    const nextAlert: StatisticsAlert = { id: `manual:${crypto.randomUUID()}`, type, severity: 'critical', title, message, source: 'Manual test', createdAt: new Date().toISOString() };
+    setManualAlerts((current) => {
+      const next = [nextAlert, ...current].slice(0, 100);
+      window.localStorage.setItem(manualAlertsStorageKey, JSON.stringify(next));
+      return next;
+    });
+    setManualAlertDialogOpen(false);
+  };
   React.useEffect(() => {
     if (selectedDate >= weekRange.from && selectedDate <= weekRange.to) return;
     setSelectedDate(today >= weekRange.from && today <= weekRange.to ? today : weekRange.from);
@@ -125,6 +213,11 @@ export function StatisticsWorkspace({ onNavigate, organizationId }: StatisticsWo
 
   return (
     <section className="mes-workspace-panel statistics-workspace">
+      {activeAlerts.length ? (
+        <div className="statistics-alert-overlay" key={activeAlerts[0].id}>
+          <StatisticsAlertSlider alerts={activeAlerts} onAcknowledge={acknowledgeAlert} />
+        </div>
+      ) : null}
       <div className="statistics-content">
         <section className="statistics-filter-bar">
           <button className="academy-back-button engineering-back-button mes-workspace-back statistics-back" type="button" onClick={() => onNavigate('/workspace/manufacturing-ops/mes')}>
@@ -142,7 +235,7 @@ export function StatisticsWorkspace({ onNavigate, organizationId }: StatisticsWo
             <button type="button" aria-label="Next week" onClick={() => moveWeek(1)}><ChevronRight size={16} /></button>
           </div>
           <button type="button" className="statistics-this-week" onClick={() => setWeekAnchor(today)}>This Week</button>
-          <button className="statistics-refresh" type="button" disabled={loading} onClick={() => void loadStatistics()}><RefreshCw size={16} className={loading ? 'spinning' : ''} /> Refresh</button>
+          <button className="statistics-refresh" type="button" disabled={loading} onClick={() => { void loadStatistics(); void loadAlerts(); }}><RefreshCw size={16} className={loading ? 'spinning' : ''} /> Refresh</button>
           <div className="statistics-live-state"><span><i /> Live production</span><small>{lastUpdatedAt ? `Updated ${new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' }).format(new Date(lastUpdatedAt))}` : 'Connecting'}</small></div>
         </section>
 
@@ -160,6 +253,7 @@ export function StatisticsWorkspace({ onNavigate, organizationId }: StatisticsWo
             <em>Live updates every 30 seconds and when shop-floor events arrive.</em>
           </footer>
         </section>
+        <StatisticsAlertHistory alerts={alertHistory} onOpenManual={() => setManualAlertDialogOpen(true)} />
       </div>
       {targetDialogOpen ? (
         <div className="statistics-target-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setTargetDialogOpen(false); }}>
@@ -174,6 +268,7 @@ export function StatisticsWorkspace({ onNavigate, organizationId }: StatisticsWo
           </form>
         </div>
       ) : null}
+      {manualAlertDialogOpen ? <ManualAlertDialog onClose={() => setManualAlertDialogOpen(false)} onCreate={createManualAlert} /> : null}
     </section>
   );
 }
