@@ -8,11 +8,11 @@
   --statistics-primary-soft: #fb923c;
   --statistics-achieved-top: #34d399;
   --statistics-achieved-bottom: #059669;
-  height: calc(100vh - 54px);
-  min-height: 620px;
+  height: auto;
+  min-height: calc(100vh - 54px);
   margin-top: 0;
   padding: 0;
-  overflow: hidden;
+  overflow: visible;
   background: #f4f7fa;
   color: #0f172a;
 }
@@ -21,7 +21,7 @@
 .statistics-live-state span { display: inline-flex; align-items: center; gap: 8px; color: #08775c; font-size: .74rem; font-weight: 950; letter-spacing: .04em; text-transform: uppercase; }
 .statistics-live-state i { width: 10px; height: 10px; border-radius: 50%; background: #10b981; animation: statistics-live-pulse 1.8s ease-out infinite; }
 .statistics-live-state small { color: #748397; font-size: .65rem; font-weight: 750; }
-.statistics-content { display: grid; height: 100%; grid-template-rows: auto auto minmax(0, 1fr); gap: 10px; padding: 10px 14px 12px; }
+.statistics-content { display: grid; min-height: calc(100vh - 54px); grid-template-rows: auto auto minmax(0, 1fr); gap: 10px; padding: 10px 14px 12px; }
 .statistics-filter-bar { display: flex; align-items: center; gap: 10px; border: 1px solid #fdcfaa; border-radius: 12px; padding: 8px 10px; background: #fff; box-shadow: 0 8px 24px #0f172a0a; }
 .statistics-back { flex: 0 0 auto; min-height: 40px; margin: 0; }
 .statistics-compact-heading { min-width: 205px; padding-right: 10px; border-right: 1px solid #e2e8f0; }
@@ -153,7 +153,7 @@
 }
 @media (max-height: 900px) and (min-width: 821px) {
   .statistics-workspace { min-height: 0; }
-  .statistics-content { gap: 7px; padding: 6px 10px 8px; }
+  .statistics-content { min-height: calc(100vh - 54px); gap: 7px; padding: 6px 10px 8px; }
   .statistics-filter-bar { padding: 5px 8px; }
   .statistics-back,
   .statistics-week-picker input,
