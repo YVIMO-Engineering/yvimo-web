@@ -1,10 +1,11 @@
 import React from 'react';
-import { CalendarDays, Check, ChevronDown, ClipboardCheck, FileText, PackageCheck, Plus, ShieldAlert, Truck, X } from 'lucide-react';
+import { AlertTriangle, CalendarDays, Check, ChevronDown, ClipboardCheck, FileText, PackageCheck, Pencil, Plus, Search, ShieldAlert, Trash2, Truck, X } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { MesOrderDatePicker } from './MesWorkspaces';
 
 type ReceptionStatus = 'reception' | 'assign-orders' | 'manufacturing' | 'quality-inspection' | 'waiting-delivery' | 'sent' | 'discrepancy';
 type ReceptionRegistryFilter = 'all' | 'in-progress' | 'completed';
+type ReceptionFormItem = { id?: string; customerId: string; quantity: string; productionOrderId?: string };
 
 type ReceptionItem = {
   id: string;
@@ -116,14 +117,17 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState('');
   const [formOpen, setFormOpen] = React.useState(false);
+  const [editingVoucherId, setEditingVoucherId] = React.useState('');
+  const [deleteOpen, setDeleteOpen] = React.useState(false);
   const [customerMenuOpen, setCustomerMenuOpen] = React.useState<number | null>(null);
-  const [formItems, setFormItems] = React.useState<Array<{ customerId: string; quantity: string }>>([]);
+  const [formItems, setFormItems] = React.useState<ReceptionFormItem[]>([]);
   const [generatedVoucherNumber, setGeneratedVoucherNumber] = React.useState('');
   const [overrideOpen, setOverrideOpen] = React.useState(false);
   const [overrideCode, setOverrideCode] = React.useState('');
   const [overrideError, setOverrideError] = React.useState('');
   const [registryFilter, setRegistryFilter] = React.useState<ReceptionRegistryFilter>('all');
   const [registryDateRange, setRegistryDateRange] = React.useState({ from: '', to: '' });
+  const [registryOrderSearch, setRegistryOrderSearch] = React.useState('');
   const [form, setForm] = React.useState(emptyForm);
 
   const loadVouchers = React.useCallback(async () => {
@@ -227,8 +231,14 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
     const arrivalDate = voucher.expectedDate.slice(0, 10);
     const matchesFrom = !registryDateRange.from || arrivalDate >= registryDateRange.from;
     const matchesTo = !registryDateRange.to || arrivalDate <= registryDateRange.to;
-    return matchesStatus && matchesFrom && matchesTo;
-  }), [registryDateRange.from, registryDateRange.to, registryFilter, vouchers]);
+    const orderSearch = registryOrderSearch.trim().toLocaleLowerCase();
+    const productionOrders = [voucher.productionOrderNumber, ...voucher.items.map((item) => item.productionOrderNumber)]
+      .filter(Boolean)
+      .join(' ')
+      .toLocaleLowerCase();
+    const matchesOrder = !orderSearch || productionOrders.includes(orderSearch);
+    return matchesStatus && matchesFrom && matchesTo && matchesOrder;
+  }), [registryDateRange.from, registryDateRange.to, registryFilter, registryOrderSearch, vouchers]);
 
   React.useEffect(() => {
     if (filteredVouchers.some((voucher) => voucher.id === selectedId)) return;
@@ -239,18 +249,100 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
     const firstCustomerId = customers.find((customer) => customer.status === 'active')?.id ?? customers[0]?.id ?? '';
     const dateCode = new Date().toISOString().slice(2, 10).replaceAll('-', '');
     setGeneratedVoucherNumber(`RV-${dateCode}-${String(Date.now()).slice(-4)}`);
+    setEditingVoucherId('');
     setForm({ ...emptyForm, customerId: firstCustomerId });
     setFormItems([{ customerId: firstCustomerId, quantity: '1' }]);
     setError('');
     setFormOpen(true);
   };
 
-  const createVoucher = async (event: React.FormEvent) => {
+  const openEditForm = () => {
+    if (!selected) return;
+    setEditingVoucherId(selected.id);
+    setGeneratedVoucherNumber(selected.voucherNumber);
+    setForm({
+      ...emptyForm,
+      customerId: selected.items[0]?.customerId ?? '',
+      customerReference: selected.customerReference,
+      packingSlip: selected.packingSlip,
+      carrier: selected.carrier,
+      quantityExpected: String(selected.quantityExpected),
+      expectedDate: selected.expectedDate.slice(0, 10),
+      notes: selected.notes,
+    });
+    setFormItems(selected.items.map((item) => ({ id: item.id, customerId: item.customerId, quantity: String(item.quantity), productionOrderId: item.productionOrderId })));
+    setCustomerMenuOpen(null);
+    setError('');
+    setFormOpen(true);
+  };
+
+  const saveVoucher = async (event: React.FormEvent) => {
     event.preventDefault();
     const validItems = formItems.filter((item) => item.customerId && Number(item.quantity) > 0);
     if (!validItems.length) return;
     setSaving(true);
     const totalQuantity = validItems.reduce((total, item) => total + Number(item.quantity), 0);
+    if (editingVoucherId) {
+      const existingVoucher = vouchers.find((voucher) => voucher.id === editingVoucherId);
+      const retainedIds = new Set(validItems.map((item) => item.id).filter(Boolean));
+      const removedAssignedItem = existingVoucher?.items.some((item) => item.productionOrderId && !retainedIds.has(item.id));
+      if (removedAssignedItem) {
+        setError('Sub-receptions with an assigned Production Order cannot be removed.');
+        setSaving(false);
+        return;
+      }
+      const { error: voucherUpdateError } = await supabase.from('mes_customer_reception_vouchers').update({
+        customer_id: validItems[0].customerId,
+        customer_reference: form.customerReference.trim(),
+        packing_slip: form.packingSlip.trim(),
+        carrier: form.carrier.trim(),
+        quantity_expected: totalQuantity,
+        expected_date: form.expectedDate || null,
+        notes: form.notes.trim(),
+        updated_at: new Date().toISOString(),
+      }).eq('id', editingVoucherId).eq('organization_id', organizationId);
+      if (voucherUpdateError) {
+        setError(voucherUpdateError.message);
+        setSaving(false);
+        return;
+      }
+      const removedIds = existingVoucher?.items.filter((item) => !item.productionOrderId && !retainedIds.has(item.id)).map((item) => item.id) ?? [];
+      if (removedIds.length) {
+        const { error: removeItemsError } = await supabase.from('mes_customer_reception_items').delete().in('id', removedIds);
+        if (removeItemsError) {
+          setError(removeItemsError.message);
+          setSaving(false);
+          return;
+        }
+      }
+      for (const item of validItems.filter((entry) => entry.id && !entry.productionOrderId)) {
+        const { error: itemUpdateError } = await supabase.from('mes_customer_reception_items').update({ customer_id: item.customerId, quantity: Number(item.quantity), updated_at: new Date().toISOString() }).eq('id', item.id as string);
+        if (itemUpdateError) {
+          setError(itemUpdateError.message);
+          setSaving(false);
+          return;
+        }
+      }
+      const newItems = validItems.filter((item) => !item.id);
+      if (newItems.length) {
+        const { error: newItemsError } = await supabase.from('mes_customer_reception_items').insert(newItems.map((item) => ({
+          organization_id: organizationId,
+          reception_voucher_id: editingVoucherId,
+          customer_id: item.customerId,
+          quantity: Number(item.quantity),
+        })));
+        if (newItemsError) {
+          setError(newItemsError.message);
+          setSaving(false);
+          return;
+        }
+      }
+      setSaving(false);
+      setFormOpen(false);
+      await loadVouchers();
+      setSelectedId(editingVoucherId);
+      return;
+    }
     const { data: voucherData, error: saveError } = await supabase.from('mes_customer_reception_vouchers').insert({
       organization_id: organizationId,
       customer_id: validItems[0].customerId,
@@ -284,6 +376,21 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
     setFormOpen(false);
     await loadVouchers();
     setSelectedId(voucherData.id);
+  };
+
+  const deleteVoucher = async () => {
+    if (!selected) return;
+    const deletedId = selected.id;
+    setSaving(true);
+    const { error: deleteError } = await supabase.from('mes_customer_reception_vouchers').delete().eq('id', deletedId).eq('organization_id', organizationId);
+    setSaving(false);
+    if (deleteError) {
+      setError(deleteError.message);
+      return;
+    }
+    setDeleteOpen(false);
+    setSelectedId('');
+    await loadVouchers();
   };
 
   const markSent = async () => {
@@ -353,6 +460,10 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
             </button>
           ))}
         </div>
+        <label className="client-reception-order-search">
+          <span>Search Production Orders</span>
+          <span><Search size={17} /><input value={registryOrderSearch} onChange={(event) => setRegistryOrderSearch(event.target.value)} placeholder="Order number" /></span>
+        </label>
         <div className="client-reception-date-filters">
           <label>
             <span>From</span>
@@ -429,7 +540,11 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
               <div className="supplier-transfer-detail-hero">
                 <span className="supplier-transfer-detail-icon"><PackageCheck size={24} /></span>
                 <div><small>Customer reception voucher</small><h3>{selected.voucherNumber}</h3><p>{selected.items.length} client item{selected.items.length === 1 ? '' : 's'} · {selected.quantityExpected.toLocaleString()} pieces</p></div>
-                <span className={`client-reception-status ${selected.status}`}>{labelStatus(selected.status)}</span>
+                <div className="client-reception-hero-controls">
+                  <span className={`client-reception-status ${selected.status}`}>{labelStatus(selected.status)}</span>
+                  <button type="button" className="client-reception-edit-button" onClick={openEditForm}><Pencil size={15} /> Edit</button>
+                  <button type="button" className="client-reception-delete-button" onClick={() => setDeleteOpen(true)}><Trash2 size={15} /> Delete</button>
+                </div>
               </div>
               <ol className={`supplier-transfer-progress client-reception-progress${selected.status === 'sent' ? ' completed' : ''}`}>
                 {steps.map((step, index) => {
@@ -489,8 +604,8 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
         <div className="mes-modal-backdrop production-order-form-backdrop" role="presentation">
           <section className="mes-order-modal client-reception-modal" role="dialog" aria-modal="true">
             <button className="supplier-modal-close" type="button" onClick={() => setFormOpen(false)}><X size={18} /></button>
-            <form className="mes-order-form" onSubmit={createVoucher}>
-              <div className="mes-order-form-wide"><p className="eyebrow">Customer Reception</p><h3>Add Reception Voucher</h3><p>Register parts expected from a client at the receiving area.</p></div>
+            <form className="mes-order-form" onSubmit={saveVoucher}>
+              <div className="mes-order-form-wide"><p className="eyebrow">Customer Reception</p><h3>{editingVoucherId ? 'Edit Reception Voucher' : 'Add Reception Voucher'}</h3><p>{editingVoucherId ? 'Update receiving information and unassigned client items.' : 'Register parts expected from a client at the receiving area.'}</p></div>
               <label>Reception ID<input value={generatedVoucherNumber} readOnly /></label>
               <label>Arrival Date<MesOrderDatePicker id="client-reception-arrival-date" value={form.expectedDate} placeholder="Select arrival date" onChange={(expectedDate) => setForm((current) => ({ ...current, expectedDate }))} /></label>
               <label>Customer Reference <small>Optional</small><input value={form.customerReference} onChange={(event) => setForm((current) => ({ ...current, customerReference: event.target.value }))} /></label>
@@ -500,16 +615,33 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
               <fieldset className="mes-order-form-wide client-reception-form-items">
                 <legend>Sub-receptions by Client</legend>
                 {formItems.map((item, index) => (
-                  <div key={`reception-item-${index}`}>
-                    <label>Client<div className="client-reception-customer-dropdown"><button type="button" onClick={() => setCustomerMenuOpen((current) => current === index ? null : index)}><span>{customers.find((customer) => customer.id === item.customerId)?.customerName || 'Select customer'}</span><ChevronDown size={17} /></button>{customerMenuOpen === index ? <div>{customers.filter((customer) => customer.status === 'active').map((customer) => <button type="button" className={customer.id === item.customerId ? 'selected' : ''} onClick={() => { setFormItems((current) => current.map((entry, itemIndex) => itemIndex === index ? { ...entry, customerId: customer.id } : entry)); setCustomerMenuOpen(null); }} key={customer.id}>{customer.customerName}{customer.id === item.customerId ? <Check size={15} /> : null}</button>)}</div> : null}</div></label>
-                    <label>Quantity<input type="number" min="1" value={item.quantity} onChange={(event) => setFormItems((current) => current.map((entry, itemIndex) => itemIndex === index ? { ...entry, quantity: event.target.value } : entry))} /></label>
-                    <button type="button" onClick={() => setFormItems((current) => current.filter((_, itemIndex) => itemIndex !== index))} disabled={formItems.length === 1}><X size={16} /></button>
+                  <div className={item.productionOrderId ? 'order-assigned' : ''} key={item.id ?? `reception-item-${index}`}>
+                    <label>Client<div className="client-reception-customer-dropdown"><button type="button" disabled={Boolean(item.productionOrderId)} onClick={() => setCustomerMenuOpen((current) => current === index ? null : index)}><span>{customers.find((customer) => customer.id === item.customerId)?.customerName || 'Select customer'}</span><ChevronDown size={17} /></button>{customerMenuOpen === index ? <div>{customers.filter((customer) => customer.status === 'active').map((customer) => <button type="button" className={customer.id === item.customerId ? 'selected' : ''} onClick={() => { setFormItems((current) => current.map((entry, itemIndex) => itemIndex === index ? { ...entry, customerId: customer.id } : entry)); setCustomerMenuOpen(null); }} key={customer.id}>{customer.customerName}{customer.id === item.customerId ? <Check size={15} /> : null}</button>)}</div> : null}</div>{item.productionOrderId ? <small>Locked · Production Order assigned</small> : null}</label>
+                    <label>Quantity<input type="number" min="1" disabled={Boolean(item.productionOrderId)} value={item.quantity} onChange={(event) => setFormItems((current) => current.map((entry, itemIndex) => itemIndex === index ? { ...entry, quantity: event.target.value } : entry))} /></label>
+                    <button type="button" onClick={() => setFormItems((current) => current.filter((_, itemIndex) => itemIndex !== index))} disabled={formItems.length === 1 || Boolean(item.productionOrderId)} aria-label="Remove client item"><X size={16} /></button>
                   </div>
                 ))}
                 <button type="button" onClick={() => setFormItems((current) => [...current, { customerId: customers.find((customer) => customer.status === 'active')?.id ?? '', quantity: '1' }])}><Plus size={16} /> Add Client Item</button>
               </fieldset>
-              <div className="mes-order-form-actions mes-order-form-wide"><button type="button" className="secondary" onClick={() => setFormOpen(false)}>Cancel</button><button type="submit" disabled={saving}>{saving ? 'Saving...' : 'Create Voucher'}</button></div>
+              <div className="mes-order-form-actions mes-order-form-wide"><button type="button" className="secondary" onClick={() => setFormOpen(false)}>Cancel</button><button type="submit" disabled={saving}>{saving ? 'Saving...' : editingVoucherId ? 'Save Changes' : 'Create Voucher'}</button></div>
             </form>
+          </section>
+        </div>
+      ) : null}
+
+      {deleteOpen && selected ? (
+        <div className="mes-modal-backdrop production-order-form-backdrop client-reception-delete-backdrop" role="presentation">
+          <section className="mes-order-modal client-reception-delete-modal" role="alertdialog" aria-modal="true" aria-labelledby="reception-delete-title">
+            <button className="supplier-modal-close" type="button" onClick={() => setDeleteOpen(false)} disabled={saving}><X size={18} /></button>
+            <span className="client-reception-delete-icon"><AlertTriangle size={26} /></span>
+            <p className="eyebrow">Delete Reception Voucher</p>
+            <h3 id="reception-delete-title">Delete {selected.voucherNumber}?</h3>
+            <p>This permanently removes the voucher and its <strong>{selected.items.length} sub-reception{selected.items.length === 1 ? '' : 's'}</strong>. Production Orders already created will remain, but their link to this reception will be removed.</p>
+            <div className="client-reception-delete-summary"><span>Received pieces</span><strong>{selected.quantityExpected.toLocaleString()}</strong></div>
+            <div className="client-reception-delete-actions">
+              <button type="button" className="secondary" onClick={() => setDeleteOpen(false)} disabled={saving}>Cancel</button>
+              <button type="button" onClick={() => void deleteVoucher()} disabled={saving}><Trash2 size={16} /> {saving ? 'Deleting...' : 'Delete Voucher'}</button>
+            </div>
           </section>
         </div>
       ) : null}
