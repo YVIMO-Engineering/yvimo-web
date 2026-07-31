@@ -354,7 +354,7 @@ export function StatisticsWorkspace({ onNavigate, organizationId }: StatisticsWo
               {error ? <div className="statistics-message error" role="alert">{error}</div> : null}
               {loading && !receptionVouchers.length ? <div className="statistics-chart-loading">Loading weekly receptions...</div> : <WeeklyReceptionsChart stats={receptionStats} selectedDate={selectedDate} onSelectDate={setSelectedDate} />}
               <footer className="statistics-chart-footer">
-                <span>Bars show received pieces by client; matching lines connect each client's consecutive daily activity.</span>
+                <span>Bars show received pieces by client; matching lines connect each client's next reception, even across inactive days.</span>
                 <em>Live updates every 30 seconds and when reception vouchers change.</em>
               </footer>
             </section>

@@ -48,15 +48,8 @@ export function WeeklyReceptionsChart({ stats, selectedDate, onSelectDate }: {
       };
     });
 
-    const runs: Array<Array<NonNullable<(typeof points)[number]>>> = [];
-    points.forEach((point) => {
-      if (!point) return;
-      const currentRun = runs[runs.length - 1];
-      if (!currentRun || currentRun[currentRun.length - 1].dayIndex !== point.dayIndex - 1) runs.push([point]);
-      else currentRun.push(point);
-    });
-
-    return { ...client, points: points.filter(Boolean) as Array<NonNullable<(typeof points)[number]>>, runs: runs.filter((run) => run.length > 1) };
+    const clientPoints = points.filter(Boolean) as Array<NonNullable<(typeof points)[number]>>;
+    return { ...client, points: clientPoints, trend: clientPoints.length > 1 ? clientPoints : null };
   });
 
   const trendPath = (points: Array<{ x: number; y: number }>) => points.slice(1).reduce((path, point, index) => {
@@ -115,12 +108,12 @@ export function WeeklyReceptionsChart({ stats, selectedDate, onSelectDate }: {
             );
           })}
           <g className="statistics-client-trends" aria-label="Daily trend by client">
-            {clientTrends.flatMap((client) => client.runs.map((run, runIndex) => (
-              <g key={`${client.customerId}-${runIndex}`}>
-                <path d={trendPath(run)} className="statistics-client-trend-halo" />
-                <path d={trendPath(run)} stroke={client.color} className="statistics-client-trend-line" />
+            {clientTrends.map((client) => client.trend ? (
+              <g key={client.customerId}>
+                <path d={trendPath(client.trend)} className="statistics-client-trend-halo" />
+                <path d={trendPath(client.trend)} stroke={client.color} className="statistics-client-trend-line" />
               </g>
-            )))}
+            ) : null)}
             {clientTrends.flatMap((client) => client.points.map((point) => {
               const boxWidth = Math.max(28, String(point.quantity).length * 9 + 15);
               return (
