@@ -1,4 +1,5 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { AlertTriangle, CalendarDays, Check, ChevronDown, ClipboardCheck, FileText, PackageCheck, Pencil, Plus, Search, ShieldAlert, Trash2, Truck, X } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { MesOrderDatePicker } from './MesWorkspaces';
@@ -6,6 +7,16 @@ import { MesOrderDatePicker } from './MesWorkspaces';
 type ReceptionStatus = 'reception' | 'assign-orders' | 'manufacturing' | 'quality-inspection' | 'waiting-delivery' | 'sent' | 'discrepancy';
 type ReceptionRegistryFilter = 'all' | 'in-progress' | 'completed';
 type ReceptionFormItem = { id?: string; customerId: string; quantity: string; productionOrderId?: string };
+
+type ExistingProductionOrder = {
+  id: string;
+  orderNumber: string;
+  customerId: string;
+  clientName: string;
+  partName: string;
+  status: string;
+  plannedQuantity: number;
+};
 
 type ReceptionItem = {
   id: string;
@@ -110,6 +121,53 @@ function formatDate(value: string) {
   return new Intl.DateTimeFormat('en-US', { month: 'short', day: '2-digit', year: 'numeric' }).format(parsedDate);
 }
 
+function ReceptionPortalDropdown({ open, onOpenChange, label, disabled = false, className = '', menuClassName = '', children }: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  label: React.ReactNode;
+  disabled?: boolean;
+  className?: string;
+  menuClassName?: string;
+  children: React.ReactNode;
+}) {
+  const triggerRef = React.useRef<HTMLButtonElement>(null);
+  const [position, setPosition] = React.useState<{ left: number; top?: number; bottom?: number; width: number; maxHeight: number } | null>(null);
+
+  React.useLayoutEffect(() => {
+    if (!open) return undefined;
+    const updatePosition = () => {
+      const rect = triggerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const spaceBelow = window.innerHeight - rect.bottom - 18;
+      const spaceAbove = rect.top - 18;
+      const openAbove = spaceBelow < 220 && spaceAbove > spaceBelow;
+      setPosition({
+        left: rect.left,
+        ...(openAbove ? { bottom: window.innerHeight - rect.top + 6 } : { top: rect.bottom + 6 }),
+        width: rect.width,
+        maxHeight: Math.max(150, Math.min(360, openAbove ? spaceAbove : spaceBelow)),
+      });
+    };
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [open]);
+
+  return (
+    <div className={`client-reception-existing-dropdown ${className}`.trim()}>
+      <button ref={triggerRef} type="button" disabled={disabled} aria-haspopup="listbox" aria-expanded={open} onClick={() => onOpenChange(!open)}><span>{label}</span><ChevronDown size={18} /></button>
+      {open && position ? createPortal(
+        <div className={`client-reception-existing-dropdown-menu portal ${menuClassName}`} role="listbox" style={position}>{children}</div>,
+        document.body,
+      ) : null}
+    </div>
+  );
+}
+
 export function ClientReceptionsWorkspace({ organizationId, onNavigate, customers }: Props) {
   const [vouchers, setVouchers] = React.useState<ReceptionVoucher[]>([]);
   const [selectedId, setSelectedId] = React.useState('');
@@ -128,6 +186,15 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
   const [registryFilter, setRegistryFilter] = React.useState<ReceptionRegistryFilter>('all');
   const [registryDateRange, setRegistryDateRange] = React.useState({ from: '', to: '' });
   const [registryOrderSearch, setRegistryOrderSearch] = React.useState('');
+  const [existingOrderItem, setExistingOrderItem] = React.useState<ReceptionItem | null>(null);
+  const [existingOrders, setExistingOrders] = React.useState<ExistingProductionOrder[]>([]);
+  const [existingOrdersLoading, setExistingOrdersLoading] = React.useState(false);
+  const [existingOrderSearch, setExistingOrderSearch] = React.useState('');
+  const [existingOrderCustomerId, setExistingOrderCustomerId] = React.useState('');
+  const [existingOrderId, setExistingOrderId] = React.useState('');
+  const [existingOrderError, setExistingOrderError] = React.useState('');
+  const [existingOrderCustomerMenuOpen, setExistingOrderCustomerMenuOpen] = React.useState(false);
+  const [existingOrderMenuOpen, setExistingOrderMenuOpen] = React.useState(false);
   const [form, setForm] = React.useState(emptyForm);
 
   const loadVouchers = React.useCallback(async () => {
@@ -435,6 +502,74 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
     onNavigate('/workspace/manufacturing-ops/mes/orders');
   };
 
+  const openExistingOrderModal = async (item: ReceptionItem) => {
+    setExistingOrderItem(item);
+    setExistingOrderSearch('');
+    setExistingOrderCustomerId(item.customerId);
+    setExistingOrderId('');
+    setExistingOrderError('');
+    setExistingOrderCustomerMenuOpen(false);
+    setExistingOrderMenuOpen(false);
+    setExistingOrdersLoading(true);
+    const { data, error: ordersError } = await supabase
+      .from('mes_production_orders')
+      .select('id, order_number, customer_id, client_name, part_name, status, planned_quantity')
+      .eq('organization_id', organizationId)
+      .order('created_at', { ascending: false });
+    setExistingOrdersLoading(false);
+    if (ordersError) {
+      setExistingOrderError(ordersError.message);
+      setExistingOrders([]);
+      return;
+    }
+    setExistingOrders((data ?? []).map((order) => ({
+      id: order.id,
+      orderNumber: order.order_number,
+      customerId: order.customer_id ?? '',
+      clientName: order.client_name ?? 'Unknown client',
+      partName: order.part_name ?? '',
+      status: order.status ?? '',
+      plannedQuantity: Number(order.planned_quantity) || 0,
+    })));
+  };
+
+  const assignExistingOrder = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!existingOrderItem || !selected || !existingOrderId) return;
+    const order = existingOrders.find((entry) => entry.id === existingOrderId);
+    if (!order) return;
+    setSaving(true);
+    setExistingOrderError('');
+    const { error: assignmentError } = await supabase
+      .from('mes_customer_reception_items')
+      .update({
+        production_order_id: order.id,
+        production_order_number: order.orderNumber,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', existingOrderItem.id)
+      .eq('reception_voucher_id', selected.id)
+      .eq('organization_id', organizationId)
+      .is('production_order_id', null);
+    setSaving(false);
+    if (assignmentError) {
+      setExistingOrderError(assignmentError.message);
+      return;
+    }
+    setExistingOrderItem(null);
+    await loadVouchers();
+  };
+
+  const assignedProductionOrderIds = React.useMemo(() => new Set(vouchers.flatMap((voucher) => voucher.items.map((item) => item.productionOrderId).filter(Boolean))), [vouchers]);
+  const filteredExistingOrders = React.useMemo(() => {
+    const search = existingOrderSearch.trim().toLocaleLowerCase();
+    return existingOrders.filter((order) => {
+      const matchesCustomer = !existingOrderCustomerId || order.customerId === existingOrderCustomerId;
+      const matchesSearch = !search || `${order.orderNumber} ${order.partName} ${order.clientName} ${order.status}`.toLocaleLowerCase().includes(search);
+      return matchesCustomer && matchesSearch;
+    });
+  }, [existingOrderCustomerId, existingOrderSearch, existingOrders]);
+
   return (
     <div className="client-receptions-workspace">
       <div className="client-receptions-toolbar">
@@ -576,7 +711,7 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
                       <div className="client-reception-item-produced"><small>Produced</small><strong>{item.completedQuantity.toLocaleString()}</strong></div>
                       <div className="client-reception-item-order">
                         <small>Production Order</small>
-                        {item.productionOrderId ? <strong className="assigned-order">{item.productionOrderNumber}</strong> : <button type="button" onClick={() => registerProductionOrder(item)}><Plus size={15} /> Assign Order</button>}
+                        {item.productionOrderId ? <strong className="assigned-order">{item.productionOrderNumber}</strong> : <div className="client-reception-order-actions"><button type="button" onClick={() => registerProductionOrder(item)}><Plus size={15} /> Assign New Order</button><button type="button" className="existing" onClick={() => void openExistingOrderModal(item)}><Search size={15} /> Assign Existing Order</button></div>}
                       </div>
                       <div className="client-reception-item-order-status">
                         <small>Order Status</small>
@@ -616,7 +751,7 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
                 <legend>Sub-receptions by Client</legend>
                 {formItems.map((item, index) => (
                   <div className={item.productionOrderId ? 'order-assigned' : ''} key={item.id ?? `reception-item-${index}`}>
-                    <label>Client<div className="client-reception-customer-dropdown"><button type="button" disabled={Boolean(item.productionOrderId)} onClick={() => setCustomerMenuOpen((current) => current === index ? null : index)}><span>{customers.find((customer) => customer.id === item.customerId)?.customerName || 'Select customer'}</span><ChevronDown size={17} /></button>{customerMenuOpen === index ? <div>{customers.filter((customer) => customer.status === 'active').map((customer) => <button type="button" className={customer.id === item.customerId ? 'selected' : ''} onClick={() => { setFormItems((current) => current.map((entry, itemIndex) => itemIndex === index ? { ...entry, customerId: customer.id } : entry)); setCustomerMenuOpen(null); }} key={customer.id}>{customer.customerName}{customer.id === item.customerId ? <Check size={15} /> : null}</button>)}</div> : null}</div>{item.productionOrderId ? <small>Locked · Production Order assigned</small> : null}</label>
+                    <label>Client<ReceptionPortalDropdown open={customerMenuOpen === index} onOpenChange={(open) => setCustomerMenuOpen(open ? index : null)} disabled={Boolean(item.productionOrderId)} className="client-reception-customer-dropdown" menuClassName="form-customer" label={customers.find((customer) => customer.id === item.customerId)?.customerName || 'Select customer'}>{customers.filter((customer) => customer.status === 'active').map((customer) => <button type="button" className={customer.id === item.customerId ? 'selected' : ''} onClick={() => { setFormItems((current) => current.map((entry, itemIndex) => itemIndex === index ? { ...entry, customerId: customer.id } : entry)); setCustomerMenuOpen(null); }} key={customer.id}>{customer.customerName}{customer.id === item.customerId ? <Check size={15} /> : null}</button>)}</ReceptionPortalDropdown>{item.productionOrderId ? <small>Locked · Production Order assigned</small> : null}</label>
                     <label>Quantity<input type="number" min="1" disabled={Boolean(item.productionOrderId)} value={item.quantity} onChange={(event) => setFormItems((current) => current.map((entry, itemIndex) => itemIndex === index ? { ...entry, quantity: event.target.value } : entry))} /></label>
                     <button type="button" onClick={() => setFormItems((current) => current.filter((_, itemIndex) => itemIndex !== index))} disabled={formItems.length === 1 || Boolean(item.productionOrderId)} aria-label="Remove client item"><X size={16} /></button>
                   </div>
@@ -664,6 +799,26 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
                 <button type="button" className="secondary" onClick={() => setOverrideOpen(false)} disabled={saving}>Cancel</button>
                 <button type="submit" disabled={saving || overrideCode.length !== 4}>{saving ? 'Applying...' : 'Confirm Override'}</button>
               </div>
+            </form>
+          </section>
+        </div>
+      ) : null}
+
+      {existingOrderItem && selected ? (
+        <div className="mes-modal-backdrop production-order-form-backdrop client-reception-existing-order-backdrop" role="presentation">
+          <section className="mes-order-modal client-reception-existing-order-modal" role="dialog" aria-modal="true" aria-labelledby="existing-order-title">
+            <button className="supplier-modal-close" type="button" onClick={() => setExistingOrderItem(null)} disabled={saving}><X size={18} /></button>
+            <form onSubmit={assignExistingOrder}>
+              <p className="eyebrow">Customer Reception</p>
+              <h3 id="existing-order-title">Assign Existing Order</h3>
+              <p>Link an existing Production Order to the <strong>{existingOrderItem.customerName}</strong> sub-reception with {existingOrderItem.quantity.toLocaleString()} pieces.</p>
+              <div className="client-reception-existing-order-filters">
+                <label>Search Production Orders<div className="client-reception-existing-order-search"><Search size={18} /><input value={existingOrderSearch} onChange={(event) => setExistingOrderSearch(event.target.value)} placeholder="Order number, part, client, or status..." autoFocus /></div></label>
+                <label>Client<ReceptionPortalDropdown open={existingOrderCustomerMenuOpen} onOpenChange={(open) => { setExistingOrderCustomerMenuOpen(open); setExistingOrderMenuOpen(false); }} label={customers.find((customer) => customer.id === existingOrderCustomerId)?.customerName ?? 'All clients'}><button type="button" className={!existingOrderCustomerId ? 'selected' : ''} onClick={() => { setExistingOrderCustomerId(''); setExistingOrderId(''); setExistingOrderCustomerMenuOpen(false); }}>All clients{!existingOrderCustomerId ? <Check size={16} /> : null}</button>{customers.map((customer) => <button type="button" className={customer.id === existingOrderCustomerId ? 'selected' : ''} onClick={() => { setExistingOrderCustomerId(customer.id); setExistingOrderId(''); setExistingOrderCustomerMenuOpen(false); }} key={customer.id}>{customer.customerName}{customer.id === existingOrderCustomerId ? <Check size={16} /> : null}</button>)}</ReceptionPortalDropdown></label>
+              </div>
+              <label className="client-reception-existing-order-select">Production Order<ReceptionPortalDropdown open={existingOrderMenuOpen} onOpenChange={(open) => { setExistingOrderMenuOpen(open); setExistingOrderCustomerMenuOpen(false); }} disabled={existingOrdersLoading} menuClassName="order" label={existingOrdersLoading ? 'Loading Production Orders...' : existingOrderId ? (() => { const order = existingOrders.find((entry) => entry.id === existingOrderId); return order ? `${order.orderNumber} · ${order.clientName} · ${order.partName || 'Part not specified'}` : 'Select a Production Order'; })() : 'Select a Production Order'}>{filteredExistingOrders.length ? filteredExistingOrders.map((order) => { const assigned = assignedProductionOrderIds.has(order.id); return <button type="button" className={order.id === existingOrderId ? 'selected' : ''} disabled={assigned} onClick={() => { setExistingOrderId(order.id); setExistingOrderMenuOpen(false); }} key={order.id}><span><strong>{order.orderNumber}</strong><small>{order.clientName} · {order.partName || 'Part not specified'} · Qty. {order.plannedQuantity} · {labelProductionStatus(order.status)}</small></span>{assigned ? <em>Already assigned</em> : order.id === existingOrderId ? <Check size={17} /> : null}</button>; }) : <div className="empty">No Production Orders match these filters.</div>}</ReceptionPortalDropdown><small>{filteredExistingOrders.length} matching order{filteredExistingOrders.length === 1 ? '' : 's'}</small></label>
+              {existingOrderError ? <div className="clients-feedback error" role="alert">{existingOrderError}</div> : null}
+              <div className="client-reception-existing-order-actions"><button type="button" className="secondary" onClick={() => setExistingOrderItem(null)} disabled={saving}>Cancel</button><button type="submit" disabled={saving || !existingOrderId}>{saving ? 'Assigning...' : 'Assign Existing Order'}</button></div>
             </form>
           </section>
         </div>

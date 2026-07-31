@@ -1392,10 +1392,11 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
                       ? 'paused'
                       : 'not-started';
         return {
+          serialId: serial?.id ?? '',
           pieceSequence,
           toolId: serial?.tool_id ?? traceability?.tool_id ?? '',
           serialNumber: serial?.serial_number || traceability?.serial_number || '',
-          status: serial?.result ?? (traceability ? 'good' : intermediateStatus),
+          status: serial ? (serial.result ?? intermediateStatus) : (traceability ? 'good' : intermediateStatus),
           reportedAt: serial?.reported_at ?? traceability?.created_at ?? '',
           timeSpentMs: resolvedSerialKey
             ? timeSpentBySerial.get(resolvedSerialKey) ?? 0
@@ -1496,6 +1497,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
 
     const traceabilityResultsByPiece = new Map<string, 'good' | 'scrap'>();
     traceabilityRows.forEach((traceability) => {
+      if (traceability.payload?.report_type === 'reverted') return;
       const pieceSequence = getProductionOrderDetailPayloadNumber(traceability.payload, 'piece_sequence');
       if (pieceSequence && serialResultsBySequence.has(pieceSequence)) return;
       const fallbackKey = (traceability.serial_number || traceability.id).trim().toLowerCase();
@@ -2679,6 +2681,13 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
         <ProductionOrderDetailsModal
           order={currentOrder}
           details={orderDetails}
+          organizationId={organizationId}
+          onPieceReleased={async () => {
+            reportedCountsByOrderRef.current.delete(currentOrder.id);
+            await loadSnapshot();
+            await loadProductionSerials();
+            await openOrderDetails();
+          }}
           onClose={() => setOrderDetailsOpen(false)}
         />
       ) : null}

@@ -1,6 +1,6 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { Activity, AlertTriangle, ArrowLeft, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleHelp, CircleX, Copy, Database, Download, Eye, Factory, Frown, FileText, ImagePlus, Maximize2, Meh, Minimize2, Minus, Pencil, Plus, Power, RadioTower, Ruler, Search, Smile, Timer, Wrench, X } from 'lucide-react';
+import { Activity, AlertTriangle, ArrowLeft, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleHelp, CircleX, Copy, Database, Download, Eye, Factory, Frown, FileText, ImagePlus, Maximize2, Meh, Minimize2, Minus, Pencil, Plus, Power, RadioTower, RotateCcw, Ruler, Search, Smile, Timer, Wrench, X } from 'lucide-react';
 import { GoogleWorkCentersMap } from '../components/maps/GoogleWorkCentersMap';
 import { resolveGooglePlacesAddressMatch, searchGooglePlacesAddressMatches, type GooglePlacesAddressMatch } from '../lib/maps/googlePlacesAddressLookup';
 import { supabase } from '../lib/supabaseClient';
@@ -432,6 +432,7 @@ export type ProductionOrderDetailQualityDocumentRow = {
 };
 
 export type ProductionOrderDetailPiece = {
+  serialId: string;
   pieceSequence: number;
   toolId: string;
   serialNumber: string;
@@ -1382,6 +1383,7 @@ function reconcileProductionOrderReportedCounts(
   traceabilityRows.forEach((traceability) => {
     const orderId = traceability.production_order_id;
     if (!orderId) return;
+    if (traceability.payload?.report_type === 'reverted') return;
     const pieceSequence = getProductionOrderDetailPayloadNumber(traceability.payload, 'piece_sequence');
     const serialKey = traceability.serial_number?.trim().toLowerCase() ?? '';
     if (pieceSequence && serialResultsByOrder.get(orderId)?.has(pieceSequence)) return;
@@ -1499,18 +1501,47 @@ export function getProductionOrderDetailMeasurements(traceability: ProductionOrd
 export function ProductionOrderDetailsModal({
   order,
   details,
+  organizationId,
+  onPieceReleased,
   onClose,
 }: {
   order: ProductionOrder;
   details: ProductionOrderDetailsState;
+  organizationId: string;
+  onPieceReleased?: () => Promise<void> | void;
   onClose: () => void;
 }) {
   const [activeView, setActiveView] = React.useState<'production' | 'quality' | 'damage'>('production');
   const [preview, setPreview] = React.useState<ProductionOrderDetailPreview | null>(null);
   const [previewError, setPreviewError] = React.useState('');
   const [pdfGenerating, setPdfGenerating] = React.useState(false);
+  const [releasePiece, setReleasePiece] = React.useState<ProductionOrderDetailPiece | null>(null);
+  const [releaseCode, setReleaseCode] = React.useState('');
+  const [releaseError, setReleaseError] = React.useState('');
+  const [releaseSaving, setReleaseSaving] = React.useState(false);
   const qualityPieces = details.pieces.filter((piece) => getProductionOrderDetailQualityInspection(piece) || getProductionOrderDetailQualityMeasurements(piece).length > 0 || getProductionOrderDetailQualityDocuments(piece).length > 0);
   const damagePieces = details.pieces.filter(hasProductionOrderDetailDamage);
+  const releaseCompletedPiece = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!releasePiece?.serialId || releasePiece.status !== 'good') return;
+    setReleaseSaving(true);
+    setReleaseError('');
+    const { error } = await supabase.rpc('admin_release_mes_production_piece', {
+      p_serial_id: releasePiece.serialId,
+      p_organization_id: organizationId,
+      p_confirmation_code: releaseCode,
+    });
+    setReleaseSaving(false);
+    if (error) {
+      setReleaseError(error.message.includes('Invalid confirmation code')
+        ? 'The confirmation code is incorrect.'
+        : error.message);
+      return;
+    }
+    setReleasePiece(null);
+    setReleaseCode('');
+    await onPieceReleased?.();
+  };
   const openQualityDocumentPreview = async (document: ProductionOrderDetailQualityDocumentRow) => {
     setPreviewError('');
     try {
@@ -1792,6 +1823,7 @@ export function ProductionOrderDetailsModal({
             <table className="production-order-details-table">
               <thead>
                 <tr>
+                  <th>Action</th>
                   <th>Piece</th>
                   <th>Status</th>
                   <th>Serial</th>
@@ -1806,6 +1838,18 @@ export function ProductionOrderDetailsModal({
                   const measurements = getProductionOrderDetailMeasurements(piece.traceability);
                   return (
                     <tr key={`${piece.pieceSequence}-${piece.serialNumber || 'pending'}`}>
+                      <td>
+                        {piece.status === 'good' && piece.serialId ? (
+                          <button
+                            type="button"
+                            className="production-order-release-piece"
+                            onClick={() => { setReleasePiece(piece); setReleaseCode(''); setReleaseError(''); }}
+                            title="Release completed piece"
+                          >
+                            <RotateCcw size={15} /> Release
+                          </button>
+                        ) : <span className="production-order-release-unavailable">—</span>}
+                      </td>
                       <td><strong>{piece.pieceSequence}</strong></td>
                       <td><span className={`production-order-details-status ${piece.status}`}>{formatProductionPieceStatus(piece.status)}</span></td>
                       <td>{piece.serialNumber || '-'}</td>
@@ -1833,7 +1877,7 @@ export function ProductionOrderDetailsModal({
                 })}
                 {!details.pieces.length ? (
                   <tr>
-                    <td colSpan={7}>
+                    <td colSpan={8}>
                       <div className="production-order-details-empty">No pieces found for this order.</div>
                     </td>
                   </tr>
@@ -1956,6 +2000,29 @@ export function ProductionOrderDetailsModal({
           </div>
         ) : null}
       </section>
+      {releasePiece ? (
+        <div className="supplier-modal-backdrop production-piece-release-backdrop" role="presentation">
+          <section className="mes-order-modal production-piece-release-modal" role="alertdialog" aria-modal="true" aria-labelledby="production-piece-release-title">
+            <button className="supplier-modal-close" type="button" onClick={() => setReleasePiece(null)} disabled={releaseSaving}><X size={18} /></button>
+            <form onSubmit={releaseCompletedPiece}>
+              <span className="production-piece-release-icon"><RotateCcw size={25} /></span>
+              <p className="eyebrow">Administrative Production Reversal</p>
+              <h3 id="production-piece-release-title">Release completed piece {releasePiece.pieceSequence}?</h3>
+              <p>This reverts the GOOD result for serial <strong>{releasePiece.serialNumber}</strong>, subtracts it from completed production, and makes the piece available again in Operator Terminal.</p>
+              <div className="production-piece-release-warning"><AlertTriangle size={18} /><span>Serial, Tool ID, and recorded machine time will be preserved. This action is recorded in the audit history.</span></div>
+              <label>
+                Confirmation Code
+                <input type="password" inputMode="numeric" autoComplete="off" value={releaseCode} onChange={(event) => setReleaseCode(event.target.value)} placeholder="Enter authorization code" autoFocus required />
+              </label>
+              {releaseError ? <div className="clients-feedback error" role="alert">{releaseError}</div> : null}
+              <div className="production-piece-release-actions">
+                <button type="button" className="secondary" onClick={() => setReleasePiece(null)} disabled={releaseSaving}>Cancel</button>
+                <button type="submit" disabled={releaseSaving || releaseCode.length !== 4}><RotateCcw size={16} /> {releaseSaving ? 'Releasing...' : 'Release Piece'}</button>
+              </div>
+            </form>
+          </section>
+        </div>
+      ) : null}
       {preview ? (
         <div className="supplier-modal-backdrop production-order-preview-backdrop" role="presentation">
           <div className="supplier-modal production-order-preview-modal" role="dialog" aria-modal="true" aria-labelledby="production-order-preview-title">
@@ -4239,10 +4306,11 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
                       ? 'paused'
                       : 'not-started';
         return {
+          serialId: serial?.id ?? '',
           pieceSequence,
           toolId: serial?.tool_id ?? traceability?.tool_id ?? '',
           serialNumber: serial?.serial_number || traceability?.serial_number || '',
-          status: serial?.result ?? (traceability ? 'good' : intermediateStatus),
+          status: serial ? (serial.result ?? intermediateStatus) : (traceability ? 'good' : intermediateStatus),
           reportedAt: serial?.reported_at ?? traceability?.created_at ?? '',
           timeSpentMs: resolvedSerialKey
             ? timeSpentBySerial.get(resolvedSerialKey) ?? 0
@@ -4565,6 +4633,11 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
         <ProductionOrderDetailsModal
           order={selectedOrder}
           details={orderDetails}
+          organizationId={organizationId}
+          onPieceReleased={async () => {
+            await loadProductionOrders(true);
+            await openOrderDetails();
+          }}
           onClose={() => setOrderDetailsOpen(false)}
         />
       ) : null}
@@ -8775,6 +8848,11 @@ function getTraceabilityCorrectionComparison(event: TraceabilityOperatorEventRow
   };
 }
 
+function isAdministrativePieceReleaseEvent(event: TraceabilityOperatorEventRow) {
+  return event.event_type === 'adjustment'
+    && event.payload?.adjustment_type === 'production-good-reverted';
+}
+
 type TraceabilityEventTone =
   | 'job-started'
   | 'job-resumed'
@@ -8827,7 +8905,9 @@ function renderTraceabilityEventIcon(eventType: string) {
   return <CircleHelp {...iconProps} />;
 }
 
-function getTraceabilityEventLabel(eventType: string) {
+function getTraceabilityEventLabel(event: TraceabilityOperatorEventRow) {
+  if (isAdministrativePieceReleaseEvent(event)) return 'Administrative Piece Release';
+  const eventType = event.event_type;
   const eventLabels: Record<string, string> = {
     'job-started': 'Job Started',
     'job-resumed': 'Job Resumed',
@@ -8852,6 +8932,12 @@ function getTraceabilityEventLabel(eventType: string) {
 }
 
 function getTraceabilityEventSummary(event: TraceabilityOperatorEventRow) {
+  if (isAdministrativePieceReleaseEvent(event)) {
+    const piece = event.payload?.piece_sequence;
+    const serial = typeof event.payload?.serial_number === 'string' ? event.payload.serial_number : '';
+    const identity = serial || (piece ? `piece ${String(piece)}` : 'production piece');
+    return `${identity} was released and its GOOD production result was reverted`;
+  }
   if (event.event_type === 'maintenance-started') return 'Station entered Maintenance from Operator Terminal';
   if (event.event_type === 'maintenance-ended') return 'Maintenance was completed and the station returned to Idle';
   if (event.event_type === 'station-offline') return 'Station was taken Offline from Operator Terminal';
@@ -9589,7 +9675,7 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
             const event = item.event;
             const order = event.mes_production_orders;
             const eventClientName = order?.client_name ?? '';
-            const eventLabel = getTraceabilityEventLabel(event.event_type);
+            const eventLabel = getTraceabilityEventLabel(event);
             const payloadComment = event.payload && typeof event.payload.comment === 'string' ? event.payload.comment : '';
             const comment = event.comment || payloadComment;
             const qualityInspections = getTraceabilityQualityInspections(event);
@@ -9597,7 +9683,8 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
             const correctionComparison = event.event_type === 'measurement-corrected' ? getTraceabilityCorrectionComparison(event) : null;
             const isQualityEvent = isTraceabilityQualityEvent(event.event_type);
             const isInventoryEvent = event.event_type === 'inventory-received' || event.event_type === 'inventory-consumed';
-            const showEventQuantity = !isQualityEvent && event.event_type !== 'measurement-corrected';
+            const isAdministrativeRelease = isAdministrativePieceReleaseEvent(event);
+            const showEventQuantity = !isQualityEvent && !isAdministrativeRelease && event.event_type !== 'measurement-corrected';
             const qualityStatusConfig = {
               ok: { label: 'OK', icon: CheckCircle2 },
               approach: { label: 'Approach', icon: AlertTriangle },
@@ -9610,7 +9697,7 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
                 className={['mes-event-row traceability-event-row', `event-tone-${item.tone}`, newCaptureIds.has(item.id) ? 'new-capture' : ''].filter(Boolean).join(' ')}
                 key={item.id}
               >
-                <span className="mes-event-marker">{renderTraceabilityEventIcon(event.event_type)}</span>
+                <span className="mes-event-marker">{isAdministrativeRelease ? <RotateCcw size={19} strokeWidth={2.6} /> : renderTraceabilityEventIcon(event.event_type)}</span>
                 <div>
                   <div className="mes-event-heading traceability-event-heading">
                     <div className="traceability-event-title">
@@ -9630,8 +9717,10 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
                   ) : (
                     <div className="traceability-event-detail-grid">
                       <span><b>Order Number</b>{order?.order_number ?? 'Unassigned order'}</span>
-                      <span><b>Part Name</b>{order?.part_name ?? 'N/A'}</span>
-                      <span><b>Client</b>{eventClientName || 'Unassigned client'}</span>
+                      {isAdministrativeRelease ? <span><b>Piece</b>{String(event.payload?.piece_sequence ?? 'N/A')}</span> : <span><b>Part Name</b>{order?.part_name ?? 'N/A'}</span>}
+                      {isAdministrativeRelease ? <span><b>Serial Number</b>{String(event.payload?.serial_number ?? 'N/A')}</span> : <span><b>Client</b>{eventClientName || 'Unassigned client'}</span>}
+                      {isAdministrativeRelease ? <span><b>Tool ID</b>{String(event.payload?.tool_id ?? 'N/A')}</span> : null}
+                      {isAdministrativeRelease ? <span><b>Released By</b>{String(event.payload?.released_by ?? 'Unknown user')}</span> : null}
                       {showEventQuantity ? <span><b>Quantity</b>{event.quantity || 'N/A'}</span> : null}
                     </div>
                   )}
