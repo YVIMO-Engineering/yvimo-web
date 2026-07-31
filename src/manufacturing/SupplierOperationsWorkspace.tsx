@@ -159,6 +159,15 @@ const supplierCapabilityColors: Record<string, string> = {
 const supplierCapabilityFallbackColors = ['#f97316', '#0ea5e9', '#16a34a', '#8b5cf6', '#db2777', '#0891b2', '#ca8a04', '#64748b'];
 const registerNewSupplierCapabilityValue = '__register_new_supplier_capability__';
 const supplierCapabilityColorOptions = ['#ff8a1f', '#1d4ed8', '#00a676', '#dc2626', '#8b5cf6', '#f59e0b', '#14b8a6', '#ec4899'];
+const supplierTransferProgressSteps = ['Ready', 'Sent', 'Returned', 'Documents', 'Completed'];
+
+function getSupplierTransferProgress(status: SupplierTransferStatus) {
+  if (status === 'ready-for-checkout') return { step: 0, exception: false };
+  if (status === 'sent-to-supplier') return { step: 1, exception: false };
+  if (status === 'discrepancy') return { step: 2, exception: true };
+  if (status === 'documents-pending') return { step: 3, exception: false };
+  return { step: 4, exception: false };
+}
 
 const defaultTransferForm: SupplierTransferFormState = {
   productionOrder: mockProductionOrders[0]?.orderNumber ?? '',
@@ -1719,8 +1728,8 @@ export function SupplierOperationsWorkspace({ onNavigate, organizationId, active
   const activeTransfersBar = (
     <section className="supplier-active-transfers" aria-label="Active supplier transfers">
       <div>
-        <span>Active Transfers</span>
-        <strong>{activeSupplierTransfers.length} active supplier transfers</strong>
+        <span><PackageCheck size={16} /> Transfer Order Registry</span>
+        <strong>{activeSupplierTransfers.length} active</strong>
       </div>
       <div className="supplier-active-transfer-list">
         {activeSupplierTransfers.map((transfer) => (
@@ -1729,29 +1738,64 @@ export function SupplierOperationsWorkspace({ onNavigate, organizationId, active
             className={selectedTransfer?.id === transfer.id ? 'active' : ''}
           >
             <button type="button" className="supplier-active-transfer-select" onClick={() => setSelectedTransferId(transfer.id)}>
-              <strong>{transfer.id}</strong>
-              <em>{transfer.externalProcess}</em>
+              <span className="supplier-transfer-registry-icon"><Truck size={18} /></span>
+              <span className="supplier-transfer-registry-copy">
+                <strong>{transfer.id}</strong>
+                <em>{transfer.externalProcess}</em>
+                <small>PO {transfer.productionOrder} · {transfer.quantitySent.toLocaleString()} parts</small>
+              </span>
             </button>
-            <button
-              type="button"
-              className="supplier-active-transfer-supplier"
-              onClick={() => onActiveTabChange('suppliers')}
-            >
-              {transfer.supplierName}
-            </button>
-            <SupplierStatusBadge status={transfer.status} />
+            <div className="supplier-transfer-registry-meta">
+              <button
+                type="button"
+                className="supplier-active-transfer-supplier"
+                onClick={() => onActiveTabChange('suppliers')}
+              >
+                {transfer.supplierName}
+              </button>
+              <SupplierStatusBadge status={transfer.status} />
+            </div>
+            <small className={isOverdueTransfer(transfer) ? 'overdue' : ''}>
+              Expected {formatSupplierDate(transfer.expectedReturnDate)}
+            </small>
           </article>
         ))}
+        {!activeSupplierTransfers.length ? (
+          <div className="supplier-empty-note">No active transfer orders.</div>
+        ) : null}
       </div>
     </section>
   );
 
   const selectedTransferSummary = selectedTransfer ? (
     <section className="supplier-selected-transfer-summary">
-      <div className="supplier-section-heading">
-        <span><PackageCheck size={16} /> Transfer Detail</span>
-        <strong>{selectedTransfer.id}</strong>
+      <div className="supplier-transfer-detail-hero">
+        <span className="supplier-transfer-detail-icon"><Truck size={24} /></span>
+        <div>
+          <small>Supplier transfer order</small>
+          <h3>{selectedTransfer.id}</h3>
+          <p>{selectedTransfer.externalProcess} · PO {selectedTransfer.productionOrder}</p>
+        </div>
+        <SupplierStatusBadge status={selectedTransfer.status} />
       </div>
+      <ol className="supplier-transfer-progress" aria-label="Transfer order progress">
+        {supplierTransferProgressSteps.map((label, index) => {
+          const progress = getSupplierTransferProgress(selectedTransfer.status);
+          const isComplete = index < progress.step;
+          const isCurrent = index === progress.step;
+          const className = [
+            isComplete ? 'complete' : '',
+            isCurrent ? 'current' : '',
+            isCurrent && progress.exception ? 'exception' : '',
+          ].filter(Boolean).join(' ');
+          return (
+            <li className={className} key={label} aria-current={isCurrent ? 'step' : undefined}>
+              <span>{isComplete ? <Check size={15} /> : index + 1}</span>
+              <strong>{isCurrent && progress.exception ? 'Discrepancy' : label}</strong>
+            </li>
+          );
+        })}
+      </ol>
       <div className="supplier-selected-transfer-grid">
         <span><b>Transfer ID</b>{selectedTransfer.id}</span>
         <span><b>Production Order</b>{selectedTransfer.productionOrder}</span>
@@ -1895,12 +1939,15 @@ export function SupplierOperationsWorkspace({ onNavigate, organizationId, active
   const selectedTransferDetail = selectedTransfer ? (
     <aside className="supplier-detail-panel">
       <div className="supplier-detail-header">
-        <span>Selected Transfer</span>
-        <strong>{selectedTransfer.id}</strong>
+        <span>Transfer quantities</span>
         <div className="supplier-parts-metric-grid">
           <article>
             <span>Sent Parts</span>
             <strong>{selectedTransfer.quantitySent.toLocaleString()}</strong>
+          </article>
+          <article>
+            <span>Received Parts</span>
+            <strong>{selectedTransfer.quantityReceived.toLocaleString()}</strong>
           </article>
           <article>
             <span>Pending Parts</span>
@@ -2954,7 +3001,7 @@ export function SupplierOperationsWorkspace({ onNavigate, organizationId, active
           ) : null}
 
           {activeTab === 'transfers' ? (
-            <>
+            <div className="supplier-transfer-registry-layout">
               {activeTransfersBar}
               <div className="supplier-transfer-combined-panel">
                 <div className="supplier-transfer-combined-main">
@@ -2962,7 +3009,7 @@ export function SupplierOperationsWorkspace({ onNavigate, organizationId, active
                 </div>
                 {selectedTransferDetail}
               </div>
-            </>
+            </div>
           ) : null}
 
           {activeTab === 'suppliers' ? supplierManagementSection : null}

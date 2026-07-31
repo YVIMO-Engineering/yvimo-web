@@ -34,10 +34,12 @@ import { SUPPORTED_CURRENCIES, type SupportedCurrency } from '../lib/exchangeRat
 import { supabase } from '../lib/supabaseClient';
 import { useSupabaseRealtimeRefresh } from '../lib/useSupabaseRealtimeRefresh';
 import { ClientBalancesWorkspace } from './ClientBalancesWorkspace';
+import { ClientReceptionsWorkspace } from './ClientReceptionsWorkspace';
 
 export type ClientsContextTab =
   | 'customers'
   | 'assets-equipment'
+  | 'receptions'
   | 'deliveries-returns'
   | 'balances'
   | 'docs-vouchers';
@@ -298,6 +300,11 @@ const clientsPageContent: Record<ClientsContextTab, { eyebrow: string; title: st
     eyebrow: 'MES / CLIENTS',
     title: 'Assets & Equipment',
     description: 'Keep customer-owned assets and equipment organized with a clear operational record for every item.',
+  },
+  receptions: {
+    eyebrow: 'MES / CLIENT RECEPTIONS',
+    title: 'Reception Vouchers',
+    description: 'Register and follow new customer parts from expected arrival through receiving and inspection.',
   },
   'deliveries-returns': {
     eyebrow: 'MES / CLIENTS',
@@ -658,7 +665,7 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
   const [toolMissingReportDownloading, setToolMissingReportDownloading] = React.useState(false);
   const [assetPhotos, setAssetPhotos] = React.useState<File[]>([]);
   const [assetDocuments, setAssetDocuments] = React.useState<File[]>([]);
-  const [loading, setLoading] = React.useState(activeTab === 'customers' || activeTab === 'assets-equipment' || activeTab === 'balances');
+  const [loading, setLoading] = React.useState(activeTab === 'customers' || activeTab === 'assets-equipment' || activeTab === 'receptions' || activeTab === 'balances');
   const [saving, setSaving] = React.useState(false);
   const [errorMessage, setErrorMessage] = React.useState('');
   const [formMode, setFormMode] = React.useState<'create' | 'edit' | null>(null);
@@ -800,7 +807,7 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
   }, [organizationId]);
 
   React.useEffect(() => {
-    if (activeTab === 'customers' || activeTab === 'assets-equipment' || activeTab === 'balances') void loadCustomers();
+    if (activeTab === 'customers' || activeTab === 'assets-equipment' || activeTab === 'receptions' || activeTab === 'balances') void loadCustomers();
   }, [activeTab, loadCustomers]);
 
   React.useEffect(() => {
@@ -1983,6 +1990,16 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
             loadingCustomers={loading}
             customerError={errorMessage}
             onRetryCustomers={() => void loadCustomers()}
+          />
+        </div>
+      ) : null}
+
+      {activeTab === 'receptions' ? (
+        <div className="clients-app-content">
+          <ClientReceptionsWorkspace
+            organizationId={organizationId}
+            onNavigate={onNavigate}
+            customers={customers.map((customer) => ({ id: customer.id, customerName: customer.customerName, status: customer.status }))}
           />
         </div>
       ) : null}

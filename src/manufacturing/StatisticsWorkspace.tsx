@@ -1,9 +1,10 @@
 import React from 'react';
-import { ArrowLeft, BarChart3, ChevronLeft, ChevronRight, RefreshCw, Target, X } from 'lucide-react';
+import { ArrowLeft, BarChart3, Boxes, ChevronLeft, ChevronRight, PackageCheck, RefreshCw, Target, Users, X } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { useSupabaseRealtimeRefresh } from '../lib/useSupabaseRealtimeRefresh';
 import { ProductionMetricCards } from './statistics/ProductionMetricCards';
 import { WeeklyProductionChart } from './statistics/WeeklyProductionChart';
+import { WeeklyReceptionsChart, type DailyReceptionStat } from './statistics/WeeklyReceptionsChart';
 import { ManualAlertDialog, StatisticsAlertHistory, StatisticsAlertSlider } from './statistics/StatisticsAlerts';
 import { buildAutomaticStatisticsAlerts, type StatisticsAlert, type StatisticsAlertType } from './statistics/statisticsAlerts';
 import {
@@ -21,6 +22,17 @@ type StatisticsWorkspaceProps = {
   organizationId: string;
 };
 
+type StatisticsView = 'production' | 'receptions';
+type ReceptionVoucherStatRow = { id: string; expected_date: string | null; created_at: string };
+type ReceptionItemStatRow = {
+  reception_voucher_id: string;
+  customer_id: string;
+  quantity: number;
+  mes_customers: { customer_name: string } | Array<{ customer_name: string }> | null;
+};
+
+const receptionClientColors = ['#2563eb', '#f97316', '#10b981', '#8b5cf6', '#ec4899', '#06b6d4', '#eab308', '#ef4444', '#14b8a6', '#6366f1', '#84cc16', '#f43f5e'];
+
 const getAlertAcknowledgementKey = (alert: StatisticsAlert) => {
   if (['inventory', 'overdue', 'overtime'].includes(alert.type)) {
     return `incident:${alert.type}:${alert.title.trim().toLowerCase()}`;
@@ -34,8 +46,11 @@ export function StatisticsWorkspace({ onNavigate, organizationId }: StatisticsWo
   const acknowledgedAlertsStorageKey = `yvimo:mes-statistics:acknowledged-alerts:${organizationId}`;
   const today = React.useMemo(() => toLocalDateInput(new Date()), []);
   const [weekAnchor, setWeekAnchor] = React.useState(today);
+  const [activeView, setActiveView] = React.useState<StatisticsView>('production');
   const [events, setEvents] = React.useState<ProductionStatisticsEvent[]>([]);
   const [targetOrders, setTargetOrders] = React.useState<ProductionTargetOrder[]>([]);
+  const [receptionVouchers, setReceptionVouchers] = React.useState<ReceptionVoucherStatRow[]>([]);
+  const [receptionItems, setReceptionItems] = React.useState<ReceptionItemStatRow[]>([]);
   const [selectedDate, setSelectedDate] = React.useState(today);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState('');
@@ -87,7 +102,7 @@ export function StatisticsWorkspace({ onNavigate, organizationId }: StatisticsWo
     const rangeStart = new Date(`${weekRange.from}T00:00:00`);
     const rangeEnd = new Date(`${weekRange.to}T00:00:00`);
     rangeEnd.setDate(rangeEnd.getDate() + 1);
-    const [eventsResponse, targetResponse] = await Promise.all([
+    const [eventsResponse, targetResponse, receptionResponse] = await Promise.all([
       supabase
         .from('mes_operator_terminal_events')
         .select('id, event_type, quantity, created_at')
@@ -103,17 +118,35 @@ export function StatisticsWorkspace({ onNavigate, organizationId }: StatisticsWo
         .neq('status', 'cancelled')
         .gte('due_date', weekRange.from)
         .lte('due_date', weekRange.to),
+      supabase
+        .from('mes_customer_reception_vouchers')
+        .select('id, expected_date, created_at')
+        .eq('organization_id', organizationId)
+        .gte('expected_date', weekRange.from)
+        .lte('expected_date', weekRange.to)
+        .order('expected_date', { ascending: true }),
     ]);
-    const queryError = eventsResponse.error || targetResponse.error;
+    const receptionIds = (receptionResponse.data ?? []).map((voucher) => voucher.id);
+    const receptionItemsResponse = receptionIds.length
+      ? await supabase
+        .from('mes_customer_reception_items')
+        .select('reception_voucher_id, customer_id, quantity, mes_customers(customer_name)')
+        .in('reception_voucher_id', receptionIds)
+      : { data: [], error: null };
+    const queryError = eventsResponse.error || targetResponse.error || receptionResponse.error || receptionItemsResponse.error;
     if (queryError) {
       setError(queryError.message);
       if (!silent) {
         setEvents([]);
         setTargetOrders([]);
+        setReceptionVouchers([]);
+        setReceptionItems([]);
       }
     } else {
       setEvents((eventsResponse.data ?? []) as ProductionStatisticsEvent[]);
       setTargetOrders((targetResponse.data ?? []) as ProductionTargetOrder[]);
+      setReceptionVouchers((receptionResponse.data ?? []) as ReceptionVoucherStatRow[]);
+      setReceptionItems((receptionItemsResponse.data ?? []) as ReceptionItemStatRow[]);
       setError('');
       setLastUpdatedAt(new Date().toISOString());
     }
@@ -167,6 +200,8 @@ export function StatisticsWorkspace({ onNavigate, organizationId }: StatisticsWo
       { table: 'mes_production_orders', filter: `organization_id=eq.${organizationId}` },
       { table: 'mes_inventory_items', filter: `organization_id=eq.${organizationId}` },
       { table: 'mes_station_status_cycles', filter: `organization_id=eq.${organizationId}` },
+      { table: 'mes_customer_reception_vouchers', filter: `organization_id=eq.${organizationId}` },
+      { table: 'mes_customer_reception_items' },
     ],
     onRefresh: () => { void loadStatistics(true); void loadAlerts(); },
     enabled: Boolean(organizationId),
@@ -176,6 +211,47 @@ export function StatisticsWorkspace({ onNavigate, organizationId }: StatisticsWo
     () => buildWeeklyProductionStats(weekAnchor, events, targetOrders),
     [events, targetOrders, weekAnchor],
   );
+  const receptionStats = React.useMemo<DailyReceptionStat[]>(() => {
+    const customerIds = [...new Set(receptionItems.map((item) => item.customer_id))].sort();
+    const colorByCustomer = new Map(customerIds.map((customerId, index) => [
+      customerId,
+      receptionClientColors[index] ?? `hsl(${Math.round(index * 137.508) % 360} 72% 48%)`,
+    ]));
+    const voucherById = new Map(receptionVouchers.map((voucher) => [voucher.id, voucher]));
+    return Array.from({ length: 7 }, (_, index) => {
+      const date = addDays(weekRange.from, index);
+      const dayVouchers = receptionVouchers.filter((voucher) => voucher.expected_date === date);
+      const dayVoucherIds = new Set(dayVouchers.map((voucher) => voucher.id));
+      const clients = new Map<string, { customerName: string; quantity: number }>();
+      receptionItems.forEach((item) => {
+        if (!dayVoucherIds.has(item.reception_voucher_id) || !voucherById.has(item.reception_voucher_id)) return;
+        const customer = Array.isArray(item.mes_customers) ? item.mes_customers[0] : item.mes_customers;
+        const current = clients.get(item.customer_id) ?? { customerName: customer?.customer_name ?? 'Unknown client', quantity: 0 };
+        current.quantity += Number(item.quantity) || 0;
+        clients.set(item.customer_id, current);
+      });
+      const displayDate = new Date(`${date}T12:00:00`);
+      const segments = [...clients.entries()].map(([customerId, client]) => ({
+        customerId,
+        customerName: client.customerName,
+        quantity: client.quantity,
+        color: colorByCustomer.get(customerId) ?? '#64748b',
+      })).sort((left, right) => right.quantity - left.quantity);
+      return {
+        date,
+        dayLabel: new Intl.DateTimeFormat('en-US', { weekday: 'short' }).format(displayDate),
+        dateLabel: new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(displayDate),
+        isToday: date === today,
+        totalPieces: segments.reduce((sum, segment) => sum + segment.quantity, 0),
+        voucherCount: dayVouchers.length,
+        segments,
+      };
+    });
+  }, [receptionItems, receptionVouchers, today, weekRange.from]);
+  const weeklyReceptionPieces = receptionStats.reduce((sum, day) => sum + day.totalPieces, 0);
+  const weeklyReceptionVouchers = receptionStats.reduce((sum, day) => sum + day.voucherCount, 0);
+  const weeklyReceptionClients = new Set(receptionStats.flatMap((day) => day.segments.map((segment) => segment.customerId))).size;
+  const todayReceptionPieces = receptionStats.find((day) => day.isToday)?.totalPieces ?? 0;
   const alertHistory = React.useMemo(() => {
     const byId = new Map<string, StatisticsAlert>();
     [...automaticAlerts, ...manualAlerts].forEach((alert) => byId.set(alert.id, alert));
@@ -226,7 +302,7 @@ export function StatisticsWorkspace({ onNavigate, organizationId }: StatisticsWo
           <div className="statistics-compact-heading">
             <p className="eyebrow">MES / Statistics</p>
             <h2>Statistics</h2>
-            <span>Live weekly production overview</span>
+            <span>{activeView === 'production' ? 'Live weekly production overview' : 'Live weekly reception overview'}</span>
           </div>
           <label className="statistics-week-picker"><span>Week containing</span><input type="date" value={weekAnchor} onChange={(event) => setWeekAnchor(event.target.value || today)} /></label>
           <div className="statistics-week-navigation">
@@ -236,23 +312,54 @@ export function StatisticsWorkspace({ onNavigate, organizationId }: StatisticsWo
           </div>
           <button type="button" className="statistics-this-week" onClick={() => setWeekAnchor(today)}>This Week</button>
           <button className="statistics-refresh" type="button" disabled={loading} onClick={() => { void loadStatistics(); void loadAlerts(); }}><RefreshCw size={16} className={loading ? 'spinning' : ''} /> Refresh</button>
-          <div className="statistics-live-state"><span><i /> Live production</span><small>{lastUpdatedAt ? `Updated ${new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' }).format(new Date(lastUpdatedAt))}` : 'Connecting'}</small></div>
+          <nav className="statistics-view-tabs" aria-label="Statistics view">
+            <button type="button" className={activeView === 'production' ? 'active' : ''} aria-pressed={activeView === 'production'} onClick={() => setActiveView('production')}><BarChart3 size={16} /> Production</button>
+            <button type="button" className={activeView === 'receptions' ? 'active' : ''} aria-pressed={activeView === 'receptions'} onClick={() => setActiveView('receptions')}><PackageCheck size={16} /> Receptions</button>
+          </nav>
+          <div className="statistics-live-state"><span><i /> Live {activeView}</span><small>{lastUpdatedAt ? `Updated ${new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' }).format(new Date(lastUpdatedAt))}` : 'Connecting'}</small></div>
         </section>
 
-        <ProductionMetricCards stats={stats} dailyTarget={dailyTarget} />
-
-        <section className="statistics-production-panel">
-          <div className="statistics-production-heading">
-            <div><span className="statistics-heading-icon"><BarChart3 size={22} /></span><span><small>Weekly production trend</small><h3>{weekLabel}</h3></span></div>
-            <div className="statistics-chart-key"><span className="actual"><i /> Production</span><span className="target"><i /> Daily target · {dailyTarget}</span><span className="trend"><i /> Production trend</span></div>
-          </div>
-          {error ? <div className="statistics-message error" role="alert">{error}</div> : null}
-          {loading && !events.length ? <div className="statistics-chart-loading">Loading weekly production...</div> : <WeeklyProductionChart stats={stats} selectedDate={selectedDate} dailyTarget={dailyTarget} onSelectDate={setSelectedDate} onEditTarget={openTargetDialog} />}
-          <footer className="statistics-chart-footer">
-            <span>Daily target is configured at {dailyTarget} pieces ({dailyTarget * 7} per week).</span>
-            <em>Live updates every 30 seconds and when shop-floor events arrive.</em>
-          </footer>
-        </section>
+        {activeView === 'production' ? (
+          <>
+            <ProductionMetricCards stats={stats} dailyTarget={dailyTarget} />
+            <section className="statistics-production-panel">
+              <div className="statistics-production-heading">
+                <div><span className="statistics-heading-icon"><BarChart3 size={22} /></span><span><small>Weekly production trend</small><h3>{weekLabel}</h3></span></div>
+                <div className="statistics-chart-key"><span className="actual"><i /> Production</span><span className="target"><i /> Daily target · {dailyTarget}</span><span className="trend"><i /> Production trend</span></div>
+              </div>
+              {error ? <div className="statistics-message error" role="alert">{error}</div> : null}
+              {loading && !events.length ? <div className="statistics-chart-loading">Loading weekly production...</div> : <WeeklyProductionChart stats={stats} selectedDate={selectedDate} dailyTarget={dailyTarget} onSelectDate={setSelectedDate} onEditTarget={openTargetDialog} />}
+              <footer className="statistics-chart-footer">
+                <span>Daily target is configured at {dailyTarget} pieces ({dailyTarget * 7} per week).</span>
+                <em>Live updates every 30 seconds and when shop-floor events arrive.</em>
+              </footer>
+            </section>
+          </>
+        ) : (
+          <>
+            <div className="statistics-metric-cards statistics-reception-metrics">
+              <article><Boxes size={25} /><span><small>Weekly received</small><strong>{weeklyReceptionPieces}</strong><em>pieces across all clients</em></span></article>
+              <article className="blue"><PackageCheck size={25} /><span><small>Reception vouchers</small><strong>{weeklyReceptionVouchers}</strong><em>registered this week</em></span></article>
+              <article className="green"><Users size={25} /><span><small>Clients received</small><strong>{weeklyReceptionClients}</strong><em>unique clients this week</em></span></article>
+              <article><PackageCheck size={25} /><span><small>Received today</small><strong>{todayReceptionPieces}</strong><em>pieces received today</em></span></article>
+            </div>
+            <section className="statistics-production-panel statistics-receptions-panel">
+              <div className="statistics-production-heading">
+                <div><span className="statistics-heading-icon reception"><Boxes size={22} /></span><span><small>Weekly receptions by client</small><h3>{weekLabel}</h3></span></div>
+                <div className="statistics-chart-key">
+                  <span className="reception-stack"><i /> Received pieces by client</span>
+                  <span className="reception-trend"><i /> Client trend</span>
+                </div>
+              </div>
+              {error ? <div className="statistics-message error" role="alert">{error}</div> : null}
+              {loading && !receptionVouchers.length ? <div className="statistics-chart-loading">Loading weekly receptions...</div> : <WeeklyReceptionsChart stats={receptionStats} selectedDate={selectedDate} onSelectDate={setSelectedDate} />}
+              <footer className="statistics-chart-footer">
+                <span>Bars show received pieces by client; matching lines connect each client's consecutive daily activity.</span>
+                <em>Live updates every 30 seconds and when reception vouchers change.</em>
+              </footer>
+            </section>
+          </>
+        )}
         <StatisticsAlertHistory alerts={alertHistory} onOpenManual={() => setManualAlertDialogOpen(true)} />
       </div>
       {targetDialogOpen ? (

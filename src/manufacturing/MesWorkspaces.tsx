@@ -622,7 +622,7 @@ function getMonthDates(displayDate: Date) {
   });
 }
 
-function MesOrderDatePicker({
+export function MesOrderDatePicker({
   id,
   value,
   placeholder = 'Select date',
@@ -3165,6 +3165,8 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
   const skipNextPageResetRef = React.useRef(restoredViewState.page > 1);
   const restoredSelectedOrderNumberRef = React.useRef(restoredViewState.selectedOrderNumber);
   const productionOrdersLoadRequestRef = React.useRef(0);
+  const receptionDraftIdRef = React.useRef('');
+  const receptionItemDraftIdRef = React.useRef('');
 
   const selectedOrder = orders.find((order) => order.orderNumber === selectedOrderNumber) ?? null;
   const selectedWorkCenterStationOptions = stationOptionsByWorkCenter[formState.assignedWorkCenter] ?? [];
@@ -3630,6 +3632,36 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
     setFormMode('create');
   };
 
+  React.useEffect(() => {
+    const storedDraft = window.sessionStorage.getItem('yvimo:mes:production-order:reception-draft');
+    if (!storedDraft) return;
+    try {
+      const draft = JSON.parse(storedDraft) as {
+        receptionId?: string;
+        receptionItemId?: string;
+        customerId?: string;
+        clientName?: string;
+        plannedQuantity?: number;
+      };
+      receptionDraftIdRef.current = draft.receptionId ?? '';
+      receptionItemDraftIdRef.current = draft.receptionItemId ?? '';
+      setOrderFormError('');
+      setFormState({
+        ...toFormState(),
+        customerId: draft.customerId ?? '',
+        clientName: draft.clientName ?? '',
+        plannedQuantity: String(draft.plannedQuantity ?? 0),
+      });
+      setPartNameOption('');
+      setAssignSerialsEnabled(false);
+      setSerialAssignmentDrafts([]);
+      setFormMode('create');
+      window.sessionStorage.removeItem('yvimo:mes:production-order:reception-draft');
+    } catch {
+      window.sessionStorage.removeItem('yvimo:mes:production-order:reception-draft');
+    }
+  }, []);
+
   const openEditOrderForm = async () => {
     if (!selectedOrder) return;
     setOrderFormError('');
@@ -3936,6 +3968,38 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
             .abortSignal(controller.signal);
           if (error) throw error;
           const nextOrder = mapProductionOrderRow(data as ProductionOrderRow);
+          let returnToReceptionId = '';
+          if (receptionDraftIdRef.current && receptionItemDraftIdRef.current) {
+            returnToReceptionId = receptionDraftIdRef.current;
+            const { error: receptionLinkError } = await supabase
+              .from('mes_customer_reception_items')
+              .update({
+                production_order_id: nextOrder.id,
+                production_order_number: nextOrder.orderNumber,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('organization_id', organizationId)
+              .eq('id', receptionItemDraftIdRef.current);
+            if (receptionLinkError) throw receptionLinkError;
+            const { count: unassignedReceptionItems, error: receptionItemsError } = await supabase
+              .from('mes_customer_reception_items')
+              .select('id', { count: 'exact', head: true })
+              .eq('organization_id', organizationId)
+              .eq('reception_voucher_id', receptionDraftIdRef.current)
+              .is('production_order_id', null);
+            if (receptionItemsError) throw receptionItemsError;
+            const { error: receptionStatusError } = await supabase
+              .from('mes_customer_reception_vouchers')
+              .update({
+                status: unassignedReceptionItems === 0 ? 'manufacturing' : 'assign-orders',
+                updated_at: new Date().toISOString(),
+              })
+              .eq('organization_id', organizationId)
+              .eq('id', receptionDraftIdRef.current);
+            if (receptionStatusError) throw receptionStatusError;
+            receptionDraftIdRef.current = '';
+            receptionItemDraftIdRef.current = '';
+          }
           if (assignSerialsEnabled) {
             const serialRows: ProductionSerialInsertRow[] = normalizedSerialDrafts.map((draft) => ({
               organization_id: organizationId,
@@ -3958,6 +4022,10 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
           setOrders((currentOrders) => [nextOrder, ...currentOrders]);
           setSelectedOrderNumber(nextOrder.orderNumber);
           closeOrderForm();
+          if (returnToReceptionId) {
+            window.sessionStorage.setItem('yvimo:clients:receptions:selected-id', returnToReceptionId);
+            onNavigate('/workspace/manufacturing-ops/mes/clients/receptions');
+          }
         } catch (error) {
           console.error('Unable to create MES production order', error);
           const message = controller.signal.aborted

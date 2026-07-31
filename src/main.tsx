@@ -3439,6 +3439,7 @@ function LoggedDashboardPage({
   }> = [
     { value: 'customers', label: 'Customers', path: '/workspace/manufacturing-ops/mes/clients', icon: Users },
     { value: 'assets-equipment', label: 'Assets & Equipment', path: '/workspace/manufacturing-ops/mes/clients/assets-equipment', icon: Wrench },
+    { value: 'receptions', label: 'Receptions', path: '/workspace/manufacturing-ops/mes/clients/receptions', icon: PackageCheck },
     { value: 'deliveries-returns', label: 'Deliveries & Returns', path: '/workspace/manufacturing-ops/mes/clients/deliveries-returns', icon: Truck, disabled: true },
     { value: 'balances', label: 'Balances', path: '/workspace/manufacturing-ops/mes/clients/balances', icon: Calculator },
     { value: 'docs-vouchers', label: 'Docs & Vouchers', path: '/workspace/manufacturing-ops/mes/clients/docs-vouchers', icon: FileText, disabled: true },
