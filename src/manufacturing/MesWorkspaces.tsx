@@ -2478,6 +2478,9 @@ function buildDailyProductionReport(
   const machineMap = new Map<string, DailyProductionReportMachine>();
 
   rows.forEach((row) => {
+    // Released GOOD pieces remain in the audit log with quantity zero. They
+    // must not appear in production totals or report activity rows.
+    if (row.event_type === 'production-good' && row.quantity !== null && Number(row.quantity) <= 0) return;
     const order = row.production_order_id ? orderById.get(row.production_order_id) ?? null : null;
     const payload = row.payload ?? {};
     const payloadText = (key: string) => typeof payload[key] === 'string' ? String(payload[key]) : '';

@@ -71,6 +71,9 @@ export function buildWeeklyProductionStats(
   const firstGoodEventByDate = new Map<string, Date>();
 
   events.forEach((event) => {
+    // Administrative piece release keeps the original audit event but sets its
+    // quantity to zero. A later re-report creates a new positive event.
+    if (event.event_type === 'production-good' && event.quantity !== null && Number(event.quantity) <= 0) return;
     const date = toLocalDateInput(new Date(event.created_at));
     const stat = byDate.get(date);
     if (!stat) return;
