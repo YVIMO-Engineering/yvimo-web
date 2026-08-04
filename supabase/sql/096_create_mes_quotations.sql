@@ -20,7 +20,7 @@ create table if not exists public.mes_quotations (
   damage_surcharge numeric(12,2) not null default 0,
   total_price numeric(12,2) not null default 0,
   pricing_status text not null default 'calculated' check (pricing_status in ('calculated', 'manual-review')),
-  status text not null default 'draft' check (status in ('draft', 'sent', 'approved')),
+  status text not null default 'draft' check (status in ('draft', 'sent', 'approved', 'declined')),
   valid_until date not null default (current_date + 30),
   created_by uuid references auth.users(id) on delete set null default auth.uid(),
   created_at timestamptz not null default now(),
