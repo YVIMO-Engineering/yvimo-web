@@ -1,6 +1,6 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { Activity, AlertTriangle, ArrowLeft, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleHelp, CircleX, Copy, Database, Download, Eye, Factory, Frown, FileText, ImagePlus, Maximize2, Meh, Minimize2, Minus, Pencil, Plus, Power, RadioTower, RotateCcw, Ruler, Search, Smile, Timer, Wrench, X } from 'lucide-react';
+import { Activity, AlertTriangle, ArrowLeft, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleHelp, CircleX, Copy, Database, Download, Eye, Factory, Frown, FileText, ImagePlus, LoaderCircle, Maximize2, Meh, Minimize2, Minus, Pencil, Plus, Power, RadioTower, RotateCcw, Ruler, Search, Smile, Timer, Wrench, X } from 'lucide-react';
 import { GoogleWorkCentersMap } from '../components/maps/GoogleWorkCentersMap';
 import { resolveGooglePlacesAddressMatch, searchGooglePlacesAddressMatches, type GooglePlacesAddressMatch } from '../lib/maps/googlePlacesAddressLookup';
 import { supabase } from '../lib/supabaseClient';
@@ -1502,12 +1502,14 @@ export function ProductionOrderDetailsModal({
   order,
   details,
   organizationId,
+  onNavigate,
   onPieceReleased,
   onClose,
 }: {
   order: ProductionOrder;
   details: ProductionOrderDetailsState;
   organizationId: string;
+  onNavigate?: (path: string) => void;
   onPieceReleased?: () => Promise<void> | void;
   onClose: () => void;
 }) {
@@ -1519,8 +1521,83 @@ export function ProductionOrderDetailsModal({
   const [releaseCode, setReleaseCode] = React.useState('');
   const [releaseError, setReleaseError] = React.useState('');
   const [releaseSaving, setReleaseSaving] = React.useState(false);
+  const [stationName, setStationName] = React.useState(order.assignedStation || 'Not assigned');
+  const [associatedReception, setAssociatedReception] = React.useState<{
+    id: string;
+    voucherNumber: string;
+    sentAt: string | null;
+  } | null>(null);
   const qualityPieces = details.pieces.filter((piece) => getProductionOrderDetailQualityInspection(piece) || getProductionOrderDetailQualityMeasurements(piece).length > 0 || getProductionOrderDetailQualityDocuments(piece).length > 0);
   const damagePieces = details.pieces.filter(hasProductionOrderDetailDamage);
+  React.useEffect(() => {
+    let active = true;
+    const loadOrderSummaryContext = async () => {
+      const stationRequest = order.assignedStation
+        ? supabase.from('mes_work_center_stations').select('name').eq('organization_id', organizationId).eq('code', order.assignedStation).limit(1).maybeSingle()
+        : Promise.resolve({ data: null, error: null });
+      const receptionRequest = supabase
+        .from('mes_customer_reception_items')
+        .select('reception_voucher_id, sent_at')
+        .eq('organization_id', organizationId)
+        .eq('production_order_id', order.id)
+        .limit(1)
+        .maybeSingle();
+      const [stationResult, receptionResult] = await Promise.all([stationRequest, receptionRequest]);
+      if (!active) return;
+      const resolvedStationName = (stationResult.data as { name?: string } | null)?.name?.trim();
+      setStationName(resolvedStationName || order.assignedStation || 'Not assigned');
+      const receptionItem = receptionResult.data as { reception_voucher_id?: string; sent_at?: string | null } | null;
+      if (receptionResult.error || !receptionItem?.reception_voucher_id) {
+        setAssociatedReception(null);
+        return;
+      }
+      const { data: receptionData, error: receptionError } = await supabase
+        .from('mes_customer_reception_vouchers')
+        .select('id, voucher_number')
+        .eq('organization_id', organizationId)
+        .eq('id', receptionItem.reception_voucher_id)
+        .maybeSingle();
+      if (!active) return;
+      const reception = receptionData as { id?: string; voucher_number?: string } | null;
+      setAssociatedReception(!receptionError && reception?.id ? {
+        id: reception.id,
+        voucherNumber: reception.voucher_number?.trim() || 'Reception voucher',
+        sentAt: receptionItem.sent_at ?? null,
+      } : null);
+    };
+    void loadOrderSummaryContext();
+    return () => {
+      active = false;
+    };
+  }, [organizationId, order.id, order.assignedStation]);
+  const createdDate = order.createdAt || '';
+  const leadTimeEnd = associatedReception?.sentAt || new Date().toISOString();
+  const leadTimeDays = (() => {
+    if (!createdDate) return null;
+    const start = new Date(createdDate);
+    const end = new Date(leadTimeEnd);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+    const startDay = Date.UTC(start.getFullYear(), start.getMonth(), start.getDate());
+    const endDay = Date.UTC(end.getFullYear(), end.getMonth(), end.getDate());
+    return Math.max(0, Math.round((endDay - startDay) / 86_400_000));
+  })();
+  const leadTimeLabel = leadTimeDays === null ? 'Not available' : `${leadTimeDays} day${leadTimeDays === 1 ? '' : 's'}`;
+  const subReceptionStatus = associatedReception?.sentAt
+    ? 'Sent'
+    : order.status === 'completed'
+      ? 'Waiting to deliver'
+      : order.status === 'waiting-inspection'
+        ? 'Quality inspection'
+        : order.status === 'cancelled'
+          ? 'Discrepancy'
+          : 'Manufacturing';
+  const subReceptionStatusClass = subReceptionStatus.toLowerCase().replaceAll(' ', '-');
+  const openAssociatedReception = () => {
+    if (!associatedReception || !onNavigate) return;
+    window.sessionStorage.setItem('yvimo:clients:receptions:selected-id', associatedReception.id);
+    onClose();
+    onNavigate('/workspace/manufacturing-ops/mes/clients/receptions');
+  };
   const releaseCompletedPiece = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!releasePiece?.serialId || releasePiece.status !== 'good') return;
@@ -1690,8 +1767,12 @@ export function ProductionOrderDetailsModal({
         ['Scrap', order.scrapQuantity.toLocaleString()],
         ['Time Spent', formatCycleDuration(details.timeSpentMs)],
         ['Work Center', order.assignedWorkCenter || 'Not assigned'],
-        ['Station', order.assignedStation || 'Not assigned'],
+        ['Station', stationName],
+        ['Created', createdDate ? formatDate(createdDate.slice(0, 10)) : 'Not available'],
         ['Due', formatDate(order.dueDate)],
+        ['Lead Time', leadTimeLabel],
+        ['Reception', associatedReception?.voucherNumber || 'Not associated'],
+        ['Sub-reception Status', associatedReception ? subReceptionStatus : 'Not associated'],
       ];
       const summaryColumnWidth = contentWidth / 3;
       summaryItems.forEach(([label, value], index) => {
@@ -1793,13 +1874,52 @@ export function ProductionOrderDetailsModal({
             <div>
               <span><small>Planned</small><strong>{order.plannedQuantity.toLocaleString()}</strong></span>
               <span><small>Completed</small><strong>{order.completedQuantity.toLocaleString()}</strong></span>
+              <span className="scrap-value"><small>Scrap</small><strong>{order.scrapQuantity.toLocaleString()}</strong></span>
             </div>
           </article>
           <article className="time-spent"><span>Time Spent</span><strong>{details.loading ? 'Calculating...' : formatCycleDuration(details.timeSpentMs)}</strong></article>
-          <article className="scrap"><span>Scrap</span><strong>{order.scrapQuantity.toLocaleString()}</strong></article>
           <article className="work-center"><span>Work Center</span><strong>{order.assignedWorkCenter || 'Not assigned'}</strong></article>
-          <article className="station"><span>Station</span><strong>{order.assignedStation || 'Not assigned'}</strong></article>
-          <article className="due"><span>Due</span><strong>{formatDate(order.dueDate)}</strong></article>
+          <article className="station"><span>Station</span><strong>{stationName}</strong></article>
+          <article className="schedule">
+            <span>Order Timeline</span>
+            <div>
+              <span><small>Created</small><strong>{createdDate ? formatDate(createdDate.slice(0, 10)) : 'N/A'}</strong></span>
+              <span><small>Due</small><strong>{formatDate(order.dueDate)}</strong></span>
+              <span className="lead-time-value">
+                <small>Lead Time</small>
+                <strong>
+                  {leadTimeLabel}
+                  {associatedReception?.sentAt
+                    ? <CheckCircle2 className="complete" size={17} aria-label="Lead time completed" />
+                    : <LoaderCircle className="running" size={17} aria-label="Lead time running" />}
+                </strong>
+              </span>
+            </div>
+          </article>
+          <article
+            className={`reception${associatedReception && onNavigate ? ' linked' : ''}`}
+            role={associatedReception && onNavigate ? 'button' : undefined}
+            tabIndex={associatedReception && onNavigate ? 0 : undefined}
+            onClick={openAssociatedReception}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') openAssociatedReception();
+            }}
+          >
+            <span>Reception</span>
+            <div>
+              <span>
+                <small>Voucher</small>
+                <strong>{associatedReception?.voucherNumber || 'Not associated'}</strong>
+                {associatedReception && onNavigate ? <em>Open reception voucher</em> : null}
+              </span>
+              <span>
+                <small>Sub-reception status</small>
+                <strong className={`sub-reception-status ${associatedReception ? subReceptionStatusClass : 'not-associated'}`}>
+                  {associatedReception ? subReceptionStatus : 'N/A'}
+                </strong>
+              </span>
+            </div>
+          </article>
         </div>
         <div className="production-order-details-view-switch" role="tablist" aria-label="Production order detail views">
           <button type="button" className={activeView === 'production' ? 'active' : ''} onClick={() => setActiveView('production')} role="tab" aria-selected={activeView === 'production'}>
@@ -4637,6 +4757,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
           order={selectedOrder}
           details={orderDetails}
           organizationId={organizationId}
+          onNavigate={onNavigate}
           onPieceReleased={async () => {
             await loadProductionOrders(true);
             await openOrderDetails();

@@ -37,6 +37,7 @@ import {
   Pencil,
   Plus,
   RadioTower,
+  ReceiptText,
   Rocket,
   ServerCog,
   ShieldCheck,
@@ -53,6 +54,7 @@ import type { Session, User } from '@supabase/supabase-js';
 import { createSessionSupabaseClient, supabase } from './lib/supabaseClient';
 import { AcademyActivityPage, AcademyCatalogPage, AcademyCertificatesPage, AcademyCoursePage, AcademyHomePage, AcademyLessonPage, AcademyProgressPage, AcademyTrackPage } from './pages/AcademyPages';
 import { ProductionOrdersWorkspace, TraceabilityWorkspace, WorkCentersWorkspace } from './manufacturing/MesWorkspaces';
+import { QuotationsWorkspace } from './manufacturing/QuotationsWorkspace';
 import { InventoryWorkspace } from './manufacturing/InventoryWorkspace';
 import { StatisticsWorkspace } from './manufacturing/StatisticsWorkspace';
 import { OperatorTerminalWorkspace } from './manufacturing/OperatorTerminalWorkspace';
@@ -1257,6 +1259,7 @@ Object.assign(translations.es, {
     'Planeaci\u00f3n y programaci\u00f3n avanzada para centros de trabajo, capacidad, prioridades y restricciones de entrega.',
   'Production Orders': '\u00d3rdenes de producci\u00f3n',
   'Work Centers': 'Centros de trabajo',
+  Quotations: 'Cotizaciones',
   'Operator Terminal': 'Terminal de operador',
   'Production Events': 'Eventos de producci\u00f3n',
   'Inventory': 'Inventario',
@@ -1267,6 +1270,8 @@ Object.assign(translations.es, {
     'Crea, libera, asigna y rastrea \u00f3rdenes de manufactura desde la cantidad planeada hasta su terminaci\u00f3n.',
   'Manage machines, lines, cells, and stations where production is executed.':
     'Administra m\u00e1quinas, l\u00edneas, celdas y estaciones donde se ejecuta la producci\u00f3n.',
+  'Create and manage customer quotations for manufacturing products and services.':
+    'Crea y administra cotizaciones para productos y servicios de manufactura.',
   'Simple shop-floor interface for starting jobs, reporting production, scrap, downtime, and completing operations.':
     'Interfaz simple de piso para iniciar trabajos, reportar producci\u00f3n, scrap, paros y completar operaciones.',
   'Timeline of execution events such as order started, quantity added, downtime started, quality check completed, and order completed.':
@@ -3183,6 +3188,14 @@ function LoggedDashboardPage({
       tone: 'blue',
     },
     {
+      label: 'Quotations',
+      description: 'Create and manage customer quotations for manufacturing products and services.',
+      icon: ReceiptText,
+      path: '/workspace/manufacturing-ops/mes/quotations',
+      implemented: true,
+      tone: 'purple',
+    },
+    {
       label: 'Operator Terminal',
       description: 'Simple shop-floor interface for starting jobs, reporting production, scrap, downtime, and completing operations.',
       icon: TerminalSquare,
@@ -3369,7 +3382,7 @@ function LoggedDashboardPage({
   };
   const getManufacturingAppPosition = (moduleLabel: string, index: number) => {
     const positionsByModule: Record<string, number[]> = {
-      MES: [1, 2, 4, 5, 6, 7, 8, 9, 10],
+      MES: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
       APS: [1, 4, 5, 6, 8],
       'Operations Intelligence': [1, 2, 4, 5, 8],
     };
@@ -3399,6 +3412,7 @@ function LoggedDashboardPage({
   const isClientsOperationsPage = activePath === '/workspace/manufacturing-ops/mes/clients' || activePath.startsWith('/workspace/manufacturing-ops/mes/clients/');
   const isCompactMesApplicationPage = activePath === '/workspace/manufacturing-ops/mes/orders'
     || activePath === '/workspace/manufacturing-ops/mes/work-centers'
+    || activePath === '/workspace/manufacturing-ops/mes/quotations'
     || activePath === '/workspace/manufacturing-ops/mes/inventory'
     || activePath === '/workspace/manufacturing-ops/mes/statistics'
     || activePath === '/workspace/manufacturing-ops/mes/traceability';
@@ -3485,6 +3499,9 @@ function LoggedDashboardPage({
     }
     if (activePath === '/workspace/manufacturing-ops/mes/work-centers') {
       return <WorkCentersWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} />;
+    }
+    if (activePath === '/workspace/manufacturing-ops/mes/quotations') {
+      return <QuotationsWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} />;
     }
     if (activePath === '/workspace/manufacturing-ops/mes/inventory') {
       return <InventoryWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} organizationName={manufacturingOrganization?.name ?? 'Manufacturing Organization'} />;

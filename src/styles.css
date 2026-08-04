@@ -7582,7 +7582,7 @@ body.work-center-map-expanded .logged-workspace {
 
 .client-reception-items article {
   display: grid;
-  grid-template-columns: 38px minmax(160px, 1fr) minmax(80px, 0.2fr) minmax(80px, 0.2fr) minmax(330px, 0.9fr) minmax(135px, 0.38fr);
+  grid-template-columns: 38px minmax(130px, 1fr) repeat(3, minmax(66px, 0.18fr)) minmax(280px, 0.82fr) minmax(125px, 0.34fr) minmax(170px, 0.46fr);
   align-items: center;
   gap: 12px;
   border: 1px solid rgba(18, 29, 41, 0.1);
@@ -7919,6 +7919,7 @@ body.work-center-map-expanded .logged-workspace {
 
 .client-reception-item-quantity strong,
 .client-reception-item-produced strong,
+.client-reception-item-scrap strong,
 .client-reception-item-order .assigned-order {
   display: inline-flex;
   align-items: center;
@@ -8007,6 +8008,92 @@ body.work-center-map-expanded .logged-workspace {
   color: #2563eb;
   font-size: 1rem;
   font-weight: 950;
+}
+
+.client-reception-item-scrap strong {
+  border: 1px solid #fecaca;
+  background: #fff1f2;
+  color: #dc2626;
+  font-size: 1rem;
+  font-weight: 950;
+}
+
+.client-reception-item-delivery {
+  min-width: 0;
+}
+
+.client-reception-item-delivery > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  width: fit-content;
+  border: 1px solid #10b981;
+  border-radius: 8px;
+  padding: 0 11px;
+  background: #10b981;
+  color: #ffffff;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.client-reception-item-delivery > button:hover,
+.client-reception-item-delivery > button:focus-visible {
+  border-color: #059669;
+  background: #059669;
+}
+
+.client-reception-item-delivery > button:disabled {
+  opacity: 0.58;
+  cursor: wait;
+}
+
+.client-reception-item-delivery .sent {
+  display: grid;
+  gap: 4px;
+}
+
+.client-reception-item-delivery .sent b {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  width: fit-content;
+  border: 1px solid #6ee7b7;
+  border-radius: 999px;
+  padding: 5px 9px;
+  background: #d1fae5;
+  color: #047857;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+
+.client-reception-item-delivery .sent time {
+  color: #475569;
+  font-size: 0.68rem;
+  font-weight: 750;
+  line-height: 1.25;
+}
+
+.client-reception-item-delivery .pending {
+  color: #94a3b8;
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+.client-reception-delivery-guidance {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid #a7f3d0;
+  border-radius: 9px;
+  padding: 10px 12px;
+  background: #ecfdf5;
+  color: #047857;
+  font-size: 0.76rem;
+  font-weight: 850;
 }
 
 .client-reception-item-order .assigned-order {
@@ -10538,8 +10625,31 @@ body.work-center-map-expanded .logged-workspace {
 
 .production-order-details-summary {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(24, minmax(0, 1fr));
   gap: 8px;
+}
+
+.production-order-details-summary article.status,
+.production-order-details-summary article.priority,
+.production-order-details-summary article.work-center,
+.production-order-details-summary article.station {
+  grid-column: span 4;
+}
+
+.production-order-details-summary article.quantity {
+  grid-column: span 10;
+}
+
+.production-order-details-summary article.time-spent {
+  grid-column: span 6;
+}
+
+.production-order-details-summary article.schedule {
+  grid-column: span 9;
+}
+
+.production-order-details-summary article.reception {
+  grid-column: span 7;
 }
 
 .production-order-details-summary article {
@@ -10572,11 +10682,21 @@ body.work-center-map-expanded .logged-workspace {
 .production-order-details-summary article.time-spent {
   --order-detail-accent: #b45309;
   --order-detail-soft: #fffbeb;
+  grid-template-rows: auto 1fr;
+  text-align: center;
 }
 
-.production-order-details-summary article.scrap {
-  --order-detail-accent: #dc2626;
-  --order-detail-soft: #fff1f2;
+.production-order-details-summary article.time-spent > span {
+  text-align: left;
+}
+
+.production-order-details-summary article.time-spent > strong {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: clamp(1.35rem, 1.7vw, 1.85rem);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
 }
 
 .production-order-details-summary article.work-center,
@@ -10585,9 +10705,27 @@ body.work-center-map-expanded .logged-workspace {
   --order-detail-soft: #f5f3ff;
 }
 
-.production-order-details-summary article.due {
+.production-order-details-summary article.schedule {
   --order-detail-accent: #c2410c;
   --order-detail-soft: #fff7ed;
+}
+
+.production-order-details-summary article.reception {
+  --order-detail-accent: #2563eb;
+  --order-detail-soft: #eff6ff;
+}
+
+.production-order-details-summary article.reception.linked {
+  cursor: pointer;
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.production-order-details-summary article.reception.linked:hover,
+.production-order-details-summary article.reception.linked:focus-visible {
+  border-color: #60a5fa;
+  box-shadow: 0 7px 18px rgba(37, 99, 235, 0.14);
+  outline: none;
+  transform: translateY(-1px);
 }
 
 .production-order-details-summary span {
@@ -10607,13 +10745,21 @@ body.work-center-map-expanded .logged-workspace {
   white-space: nowrap;
 }
 
-.production-order-details-summary article.quantity > div {
+.production-order-details-summary article.quantity > div,
+.production-order-details-summary article.schedule > div,
+.production-order-details-summary article.reception > div {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
 }
 
-.production-order-details-summary article.quantity > div > span {
+.production-order-details-summary article.reception > div {
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+}
+
+.production-order-details-summary article.quantity > div > span,
+.production-order-details-summary article.schedule > div > span,
+.production-order-details-summary article.reception > div > span {
   display: grid;
   gap: 2px;
   min-width: 0;
@@ -10625,7 +10771,9 @@ body.work-center-map-expanded .logged-workspace {
   text-transform: none;
 }
 
-.production-order-details-summary article.quantity small {
+.production-order-details-summary article.quantity small,
+.production-order-details-summary article.schedule small,
+.production-order-details-summary article.reception small {
   color: var(--order-detail-accent);
   font-size: 0.58rem;
   font-weight: 950;
@@ -10633,8 +10781,88 @@ body.work-center-map-expanded .logged-workspace {
   text-transform: uppercase;
 }
 
-.production-order-details-summary article.quantity strong {
+.production-order-details-summary article.quantity strong,
+.production-order-details-summary article.schedule strong,
+.production-order-details-summary article.reception > div strong {
   font-size: 0.9rem;
+}
+
+.production-order-details-summary article.reception em {
+  overflow: hidden;
+  color: #2563eb;
+  font-size: 0.56rem;
+  font-style: normal;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.production-order-details-summary article.reception strong.sub-reception-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-size: 0.64rem;
+  line-height: 1.1;
+  text-transform: uppercase;
+  white-space: normal;
+}
+
+.production-order-details-summary article.reception strong.sub-reception-status.waiting-to-deliver {
+  border-color: #fde68a;
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.production-order-details-summary article.reception strong.sub-reception-status.quality-inspection {
+  border-color: #c4b5fd;
+  background: #ede9fe;
+  color: #6d28d9;
+}
+
+.production-order-details-summary article.reception strong.sub-reception-status.sent {
+  border-color: #6ee7b7;
+  background: #d1fae5;
+  color: #047857;
+}
+
+.production-order-details-summary article.reception strong.sub-reception-status.discrepancy {
+  border-color: #fecaca;
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.production-order-details-summary article.quantity .scrap-value small,
+.production-order-details-summary article.quantity .scrap-value strong {
+  color: #dc2626;
+}
+
+.production-order-details-summary article.schedule .lead-time-value > strong {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.production-order-details-summary article.schedule .lead-time-value svg.running {
+  flex: 0 0 auto;
+  color: #f97316;
+  animation: order-detail-lead-time-spin 0.9s linear infinite;
+}
+
+.production-order-details-summary article.schedule .lead-time-value svg.complete {
+  flex: 0 0 auto;
+  color: #10b981;
+}
+
+@keyframes order-detail-lead-time-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .production-order-details-summary article.time-spent strong {
@@ -12328,6 +12556,17 @@ body.work-center-map-expanded .logged-workspace {
 
   .production-order-details-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .production-order-details-summary article.status,
+  .production-order-details-summary article.priority,
+  .production-order-details-summary article.quantity,
+  .production-order-details-summary article.time-spent,
+  .production-order-details-summary article.work-center,
+  .production-order-details-summary article.station,
+  .production-order-details-summary article.schedule,
+  .production-order-details-summary article.reception {
+    grid-column: auto;
   }
 
   .production-order-preview-modal {

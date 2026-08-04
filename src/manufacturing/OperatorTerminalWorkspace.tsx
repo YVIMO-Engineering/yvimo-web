@@ -2682,6 +2682,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
           order={currentOrder}
           details={orderDetails}
           organizationId={organizationId}
+          onNavigate={onNavigate}
           onPieceReleased={async () => {
             reportedCountsByOrderRef.current.delete(currentOrder.id);
             await loadSnapshot();

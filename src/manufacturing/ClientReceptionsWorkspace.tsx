@@ -27,6 +27,8 @@ type ReceptionItem = {
   productionOrderNumber: string;
   productionStatus: string;
   completedQuantity: number;
+  scrapQuantity: number;
+  sentAt: string;
 };
 
 type ReceptionVoucher = {
@@ -121,6 +123,15 @@ function formatDate(value: string) {
   return new Intl.DateTimeFormat('en-US', { month: 'short', day: '2-digit', year: 'numeric' }).format(parsedDate);
 }
 
+function formatReceptionTimestamp(value: string) {
+  if (!value) return '';
+  const parsedDate = new Date(value);
+  if (Number.isNaN(parsedDate.getTime())) return '';
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short', day: '2-digit', year: 'numeric', hour: 'numeric', minute: '2-digit',
+  }).format(parsedDate);
+}
+
 function ReceptionPortalDropdown({ open, onOpenChange, label, disabled = false, className = '', menuClassName = '', children }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -173,6 +184,7 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
   const [selectedId, setSelectedId] = React.useState('');
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
+  const [sendingItemId, setSendingItemId] = React.useState('');
   const [error, setError] = React.useState('');
   const [formOpen, setFormOpen] = React.useState(false);
   const [editingVoucherId, setEditingVoucherId] = React.useState('');
@@ -213,19 +225,20 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
     const receptionRows = (data ?? []) as ReceptionRow[];
     const receptionIds = receptionRows.map((row) => row.id);
     const { data: itemData } = receptionIds.length
-      ? await supabase.from('mes_customer_reception_items').select('id, reception_voucher_id, customer_id, quantity, production_order_id, production_order_number, mes_customers(customer_name)').in('reception_voucher_id', receptionIds).order('created_at')
+      ? await supabase.from('mes_customer_reception_items').select('id, reception_voucher_id, customer_id, quantity, production_order_id, production_order_number, sent_at, mes_customers(customer_name)').in('reception_voucher_id', receptionIds).order('created_at')
       : { data: [] };
-    const itemRows = (itemData ?? []) as Array<{ id: string; reception_voucher_id: string; customer_id: string; quantity: number; production_order_id: string | null; production_order_number: string; mes_customers: { customer_name: string } | Array<{ customer_name: string }> | null }>;
+    const itemRows = (itemData ?? []) as Array<{ id: string; reception_voucher_id: string; customer_id: string; quantity: number; production_order_id: string | null; production_order_number: string; sent_at: string | null; mes_customers: { customer_name: string } | Array<{ customer_name: string }> | null }>;
     const productionOrderIds = itemRows.map((row) => row.production_order_id).filter((id): id is string => Boolean(id));
-    const productionStatusById = new Map<string, { status: string; completedQuantity: number }>();
+    const productionStatusById = new Map<string, { status: string; completedQuantity: number; scrapQuantity: number }>();
     if (productionOrderIds.length) {
       const { data: productionOrders } = await supabase
         .from('mes_production_orders')
-        .select('id, status, completed_quantity')
+        .select('id, status, completed_quantity, scrap_quantity')
         .in('id', productionOrderIds);
       (productionOrders ?? []).forEach((order) => productionStatusById.set(order.id, {
         status: order.status,
         completedQuantity: Number(order.completed_quantity) || 0,
+        scrapQuantity: Number(order.scrap_quantity) || 0,
       }));
     }
     const mapped = receptionRows.map((row) => {
@@ -233,7 +246,7 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
       const receptionItems: ReceptionItem[] = itemRows.filter((item) => item.reception_voucher_id === row.id).map((item) => {
         const itemCustomer = Array.isArray(item.mes_customers) ? item.mes_customers[0] : item.mes_customers;
         const productionOrder = item.production_order_id ? productionStatusById.get(item.production_order_id) : null;
-        return { id: item.id, customerId: item.customer_id, customerName: itemCustomer?.customer_name ?? 'Unknown customer', quantity: item.quantity, productionOrderId: item.production_order_id ?? '', productionOrderNumber: item.production_order_number, productionStatus: productionOrder?.status ?? '', completedQuantity: productionOrder?.completedQuantity ?? 0 };
+        return { id: item.id, customerId: item.customer_id, customerName: itemCustomer?.customer_name ?? 'Unknown customer', quantity: item.quantity, productionOrderId: item.production_order_id ?? '', productionOrderNumber: item.production_order_number, productionStatus: productionOrder?.status ?? '', completedQuantity: productionOrder?.completedQuantity ?? 0, scrapQuantity: productionOrder?.scrapQuantity ?? 0, sentAt: item.sent_at ?? '' };
       });
       const assignedItems = receptionItems.filter((item) => item.productionOrderId);
       const productionStatuses = assignedItems.map((item) => item.productionStatus);
@@ -460,14 +473,20 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
     await loadVouchers();
   };
 
-  const markSent = async () => {
-    if (!selected || selected.status !== 'waiting-delivery') return;
-    setSaving(true);
-    const update: Record<string, unknown> = { status: 'sent', updated_at: new Date().toISOString() };
-    const { error: updateError } = await supabase.from('mes_customer_reception_vouchers').update(update).eq('id', selected.id);
-    setSaving(false);
-    if (updateError) setError(updateError.message);
-    else await loadVouchers();
+  const markReceptionItemSent = async (item: ReceptionItem) => {
+    if (item.sentAt || sendingItemId) return;
+    setSendingItemId(item.id);
+    setError('');
+    const { error: sentError } = await supabase.rpc('mark_customer_reception_item_sent', {
+      p_item_id: item.id,
+      p_organization_id: organizationId,
+    });
+    setSendingItemId('');
+    if (sentError) {
+      setError(sentError.message);
+      return;
+    }
+    await loadVouchers();
   };
 
   const forceWaitingDelivery = async (event: React.FormEvent) => {
@@ -697,8 +716,8 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
               </div>
               <div className="client-reception-actions">
                 {!['waiting-delivery', 'sent'].includes(selected.status) ? <button className="client-reception-override-action" type="button" onClick={() => { setOverrideCode(''); setOverrideError(''); setOverrideOpen(true); }}><ShieldAlert size={16} /> Skip to Waiting to Deliver</button> : null}
-                {selected.status === 'waiting-delivery' ? <button className="client-reception-mark-sent" type="button" onClick={() => void markSent()} disabled={saving}><Truck size={16} /> Mark as Sent</button> : null}
-                {selected.status === 'sent' ? <button type="button" disabled><Check size={16} /> Process Completed</button> : null}
+                {selected.status === 'waiting-delivery' ? <span className="client-reception-delivery-guidance"><Truck size={16} /> Mark each completed sub-reception as sent below.</span> : null}
+                {selected.status === 'sent' ? <button type="button" disabled><Check size={16} /> All Sub-receptions Sent</button> : null}
               </div>
               <section className="client-reception-items">
                 <header><div><strong>Sub-receptions by Client</strong><span>{selected.items.length} items · {selected.quantityExpected.toLocaleString()} total pieces</span></div></header>
@@ -709,6 +728,7 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
                       <div><small>Client</small><strong>{item.customerName}</strong></div>
                       <div className="client-reception-item-quantity"><small>Quantity</small><strong>{item.quantity.toLocaleString()}</strong></div>
                       <div className="client-reception-item-produced"><small>Produced</small><strong>{item.completedQuantity.toLocaleString()}</strong></div>
+                      <div className="client-reception-item-scrap"><small>Scrap</small><strong>{item.scrapQuantity.toLocaleString()}</strong></div>
                       <div className="client-reception-item-order">
                         <small>Production Order</small>
                         {item.productionOrderId ? <strong className="assigned-order">{item.productionOrderNumber}</strong> : <div className="client-reception-order-actions"><button type="button" onClick={() => registerProductionOrder(item)}><Plus size={15} /> Assign New Order</button><button type="button" className="existing" onClick={() => void openExistingOrderModal(item)}><Search size={15} /> Assign Existing Order</button></div>}
@@ -716,6 +736,10 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
                       <div className="client-reception-item-order-status">
                         <small>Order Status</small>
                         <strong className={item.productionStatus || 'not-assigned'}>{labelProductionStatus(item.productionStatus)}</strong>
+                      </div>
+                      <div className="client-reception-item-delivery">
+                        <small>Delivery</small>
+                        {item.sentAt ? <span className="sent"><b><Check size={14} /> Sent</b><time dateTime={item.sentAt}>{formatReceptionTimestamp(item.sentAt)}</time></span> : item.productionStatus === 'completed' || selected.status === 'waiting-delivery' ? <button type="button" onClick={() => void markReceptionItemSent(item)} disabled={Boolean(sendingItemId)}><Truck size={15} /> {sendingItemId === item.id ? 'Sending...' : 'Mark as Sent'}</button> : <span className="pending">Pending completion</span>}
                       </div>
                     </article>
                   ))}
