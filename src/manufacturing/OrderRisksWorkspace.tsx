@@ -3,6 +3,7 @@ import { AlertOctagon, AlertTriangle, ArrowLeft, Check, CheckCircle2, ChevronDow
 import { supabase } from '../lib/supabaseClient';
 import { useSupabaseRealtimeRefresh } from '../lib/useSupabaseRealtimeRefresh';
 import type { ProductionOrderStatus } from './mesTypes';
+import { ProductionOrdersWorkspace } from './MesWorkspaces';
 import './orderRisks.css';
 
 type OrderRisksWorkspaceProps = {
@@ -21,12 +22,36 @@ type OrderRiskRow = {
   status: ProductionOrderStatus;
   serialNumbers: string[];
   stationCodes: string[];
+  assignedWorkCenter: string;
+  createdAt: string;
 };
 
 type RiskLevel = 'overdue' | 'high' | 'moderate' | 'low';
 
 type OrderSerialRow = { production_order_id: string; serial_number: string | null; assigned_station: string | null };
-type StationRow = { code: string; name: string };
+type StationRow = { code: string; name: string; work_center_id: string };
+type WorkCenterRow = { id: string; code: string; name: string };
+
+const productionOrderDeepLinkKey = 'yvimo:mes:selectedProductionOrderNumber';
+const productionOrderDetailsDeepLinkKey = 'yvimo:mes:openProductionOrderDetails';
+const orderRisksFilterKeyPrefix = 'yvimo:order-risks:filters';
+
+type SavedOrderRiskFilters = { client: string; workCenter: string; stations: string[]; search: string };
+
+function loadSavedFilters(organizationId: string): SavedOrderRiskFilters {
+  const fallback = { client: 'all', workCenter: 'all', stations: [], search: '' };
+  try {
+    const saved = JSON.parse(window.sessionStorage.getItem(`${orderRisksFilterKeyPrefix}:${organizationId}`) ?? '{}') as Partial<SavedOrderRiskFilters>;
+    return {
+      client: typeof saved.client === 'string' ? saved.client : fallback.client,
+      workCenter: typeof saved.workCenter === 'string' ? saved.workCenter : fallback.workCenter,
+      stations: Array.isArray(saved.stations) ? saved.stations.filter((station): station is string => typeof station === 'string') : fallback.stations,
+      search: typeof saved.search === 'string' ? saved.search : fallback.search,
+    };
+  } catch {
+    return fallback;
+  }
+}
 
 const activeStatuses: ProductionOrderStatus[] = ['planned', 'released', 'running', 'paused', 'waiting-inspection'];
 
@@ -53,6 +78,25 @@ function dueLabel(dueDate: string) {
   return `${days} days left`;
 }
 
+function dueMetricTitle(dueDate: string) {
+  return daysUntilDue(dueDate) < 0 ? 'Overdue' : 'Due';
+}
+
+function statusLabel(status: ProductionOrderStatus) {
+  return status.split('-').map((word) => `${word.charAt(0).toUpperCase()}${word.slice(1)}`).join(' ');
+}
+
+function leadTimeLabel(createdAt: string) {
+  if (!createdAt) return 'Not available';
+  const start = new Date(createdAt);
+  const end = new Date();
+  if (Number.isNaN(start.getTime())) return 'Not available';
+  const startDay = Date.UTC(start.getFullYear(), start.getMonth(), start.getDate());
+  const endDay = Date.UTC(end.getFullYear(), end.getMonth(), end.getDate());
+  const days = Math.max(0, Math.round((endDay - startDay) / 86_400_000));
+  return `${days} day${days === 1 ? '' : 's'}`;
+}
+
 const sections: Array<{ level: RiskLevel; title: string; range: string; icon: typeof AlertTriangle }> = [
   { level: 'overdue', title: 'Overdue', range: 'Delivery date has passed', icon: AlertOctagon },
   { level: 'high', title: 'High Risk', range: 'Due today or tomorrow', icon: AlertTriangle },
@@ -61,20 +105,25 @@ const sections: Array<{ level: RiskLevel; title: string; range: string; icon: ty
 ];
 
 export function OrderRisksWorkspace({ onNavigate, organizationId }: OrderRisksWorkspaceProps) {
+  const savedFilters = React.useMemo(() => loadSavedFilters(organizationId), [organizationId]);
   const [orders, setOrders] = React.useState<OrderRiskRow[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState('');
-  const [clientFilter, setClientFilter] = React.useState('all');
-  const [searchTerm, setSearchTerm] = React.useState('');
+  const [clientFilter, setClientFilter] = React.useState(savedFilters.client);
+  const [workCenterFilter, setWorkCenterFilter] = React.useState(savedFilters.workCenter);
+  const [searchTerm, setSearchTerm] = React.useState(savedFilters.search);
   const [clientMenuOpen, setClientMenuOpen] = React.useState(false);
+  const [workCenterMenuOpen, setWorkCenterMenuOpen] = React.useState(false);
   const [stations, setStations] = React.useState<StationRow[]>([]);
-  const [selectedStations, setSelectedStations] = React.useState<string[]>([]);
+  const [workCenters, setWorkCenters] = React.useState<WorkCenterRow[]>([]);
+  const [selectedStations, setSelectedStations] = React.useState<string[]>(savedFilters.stations);
+  const [detailOrderNumber, setDetailOrderNumber] = React.useState('');
 
   const loadOrders = React.useCallback(async () => {
-    const [{ data, error: loadError }, { data: serialData, error: serialError }, { data: stationData, error: stationError }] = await Promise.all([
+    const [{ data, error: loadError }, { data: serialData, error: serialError }, { data: stationData, error: stationError }, { data: workCenterData, error: workCenterError }] = await Promise.all([
       supabase
         .from('mes_production_orders')
-        .select('id, order_number, client_name, planned_quantity, completed_quantity, scrap_quantity, due_date, status, assigned_station')
+        .select('id, order_number, client_name, planned_quantity, completed_quantity, scrap_quantity, due_date, status, assigned_station, assigned_work_center, created_at')
         .eq('organization_id', organizationId)
         .in('status', activeStatuses)
         .order('due_date', { ascending: true }),
@@ -84,13 +133,18 @@ export function OrderRisksWorkspace({ onNavigate, organizationId }: OrderRisksWo
         .eq('organization_id', organizationId),
       supabase
         .from('mes_work_center_stations')
-        .select('code, name')
+        .select('code, name, work_center_id')
+        .eq('organization_id', organizationId)
+        .order('name', { ascending: true }),
+      supabase
+        .from('mes_work_centers')
+        .select('id, code, name')
         .eq('organization_id', organizationId)
         .order('name', { ascending: true }),
     ]);
 
-    if (loadError || serialError || stationError) {
-      setError(loadError?.message ?? serialError?.message ?? stationError?.message ?? 'Unable to load order risk data.');
+    if (loadError || serialError || stationError || workCenterError) {
+      setError(loadError?.message ?? serialError?.message ?? stationError?.message ?? workCenterError?.message ?? 'Unable to load order risk data.');
     } else {
       const serialsByOrder = ((serialData ?? []) as OrderSerialRow[]).reduce<Record<string, { serials: string[]; stations: string[] }>>((groups, serial) => {
         const group = groups[serial.production_order_id] ?? { serials: [], stations: [] };
@@ -99,12 +153,15 @@ export function OrderRisksWorkspace({ onNavigate, organizationId }: OrderRisksWo
         groups[serial.production_order_id] = group;
         return groups;
       }, {});
-      setOrders(((data ?? []) as Array<Omit<OrderRiskRow, 'serialNumbers' | 'stationCodes'> & { assigned_station: string | null }>).map((order) => ({
+      setOrders(((data ?? []) as Array<Omit<OrderRiskRow, 'serialNumbers' | 'stationCodes' | 'assignedWorkCenter' | 'createdAt'> & { assigned_station: string | null; assigned_work_center: string | null; created_at: string | null }>).map((order) => ({
         ...order,
         serialNumbers: serialsByOrder[order.id]?.serials ?? [],
         stationCodes: Array.from(new Set([order.assigned_station, ...(serialsByOrder[order.id]?.stations ?? [])].filter(Boolean) as string[])),
+        assignedWorkCenter: order.assigned_work_center ?? '',
+        createdAt: order.created_at ?? '',
       })));
       setStations((stationData ?? []) as StationRow[]);
+      setWorkCenters((workCenterData ?? []) as WorkCenterRow[]);
       setError('');
     }
     setLoading(false);
@@ -117,25 +174,41 @@ export function OrderRisksWorkspace({ onNavigate, organizationId }: OrderRisksWo
       { table: 'mes_production_orders', filter: `organization_id=eq.${organizationId}` },
       { table: 'mes_production_serials', filter: `organization_id=eq.${organizationId}` },
       { table: 'mes_work_center_stations', filter: `organization_id=eq.${organizationId}` },
+      { table: 'mes_work_centers', filter: `organization_id=eq.${organizationId}` },
     ], [organizationId]),
     onRefresh: loadOrders,
   });
+
+  React.useEffect(() => {
+    window.sessionStorage.setItem(`${orderRisksFilterKeyPrefix}:${organizationId}`, JSON.stringify({
+      client: clientFilter,
+      workCenter: workCenterFilter,
+      stations: selectedStations,
+      search: searchTerm,
+    } satisfies SavedOrderRiskFilters));
+  }, [clientFilter, organizationId, searchTerm, selectedStations, workCenterFilter]);
 
   const clientOptions = React.useMemo(() => Array.from(new Set(orders.map((order) => order.client_name?.trim()).filter(Boolean) as string[])).sort((a, b) => a.localeCompare(b)), [orders]);
   const normalizedSearch = searchTerm.trim().toLocaleLowerCase();
   const stationNameByCode = React.useMemo(() => new Map(stations.map((station) => [station.code, station.name])), [stations]);
   const filteredOrders = orders.filter((order) => {
     const matchesClient = clientFilter === 'all' || order.client_name === clientFilter;
+    const matchesWorkCenter = workCenterFilter === 'all' || order.assignedWorkCenter === workCenterFilter;
     const matchesStations = selectedStations.length === 0 || selectedStations.some((station) => order.stationCodes.includes(station));
     const matchesSearch = !normalizedSearch
       || order.order_number.toLocaleLowerCase().includes(normalizedSearch)
       || order.serialNumbers.some((serial) => serial.toLocaleLowerCase().includes(normalizedSearch));
-    return matchesClient && matchesStations && matchesSearch;
+    return matchesClient && matchesWorkCenter && matchesStations && matchesSearch;
   });
-  const filtersActive = clientFilter !== 'all' || selectedStations.length > 0 || Boolean(normalizedSearch);
+  const filtersActive = clientFilter !== 'all' || workCenterFilter !== 'all' || selectedStations.length > 0 || Boolean(normalizedSearch);
   const toggleStation = (stationCode: string) => setSelectedStations((current) => current.includes(stationCode)
     ? current.filter((code) => code !== stationCode)
     : [...current, stationCode]);
+  const openOrderDetails = (orderNumber: string) => {
+    window.sessionStorage.setItem(productionOrderDeepLinkKey, orderNumber);
+    window.sessionStorage.setItem(productionOrderDetailsDeepLinkKey, orderNumber);
+    setDetailOrderNumber(orderNumber);
+  };
 
   return (
     <div className="order-risks-workspace">
@@ -170,6 +243,23 @@ export function OrderRisksWorkspace({ onNavigate, organizationId }: OrderRisksWo
                 {['all', ...clientOptions].map((client) => (
                   <button type="button" role="option" aria-selected={clientFilter === client} key={client} onClick={() => { setClientFilter(client); setClientMenuOpen(false); }}>
                     <span>{client === 'all' ? 'All clients' : client}</span>{clientFilter === client ? <Check size={16} /> : null}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        </label>
+        <label className="order-risks-work-center-filter">
+          <span>Work Center</span>
+          <div className={`order-risks-dropdown ${workCenterMenuOpen ? 'open' : ''}`}>
+            <button type="button" aria-haspopup="listbox" aria-expanded={workCenterMenuOpen} onClick={() => setWorkCenterMenuOpen((open) => !open)}>
+              <span>{workCenterFilter === 'all' ? 'All work centers' : workCenters.find((center) => center.code === workCenterFilter)?.name ?? workCenterFilter}</span><ChevronDown size={17} />
+            </button>
+            {workCenterMenuOpen ? (
+              <div className="order-risks-dropdown-menu" role="listbox">
+                {[{ id: 'all', code: 'all', name: 'All work centers' }, ...workCenters].map((center) => (
+                  <button type="button" role="option" aria-selected={workCenterFilter === center.code} key={center.code} onClick={() => { setWorkCenterFilter(center.code); setWorkCenterMenuOpen(false); }}>
+                    <span>{center.name}{center.code !== 'all' ? ` · ${center.code}` : ''}</span>{workCenterFilter === center.code ? <Check size={16} /> : null}
                   </button>
                 ))}
               </div>
@@ -216,10 +306,27 @@ export function OrderRisksWorkspace({ onNavigate, organizationId }: OrderRisksWo
                 {!loading && sectionOrders.map((order) => {
                   const progress = order.planned_quantity > 0 ? Math.min(100, Math.round((order.completed_quantity / order.planned_quantity) * 100)) : 0;
                   return (
-                    <article className="order-risk-card" key={order.id}>
+                    <article
+                      className="order-risk-card clickable"
+                      key={order.id}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`Open details for production order ${order.order_number}`}
+                      onClick={() => openOrderDetails(order.order_number)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          openOrderDetails(order.order_number);
+                        }
+                      }}
+                    >
                       <div className="order-risk-card-top">
                         <span><small>Production order</small><strong>#{order.order_number}</strong></span>
-                        <em>{dueLabel(order.due_date)}</em>
+                        <div className="order-risk-card-badges">
+                          <span className={`mes-status-badge status-${order.status}`}>{statusLabel(order.status)}</span>
+                          <span className="order-risk-due-metric"><small>{dueMetricTitle(order.due_date)}</small><strong>{dueLabel(order.due_date)}</strong></span>
+                          <span className="order-risk-lead-time"><small>Lead Time</small><strong>{leadTimeLabel(order.createdAt)}</strong></span>
+                        </div>
                       </div>
                       <p className="order-risk-client">{order.client_name || 'Customer not assigned'}</p>
                       <div className="order-risk-machines">
@@ -244,6 +351,14 @@ export function OrderRisksWorkspace({ onNavigate, organizationId }: OrderRisksWo
           <div className="order-risks-all-clear"><PackageOpen size={28} /><strong>{filtersActive ? 'No matching production orders' : 'No active production orders'}</strong><span>{filtersActive ? 'Try changing the client or search term.' : 'New active orders will appear here automatically.'}</span></div>
         ) : null}
       </main>
+      {detailOrderNumber ? (
+        <ProductionOrdersWorkspace
+          organizationId={organizationId}
+          onNavigate={onNavigate}
+          modalOnly
+          onModalClose={() => setDetailOrderNumber('')}
+        />
+      ) : null}
     </div>
   );
 }

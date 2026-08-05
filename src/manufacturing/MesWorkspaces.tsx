@@ -20,6 +20,7 @@ type WorkspaceProps = {
 };
 
 const productionOrderDeepLinkKey = 'yvimo:mes:selectedProductionOrderNumber';
+const productionOrderDetailsDeepLinkKey = 'yvimo:mes:openProductionOrderDetails';
 const productionOrdersViewStateKeyPrefix = 'yvimo:mes:production-orders:view';
 
 type ProductionOrdersViewState = {
@@ -3284,7 +3285,10 @@ function PendingWorkReportModal({
   return typeof document === 'undefined' ? modalContent : createPortal(modalContent, document.body);
 }
 
-export function ProductionOrdersWorkspace({ onNavigate, organizationId }: WorkspaceProps) {
+export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnly = false, onModalClose }: WorkspaceProps & {
+  modalOnly?: boolean;
+  onModalClose?: () => void;
+}) {
   const restoredViewState = React.useMemo(() => loadProductionOrdersViewState(organizationId), [organizationId]);
   const [orders, setOrders] = React.useState<ProductionOrder[]>([]);
   const [selectedOrderNumber, setSelectedOrderNumber] = React.useState(restoredViewState.selectedOrderNumber);
@@ -3352,6 +3356,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
   }, [orderDetailsOpen, orderDetails.loading, orderDetails.error, orderDetails.pieces]);
   const orderRowRefs = React.useRef<Record<string, HTMLTableRowElement | null>>({});
   const pendingScrollOrderNumberRef = React.useRef('');
+  const pendingOpenOrderDetailsRef = React.useRef('');
   const skipNextPageResetRef = React.useRef(restoredViewState.page > 1);
   const restoredSelectedOrderNumberRef = React.useRef(restoredViewState.selectedOrderNumber);
   const productionOrdersLoadRequestRef = React.useRef(0);
@@ -3591,6 +3596,10 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
     setSortByPriority(false);
     setPage(Math.floor(targetOrderIndex / pageSize) + 1);
     setSelectedOrderNumber(pendingOrderNumber);
+    if (window.sessionStorage.getItem(productionOrderDetailsDeepLinkKey) === pendingOrderNumber) {
+      pendingOpenOrderDetailsRef.current = pendingOrderNumber;
+      window.sessionStorage.removeItem(productionOrderDetailsDeepLinkKey);
+    }
     pendingScrollOrderNumberRef.current = pendingOrderNumber;
   }, [orders, orderView, searchTerm]);
 
@@ -4464,6 +4473,12 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
     }
   };
 
+  React.useEffect(() => {
+    if (!selectedOrder || pendingOpenOrderDetailsRef.current !== selectedOrder.orderNumber) return;
+    pendingOpenOrderDetailsRef.current = '';
+    void openOrderDetails();
+  }, [selectedOrder]);
+
   const confirmPendingAction = async () => {
     if (!confirmation) return;
     const pendingConfirmation = confirmation;
@@ -4482,6 +4497,25 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId }: Worksp
       document.documentElement.style.overflow = previousDocumentOverflow;
     };
   }, [formMode, confirmation, jobQueueSummary, pendingWorkReport, dailyProductionReport, orderDetailsOpen]);
+
+  if (modalOnly) {
+    return orderDetailsOpen && selectedOrder ? (
+      <ProductionOrderDetailsModal
+        order={selectedOrder}
+        details={orderDetails}
+        organizationId={organizationId}
+        onNavigate={onNavigate}
+        onPieceReleased={async () => {
+          await loadProductionOrders(true);
+          await openOrderDetails();
+        }}
+        onClose={() => {
+          setOrderDetailsOpen(false);
+          onModalClose?.();
+        }}
+      />
+    ) : null;
+  }
 
   return (
     <section className="mes-workspace-panel production-orders-workspace">
