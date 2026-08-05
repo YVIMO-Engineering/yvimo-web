@@ -8405,6 +8405,13 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
                   totals[cycle.status] = (totals[cycle.status] ?? 0) + reportCycleDuration(cycle);
                   return totals;
                 }, {});
+                const timelineDays: Date[] = [];
+                const timelineCursor = new Date(`${cycleReportDateRange.from}T00:00:00`);
+                const timelineLastDay = new Date(`${cycleReportDateRange.to}T00:00:00`);
+                while (timelineCursor <= timelineLastDay) {
+                  timelineDays.push(new Date(timelineCursor));
+                  timelineCursor.setDate(timelineCursor.getDate() + 1);
+                }
                 return (
                   <article className="station-cycle-machine" key={station.id}>
                     <header><div><strong>{station.name}</strong><span>{station.code}</span></div><span>{formatCycleDuration(stationTotalDuration)} tracked</span></header>
@@ -8430,6 +8437,52 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
                         );
                       })}
                     </div>
+                    <section className="station-status-timeline" aria-label={`${station.name} status timeline`}>
+                      <div className="station-status-timeline-heading">
+                        <div><strong>Status Timeline</strong><span>24-hour machine status history</span></div>
+                        <div className="station-status-timeline-legend" aria-label="Status colors">
+                          {(['running', 'idle', 'down', 'setup', 'maintenance', 'offline'] as WorkCenterStatus[]).map((status) => <span className={`timeline-${status}`} key={status}><i />{formatLabel(status)}</span>)}
+                        </div>
+                      </div>
+                      <div className="station-status-timeline-days">
+                        {timelineDays.map((day) => {
+                          const dayStart = new Date(day);
+                          const dayEnd = new Date(day);
+                          dayEnd.setDate(dayEnd.getDate() + 1);
+                          const dayStartMs = dayStart.getTime();
+                          const dayEndMs = dayEnd.getTime();
+                          const dayDuration = dayEndMs - dayStartMs;
+                          const segments = stationCycles
+                            .map((cycle) => {
+                              const start = Math.max(new Date(cycle.started_at).getTime(), dayStartMs);
+                              const end = Math.min(cycle.ended_at ? new Date(cycle.ended_at).getTime() : cycleClock, dayEndMs);
+                              return { cycle, start, end };
+                            })
+                            .filter((segment) => segment.end > segment.start)
+                            .sort((left, right) => left.start - right.start);
+                          return (
+                            <div className="station-status-timeline-day" key={toIsoDate(day)}>
+                              <time>{day.toLocaleDateString(undefined, { month: 'short', day: '2-digit' })}</time>
+                              <div className="station-status-timeline-chart">
+                                <div className="station-status-timeline-track">
+                                  {segments.map(({ cycle, start, end }, index) => (
+                                    <span
+                                      className={`station-status-timeline-segment timeline-${cycle.status}`}
+                                      key={`${cycle.id}-${index}`}
+                                      style={{ left: `${((start - dayStartMs) / dayDuration) * 100}%`, width: `${((end - start) / dayDuration) * 100}%` }}
+                                      title={`${formatLabel(cycle.status)} · ${formatTimestamp(new Date(start).toISOString())} – ${!cycle.ended_at && end === cycleClock ? 'Current' : formatTimestamp(new Date(end).toISOString())}`}
+                                    />
+                                  ))}
+                                </div>
+                                <div className="station-status-timeline-hours" aria-hidden="true">
+                                  {Array.from({ length: 25 }, (_, hour) => <span key={hour}>{String(hour).padStart(2, '0')}</span>)}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </section>
                   </article>
                 );
               })}

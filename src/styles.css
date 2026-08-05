@@ -19672,6 +19672,29 @@ body.work-center-map-expanded .logged-workspace {
 .station-cycle-status.station-cycle-maintenance { border-color: #d97706; background: #fff8e7; color: #9a5700; }
 .station-cycle-status.station-cycle-offline { border-color: #94a3b8; background: #f1f5f9; color: #475569; }
 .station-cycle-empty { margin: 0; padding: 18px 16px; color: #607080; }
+.station-status-timeline { display: grid; gap: 14px; padding: 17px 20px 20px; background: #fbfcfe; }
+.station-status-timeline-heading { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+.station-status-timeline-heading > div:first-child { display: grid; gap: 2px; }
+.station-status-timeline-heading strong { color: #172536; font-size: .82rem; letter-spacing: .035em; text-transform: uppercase; }
+.station-status-timeline-heading > div:first-child span { color: #718095; font-size: .68rem; font-weight: 650; }
+.station-status-timeline-legend { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px 12px; }
+.station-status-timeline-legend span { display: inline-flex; align-items: center; gap: 5px; color: #5c6b7e; font-size: .62rem; font-weight: 760; }
+.station-status-timeline-legend i { width: 9px; height: 9px; border-radius: 3px; background: #94a3b8; }
+.station-status-timeline-days { display: grid; gap: 14px; }
+.station-status-timeline-day { display: grid; grid-template-columns: 62px minmax(0, 1fr); align-items: start; gap: 10px; }
+.station-status-timeline-day > time { padding-top: 4px; color: #415166; font-size: .67rem; font-weight: 800; }
+.station-status-timeline-chart { min-width: 0; }
+.station-status-timeline-track { position: relative; height: 22px; overflow: hidden; border: 1px solid #d5dee8; border-radius: 6px; background-color: #edf1f5; background-image: linear-gradient(to right, rgba(100,116,139,.18) 1px, transparent 1px); background-size: calc(100% / 24) 100%; }
+.station-status-timeline-segment { position: absolute; top: 0; bottom: 0; z-index: 1; min-width: 1px; border-left: 1px solid rgba(255,255,255,.42); background: #94a3b8; }
+.station-status-timeline-segment:hover { z-index: 2; filter: brightness(.92); box-shadow: 0 0 0 2px rgba(15,23,42,.15); }
+.station-status-timeline-hours { display: flex; justify-content: space-between; margin-top: 5px; color: #718095; font-size: .52rem; font-variant-numeric: tabular-nums; }
+.station-status-timeline-segment.timeline-running, .station-status-timeline-legend .timeline-running i { background: #f59e0b; }
+.station-status-timeline-segment.timeline-idle, .station-status-timeline-legend .timeline-idle i,
+.station-status-timeline-segment.timeline-available, .station-status-timeline-legend .timeline-available i { background: #10b981; }
+.station-status-timeline-segment.timeline-down, .station-status-timeline-legend .timeline-down i { background: #ef4444; }
+.station-status-timeline-segment.timeline-setup, .station-status-timeline-legend .timeline-setup i { background: #8b5cf6; }
+.station-status-timeline-segment.timeline-maintenance, .station-status-timeline-legend .timeline-maintenance i { background: #d97706; }
+.station-status-timeline-segment.timeline-offline, .station-status-timeline-legend .timeline-offline i { background: #94a3b8; }
 
 .station-cycle-detail-backdrop { z-index: 110; padding: 80px 24px 24px !important; }
 .station-cycle-detail-modal { display: flex; flex-direction: column; gap: 0; width: min(1240px, calc(100vw - 48px)); max-height: calc(100dvh - 120px); padding: 0; overflow: hidden; }
@@ -19696,6 +19719,10 @@ body.work-center-map-expanded .logged-workspace {
   .station-cycle-report-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .station-cycle-report-header { align-items: flex-start; flex-direction: column; }
   .station-cycle-report-header-actions { align-items: stretch; flex-wrap: wrap; width: 100%; }
+  .station-status-timeline-heading { align-items: flex-start; flex-direction: column; }
+  .station-status-timeline-legend { justify-content: flex-start; }
+  .station-status-timeline-day { grid-template-columns: 1fr; }
+  .station-status-timeline-day > time { padding-top: 0; }
   .station-cycle-report-filters { align-items: stretch; flex: 1 1 100%; flex-wrap: wrap; }
   .station-cycle-summary-head { display: none; }
   .station-cycle-summary-row { grid-template-columns: 1fr 1fr; }
