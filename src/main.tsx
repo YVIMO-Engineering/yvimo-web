@@ -48,6 +48,7 @@ import {
   Users,
   Workflow,
   Wrench,
+  ShieldAlert,
   X,
 } from 'lucide-react';
 import type { Session, User } from '@supabase/supabase-js';
@@ -61,6 +62,7 @@ import { OperatorTerminalWorkspace } from './manufacturing/OperatorTerminalWorks
 import { QualityOperationsWorkspace, type QualityContextTab } from './manufacturing/QualityOperationsWorkspace';
 import { SupplierOperationsWorkspace, type SupplierContextTab } from './manufacturing/SupplierOperationsWorkspace';
 import { CustomerOperationsWorkspace, type ClientsContextTab } from './manufacturing/CustomerOperationsWorkspace';
+import { OrderRisksWorkspace } from './manufacturing/OrderRisksWorkspace';
 import './manufacturing/customerOperations.css';
 import './manufacturing/clientBalances.css';
 import './styles.css';
@@ -3169,7 +3171,7 @@ function LoggedDashboardPage({
     icon: React.ComponentType<{ size?: number }>;
     path: string;
     implemented: boolean;
-    tone?: 'green' | 'blue' | 'orange' | 'purple';
+    tone?: 'green' | 'blue' | 'orange' | 'purple' | 'red';
   }> = [
     {
       label: 'Production Orders',
@@ -3294,7 +3296,17 @@ function LoggedDashboardPage({
     description: string;
     icon: React.ComponentType<{ size?: number }>;
     path: string;
+    implemented?: boolean;
+    tone?: 'green' | 'blue' | 'orange' | 'purple' | 'red';
   }> = [
+    {
+      label: 'Order Risks',
+      description: 'Monitor active production orders by delivery urgency and identify late-delivery risk in real time.',
+      icon: ShieldAlert,
+      path: '/workspace/manufacturing-ops/intelligence/order-risks',
+      implemented: true,
+      tone: 'red',
+    },
     {
       label: 'OEE Dashboard',
       description: 'Monitor availability, performance, quality, and total OEE by area or work center.',
@@ -3384,7 +3396,7 @@ function LoggedDashboardPage({
     const positionsByModule: Record<string, number[]> = {
       MES: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
       APS: [1, 4, 5, 6, 8],
-      'Operations Intelligence': [1, 2, 4, 5, 8],
+      'Operations Intelligence': [1, 2, 3, 4, 5, 8],
     };
     return positionsByModule[moduleLabel]?.[index] ?? index + 1;
   };
@@ -3394,7 +3406,7 @@ function LoggedDashboardPage({
       ? intelligenceModules
       : mesModules;
   const isManufacturingAppImplemented = (module: { implemented?: boolean }) => module.implemented === true;
-  const getManufacturingAppToneClass = (module: { tone?: 'green' | 'blue' | 'orange' | 'purple' }) => module.tone ? `tone-${module.tone}` : '';
+  const getManufacturingAppToneClass = (module: { tone?: 'green' | 'blue' | 'orange' | 'purple' | 'red' }) => module.tone ? `tone-${module.tone}` : '';
   const handleManufacturingAppLaunch = (module: { label: string; path: string; implemented?: boolean }) => {
     if (!isManufacturingAppImplemented(module)) {
       setManufacturingUnavailableApp(module.label);
@@ -3416,6 +3428,7 @@ function LoggedDashboardPage({
     || activePath === '/workspace/manufacturing-ops/mes/inventory'
     || activePath === '/workspace/manufacturing-ops/mes/statistics'
     || activePath === '/workspace/manufacturing-ops/mes/traceability';
+  const isOrderRisksPage = activePath === '/workspace/manufacturing-ops/intelligence/order-risks';
   const supplierContextTabs: Array<{
     value: SupplierContextTab;
     label: string;
@@ -3493,6 +3506,9 @@ function LoggedDashboardPage({
   const renderActiveMesWorkspace = () => {
     if (!activeManufacturingOrganizationId) {
       return manufacturingOrganizationRequiredPanel;
+    }
+    if (activePath === '/workspace/manufacturing-ops/intelligence/order-risks') {
+      return <OrderRisksWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} />;
     }
     if (activePath === '/workspace/manufacturing-ops/mes/orders') {
       return <ProductionOrdersWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} />;
@@ -4077,7 +4093,7 @@ function LoggedDashboardPage({
     <main className={[
       'logged-shell',
       isOperatorTerminalPage ? 'operator-terminal-shell' : '',
-      isCompactMesApplicationPage ? 'compact-mes-application-shell' : '',
+      isCompactMesApplicationPage || isOrderRisksPage ? 'compact-mes-application-shell' : '',
       isSupplierOperationsPage || isQualityOperationsPage || isClientsOperationsPage ? 'supplier-context-shell' : '',
       isSupplierAccessOverview ? 'supplier-access-shell' : '',
       isSupplierAccessOverview && supplierCustomerPickerOpen ? 'supplier-customer-picker-open' : '',
