@@ -168,6 +168,10 @@
 .quotation-detail-coating dd { margin:0; color:#334155; font-weight:600; text-align:right; }
 .quotation-detail-coating dt { color:#64748b; }
 .quotation-detail-content > .quotation-first-time-note { grid-column:1; margin:0; }
+.quotation-detail-summary sup { display:inline-grid; min-width:15px; height:15px; place-items:center; margin-left:4px; border-radius:50%; background:#7c3aed; color:#fff; font-size:.52rem; font-weight:800; line-height:1; vertical-align:super; }
+.quotation-detail-notes { grid-column:1; display:grid; gap:8px; }
+.quotation-detail-notes p { display:grid; grid-template-columns:24px minmax(0,1fr); gap:9px; align-items:start; margin:0; border-left:4px solid #8b5cf6; padding:10px 12px; background:#f5f3ff; color:#5b21b6; font-size:.7rem; line-height:1.45; }
+.quotation-detail-notes p > b { display:grid; width:20px; height:20px; place-items:center; border-radius:50%; background:#7c3aed; color:#fff; font-size:.62rem; }
 .quotation-v1-pdf .quotation-detail-content { display:block; }
 .quotation-v1-pdf .quotation-detail-step,.quotation-v1-pdf .quotation-detail-summary { position:static; margin-bottom:11px; break-inside:avoid; }
 .quotation-v1-pdf .quotation-detail-step-title { padding:9px 11px; }
@@ -196,6 +200,8 @@
 .quotation-v1-pdf .quotation-detail-scenario > strong { border-left-color:var(--gleason-blue); background:var(--gleason-blue-soft); color:var(--gleason-blue-dark); }
 .quotation-v1-pdf .quotation-v1-tech small { color:var(--gleason-blue); }
 .quotation-v1-pdf .quotation-detail-damage p,.quotation-v1-pdf .quotation-first-time-note { border-color:var(--gleason-blue); background:var(--gleason-blue-soft); color:var(--gleason-blue-dark); }
+.quotation-v1-pdf .quotation-detail-summary sup,.quotation-v1-pdf .quotation-detail-notes p > b { background:var(--gleason-blue); }
+.quotation-v1-pdf .quotation-detail-notes p { border-left-color:var(--gleason-blue); background:var(--gleason-blue-soft); color:var(--gleason-blue-dark); }
 .quotation-v1-pdf .quotation-detail-summary { border-color:var(--gleason-blue-border); background:var(--gleason-blue-soft); }
 .quotation-v1-pdf .quotation-detail-summary h3,.quotation-v1-pdf .quotation-detail-summary > dl dt:nth-last-of-type(2),.quotation-v1-pdf .quotation-detail-summary > dl dd:nth-last-of-type(2),.quotation-v1-pdf .quotation-detail-summary > dl dt:last-of-type,.quotation-v1-pdf .quotation-detail-summary > dl dd:last-of-type { color:var(--gleason-blue-dark); }
 .quotation-v1-pdf .quotation-detail-summary > dl dt:nth-last-of-type(2),.quotation-v1-pdf .quotation-detail-summary > dl dd:nth-last-of-type(2),.quotation-v1-pdf .quotation-detail-summary > dl dt:last-of-type,.quotation-v1-pdf .quotation-detail-summary > dl dd:last-of-type,.quotation-v1-pdf .quotation-detail-coating { border-color:var(--gleason-blue-border); }
