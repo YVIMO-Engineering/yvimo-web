@@ -7,6 +7,13 @@ export async function exportElementScreenshotToSinglePagePdf(element: HTMLElemen
   const previousScrollY = window.scrollY;
 
   window.scrollTo(0, 0);
+  await Promise.all(Array.from(element.querySelectorAll('img')).map(async (image) => {
+    if (!image.complete) await new Promise<void>((resolve) => {
+      image.addEventListener('load', () => resolve(), { once: true });
+      image.addEventListener('error', () => resolve(), { once: true });
+    });
+    if (typeof image.decode === 'function') await image.decode().catch(() => undefined);
+  }));
   await new Promise((resolve) => window.requestAnimationFrame(() => {
     window.requestAnimationFrame(resolve);
   }));

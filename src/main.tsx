@@ -3525,7 +3525,7 @@ function LoggedDashboardPage({
       return <WorkCentersWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} />;
     }
     if (activePath === '/workspace/manufacturing-ops/mes/quotations') {
-      return <QuotationsWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} organizationName={manufacturingOrganization?.name ?? 'Manufacturing Organization'} />;
+      return <QuotationsWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} organizationName={manufacturingOrganization?.name ?? 'Manufacturing Organization'} organizationLogoUrl={manufacturingOrganization?.logoUrl ?? ''} />;
     }
     if (activePath === '/workspace/manufacturing-ops/mes/inventory') {
       return <InventoryWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} organizationName={manufacturingOrganization?.name ?? 'Manufacturing Organization'} />;

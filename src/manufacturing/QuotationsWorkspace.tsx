@@ -10,7 +10,7 @@ import { QuotationDamageSurchargeStep, type DamagePricingMethod } from './Quotat
 import { calculateQuotationTotals, engineeringDefaults, legacyRecurringItem, recurringDefaults, type QuotationItem, type ServiceHistory } from './quotationV1';
 import './quotations.css';
 
-type Props = { onNavigate: (path: string) => void; organizationId: string; organizationName: string };
+type Props = { onNavigate: (path: string) => void; organizationId: string; organizationName: string; organizationLogoUrl?: string };
 type QuotationStatus = 'draft' | 'sent' | 'approved' | 'declined';
 type PartType = 'Hob' | 'Shaper' | 'Shaper with shank' | 'Shaver' | 'Other';
 type Customer = { id: string; customer_name: string };
@@ -127,7 +127,7 @@ function QuotationDropdown({ value, options, placeholder, onChange }: {
   </div>;
 }
 
-export function QuotationsWorkspace({ onNavigate, organizationId, organizationName }: Props) {
+export function QuotationsWorkspace({ onNavigate, organizationId, organizationName, organizationLogoUrl = '' }: Props) {
   const [quotations, setQuotations] = React.useState<Quotation[]>([]);
   const [customers, setCustomers] = React.useState<Customer[]>([]);
   const [search, setSearch] = React.useState('');
@@ -141,6 +141,7 @@ export function QuotationsWorkspace({ onNavigate, organizationId, organizationNa
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
   const [message, setMessage] = React.useState('');
+  const [pdfStatus,setPdfStatus]=React.useState<'idle'|'generating'|'generated'|'error'>('idle');
   const [itemsByQuotation, setItemsByQuotation] = React.useState<Record<string,QuotationItem[]>>({});
   const [quotationItems, setQuotationItems] = React.useState<QuotationItem[]>(()=>recurringDefaults(65));
   const [serviceHistory,setServiceHistory]=React.useState<ServiceHistory>('existing_program');
@@ -261,11 +262,20 @@ export function QuotationsWorkspace({ onNavigate, organizationId, organizationNa
     await loadData();
   };
   const downloadQuotationPdf = async () => {
-    if (!selectedQuotation || !quotationPdfRef.current) return;
-    await exportElementScreenshotToSinglePagePdf(quotationPdfRef.current, `${selectedQuotation.quotation_number}.pdf`);
+    if (!selectedQuotation || !quotationPdfRef.current || pdfStatus==='generating') return;
+    setPdfStatus('generating');
+    try {
+      await exportElementScreenshotToSinglePagePdf(quotationPdfRef.current, `${selectedQuotation.quotation_number}.pdf`);
+      setPdfStatus('generated');
+      window.setTimeout(()=>setPdfStatus('idle'),3000);
+    } catch (error) {
+      console.error('Unable to generate quotation PDF',error);
+      setPdfStatus('error');
+      window.setTimeout(()=>setPdfStatus('idle'),5000);
+    }
   };
 
-  return <><section className="mes-workspace-panel quotations-workspace">
+  return <>{pdfStatus!=='idle'?<div className={`quotation-pdf-status ${pdfStatus}`} role="status" aria-live="polite"><strong>{pdfStatus==='generating'?'Generating PDF…':pdfStatus==='generated'?'PDF generated':'PDF generation failed'}</strong><span>{pdfStatus==='generating'?'Preparing the quotation and organization image.':pdfStatus==='generated'?'The quotation report has been downloaded.':'Please try again. If the problem continues, verify the organization image.'}</span></div>:null}<section className="mes-workspace-panel quotations-workspace">
     <div className="mes-screen-header"><button className="academy-back-button engineering-back-button mes-workspace-back" type="button" onClick={() => onNavigate('/workspace/manufacturing-ops/mes')}><ArrowLeft size={16}/> MES Applications</button><div className="mes-workspace-heading"><p className="eyebrow">MES / Quotations</p><h2>Quotations</h2><p>Create and manage customer quotations for manufacturing products and services.</p></div></div>
     <section className="quotations-toolbar"><div className="quotations-toolbar-actions"><button className="quotations-new-button" type="button" onClick={openNewQuotation}><Plus size={18}/> New Quotation</button>{selectedQuotation ? <><button className="quotations-details-button" type="button" onClick={() => setDetailsOpen(true)}>Quotation Details</button>{selectedQuotation.status === 'draft' ? <button className="quotation-status-action sent" type="button" disabled={saving} onClick={() => void changeQuotationStatus('sent')}>Mark as Sent</button> : null}{selectedQuotation.status === 'sent' ? <><button className="quotation-status-action approved" type="button" disabled={saving} onClick={() => void changeQuotationStatus('approved')}>Approve</button><button className="quotation-status-action declined" type="button" disabled={saving} onClick={() => void changeQuotationStatus('declined')}>Decline</button></> : null}</> : null}</div><label className="production-orders-search production-orders-overview-search"><span>Search quotations</span><div><Search size={17}/><input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Quotation, client, tool, serial, status"/></div></label></section>
     {message && !modalOpen ? <div className="quotations-message" role="alert">{message}</div> : null}
@@ -289,5 +299,5 @@ export function QuotationsWorkspace({ onNavigate, organizationId, organizationNa
       <QuotationAddonCatalogPicker organizationId={organizationId} onAdd={(item)=>setQuotationItems(current=>[...current,item])}/>
       <QuotationAddonAdvancedFields items={quotationItems} onItems={setQuotationItems}/>
     </div><aside className={`quotation-calculation${formComplete ? '' : ' incomplete'}`}><div><Calculator size={22}/><span>Price calculation</span></div>{formComplete ? <><dl>{totals.oneTimeEngineeringSubtotal>0?<><dt>Engineering & program preparation</dt><dd>${totals.oneTimeEngineeringSubtotal.toFixed(2)}</dd></>:null}<dt>Sharpening service</dt><dd>${totals.recurringServiceSubtotal.toFixed(2)}</dd><dt>Coating</dt><dd>{manualReview ? 'Manual review' : `$${coatPrice?.toFixed(2)}`}</dd><dt>Damage surcharge</dt><dd>${surcharge.toFixed(2)}</dd>{totals.addonsSubtotal>0?<><dt>Additional quotation items</dt><dd>${totals.addonsSubtotal.toFixed(2)}</dd></>:null}{totals.otherSubtotal>0?<><dt>Other services</dt><dd>${totals.otherSubtotal.toFixed(2)}</dd></>:null}<dt className="quotation-hours-total">Total service hours</dt><dd className="quotation-hours-total">{totalServiceHours.toFixed(2)} hrs</dd><dt>Total</dt><dd>{manualReview ? 'Pending review' : `$${total.toFixed(2)} USD`}</dd></dl>{coatingSource ? <section className="quotation-price-source"><span>Coating price source</span><strong>{coatingSource.table}</strong><dl><dt>Input used</dt><dd>{length.toFixed(2)} mm × Ø {diameter.toFixed(2)} mm</dd><dt>Selected row</dt><dd>{coatingSource.row}</dd><dt>Selected column</dt><dd>{coatingSource.column}</dd><dt>Cell value</dt><dd>${coatingSource.price.toFixed(2)} USD</dd></dl>{form.measurementUnit === 'in' ? <small>Converted from {form.length} in × Ø {form.diameter} in before consulting the metric table.</small> : null}</section> : null}<p>{damageMethod==='standard'?(damageSteps?`Standard rule: ${damageSteps*25}% of sharpening-service cost.`:'Standard rule: no surcharge below the damage threshold.'):damageMethod==='percentage'?`Negotiated damage surcharge: ${Number(damagePercent).toFixed(2)}% of sharpening-service cost.`:damageMethod==='fixed'?`Negotiated fixed damage surcharge: $${surcharge.toFixed(2)} USD.`:'Damage surcharge waived for this quotation.'}</p>{manualReview ? <p>The selected dimensions or part type are outside the supplied price tables.</p> : null}</> : <p className="quotation-calculation-pending">Complete every required field with valid values to calculate a price.</p>}</aside>{message ? <div className="quotations-message" role="alert">{message}</div> : null}<footer><button type="button" onClick={() => setModalOpen(false)}>Cancel</button><button className="save" type="submit" disabled={saving || !formComplete}>{saving ? 'Saving...' : editingId ? 'Save Changes' : 'Create Quotation'}</button></footer></form></section></div> : null}
-  </section>{detailsOpen&&selectedQuotation&&selectedItems.length?<QuotationV1Details quote={selectedQuotation} items={selectedItems} organizationName={organizationName} coatingSource={selectedCoatingSource} onClose={()=>setDetailsOpen(false)} onEdit={openEditQuotation} onDelete={()=>setDeleteConfirmOpen(true)} onPdf={()=>void downloadQuotationPdf()} pdfRef={quotationPdfRef}/>:null}</>;
+  </section>{detailsOpen&&selectedQuotation&&selectedItems.length?<QuotationV1Details quote={selectedQuotation} items={selectedItems} organizationName={organizationName} organizationLogoUrl={organizationLogoUrl} coatingSource={selectedCoatingSource} onClose={()=>setDetailsOpen(false)} onEdit={openEditQuotation} onDelete={()=>setDeleteConfirmOpen(true)} onPdf={()=>void downloadQuotationPdf()} pdfRef={quotationPdfRef}/>:null}</>;
 }
