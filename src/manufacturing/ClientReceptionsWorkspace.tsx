@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { AlertTriangle, CalendarDays, Check, ChevronDown, ClipboardCheck, FileText, PackageCheck, Pencil, Plus, Search, ShieldAlert, Trash2, Truck, X } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { MesOrderDatePicker } from './MesWorkspaces';
+import { localizeClientsTree, translateClientsText, type ClientsLanguageCode } from './clientsI18n';
 
 type ReceptionStatus = 'reception' | 'assign-orders' | 'manufacturing' | 'quality-inspection' | 'waiting-delivery' | 'sent' | 'discrepancy';
 type ReceptionRegistryFilter = 'all' | 'in-progress' | 'completed';
@@ -82,6 +83,7 @@ type Props = {
   organizationId: string;
   onNavigate: (path: string) => void;
   customers: Array<{ id: string; customerName: string; status: 'active' | 'inactive' }>;
+  languageCode: ClientsLanguageCode;
 };
 
 const steps = ['Reception', 'Assign Orders', 'Manufacturing', 'Quality Inspection', 'Waiting to Deliver', 'Sent'];
@@ -106,7 +108,16 @@ const emptyForm = {
 };
 
 function labelStatus(status: ReceptionStatus) {
-  return status === 'discrepancy' ? 'Discrepancy' : status.charAt(0).toUpperCase() + status.slice(1);
+  const labels: Record<ReceptionStatus, string> = {
+    reception: 'Reception',
+    'assign-orders': 'Assign Orders',
+    manufacturing: 'Manufacturing',
+    'quality-inspection': 'Quality Inspection',
+    'waiting-delivery': 'Waiting to Deliver',
+    sent: 'Sent',
+    discrepancy: 'Discrepancy',
+  };
+  return labels[status];
 }
 
 function labelProductionStatus(status: string) {
@@ -114,20 +125,20 @@ function labelProductionStatus(status: string) {
   return status.split('-').map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
 }
 
-function formatDate(value: string) {
+function formatDate(value: string, languageCode: ClientsLanguageCode) {
   if (!value) return 'Not specified';
   const parsedDate = /^\d{4}-\d{2}-\d{2}$/.test(value)
     ? new Date(`${value}T12:00:00`)
     : new Date(value);
   if (Number.isNaN(parsedDate.getTime())) return 'Not specified';
-  return new Intl.DateTimeFormat('en-US', { month: 'short', day: '2-digit', year: 'numeric' }).format(parsedDate);
+  return new Intl.DateTimeFormat(languageCode === 'es' ? 'es-MX' : 'en-US', { month: 'short', day: '2-digit', year: 'numeric' }).format(parsedDate);
 }
 
-function formatReceptionTimestamp(value: string) {
+function formatReceptionTimestamp(value: string, languageCode: ClientsLanguageCode) {
   if (!value) return '';
   const parsedDate = new Date(value);
   if (Number.isNaN(parsedDate.getTime())) return '';
-  return new Intl.DateTimeFormat('en-US', {
+  return new Intl.DateTimeFormat(languageCode === 'es' ? 'es-MX' : 'en-US', {
     month: 'short', day: '2-digit', year: 'numeric', hour: 'numeric', minute: '2-digit',
   }).format(parsedDate);
 }
@@ -142,29 +153,58 @@ function ReceptionPortalDropdown({ open, onOpenChange, label, disabled = false, 
   children: React.ReactNode;
 }) {
   const triggerRef = React.useRef<HTMLButtonElement>(null);
-  const [position, setPosition] = React.useState<{ left: number; top?: number; bottom?: number; width: number; maxHeight: number } | null>(null);
+  const [position, setPosition] = React.useState<{ left: number; top: number; width: number; maxHeight: number } | null>(null);
 
   React.useLayoutEffect(() => {
     if (!open) return undefined;
     const updatePosition = () => {
       const rect = triggerRef.current?.getBoundingClientRect();
       if (!rect) return;
-      const spaceBelow = window.innerHeight - rect.bottom - 18;
-      const spaceAbove = rect.top - 18;
+
+      // `innerHeight` can describe the layout viewport instead of the actually
+      // visible area on mobile Safari and when the browser is zoomed. Keeping
+      // the portalled menu inside the visual viewport prevents it from opening
+      // off-screen on short laptops and tablets.
+      const visualViewport = window.visualViewport;
+      const viewportTop = visualViewport?.offsetTop ?? 0;
+      const viewportLeft = visualViewport?.offsetLeft ?? 0;
+      const viewportHeight = visualViewport?.height ?? window.innerHeight;
+      const viewportWidth = visualViewport?.width ?? window.innerWidth;
+      const viewportBottom = viewportTop + viewportHeight;
+      const viewportRight = viewportLeft + viewportWidth;
+      const viewportMargin = 8;
+      const menuGap = 6;
+      const spaceBelow = Math.max(0, viewportBottom - rect.bottom - viewportMargin - menuGap);
+      const spaceAbove = Math.max(0, rect.top - viewportTop - viewportMargin - menuGap);
       const openAbove = spaceBelow < 220 && spaceAbove > spaceBelow;
+      const availableHeight = openAbove ? spaceAbove : spaceBelow;
+      const maxHeight = Math.max(0, Math.min(360, availableHeight));
+      const width = Math.min(rect.width, Math.max(0, viewportWidth - (viewportMargin * 2)));
+      const left = Math.min(
+        Math.max(rect.left, viewportLeft + viewportMargin),
+        Math.max(viewportLeft + viewportMargin, viewportRight - viewportMargin - width),
+      );
+      const top = openAbove
+        ? Math.max(viewportTop + viewportMargin, rect.top - menuGap - maxHeight)
+        : Math.min(rect.bottom + menuGap, viewportBottom - viewportMargin - maxHeight);
+
       setPosition({
-        left: rect.left,
-        ...(openAbove ? { bottom: window.innerHeight - rect.top + 6 } : { top: rect.bottom + 6 }),
-        width: rect.width,
-        maxHeight: Math.max(150, Math.min(360, openAbove ? spaceAbove : spaceBelow)),
+        left,
+        top,
+        width,
+        maxHeight,
       });
     };
     updatePosition();
     window.addEventListener('resize', updatePosition);
     window.addEventListener('scroll', updatePosition, true);
+    window.visualViewport?.addEventListener('resize', updatePosition);
+    window.visualViewport?.addEventListener('scroll', updatePosition);
     return () => {
       window.removeEventListener('resize', updatePosition);
       window.removeEventListener('scroll', updatePosition, true);
+      window.visualViewport?.removeEventListener('resize', updatePosition);
+      window.visualViewport?.removeEventListener('scroll', updatePosition);
     };
   }, [open]);
 
@@ -179,7 +219,7 @@ function ReceptionPortalDropdown({ open, onOpenChange, label, disabled = false, 
   );
 }
 
-export function ClientReceptionsWorkspace({ organizationId, onNavigate, customers }: Props) {
+export function ClientReceptionsWorkspace({ organizationId, onNavigate, customers, languageCode }: Props) {
   const [vouchers, setVouchers] = React.useState<ReceptionVoucher[]>([]);
   const [selectedId, setSelectedId] = React.useState('');
   const [loading, setLoading] = React.useState(true);
@@ -589,7 +629,7 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
     });
   }, [existingOrderCustomerId, existingOrderSearch, existingOrders]);
 
-  return (
+  return localizeClientsTree((
     <div className="client-receptions-workspace">
       <div className="client-receptions-toolbar">
         <span>{active.length} active reception vouchers</span>
@@ -616,7 +656,7 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
         </div>
         <label className="client-reception-order-search">
           <span>Search Production Orders</span>
-          <span><Search size={17} /><input value={registryOrderSearch} onChange={(event) => setRegistryOrderSearch(event.target.value)} placeholder="Order number" /></span>
+          <span><Search size={17} /><input value={registryOrderSearch} onChange={(event) => setRegistryOrderSearch(event.target.value)} placeholder={translateClientsText(languageCode, 'Order number')} /></span>
         </label>
         <div className="client-reception-date-filters">
           <label>
@@ -624,7 +664,7 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
             <MesOrderDatePicker
               id="client-reception-registry-from"
               value={registryDateRange.from}
-              placeholder="Select date"
+              placeholder={translateClientsText(languageCode, 'Select date')}
               onChange={(from) => setRegistryDateRange((current) => ({ ...current, from }))}
             />
           </label>
@@ -633,7 +673,7 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
             <MesOrderDatePicker
               id="client-reception-registry-to"
               value={registryDateRange.to}
-              placeholder="Select date"
+              placeholder={translateClientsText(languageCode, 'Select date')}
               onChange={(to) => setRegistryDateRange((current) => ({ ...current, to }))}
             />
           </label>
@@ -673,12 +713,12 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
                 <div className="client-reception-registry-dates">
                   <span className="client-reception-registry-date">
                     <CalendarDays size={15} />
-                    <span><small>Arrival date</small><strong>{formatDate(voucher.expectedDate)}</strong></span>
+                    <span><small>Arrival date</small><strong>{formatDate(voucher.expectedDate, languageCode)}</strong></span>
                   </span>
                   {voucher.status === 'sent' && voucher.sentAt ? (
                     <span className="client-reception-registry-date sent">
                       <Truck size={15} />
-                      <span><small>Sent date</small><strong>{formatDate(voucher.sentAt)}</strong></span>
+                      <span><small>Sent date</small><strong>{formatDate(voucher.sentAt, languageCode)}</strong></span>
                     </span>
                   ) : null}
                 </div>
@@ -711,7 +751,7 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
                 <span><b>Voucher ID</b>{selected.voucherNumber}</span>
                 <span><b>Clients</b>{selected.items.length.toLocaleString()}</span>
                 <span><b>Carrier</b>{selected.carrier || 'Not specified'}</span>
-                <span><b>Arrival Date</b>{formatDate(selected.expectedDate)}</span>
+                <span><b>Arrival Date</b>{formatDate(selected.expectedDate, languageCode)}</span>
                 <span className={`supplier-selected-transfer-status client-reception-status-box ${selected.status}`}><b>Status</b><strong>{labelStatus(selected.status)}</strong></span>
               </div>
               <div className="client-reception-actions">
@@ -739,7 +779,7 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
                       </div>
                       <div className="client-reception-item-delivery">
                         <small>Delivery</small>
-                        {item.sentAt ? <span className="sent"><b><Check size={14} /> Sent</b><time dateTime={item.sentAt}>{formatReceptionTimestamp(item.sentAt)}</time></span> : item.productionStatus === 'completed' || selected.status === 'waiting-delivery' ? <button type="button" onClick={() => void markReceptionItemSent(item)} disabled={Boolean(sendingItemId)}><Truck size={15} /> {sendingItemId === item.id ? 'Sending...' : 'Mark as Sent'}</button> : <span className="pending">Pending completion</span>}
+                        {item.sentAt ? <span className="sent"><b><Check size={14} /> Sent</b><time dateTime={item.sentAt}>{formatReceptionTimestamp(item.sentAt, languageCode)}</time></span> : item.productionStatus === 'completed' || selected.status === 'waiting-delivery' ? <button type="button" onClick={() => void markReceptionItemSent(item)} disabled={Boolean(sendingItemId)}><Truck size={15} /> {sendingItemId === item.id ? 'Sending...' : 'Mark as Sent'}</button> : <span className="pending">Pending completion</span>}
                       </div>
                     </article>
                   ))}
@@ -848,5 +888,5 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
         </div>
       ) : null}
     </div>
-  );
+  ), languageCode);
 }

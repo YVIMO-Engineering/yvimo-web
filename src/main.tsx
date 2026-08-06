@@ -62,6 +62,7 @@ import { OperatorTerminalWorkspace } from './manufacturing/OperatorTerminalWorks
 import { QualityOperationsWorkspace, type QualityContextTab } from './manufacturing/QualityOperationsWorkspace';
 import { SupplierOperationsWorkspace, type SupplierContextTab } from './manufacturing/SupplierOperationsWorkspace';
 import { CustomerOperationsWorkspace, type ClientsContextTab } from './manufacturing/CustomerOperationsWorkspace';
+import { translateClientsText } from './manufacturing/clientsI18n';
 import { OrderRisksWorkspace } from './manufacturing/OrderRisksWorkspace';
 import './manufacturing/customerOperations.css';
 import './manufacturing/clientBalances.css';
@@ -1268,6 +1269,13 @@ Object.assign(translations.es, {
   'Quality Checks': 'Revisiones de calidad',
   'Downtime Events': 'Eventos de paro',
   Clients: 'Clientes',
+  Customers: 'Clientes',
+  'Assets & Equipment': 'Activos y equipos',
+  Receptions: 'Recepciones',
+  'Deliveries & Returns': 'Entregas y devoluciones',
+  Balances: 'Saldos',
+  'Docs & Vouchers': 'Documentos y vales',
+  'Clients sections': 'Secciones de clientes',
   'Create, release, assign, and track manufacturing orders from planned quantity to completion.':
     'Crea, libera, asigna y rastrea \u00f3rdenes de manufactura desde la cantidad planeada hasta su terminaci\u00f3n.',
   'Manage machines, lines, cells, and stations where production is executed.':
@@ -3535,7 +3543,7 @@ function LoggedDashboardPage({
       return <QualityOperationsWorkspace onNavigate={onNavigate} activeTab={activeQualityContextTab} organizationId={activeManufacturingOrganizationId} organizationName={manufacturingOrganization?.name} organizationLogoUrl={manufacturingOrganization?.logoUrl} />;
     }
     if (isClientsOperationsPage) {
-      return <CustomerOperationsWorkspace onNavigate={onNavigate} activeTab={activeClientsContextTab} organizationId={activeManufacturingOrganizationId} />;
+      return <CustomerOperationsWorkspace onNavigate={onNavigate} activeTab={activeClientsContextTab} organizationId={activeManufacturingOrganizationId} languageCode={languageCode} />;
     }
     if (isSupplierOperationsPage) {
       return (
@@ -4296,10 +4304,10 @@ function LoggedDashboardPage({
       ) : null}
 
       {isClientsOperationsPage ? (
-        <aside className="supplier-shell-context-menu clients-shell-context-menu" aria-label="Clients sections">
+        <aside className="supplier-shell-context-menu clients-shell-context-menu" aria-label={translateClientsText(languageCode, 'Clients sections')}>
           <div>
             <span>MES</span>
-            <strong>Clients</strong>
+            <strong>{translateClientsText(languageCode, 'Clients')}</strong>
           </div>
           <nav>
             {clientsContextTabs.map((tab) => {
@@ -4316,7 +4324,7 @@ function LoggedDashboardPage({
                   }}
                 >
                   <Icon size={18} />
-                  <span>{tab.label}</span>
+                  <span>{translateClientsText(languageCode, tab.label)}</span>
                 </button>
               );
             })}

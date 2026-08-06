@@ -35,6 +35,7 @@ import { supabase } from '../lib/supabaseClient';
 import { useSupabaseRealtimeRefresh } from '../lib/useSupabaseRealtimeRefresh';
 import { ClientBalancesWorkspace } from './ClientBalancesWorkspace';
 import { ClientReceptionsWorkspace } from './ClientReceptionsWorkspace';
+import { localizeClientsTree, translateClientsText, type ClientsLanguageCode } from './clientsI18n';
 
 export type ClientsContextTab =
   | 'customers'
@@ -206,6 +207,7 @@ type CustomerOperationsWorkspaceProps = {
   onNavigate: (path: string) => void;
   activeTab: ClientsContextTab;
   organizationId: string;
+  languageCode: ClientsLanguageCode;
 };
 
 const emptyCustomerForm: CustomerFormState = {
@@ -591,9 +593,9 @@ function getAssetTypeColors(assetType: string): React.CSSProperties {
   } as React.CSSProperties;
 }
 
-function formatAssetDate(value: string | null) {
+function formatAssetDate(value: string | null, languageCode: ClientsLanguageCode) {
   if (!value) return 'Not recorded';
-  return new Intl.DateTimeFormat('en-US', { month: 'short', day: '2-digit', year: 'numeric' }).format(new Date(value));
+  return new Intl.DateTimeFormat(languageCode === 'es' ? 'es-MX' : 'en-US', { month: 'short', day: '2-digit', year: 'numeric' }).format(new Date(value));
 }
 
 function mapAssetRow(row: CustomerAssetRow): CustomerAssetRecord {
@@ -627,7 +629,7 @@ function mapAssetRow(row: CustomerAssetRow): CustomerAssetRecord {
   };
 }
 
-export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizationId }: CustomerOperationsWorkspaceProps) {
+export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizationId, languageCode }: CustomerOperationsWorkspaceProps) {
   const page = clientsPageContent[activeTab];
   const restoredAssetView = React.useMemo(() => readAssetRegistryViewState(organizationId), [organizationId]);
   const [customers, setCustomers] = React.useState<CustomerRecord[]>([]);
@@ -1642,11 +1644,11 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
       <div
         className="address-suggestion-menu customer-address-suggestion-menu"
         role="listbox"
-        aria-label="Customer address suggestions"
+        aria-label={translateClientsText(languageCode, 'Customer address suggestions')}
         ref={addressSuggestionMenuRef}
         style={addressSuggestionPosition}
       >
-        {addressSuggestionsLoading ? <span className="address-suggestion-loading">Searching locations...</span> : null}
+        {addressSuggestionsLoading ? <span className="address-suggestion-loading">{translateClientsText(languageCode, 'Searching locations...')}</span> : null}
         {addressSuggestions.map((suggestion) => (
           <button type="button" role="option" key={suggestion.placeId ?? suggestion.address} onClick={() => void selectAddressSuggestion(suggestion)}>
             <strong>{suggestion.address.split(',')[0]}</strong>
@@ -1658,7 +1660,7 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
     )
     : null;
 
-  return (
+  return localizeClientsTree((
     <section className="mes-workspace-panel clients-operations-workspace">
       {addressSuggestionMenu}
       <div className={`mes-screen-header${activeTab === 'balances' ? ' client-balances-screen-header' : ''}`}>
@@ -1909,8 +1911,8 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
                           </div>
                           {selectedAssetSharpeningsRemaining === null ? <p className="clients-asset-life-hint">{isSelectedAssetShaver ? 'Record the current sharpening number to calculate remaining life.' : 'Link a configured Tool ID and compatible measurements.'}</p> : null}
                         </div>
-                        <span><small>Last Service</small><b>{formatAssetDate(selectedAsset.lastServiceAt)}</b></span>
-                        <span><small>Last Inspection</small><b>{formatAssetDate(selectedAsset.lastInspectionAt)}</b></span>
+                        <span><small>Last Service</small><b>{formatAssetDate(selectedAsset.lastServiceAt, languageCode)}</b></span>
+                        <span><small>Last Inspection</small><b>{formatAssetDate(selectedAsset.lastInspectionAt, languageCode)}</b></span>
                         <span><small>Total Services</small><b>{selectedAsset.serviceCount}</b></span>
                       </div>
 
@@ -1932,7 +1934,7 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
                                 return (
                                   <tr key={service.id}>
                                     <td><span className="clients-asset-service-name"><Wrench size={17} /><b>Sharpening</b></span></td>
-                                    <td><b>{formatAssetDate(service.serviceDate)}</b></td>
+                                    <td><b>{formatAssetDate(service.serviceDate, languageCode)}</b></td>
                                     <td>{service.orderNumber ? <button className="clients-asset-order-link" type="button" onClick={() => openProductionOrder(service.orderNumber)}>{service.orderNumber}</button> : <span className="clients-asset-no-evidence">Not linked</span>}</td>
                                     <td><em className={`clients-service-result ${service.result}`}>{service.result}</em>{service.remainingLifePercent !== null ? <small>{service.remainingLifePercent}% life</small> : null}</td>
                                     <td>
@@ -1949,7 +1951,7 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
                               {selectedAssetAttachments.filter((attachment) => !attachment.serviceEventId).map((attachment) => (
                                 <tr className="unlinked-evidence" key={`attachment-${attachment.id}`}>
                                   <td><b>Unlinked evidence</b></td>
-                                  <td><b>{formatAssetDate(attachment.createdAt)}</b></td>
+                                  <td><b>{formatAssetDate(attachment.createdAt, languageCode)}</b></td>
                                   <td>—</td>
                                   <td>—</td>
                                   <td><div className="clients-asset-service-files"><button type="button" onClick={() => void openAssetAttachment(attachment)}>{attachment.attachmentType === 'photo' ? <Camera size={15} /> : <FileText size={15} />}<span>{attachment.fileName}</span><ExternalLink size={13} /></button></div></td>
@@ -1999,6 +2001,7 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
           <ClientReceptionsWorkspace
             organizationId={organizationId}
             onNavigate={onNavigate}
+            languageCode={languageCode}
             customers={customers.map((customer) => ({ id: customer.id, customerName: customer.customerName, status: customer.status }))}
           />
         </div>
@@ -2194,7 +2197,7 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
                               aria-label={`Rename ${document.fileName}`}
                             />
                           ) : <b title={document.fileName}>{document.fileName}</b>}
-                          <small>Uploaded {formatAssetDate(document.createdAt)}</small>
+                          <small>Uploaded {formatAssetDate(document.createdAt, languageCode)}</small>
                           <div>
                             <button type="button" title="Preview drawing" aria-label={`Preview ${document.fileName}`} onClick={() => void openToolDocument(document)}><Eye size={15} /></button>
                             {toolDocumentRenamingId === document.id ? (
@@ -2492,5 +2495,5 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
         </div>
       ) : null}
     </section>
-  );
+  ), languageCode);
 }

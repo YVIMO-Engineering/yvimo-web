@@ -7795,6 +7795,9 @@ body.work-center-map-expanded .logged-workspace {
   z-index: 1000;
   right: auto;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
 }
 
 .client-reception-existing-dropdown-menu.portal.form-customer {
