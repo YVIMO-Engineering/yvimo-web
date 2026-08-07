@@ -25233,6 +25233,11 @@ body.work-center-map-expanded .logged-workspace {
   gap: 8px;
 }
 
+.academy-live-session-item > .academy-activity-card,
+.academy-live-session-item > .academy-activity-empty {
+  grid-column: 1 / -1;
+}
+
 .academy-live-sessions .academy-lesson-list {
   grid-column: 2;
 }
@@ -25870,6 +25875,17 @@ body.work-center-map-expanded .logged-workspace {
   color: #ffffff;
   cursor: pointer;
   font-weight: 950;
+}
+
+.academy-activity-empty.has-activities {
+  justify-content: flex-end;
+  border-color: transparent;
+  padding-block: 2px;
+  background: transparent;
+}
+
+.academy-activity-empty.has-activities > span {
+  display: none;
 }
 
 .academy-editor-backdrop {

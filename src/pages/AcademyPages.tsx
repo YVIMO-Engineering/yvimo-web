@@ -2820,10 +2820,16 @@ export function AcademyCoursePage({ user, navigateTo, courseSlug, t = defaultT, 
     configJson: AcademyActivityConfig;
   }) => {
     if (!bundle) return;
+    const destinationChanged = Boolean(input.activity && input.activity.lesson_id !== input.lesson.id);
     const contentChanged = input.activity
       ? input.activity.type !== input.type
         || JSON.stringify(input.activity.config_json) !== JSON.stringify(input.configJson)
       : false;
+    const destinationActivities = activities.filter((activityItem) => activityItem.lesson_id === input.lesson.id);
+    const nextOrderIndex = destinationActivities.reduce(
+      (highest, activityItem) => Math.max(highest, activityItem.order_index),
+      -1,
+    ) + 1;
     try {
       await saveAcademyActivity({
         id: input.activity?.id,
@@ -2836,7 +2842,7 @@ export function AcademyCoursePage({ user, navigateTo, courseSlug, t = defaultT, 
         pointsReward: input.pointsReward,
         isRequired: input.isRequired,
         isPublished: input.isPublished,
-        orderIndex: input.activity?.order_index ?? input.lesson.order_index,
+        orderIndex: input.activity && !destinationChanged ? input.activity.order_index : nextOrderIndex,
         configJson: input.configJson,
       });
       setEditingActivity(null);
@@ -3033,11 +3039,17 @@ export function AcademyCoursePage({ user, navigateTo, courseSlug, t = defaultT, 
           <LiveSessionsBlock
             sessions={liveSessions}
             canManage={canManageLiveSessions}
+            canManageActivities={canManageActivities}
+            activities={activities}
+            activityAttempts={activityAttempts}
             courseSlug={bundle.course.slug}
             navigateTo={navigateTo}
             onAdd={() => setEditingLiveSession(null)}
             onEdit={(session) => setEditingLiveSession(session)}
             onDelete={handleDeleteLiveSession}
+            onAddActivity={(session) => setEditingActivity({ lesson: session, activity: null })}
+            onEditActivity={(session, activity) => setEditingActivity({ lesson: session, activity })}
+            onDeleteActivity={handleDeleteActivity}
             t={t}
           />
         ) : null}
@@ -3046,6 +3058,7 @@ export function AcademyCoursePage({ user, navigateTo, courseSlug, t = defaultT, 
         <ActivityEditor
           activity={editingActivity.activity}
           lesson={editingActivity.lesson}
+          destinationLessons={[...allLessons, ...liveSessions]}
           onCancel={() => setEditingActivity(null)}
           onSave={handleSaveActivity}
           t={t}
@@ -3065,15 +3078,22 @@ export function AcademyCoursePage({ user, navigateTo, courseSlug, t = defaultT, 
 }
 
 function LiveSessionsBlock({
-  sessions, canManage, courseSlug, navigateTo, onAdd, onEdit, onDelete, t = defaultT,
+  sessions, canManage, canManageActivities, activities, activityAttempts, courseSlug, navigateTo,
+  onAdd, onEdit, onDelete, onAddActivity, onEditActivity, onDeleteActivity, t = defaultT,
 }: {
   sessions: AcademyLesson[];
   canManage: boolean;
+  canManageActivities: boolean;
+  activities: AcademyActivity[];
+  activityAttempts: AcademyActivityAttempt[];
   courseSlug: string;
   navigateTo: (path: string) => void;
   onAdd: () => void;
   onEdit: (session: AcademyLesson) => void;
   onDelete: (session: AcademyLesson) => void;
+  onAddActivity: (session: AcademyLesson) => void;
+  onEditActivity: (session: AcademyLesson, activity: AcademyActivity) => void;
+  onDeleteActivity: (activity: AcademyActivity) => void;
   t?: AcademyTranslator;
 }) {
   return (
@@ -3099,7 +3119,9 @@ function LiveSessionsBlock({
         ) : null}
       </div>
       <div className="academy-lesson-list">
-        {sessions.map((session) => (
+        {sessions.map((session) => {
+          const sessionActivities = activities.filter((activityItem) => activityItem.lesson_id === session.id);
+          return (
           <div className="academy-live-session-item" key={session.id}>
             <button
               className="academy-lesson-row"
@@ -3119,8 +3141,32 @@ function LiveSessionsBlock({
                 <button type="button" onClick={() => onDelete(session)} title={t('Delete recording')}><Trash2 size={15} /></button>
               </div>
             ) : null}
+            {sessionActivities.map((activityItem) => (
+              <ActivityCard
+                activity={activityItem}
+                attempt={activityAttempts.find((attempt) => attempt.activity_id === activityItem.id)}
+                locked={false}
+                canManage={canManageActivities}
+                courseSlug={courseSlug}
+                navigateTo={navigateTo}
+                onEdit={() => onEditActivity(session, activityItem)}
+                onDelete={() => onDeleteActivity(activityItem)}
+                t={t}
+                key={activityItem.id}
+              />
+            ))}
+            {canManageActivities ? (
+              <div className={`academy-activity-empty ${sessionActivities.length > 0 ? 'has-activities' : ''}`}>
+                <span>{sessionActivities.length > 0 ? t('Add another activity') : t('No activity available yet')}</span>
+                <button type="button" onClick={() => onAddActivity(session)}>
+                  <Plus size={15} />
+                  {t('Add activity')}
+                </button>
+              </div>
+            ) : null}
           </div>
-        ))}
+          );
+        })}
         {sessions.length === 0 ? <p className="academy-live-empty">{t('No live session recordings have been published yet.')}</p> : null}
       </div>
     </article>
@@ -3443,7 +3489,7 @@ function AcademyModuleBlock({
                 </span>
                 {progressState === 'completed' ? <span className="academy-lesson-done">{t('Done')}</span> : <ArrowRight size={16} />}
               </button>
-              {lessonActivities.length > 0 ? lessonActivities.map((activityItem) => (
+              {lessonActivities.map((activityItem) => (
                 <ActivityCard
                   activity={activityItem}
                   attempt={activityAttempts.find((attempt) => attempt.activity_id === activityItem.id)}
@@ -3456,9 +3502,10 @@ function AcademyModuleBlock({
                   t={t}
                   key={activityItem.id}
                 />
-              )) : canManageActivities ? (
-                <div className="academy-activity-empty">
-                  <span>{t('No activity available yet')}</span>
+              ))}
+              {canManageActivities ? (
+                <div className={`academy-activity-empty ${lessonActivities.length > 0 ? 'has-activities' : ''}`}>
+                  <span>{lessonActivities.length > 0 ? t('Add another activity') : t('No activity available yet')}</span>
                   <button type="button" onClick={() => onAddActivity(lesson)}>
                     <Plus size={15} />
                     {t('Add activity')}
@@ -3636,12 +3683,14 @@ function ActivityCard({
 function ActivityEditor({
   activity,
   lesson,
+  destinationLessons,
   onCancel,
   onSave,
   t = defaultT,
 }: {
   activity: AcademyActivity | null;
   lesson: AcademyLesson;
+  destinationLessons: AcademyLesson[];
   onCancel: () => void;
   onSave: (input: {
     activity: AcademyActivity | null;
@@ -3664,6 +3713,7 @@ function ActivityEditor({
   const [pointsReward, setPointsReward] = React.useState(activity?.points_reward ?? 10);
   const [isRequired, setIsRequired] = React.useState(activity?.is_required ?? true);
   const [isPublished, setIsPublished] = React.useState(activity?.is_published ?? true);
+  const [targetLessonId, setTargetLessonId] = React.useState(lesson.id);
   const [configText, setConfigText] = React.useState(JSON.stringify(activity?.config_json ?? getDefaultActivityConfig(type), null, 2));
   const [error, setError] = React.useState<string | null>(null);
 
@@ -3680,9 +3730,10 @@ function ActivityEditor({
   const handleSave = () => {
     try {
       const parsed = JSON.parse(configText) as AcademyActivityConfig;
+      const targetLesson = destinationLessons.find((item) => item.id === targetLessonId) ?? lesson;
       onSave({
         activity,
-        lesson,
+        lesson: targetLesson,
         type,
         title,
         instructions,
@@ -3704,13 +3755,30 @@ function ActivityEditor({
           <div>
             <p className="eyebrow">{t('Staff activity tools')}</p>
             <h2>{activity ? t('Edit activity') : t('Add activity')}</h2>
-            <span>{lesson.title}</span>
+            <span>{destinationLessons.find((item) => item.id === targetLessonId)?.title ?? lesson.title}</span>
           </div>
           <button type="button" onClick={onCancel}>
             <X size={18} />
           </button>
         </div>
         <div className="academy-editor-grid">
+          {activity ? (
+            <label className="academy-editor-wide">
+              {t('Transfer activity to')}
+              <select value={targetLessonId} onChange={(event) => setTargetLessonId(event.target.value)}>
+                <optgroup label={t('Curriculum lessons')}>
+                  {destinationLessons.filter((item) => item.content_group === 'curriculum').map((item) => (
+                    <option value={item.id} key={item.id}>{item.title}</option>
+                  ))}
+                </optgroup>
+                <optgroup label={t('Live session recordings')}>
+                  {destinationLessons.filter((item) => item.content_group === 'live_session').map((item) => (
+                    <option value={item.id} key={item.id}>{item.title}</option>
+                  ))}
+                </optgroup>
+              </select>
+            </label>
+          ) : null}
           <label>
             {t('Title')}
             <input value={title} onChange={(event) => setTitle(event.target.value)} />
