@@ -9,6 +9,7 @@
     "preview": "vite preview --host localhost --port 4173",
     "test:r2": "node --experimental-strip-types --test server/r2.test.ts",
     "test:quotations": "node --experimental-strip-types --test src/manufacturing/quotationV1.test.ts",
+    "test:import-costing": "node --experimental-strip-types --test src/manufacturing/importCosting.test.ts",
     "typecheck:server": "tsc -p tsconfig.server.json"
   },
   "dependencies": {

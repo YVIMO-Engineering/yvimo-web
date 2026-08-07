@@ -64,6 +64,7 @@ import { SupplierOperationsWorkspace, type SupplierContextTab } from './manufact
 import { CustomerOperationsWorkspace, type ClientsContextTab } from './manufacturing/CustomerOperationsWorkspace';
 import { translateClientsText } from './manufacturing/clientsI18n';
 import { OrderRisksWorkspace } from './manufacturing/OrderRisksWorkspace';
+import { ImportCostingWorkspace } from './manufacturing/ImportCostingWorkspace';
 import './manufacturing/customerOperations.css';
 import './manufacturing/clientBalances.css';
 import './styles.css';
@@ -3316,10 +3317,12 @@ function LoggedDashboardPage({
       tone: 'red',
     },
     {
-      label: 'OEE Dashboard',
-      description: 'Monitor availability, performance, quality, and total OEE by area or work center.',
-      icon: Gauge,
-      path: '/workspace/manufacturing-ops/intelligence/oee',
+      label: 'Import Costing',
+      description: 'Calculate landed import costs, validate margins, and maintain a traceable history of customer offers.',
+      icon: Truck,
+      path: '/workspace/manufacturing-ops/intelligence/import-costing',
+      implemented: true,
+      tone: 'blue',
     },
     {
       label: 'Downtime Analysis',
@@ -3437,6 +3440,7 @@ function LoggedDashboardPage({
     || activePath === '/workspace/manufacturing-ops/mes/statistics'
     || activePath === '/workspace/manufacturing-ops/mes/traceability';
   const isOrderRisksPage = activePath === '/workspace/manufacturing-ops/intelligence/order-risks';
+  const isImportCostingPage = activePath === '/workspace/manufacturing-ops/intelligence/import-costing';
   const supplierContextTabs: Array<{
     value: SupplierContextTab;
     label: string;
@@ -3517,6 +3521,9 @@ function LoggedDashboardPage({
     }
     if (activePath === '/workspace/manufacturing-ops/intelligence/order-risks') {
       return <OrderRisksWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} />;
+    }
+    if (activePath === '/workspace/manufacturing-ops/intelligence/import-costing') {
+      return <ImportCostingWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} />;
     }
     if (activePath === '/workspace/manufacturing-ops/mes/orders') {
       return <ProductionOrdersWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} />;
@@ -4101,7 +4108,7 @@ function LoggedDashboardPage({
     <main className={[
       'logged-shell',
       isOperatorTerminalPage ? 'operator-terminal-shell' : '',
-      isCompactMesApplicationPage || isOrderRisksPage ? 'compact-mes-application-shell' : '',
+      isCompactMesApplicationPage || isOrderRisksPage || isImportCostingPage ? 'compact-mes-application-shell' : '',
       isSupplierOperationsPage || isQualityOperationsPage || isClientsOperationsPage ? 'supplier-context-shell' : '',
       isSupplierAccessOverview ? 'supplier-access-shell' : '',
       isSupplierAccessOverview && supplierCustomerPickerOpen ? 'supplier-customer-picker-open' : '',
