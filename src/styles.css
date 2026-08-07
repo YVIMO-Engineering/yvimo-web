@@ -6721,17 +6721,21 @@ body.work-center-map-expanded .logged-workspace {
   box-shadow: 0 8px 22px rgba(15, 23, 42, 0.05);
 }
 
-.client-reception-filter-buttons {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
+.client-reception-filter-dropdown {
+  position: relative;
+  flex: 0 0 220px;
 }
 
-.client-reception-filter-buttons button {
+.client-reception-filter-dropdown > button {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
   min-height: 42px;
   border: 1px solid #d7e0eb;
   border-radius: 8px;
-  padding: 0 16px;
+  padding: 0 12px;
   background: #f8fafc;
   color: #526175;
   font: inherit;
@@ -6740,16 +6744,63 @@ body.work-center-map-expanded .logged-workspace {
   cursor: pointer;
 }
 
-.client-reception-filter-buttons button:hover {
-  border-color: rgba(255, 122, 0, 0.5);
+.client-reception-filter-dropdown > button > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   color: #c45100;
 }
 
-.client-reception-filter-buttons button.active {
-  border-color: #ff7a00;
+.client-reception-filter-dropdown > button > strong {
+  overflow: hidden;
+  color: #172033;
+  font-size: .72rem;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.client-reception-filter-dropdown > button:hover,
+.client-reception-filter-dropdown > button[aria-expanded='true'] {
+  border-color: rgba(255, 122, 0, 0.5);
+  background: #fffaf5;
+}
+
+.client-reception-filter-menu {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 7px);
+  left: 0;
+  display: grid;
+  width: 270px;
+  border: 1px solid #d7e0eb;
+  border-radius: 10px;
+  padding: 6px;
+  background: #ffffff;
+  box-shadow: 0 18px 42px rgba(15, 23, 42, .18);
+}
+
+.client-reception-filter-menu button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 38px;
+  border: 0;
+  border-radius: 7px;
+  padding: 0 10px;
+  background: transparent;
+  color: #526175;
+  font: inherit;
+  font-size: .76rem;
+  font-weight: 850;
+  text-align: left;
+  cursor: pointer;
+}
+
+.client-reception-filter-menu button:hover,
+.client-reception-filter-menu button.active {
   background: #fff2e5;
   color: #c45100;
-  box-shadow: inset 0 0 0 1px rgba(255, 122, 0, 0.08);
 }
 
 .client-reception-order-search {
@@ -6797,7 +6848,7 @@ body.work-center-map-expanded .logged-workspace {
 
 .client-reception-date-filters {
   display: grid;
-  grid-template-columns: repeat(2, minmax(170px, 210px));
+  grid-template-columns: repeat(2, minmax(160px, 195px)) auto auto;
   gap: 10px;
 }
 
@@ -6811,16 +6862,59 @@ body.work-center-map-expanded .logged-workspace {
   text-transform: uppercase;
 }
 
+.client-reception-analysis-button {
+  align-self: end;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 42px;
+  border: 1px solid #ff7a00;
+  border-radius: 8px;
+  padding: 0 14px;
+  background: #ff7a00;
+  color: #ffffff;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 900;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.client-reception-clear-filters {
+  align-self: end;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 42px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 0 13px;
+  background: #ffffff;
+  color: #475569;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 900;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.client-reception-clear-filters:hover,
+.client-reception-clear-filters:focus-visible {
+  border-color: #ff8a1f;
+  background: #fff7ed;
+  color: #c45100;
+}
+
 @media (max-width: 900px) {
   .client-reception-registry-filters {
     align-items: stretch;
     flex-direction: column;
   }
 
-  .client-reception-filter-buttons,
-  .client-reception-filter-buttons button {
-    flex: 1;
-  }
+  .client-reception-filter-dropdown { flex-basis: auto; width: 100%; }
+  .client-reception-filter-menu { width: 100%; }
 
   .client-reception-order-search {
     flex-basis: auto;
@@ -6830,6 +6924,125 @@ body.work-center-map-expanded .logged-workspace {
   .client-reception-date-filters {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .client-reception-analysis-button { grid-column: 1 / 2; }
+  .client-reception-clear-filters { grid-column: 2 / 3; }
+}
+
+.client-reception-analysis-backdrop {
+  z-index: 10000;
+  align-items: start;
+  justify-items: center;
+  padding: 12px 18px;
+  overflow-y: auto;
+}
+
+.client-reception-analysis-modal {
+  width: min(1580px, calc(100vw - 36px));
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
+  border-radius: 14px;
+  background: #f8fafc;
+  box-shadow: 0 28px 80px rgba(15, 23, 42, 0.28);
+}
+
+.client-reception-analysis-modal > header {
+  position: sticky;
+  z-index: 3;
+  top: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  border-top: 5px solid #ff7a00;
+  border-bottom: 1px solid #fed7aa;
+  padding: 20px 24px;
+  background: #fffaf5;
+}
+
+.client-reception-analysis-modal > header h3,
+.client-reception-analysis-modal > header p { margin: 0; }
+.client-reception-analysis-modal > header h3 { margin: 3px 0; font-size: 1.65rem; }
+.client-reception-analysis-modal > header > div > p:last-child { color: #64748b; font-size: .78rem; font-weight: 750; }
+.client-reception-analysis-modal > header > button { display: grid; place-items: center; width: 38px; height: 38px; border: 1px solid #fed7aa; border-radius: 9px; background: #fff; color: #c2410c; cursor: pointer; }
+
+.client-reception-analysis-overview { display: grid; grid-template-columns: minmax(0, 1fr) 280px; align-items: end; gap: 14px; padding: 16px 24px 0; }
+.client-reception-analysis-filter { display: flex; justify-content: flex-end; }
+.client-reception-analysis-filter label { display: grid; gap: 5px; min-width: 260px; color: #526175; font-size: .65rem; font-weight: 900; letter-spacing: .07em; text-transform: uppercase; }
+.client-reception-analysis-filter select { min-height: 42px; border: 1px solid #cbd5e1; border-radius: 8px; padding: 0 12px; background: #fff; color: #172033; font: inherit; font-size: .84rem; font-weight: 800; }
+
+.client-reception-analysis-secondary-kpis { display: grid; grid-template-columns: repeat(3, minmax(170px, 1fr)); gap: 10px; }
+.client-reception-analysis-secondary-kpis article { display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto auto; column-gap: 10px; min-height: 74px; border: 1px solid #e2e8f0; border-left: 4px solid #2563eb; border-radius: 10px; padding: 10px 13px; background: #fff; }
+.client-reception-analysis-secondary-kpis article > span { grid-row: 1 / 4; display: grid; place-items: center; align-self: center; width: 34px; height: 34px; border-radius: 8px; background: #eff6ff; color: #2563eb; }
+.client-reception-analysis-secondary-kpis article:nth-child(2) { border-left-color: #7c3aed; }
+.client-reception-analysis-secondary-kpis article:nth-child(2) > span { background: #f5f3ff; color: #7c3aed; }
+.client-reception-analysis-secondary-kpis article.value { border-left-color: #10b981; }
+.client-reception-analysis-secondary-kpis article.value > span { background: #ecfdf5; color: #059669; }
+.client-reception-analysis-secondary-kpis small { color: #64748b; font-size: .59rem; font-weight: 900; letter-spacing: .05em; text-transform: uppercase; }
+.client-reception-analysis-secondary-kpis strong { overflow: hidden; color: #172033; font-size: .92rem; text-overflow: ellipsis; white-space: nowrap; }
+.client-reception-analysis-secondary-kpis em { color: #64748b; font-size: .64rem; font-style: normal; font-weight: 750; }
+
+.client-reception-analysis-kpis { display: grid; grid-template-columns: repeat(6, minmax(145px, 1fr)); gap: 10px; padding: 16px 24px; }
+.client-reception-analysis-kpis article { display: grid; grid-template-columns: auto 1fr; gap: 2px 9px; border: 1px solid #e2e8f0; border-left: 4px solid #ff7a00; border-radius: 10px; padding: 13px; background: #fff; }
+.client-reception-analysis-kpis article > span { grid-row: 1 / 3; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 8px; background: #fff1e3; color: #d95700; }
+.client-reception-analysis-kpis small { color: #64748b; font-size: .62rem; font-weight: 900; letter-spacing: .05em; text-transform: uppercase; }
+.client-reception-analysis-kpis strong { color: #172033; font-size: 1.16rem; }
+
+.client-reception-analysis-chart,
+.client-reception-analysis-list { margin: 0 24px 18px; border: 1px solid #e2e8f0; border-radius: 11px; padding: 18px; background: #fff; }
+.client-reception-analysis-chart .statistics-weekly-chart-layout { margin-top: 12px; overflow: hidden; border: 1px solid #e2e8f0; border-radius: 10px; }
+.client-reception-analysis-chart .statistics-production-chart { min-height: 430px; }
+.client-reception-analysis-chart .statistics-day-tooltip { border-top-color: #ff7a00; }
+.client-reception-analysis-chart > header strong,
+.client-reception-analysis-list > header strong { color: #172033; font-size: 1rem; }
+.client-reception-analysis-chart > header small { display: block; margin-top: 3px; color: #64748b; font-size: .7rem; }
+.client-reception-analysis-chart .empty { color: #94a3b8; text-align: center; }
+
+.client-reception-segmented-chart { display: flex; align-items: flex-end; gap: 14px; min-height: 255px; overflow-x: auto; border-bottom: 1px solid #cbd5e1; padding: 22px 8px 10px; }
+.client-reception-segmented-chart article { flex: 1 0 88px; display: grid; justify-items: center; gap: 4px; }
+.client-reception-segmented-chart .bar { display: flex; flex-direction: column-reverse; width: 48px; overflow: hidden; border-radius: 7px 7px 2px 2px; background: #f1f5f9; }
+.client-reception-segmented-chart .bar span { display: block; width: 100%; min-height: 2px; }
+.client-reception-segmented-chart article > b { color: #172033; font-size: .8rem; }
+.client-reception-segmented-chart article > small { color: #526175; font-size: .63rem; font-weight: 850; white-space: nowrap; }
+.client-reception-segmented-chart article > em { color: #94a3b8; font-size: .58rem; font-style: normal; font-weight: 750; }
+
+.client-reception-analysis-list > header { display: flex; justify-content: space-between; margin-bottom: 10px; }
+.client-reception-analysis-list > header span { color: #64748b; font-size: .72rem; font-weight: 800; }
+.client-reception-analysis-list > div { display: grid; gap: 12px; max-height: 620px; overflow-y: auto; padding-right: 4px; }
+.client-reception-analysis-list > div > article { display: grid; gap: 12px; overflow-x: auto; border: 1px solid #dbe3ec; border-left: 4px solid #ff7a00; border-radius: 10px; padding: 14px; background: #f8fafc; }
+.client-reception-analysis-voucher-header { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.client-reception-analysis-voucher-header > div { display: grid; gap: 3px; }
+.client-reception-analysis-voucher-header > div > strong { color: #172033; font-size: 1rem; }
+.client-reception-analysis-voucher-header > div > small { color: #64748b; font-size: .68rem; font-weight: 750; }
+
+.client-reception-analysis-list .client-reception-progress { min-width: 920px; margin: 2px 0 4px; padding: 4px 0 7px; }
+.client-reception-analysis-list .client-reception-progress li > span { width: 28px; height: 28px; font-size: .67rem; }
+.client-reception-analysis-list .client-reception-progress li > strong { font-size: .58rem; }
+
+.client-reception-analysis-subreceptions { display: grid; gap: 7px; min-width: 1180px; }
+.client-reception-analysis-subrow { display: grid; grid-template-columns: 34px minmax(120px, 1fr) repeat(3, minmax(70px, .24fr)) minmax(145px, .55fr) minmax(125px, .42fr) minmax(115px, .38fr) minmax(100px, .34fr); align-items: center; gap: 10px; border: 1px solid #e2e8f0; border-left: 3px solid #ff8a1f; border-radius: 8px; padding: 10px; background: #fff; }
+.client-reception-analysis-subrow > div { display: grid; gap: 4px; min-width: 0; }
+.client-reception-analysis-subrow small { color: #64748b; font-size: .58rem; font-weight: 900; letter-spacing: .05em; text-transform: uppercase; }
+.client-reception-analysis-subrow .client > strong { overflow: hidden; color: #172033; font-size: .82rem; text-overflow: ellipsis; white-space: nowrap; }
+.client-reception-analysis-subrow .order > strong { overflow: hidden; color: #2563eb; font-size: .72rem; text-overflow: ellipsis; white-space: nowrap; }
+.client-reception-analysis-subrow .client-reception-item-quantity strong,
+.client-reception-analysis-subrow .client-reception-item-produced strong,
+.client-reception-analysis-subrow .client-reception-item-scrap strong { min-height: 30px; padding: 0 9px; font-size: .82rem; }
+.client-reception-analysis-subrow .client-reception-item-order-status strong { min-width: 0; min-height: 30px; padding: 0 8px; font-size: .59rem; }
+.client-reception-analysis-subrow .process > strong { display: inline-flex; align-items: center; justify-content: center; width: fit-content; min-height: 28px; border-radius: 999px; padding: 0 9px; font-size: .6rem; font-weight: 900; text-transform: uppercase; }
+.client-reception-analysis-subrow .process > strong.pending { background: #f1f5f9; color: #64748b; }
+.client-reception-analysis-subrow .process > strong.active { background: #e0f2fe; color: #0369a1; }
+.client-reception-analysis-subrow .process > strong.done { background: #d1fae5; color: #047857; }
+
+@media (max-width: 1050px) {
+  .client-reception-analysis-overview { grid-template-columns: 1fr; }
+  .client-reception-analysis-filter { justify-content: stretch; }
+  .client-reception-analysis-filter label { width: 100%; }
+  .client-reception-analysis-kpis { grid-template-columns: repeat(3, 1fr); }
+}
+
+@media (max-width: 720px) {
+  .client-reception-analysis-secondary-kpis { grid-template-columns: 1fr; }
 }
 
 .client-reception-status {
@@ -6853,6 +7066,11 @@ body.work-center-map-expanded .logged-workspace {
 
 .client-reception-status.quality-inspection {
   background: #7c3aed;
+}
+
+.client-reception-status.coating {
+  background: #e0f2fe;
+  color: #0369a1;
 }
 
 .client-reception-status.waiting-delivery {
@@ -6893,7 +7111,11 @@ body.work-center-map-expanded .logged-workspace {
 
 .client-reception-actions {
   display: flex;
+  align-items: center;
+  flex-wrap: wrap;
   justify-content: flex-end;
+  gap: 10px;
+  min-width: 0;
   border-top: 1px solid rgba(255, 138, 31, 0.16);
   padding-top: 14px;
 }
@@ -7345,7 +7567,7 @@ body.work-center-map-expanded .logged-workspace {
 }
 
 .client-reception-progress {
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(7, minmax(0, 1fr));
 }
 
 .client-reception-progress li.complete::before,
@@ -7589,7 +7811,7 @@ body.work-center-map-expanded .logged-workspace {
 
 .client-reception-items article {
   display: grid;
-  grid-template-columns: 38px minmax(130px, 1fr) repeat(3, minmax(66px, 0.18fr)) minmax(280px, 0.82fr) minmax(125px, 0.34fr) minmax(170px, 0.46fr);
+  grid-template-columns: 38px minmax(130px, 1fr) repeat(3, minmax(66px, 0.18fr)) minmax(240px, 0.72fr) minmax(125px, 0.34fr) minmax(185px, 0.5fr) minmax(170px, 0.46fr);
   align-items: center;
   gap: 12px;
   border: 1px solid rgba(18, 29, 41, 0.1);
@@ -8032,6 +8254,69 @@ body.work-center-map-expanded .logged-workspace {
   min-width: 0;
 }
 
+.client-reception-item-coating {
+  min-width: 0;
+}
+
+.client-reception-item-coating > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: fit-content;
+  min-height: 36px;
+  border: 1px solid #0284c7;
+  border-radius: 8px;
+  padding: 0 11px;
+  background: #0284c7;
+  color: #ffffff;
+  font: inherit;
+  font-size: 0.7rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.client-reception-item-coating > button.return {
+  border-color: #7c3aed;
+  background: #7c3aed;
+}
+
+.client-reception-item-coating > button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.client-reception-item-coating .coating-date {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #0369a1;
+  font-size: 0.66rem;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.client-reception-item-coating .coating-complete {
+  display: grid;
+  gap: 4px;
+}
+
+.client-reception-item-coating .coating-complete b {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  width: fit-content;
+  color: #6d28d9;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+
+.client-reception-item-coating time {
+  color: #475569;
+  font-size: 0.66rem;
+  font-weight: 750;
+}
+
 .client-reception-item-delivery > button {
   display: inline-flex;
   align-items: center;
@@ -8104,6 +8389,29 @@ body.work-center-map-expanded .logged-workspace {
   color: #047857;
   font-size: 0.76rem;
   font-weight: 850;
+}
+
+.client-reception-coating-guidance {
+  display: inline-flex;
+  align-items: center;
+  flex: 1 1 360px;
+  gap: 7px;
+  min-width: 0;
+  max-width: 100%;
+  border: 1px solid #bae6fd;
+  border-radius: 9px;
+  padding: 10px 12px;
+  background: #f0f9ff;
+  color: #0369a1;
+  font-size: 0.76rem;
+  font-weight: 800;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.client-reception-coating-guidance svg {
+  flex: 0 0 auto;
 }
 
 .client-reception-item-order .assigned-order {

@@ -516,7 +516,7 @@ type MesOrderDateRange = {
   from: string;
   to: string;
 };
-type MesOrderQuickRangeValue = 'today' | 'week' | 'month' | 'year';
+type MesOrderQuickRangeValue = 'today' | 'week' | 'month' | 'last-month' | 'year';
 
 const formatLabel = (value: string) => value.replace(/-/g, ' ');
 const formatTitleLabel = (value: string) => {
@@ -600,6 +600,11 @@ function getMesOrderQuickRange(range: MesOrderQuickRangeValue): MesOrderDateRang
     endDate.setFullYear(today.getFullYear(), today.getMonth() + 1, 0);
   }
 
+  if (range === 'last-month') {
+    startDate.setFullYear(today.getFullYear(), today.getMonth() - 1, 1);
+    endDate.setFullYear(today.getFullYear(), today.getMonth(), 0);
+  }
+
   if (range === 'year') {
     startDate.setFullYear(today.getFullYear(), 0, 1);
     endDate.setFullYear(today.getFullYear(), 11, 31);
@@ -656,7 +661,7 @@ export function MesOrderDatePicker({
     const calendarWidth = Math.min(Math.max(rect.width, 312), window.innerWidth - (viewportPadding * 2));
     const availableBelow = window.innerHeight - rect.bottom - viewportPadding;
     const availableAbove = rect.top - viewportPadding;
-    const calendarHeight = onQuickRange ? 454 : 374;
+    const calendarHeight = onQuickRange ? 494 : 374;
     const openUp = availableBelow < calendarHeight && availableAbove > availableBelow;
     const left = Math.max(viewportPadding, Math.min(rect.left, window.innerWidth - calendarWidth - viewportPadding));
 
@@ -750,6 +755,7 @@ export function MesOrderDatePicker({
             ...(onQuickRange ? [
               { value: 'week', label: 'This week' },
               { value: 'month', label: 'This month' },
+              { value: 'last-month', label: 'Last month' },
               { value: 'year', label: 'This year' },
             ] as const : []),
           ] as Array<{ value: MesOrderQuickRangeValue; label: string }>).map((shortcut) => (

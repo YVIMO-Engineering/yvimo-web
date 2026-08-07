@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertOctagon, AlertTriangle, ArrowLeft, Check, CheckCircle2, ChevronDown, Clock3, Factory, PackageOpen, RefreshCw, Search, ShieldCheck, X } from 'lucide-react';
+import { AlertOctagon, AlertTriangle, ArrowLeft, Check, CheckCircle2, ChevronDown, ChevronUp, Clock3, Eye, EyeOff, Factory, PackageOpen, PaintBucket, RefreshCw, Search, ShieldCheck, X } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { useSupabaseRealtimeRefresh } from '../lib/useSupabaseRealtimeRefresh';
 import type { ProductionOrderStatus } from './mesTypes';
@@ -31,6 +31,17 @@ type RiskLevel = 'overdue' | 'high' | 'moderate' | 'low';
 type OrderSerialRow = { production_order_id: string; serial_number: string | null; assigned_station: string | null };
 type StationRow = { code: string; name: string; work_center_id: string };
 type WorkCenterRow = { id: string; code: string; name: string };
+type CoatingTrackingRow = {
+  id: string;
+  productionOrderId: string;
+  orderNumber: string;
+  customerName: string;
+  quantity: number;
+  coatingSentAt: string;
+  stationCodes: string[];
+  assignedWorkCenter: string;
+  serialNumbers: string[];
+};
 
 const productionOrderDeepLinkKey = 'yvimo:mes:selectedProductionOrderNumber';
 const productionOrderDetailsDeepLinkKey = 'yvimo:mes:openProductionOrderDetails';
@@ -97,6 +108,15 @@ function leadTimeLabel(createdAt: string) {
   return `${days} day${days === 1 ? '' : 's'}`;
 }
 
+function coatingElapsedLabel(sentAt: string) {
+  const start = new Date(sentAt);
+  if (Number.isNaN(start.getTime())) return 'Not available';
+  const hours = Math.max(0, (Date.now() - start.getTime()) / 3_600_000);
+  if (hours < 24) return `${Math.floor(hours)}h ${Math.floor((hours % 1) * 60)}m`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ${Math.floor(hours % 24)}h`;
+}
+
 const sections: Array<{ level: RiskLevel; title: string; range: string; icon: typeof AlertTriangle }> = [
   { level: 'overdue', title: 'Overdue', range: 'Delivery date has passed', icon: AlertOctagon },
   { level: 'high', title: 'High Risk', range: 'Due today or tomorrow', icon: AlertTriangle },
@@ -118,9 +138,11 @@ export function OrderRisksWorkspace({ onNavigate, organizationId }: OrderRisksWo
   const [workCenters, setWorkCenters] = React.useState<WorkCenterRow[]>([]);
   const [selectedStations, setSelectedStations] = React.useState<string[]>(savedFilters.stations);
   const [detailOrderNumber, setDetailOrderNumber] = React.useState('');
+  const [coatingTrackings, setCoatingTrackings] = React.useState<CoatingTrackingRow[]>([]);
+  const [expandedSections, setExpandedSections] = React.useState<Record<string, boolean>>({ overdue: true, high: true, moderate: true, low: true, coating: true });
 
   const loadOrders = React.useCallback(async () => {
-    const [{ data, error: loadError }, { data: serialData, error: serialError }, { data: stationData, error: stationError }, { data: workCenterData, error: workCenterError }] = await Promise.all([
+    const [{ data, error: loadError }, { data: serialData, error: serialError }, { data: stationData, error: stationError }, { data: workCenterData, error: workCenterError }, { data: coatingData, error: coatingError }] = await Promise.all([
       supabase
         .from('mes_production_orders')
         .select('id, order_number, client_name, planned_quantity, completed_quantity, scrap_quantity, due_date, status, assigned_station, assigned_work_center, created_at')
@@ -141,10 +163,17 @@ export function OrderRisksWorkspace({ onNavigate, organizationId }: OrderRisksWo
         .select('id, code, name')
         .eq('organization_id', organizationId)
         .order('name', { ascending: true }),
+      supabase
+        .from('mes_customer_reception_items')
+        .select('id, production_order_id, production_order_number, customer_id, quantity, coating_sent_at, mes_customers(customer_name), mes_production_orders!production_order_id(assigned_station, assigned_work_center)')
+        .eq('organization_id', organizationId)
+        .not('coating_sent_at', 'is', null)
+        .is('coating_returned_at', null)
+        .order('coating_sent_at', { ascending: true }),
     ]);
 
-    if (loadError || serialError || stationError || workCenterError) {
-      setError(loadError?.message ?? serialError?.message ?? stationError?.message ?? workCenterError?.message ?? 'Unable to load order risk data.');
+    if (loadError || serialError || stationError || workCenterError || coatingError) {
+      setError(loadError?.message ?? serialError?.message ?? stationError?.message ?? workCenterError?.message ?? coatingError?.message ?? 'Unable to load order risk data.');
     } else {
       const serialsByOrder = ((serialData ?? []) as OrderSerialRow[]).reduce<Record<string, { serials: string[]; stations: string[] }>>((groups, serial) => {
         const group = groups[serial.production_order_id] ?? { serials: [], stations: [] };
@@ -162,6 +191,22 @@ export function OrderRisksWorkspace({ onNavigate, organizationId }: OrderRisksWo
       })));
       setStations((stationData ?? []) as StationRow[]);
       setWorkCenters((workCenterData ?? []) as WorkCenterRow[]);
+      setCoatingTrackings((coatingData ?? []).map((item) => {
+        const customer = Array.isArray(item.mes_customers) ? item.mes_customers[0] : item.mes_customers;
+        const productionOrder = Array.isArray(item.mes_production_orders) ? item.mes_production_orders[0] : item.mes_production_orders;
+        const productionOrderId = item.production_order_id ?? '';
+        return {
+          id: item.id,
+          productionOrderId,
+          orderNumber: item.production_order_number ?? '',
+          customerName: customer?.customer_name ?? 'Customer not assigned',
+          quantity: Number(item.quantity) || 0,
+          coatingSentAt: item.coating_sent_at ?? '',
+          stationCodes: Array.from(new Set([productionOrder?.assigned_station, ...(serialsByOrder[productionOrderId]?.stations ?? [])].filter(Boolean) as string[])),
+          assignedWorkCenter: productionOrder?.assigned_work_center ?? '',
+          serialNumbers: serialsByOrder[productionOrderId]?.serials ?? [],
+        };
+      }));
       setError('');
     }
     setLoading(false);
@@ -175,6 +220,7 @@ export function OrderRisksWorkspace({ onNavigate, organizationId }: OrderRisksWo
       { table: 'mes_production_serials', filter: `organization_id=eq.${organizationId}` },
       { table: 'mes_work_center_stations', filter: `organization_id=eq.${organizationId}` },
       { table: 'mes_work_centers', filter: `organization_id=eq.${organizationId}` },
+      { table: 'mes_customer_reception_items', filter: `organization_id=eq.${organizationId}` },
     ], [organizationId]),
     onRefresh: loadOrders,
   });
@@ -188,7 +234,7 @@ export function OrderRisksWorkspace({ onNavigate, organizationId }: OrderRisksWo
     } satisfies SavedOrderRiskFilters));
   }, [clientFilter, organizationId, searchTerm, selectedStations, workCenterFilter]);
 
-  const clientOptions = React.useMemo(() => Array.from(new Set(orders.map((order) => order.client_name?.trim()).filter(Boolean) as string[])).sort((a, b) => a.localeCompare(b)), [orders]);
+  const clientOptions = React.useMemo(() => Array.from(new Set([...orders.map((order) => order.client_name?.trim()), ...coatingTrackings.map((tracking) => tracking.customerName.trim())].filter(Boolean) as string[])).sort((a, b) => a.localeCompare(b)), [coatingTrackings, orders]);
   const normalizedSearch = searchTerm.trim().toLocaleLowerCase();
   const stationNameByCode = React.useMemo(() => new Map(stations.map((station) => [station.code, station.name])), [stations]);
   const filteredOrders = orders.filter((order) => {
@@ -201,6 +247,15 @@ export function OrderRisksWorkspace({ onNavigate, organizationId }: OrderRisksWo
     return matchesClient && matchesWorkCenter && matchesStations && matchesSearch;
   });
   const filtersActive = clientFilter !== 'all' || workCenterFilter !== 'all' || selectedStations.length > 0 || Boolean(normalizedSearch);
+  const filteredCoatingTrackings = coatingTrackings.filter((tracking) => {
+    const matchesClient = clientFilter === 'all' || tracking.customerName === clientFilter;
+    const matchesWorkCenter = workCenterFilter === 'all' || tracking.assignedWorkCenter === workCenterFilter;
+    const matchesStations = selectedStations.length === 0 || selectedStations.some((station) => tracking.stationCodes.includes(station));
+    const matchesSearch = !normalizedSearch || tracking.orderNumber.toLocaleLowerCase().includes(normalizedSearch) || tracking.serialNumbers.some((serial) => serial.toLocaleLowerCase().includes(normalizedSearch));
+    return matchesClient && matchesWorkCenter && matchesStations && matchesSearch;
+  });
+  const setAllSectionsExpanded = (expanded: boolean) => setExpandedSections({ overdue: expanded, high: expanded, moderate: expanded, low: expanded, coating: expanded });
+  const toggleSection = (section: string) => setExpandedSections((current) => ({ ...current, [section]: !current[section] }));
   const toggleStation = (stationCode: string) => setSelectedStations((current) => current.includes(stationCode)
     ? current.filter((code) => code !== stationCode)
     : [...current, stationCode]);
@@ -287,6 +342,12 @@ export function OrderRisksWorkspace({ onNavigate, organizationId }: OrderRisksWo
         </fieldset>
       </section>
 
+      <div className="order-risk-visibility-controls">
+        <span>Section visibility</span>
+        <button type="button" onClick={() => setAllSectionsExpanded(false)}><EyeOff size={15} /> Hide All</button>
+        <button type="button" onClick={() => setAllSectionsExpanded(true)}><Eye size={15} /> Show All</button>
+      </div>
+
       <main className="order-risk-sections" aria-busy={loading}>
         {sections.map((section) => {
           const sectionOrders = filteredOrders.filter((order) => riskForOrder(order) === section.level);
@@ -297,8 +358,9 @@ export function OrderRisksWorkspace({ onNavigate, organizationId }: OrderRisksWo
                 <span className="order-risk-section-icon"><Icon size={22} /></span>
                 <span><h2>{section.title}</h2><p>{section.range}</p></span>
                 <strong>{loading ? '—' : sectionOrders.length} {sectionOrders.length === 1 ? 'order' : 'orders'}</strong>
+                <button className="order-risk-section-toggle" type="button" aria-expanded={expandedSections[section.level]} onClick={() => toggleSection(section.level)}>{expandedSections[section.level] ? <ChevronUp size={18} /> : <ChevronDown size={18} />}<span>{expandedSections[section.level] ? 'Collapse' : 'Expand'}</span></button>
               </div>
-              <div className="order-risk-card-grid">
+              {expandedSections[section.level] ? <div className="order-risk-card-grid">
                 {loading ? [1, 2, 3].map((item) => <div className="order-risk-card skeleton" key={item} />) : null}
                 {!loading && sectionOrders.length === 0 ? (
                   <div className="order-risk-empty"><CheckCircle2 size={22} /><span>No active orders in this risk level.</span></div>
@@ -343,13 +405,34 @@ export function OrderRisksWorkspace({ onNavigate, organizationId }: OrderRisksWo
                     </article>
                   );
                 })}
-              </div>
+              </div> : null}
             </section>
           );
         })}
         {!loading && filteredOrders.length === 0 && !error ? (
           <div className="order-risks-all-clear"><PackageOpen size={28} /><strong>{filtersActive ? 'No matching production orders' : 'No active production orders'}</strong><span>{filtersActive ? 'Try changing the client or search term.' : 'New active orders will appear here automatically.'}</span></div>
         ) : null}
+
+        <div className="order-risk-subtracking-divider"><span>Sub-trackings</span><p>Special process monitoring independent from delivery risk categories</p></div>
+        <section className="order-risk-section coating">
+          <div className="order-risk-section-heading">
+            <span className="order-risk-section-icon"><PaintBucket size={22} /></span>
+            <span><h2>Coating</h2><p>Time at the external coating supplier</p></span>
+            <strong>{loading ? '—' : filteredCoatingTrackings.length} {filteredCoatingTrackings.length === 1 ? 'sub-reception' : 'sub-receptions'}</strong>
+            <button className="order-risk-section-toggle" type="button" aria-expanded={expandedSections.coating} onClick={() => toggleSection('coating')}>{expandedSections.coating ? <ChevronUp size={18} /> : <ChevronDown size={18} />}<span>{expandedSections.coating ? 'Collapse' : 'Expand'}</span></button>
+          </div>
+          {expandedSections.coating ? <div className="order-risk-card-grid">
+            {loading ? [1, 2, 3].map((item) => <div className="order-risk-card skeleton" key={item} />) : null}
+            {!loading && filteredCoatingTrackings.length === 0 ? <div className="order-risk-empty"><CheckCircle2 size={22} /><span>No sub-receptions are currently at the coating supplier.</span></div> : null}
+            {!loading && filteredCoatingTrackings.map((tracking) => <article className={`order-risk-card coating-card${tracking.orderNumber ? ' clickable' : ''}`} key={tracking.id} role={tracking.orderNumber ? 'button' : undefined} tabIndex={tracking.orderNumber ? 0 : undefined} onClick={() => tracking.orderNumber && openOrderDetails(tracking.orderNumber)} onKeyDown={(event) => { if (tracking.orderNumber && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); openOrderDetails(tracking.orderNumber); } }}>
+              <div className="order-risk-card-top"><span><small>Production order</small><strong>{tracking.orderNumber ? `#${tracking.orderNumber}` : 'Not assigned'}</strong></span><div className="order-risk-card-badges"><span className="order-risk-coating-status">At supplier</span><span className="order-risk-coating-time"><small>Elapsed Time</small><strong>{coatingElapsedLabel(tracking.coatingSentAt)}</strong></span></div></div>
+              <p className="order-risk-client">{tracking.customerName}</p>
+              <div className="order-risk-machines"><span><Factory size={14} /> Machines</span><div>{tracking.stationCodes.length ? tracking.stationCodes.map((code) => <em key={code}>{stationNameByCode.get(code) ? `${stationNameByCode.get(code)} · ${code}` : code}</em>) : <small>Not assigned</small>}</div></div>
+              <div className="order-risk-coating-timeline"><span className="done"><Check size={14} /><b>Sent to coating</b><time>{new Date(tracking.coatingSentAt).toLocaleString()}</time></span><i /><span><Clock3 size={14} /><b>Awaiting return</b><small>Supplier process active</small></span></div>
+              <div className="order-risk-quantities"><span><small>Sub-reception Qty.</small><strong>{tracking.quantity.toLocaleString()}</strong></span><span><small>Serials</small><strong>{tracking.serialNumbers.length}</strong></span><span><small>Elapsed</small><strong>{coatingElapsedLabel(tracking.coatingSentAt)}</strong></span></div>
+            </article>)}
+          </div> : null}
+        </section>
       </main>
       {detailOrderNumber ? (
         <ProductionOrdersWorkspace

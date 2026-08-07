@@ -25,7 +25,7 @@ export function WeeklyReceptionsChart({ stats, selectedDate, onSelectDate }: {
   const chart = { width: 1200, height: 620, left: 72, right: 28, top: 38, bottom: 112 };
   const plotWidth = chart.width - chart.left - chart.right;
   const plotHeight = chart.height - chart.top - chart.bottom;
-  const slotWidth = plotWidth / 7;
+  const slotWidth = plotWidth / Math.max(stats.length, 1);
   const maxTotal = Math.max(5, ...stats.map((stat) => stat.totalPieces));
   const maxValue = Math.max(5, Math.ceil(maxTotal * 1.2));
   const valueHeight = (value: number) => value / maxValue * plotHeight;

@@ -1,12 +1,14 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { AlertTriangle, CalendarDays, Check, ChevronDown, ClipboardCheck, FileText, PackageCheck, Pencil, Plus, Search, ShieldAlert, Trash2, Truck, X } from 'lucide-react';
+import { AlertTriangle, BarChart3, CalendarDays, Check, ChevronDown, CircleDollarSign, ClipboardCheck, Clock3, FileText, PackageCheck, PaintBucket, Pencil, Plus, RotateCcw, Search, Send, ShieldAlert, TrendingDown, TrendingUp, Trash2, Truck, Users, X } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { MesOrderDatePicker } from './MesWorkspaces';
 import { localizeClientsTree, translateClientsText, type ClientsLanguageCode } from './clientsI18n';
+import { WeeklyReceptionsChart, type DailyReceptionStat } from './statistics/WeeklyReceptionsChart';
+import './statisticsWorkspace.css';
 
-type ReceptionStatus = 'reception' | 'assign-orders' | 'manufacturing' | 'quality-inspection' | 'waiting-delivery' | 'sent' | 'discrepancy';
-type ReceptionRegistryFilter = 'all' | 'in-progress' | 'completed';
+type ReceptionStatus = 'reception' | 'assign-orders' | 'manufacturing' | 'quality-inspection' | 'coating' | 'waiting-delivery' | 'sent' | 'discrepancy';
+type ReceptionRegistryFilter = 'all' | ReceptionStatus;
 type ReceptionFormItem = { id?: string; customerId: string; quantity: string; productionOrderId?: string };
 
 type ExistingProductionOrder = {
@@ -29,6 +31,10 @@ type ReceptionItem = {
   productionStatus: string;
   completedQuantity: number;
   scrapQuantity: number;
+  serialNumbers: string[];
+  toolIds: string[];
+  coatingSentAt: string;
+  coatingReturnedAt: string;
   sentAt: string;
 };
 
@@ -86,14 +92,15 @@ type Props = {
   languageCode: ClientsLanguageCode;
 };
 
-const steps = ['Reception', 'Assign Orders', 'Manufacturing', 'Quality Inspection', 'Waiting to Deliver', 'Sent'];
+const steps = ['Reception', 'Assign Orders', 'Manufacturing', 'Quality Inspection', 'Coating', 'Waiting to Deliver', 'Sent'];
 const statusStep: Record<ReceptionStatus, number> = {
   reception: 0,
   'assign-orders': 1,
   manufacturing: 2,
   'quality-inspection': 3,
-  'waiting-delivery': 4,
-  sent: 5,
+  coating: 4,
+  'waiting-delivery': 5,
+  sent: 6,
   discrepancy: 3,
 };
 
@@ -113,6 +120,7 @@ function labelStatus(status: ReceptionStatus) {
     'assign-orders': 'Assign Orders',
     manufacturing: 'Manufacturing',
     'quality-inspection': 'Quality Inspection',
+    coating: 'Coating',
     'waiting-delivery': 'Waiting to Deliver',
     sent: 'Sent',
     discrepancy: 'Discrepancy',
@@ -225,6 +233,7 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
   const [sendingItemId, setSendingItemId] = React.useState('');
+  const [updatingCoatingItemId, setUpdatingCoatingItemId] = React.useState('');
   const [error, setError] = React.useState('');
   const [formOpen, setFormOpen] = React.useState(false);
   const [editingVoucherId, setEditingVoucherId] = React.useState('');
@@ -236,8 +245,12 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
   const [overrideCode, setOverrideCode] = React.useState('');
   const [overrideError, setOverrideError] = React.useState('');
   const [registryFilter, setRegistryFilter] = React.useState<ReceptionRegistryFilter>('all');
+  const [registryFilterOpen, setRegistryFilterOpen] = React.useState(false);
   const [registryDateRange, setRegistryDateRange] = React.useState({ from: '', to: '' });
   const [registryOrderSearch, setRegistryOrderSearch] = React.useState('');
+  const [analysisOpen, setAnalysisOpen] = React.useState(false);
+  const [analysisCustomerId, setAnalysisCustomerId] = React.useState('');
+  const [analysisSelectedDate, setAnalysisSelectedDate] = React.useState('');
   const [existingOrderItem, setExistingOrderItem] = React.useState<ReceptionItem | null>(null);
   const [existingOrders, setExistingOrders] = React.useState<ExistingProductionOrder[]>([]);
   const [existingOrdersLoading, setExistingOrdersLoading] = React.useState(false);
@@ -248,6 +261,16 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
   const [existingOrderCustomerMenuOpen, setExistingOrderCustomerMenuOpen] = React.useState(false);
   const [existingOrderMenuOpen, setExistingOrderMenuOpen] = React.useState(false);
   const [form, setForm] = React.useState(emptyForm);
+  const registryFilterRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    if (!registryFilterOpen) return undefined;
+    const closeFilter = (event: MouseEvent) => {
+      if (!registryFilterRef.current?.contains(event.target as Node)) setRegistryFilterOpen(false);
+    };
+    document.addEventListener('mousedown', closeFilter);
+    return () => document.removeEventListener('mousedown', closeFilter);
+  }, [registryFilterOpen]);
 
   const loadVouchers = React.useCallback(async () => {
     if (!organizationId) return;
@@ -265,33 +288,45 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
     const receptionRows = (data ?? []) as ReceptionRow[];
     const receptionIds = receptionRows.map((row) => row.id);
     const { data: itemData } = receptionIds.length
-      ? await supabase.from('mes_customer_reception_items').select('id, reception_voucher_id, customer_id, quantity, production_order_id, production_order_number, sent_at, mes_customers(customer_name)').in('reception_voucher_id', receptionIds).order('created_at')
+      ? await supabase.from('mes_customer_reception_items').select('id, reception_voucher_id, customer_id, quantity, production_order_id, production_order_number, coating_sent_at, coating_returned_at, sent_at, mes_customers(customer_name)').in('reception_voucher_id', receptionIds).order('created_at')
       : { data: [] };
-    const itemRows = (itemData ?? []) as Array<{ id: string; reception_voucher_id: string; customer_id: string; quantity: number; production_order_id: string | null; production_order_number: string; sent_at: string | null; mes_customers: { customer_name: string } | Array<{ customer_name: string }> | null }>;
+    const itemRows = (itemData ?? []) as Array<{ id: string; reception_voucher_id: string; customer_id: string; quantity: number; production_order_id: string | null; production_order_number: string; coating_sent_at: string | null; coating_returned_at: string | null; sent_at: string | null; mes_customers: { customer_name: string } | Array<{ customer_name: string }> | null }>;
     const productionOrderIds = itemRows.map((row) => row.production_order_id).filter((id): id is string => Boolean(id));
     const productionStatusById = new Map<string, { status: string; completedQuantity: number; scrapQuantity: number }>();
+    const productionIdentifiersById = new Map<string, { serialNumbers: string[]; toolIds: string[] }>();
     if (productionOrderIds.length) {
-      const { data: productionOrders } = await supabase
-        .from('mes_production_orders')
-        .select('id, status, completed_quantity, scrap_quantity')
-        .in('id', productionOrderIds);
+      const [{ data: productionOrders }, { data: productionSerials }] = await Promise.all([
+        supabase.from('mes_production_orders').select('id, status, completed_quantity, scrap_quantity').in('id', productionOrderIds),
+        supabase.from('mes_production_serials').select('production_order_id, serial_number, tool_id').in('production_order_id', productionOrderIds),
+      ]);
       (productionOrders ?? []).forEach((order) => productionStatusById.set(order.id, {
         status: order.status,
         completedQuantity: Number(order.completed_quantity) || 0,
         scrapQuantity: Number(order.scrap_quantity) || 0,
       }));
+      (productionSerials ?? []).forEach((serial) => {
+        const identifiers = productionIdentifiersById.get(serial.production_order_id) ?? { serialNumbers: [], toolIds: [] };
+        const serialNumber = String(serial.serial_number ?? '').trim();
+        const toolId = String(serial.tool_id ?? '').trim();
+        if (serialNumber && !identifiers.serialNumbers.includes(serialNumber)) identifiers.serialNumbers.push(serialNumber);
+        if (toolId && !identifiers.toolIds.includes(toolId)) identifiers.toolIds.push(toolId);
+        productionIdentifiersById.set(serial.production_order_id, identifiers);
+      });
     }
     const mapped = receptionRows.map((row) => {
       const customerRelation = Array.isArray(row.mes_customers) ? row.mes_customers[0] : row.mes_customers;
       const receptionItems: ReceptionItem[] = itemRows.filter((item) => item.reception_voucher_id === row.id).map((item) => {
         const itemCustomer = Array.isArray(item.mes_customers) ? item.mes_customers[0] : item.mes_customers;
         const productionOrder = item.production_order_id ? productionStatusById.get(item.production_order_id) : null;
-        return { id: item.id, customerId: item.customer_id, customerName: itemCustomer?.customer_name ?? 'Unknown customer', quantity: item.quantity, productionOrderId: item.production_order_id ?? '', productionOrderNumber: item.production_order_number, productionStatus: productionOrder?.status ?? '', completedQuantity: productionOrder?.completedQuantity ?? 0, scrapQuantity: productionOrder?.scrapQuantity ?? 0, sentAt: item.sent_at ?? '' };
+        const productionIdentifiers = item.production_order_id ? productionIdentifiersById.get(item.production_order_id) : null;
+        return { id: item.id, customerId: item.customer_id, customerName: itemCustomer?.customer_name ?? 'Unknown customer', quantity: item.quantity, productionOrderId: item.production_order_id ?? '', productionOrderNumber: item.production_order_number, productionStatus: productionOrder?.status ?? '', completedQuantity: productionOrder?.completedQuantity ?? 0, scrapQuantity: productionOrder?.scrapQuantity ?? 0, serialNumbers: productionIdentifiers?.serialNumbers ?? [], toolIds: productionIdentifiers?.toolIds ?? [], coatingSentAt: item.coating_sent_at ?? '', coatingReturnedAt: item.coating_returned_at ?? '', sentAt: item.sent_at ?? '' };
       });
       const assignedItems = receptionItems.filter((item) => item.productionOrderId);
       const productionStatuses = assignedItems.map((item) => item.productionStatus);
       const allOrdersCompleted = productionStatuses.length > 0
         && productionStatuses.every((status) => status === 'completed');
+      const allCoatingReturned = receptionItems.length > 0
+        && receptionItems.every((item) => Boolean(item.coatingReturnedAt));
       const allOrdersAtQualityOrLater = productionStatuses.length > 0
         && productionStatuses.every((status) => status === 'waiting-inspection' || status === 'completed');
       const synchronizedStatus: ReceptionStatus = row.status === 'sent' || row.status === 'discrepancy' || row.status === 'waiting-delivery'
@@ -301,7 +336,7 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
           : productionStatuses.some((status) => status === 'cancelled')
             ? 'discrepancy'
           : allOrdersCompleted
-            ? 'waiting-delivery'
+            ? allCoatingReturned ? 'waiting-delivery' : 'coating'
           : allOrdersAtQualityOrLater
             ? 'quality-inspection'
             : assignedItems.length
@@ -346,19 +381,94 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
   const selected = vouchers.find((voucher) => voucher.id === selectedId) ?? null;
   const active = vouchers.filter((voucher) => voucher.status !== 'sent');
   const filteredVouchers = React.useMemo(() => vouchers.filter((voucher) => {
-    const matchesStatus = registryFilter === 'all'
-      || (registryFilter === 'completed' ? voucher.status === 'sent' : voucher.status !== 'sent');
+    const matchesStatus = registryFilter === 'all' || voucher.status === registryFilter;
     const arrivalDate = voucher.expectedDate.slice(0, 10);
     const matchesFrom = !registryDateRange.from || arrivalDate >= registryDateRange.from;
     const matchesTo = !registryDateRange.to || arrivalDate <= registryDateRange.to;
     const orderSearch = registryOrderSearch.trim().toLocaleLowerCase();
-    const productionOrders = [voucher.productionOrderNumber, ...voucher.items.map((item) => item.productionOrderNumber)]
+    const productionOrders = [voucher.productionOrderNumber, ...voucher.items.flatMap((item) => [item.productionOrderNumber, ...item.serialNumbers, ...item.toolIds])]
       .filter(Boolean)
       .join(' ')
       .toLocaleLowerCase();
     const matchesOrder = !orderSearch || productionOrders.includes(orderSearch);
     return matchesStatus && matchesFrom && matchesTo && matchesOrder;
   }), [registryDateRange.from, registryDateRange.to, registryFilter, registryOrderSearch, vouchers]);
+
+  const analysisVouchers = React.useMemo(() => vouchers.filter((voucher) => {
+    const arrivalDate = voucher.expectedDate.slice(0, 10);
+    const matchesFrom = !registryDateRange.from || arrivalDate >= registryDateRange.from;
+    const matchesTo = !registryDateRange.to || arrivalDate <= registryDateRange.to;
+    const matchesCustomer = !analysisCustomerId || voucher.items.some((item) => item.customerId === analysisCustomerId);
+    return matchesFrom && matchesTo && matchesCustomer;
+  }), [analysisCustomerId, registryDateRange.from, registryDateRange.to, vouchers]);
+
+  const analysis = React.useMemo(() => {
+    const items = analysisVouchers.flatMap((voucher) => voucher.items.filter((item) => !analysisCustomerId || item.customerId === analysisCustomerId));
+    const hoursBetween = (from: string, to: string) => from && to ? Math.max(0, (new Date(to).getTime() - new Date(from).getTime()) / 3_600_000) : null;
+    const cycleTimes = analysisVouchers.map((voucher) => hoursBetween(voucher.receivedAt || voucher.createdAt, voucher.sentAt)).filter((value): value is number => value !== null);
+    const coatingTimes = items.map((item) => hoursBetween(item.coatingSentAt, item.coatingReturnedAt)).filter((value): value is number => value !== null);
+    const clientTotals = Array.from(items.reduce((totals, item) => {
+      const client = totals.get(item.customerId) ?? { customerName: item.customerName, pieces: 0 };
+      client.pieces += item.quantity;
+      totals.set(item.customerId, client);
+      return totals;
+    }, new Map<string, { customerName: string; pieces: number }>()).values()).sort((a, b) => b.pieces - a.pieces || a.customerName.localeCompare(b.customerName));
+    const dayMap = new Map<string, { pieces: number; vouchers: Set<string>; clients: Map<string, { name: string; quantity: number }> }>();
+    analysisVouchers.forEach((voucher) => {
+      const date = voucher.expectedDate.slice(0, 10) || voucher.createdAt.slice(0, 10);
+      const day = dayMap.get(date) ?? { pieces: 0, vouchers: new Set<string>(), clients: new Map() };
+      voucher.items.filter((item) => !analysisCustomerId || item.customerId === analysisCustomerId).forEach((item) => {
+        day.pieces += item.quantity;
+        const client = day.clients.get(item.customerId) ?? { name: item.customerName, quantity: 0 };
+        client.quantity += item.quantity;
+        day.clients.set(item.customerId, client);
+      });
+      day.vouchers.add(voucher.id);
+      dayMap.set(date, day);
+    });
+    const days = Array.from(dayMap.entries()).sort(([a], [b]) => a.localeCompare(b));
+    return {
+      items,
+      totalPieces: items.reduce((total, item) => total + item.quantity, 0),
+      completed: analysisVouchers.filter((voucher) => voucher.status === 'sent').length,
+      averageCycleHours: cycleTimes.length ? cycleTimes.reduce((sum, value) => sum + value, 0) / cycleTimes.length : null,
+      averageCoatingHours: coatingTimes.length ? coatingTimes.reduce((sum, value) => sum + value, 0) / coatingTimes.length : null,
+      highestVolumeClient: clientTotals[0] ?? null,
+      lowestVolumeClient: clientTotals[clientTotals.length - 1] ?? null,
+      days,
+      maxDayPieces: Math.max(1, ...days.map(([, day]) => day.pieces)),
+    };
+  }, [analysisCustomerId, analysisVouchers]);
+
+  const analysisChartStats = React.useMemo<DailyReceptionStat[]>(() => {
+    const palette = ['#ff7a00', '#7c3aed', '#0284c7', '#10b981', '#eab308', '#ef4444', '#ec4899'];
+    const customerColors = new Map<string, string>();
+    analysis.days.forEach(([, day]) => day.clients.forEach((_client, customerId) => {
+      if (!customerColors.has(customerId)) customerColors.set(customerId, palette[customerColors.size % palette.length]);
+    }));
+    const today = new Date().toISOString().slice(0, 10);
+    const stats = analysis.days.map(([date, day]) => {
+      const parsed = new Date(`${date}T12:00:00`);
+      return {
+        date,
+        dayLabel: new Intl.DateTimeFormat(languageCode === 'es' ? 'es-MX' : 'en-US', { weekday: 'short' }).format(parsed),
+        dateLabel: new Intl.DateTimeFormat(languageCode === 'es' ? 'es-MX' : 'en-US', { month: 'short', day: 'numeric' }).format(parsed),
+        isToday: date === today,
+        totalPieces: day.pieces,
+        voucherCount: day.vouchers.size,
+        segments: Array.from(day.clients.entries()).map(([customerId, client]) => ({ customerId, customerName: client.name, quantity: client.quantity, color: customerColors.get(customerId) ?? palette[0] })),
+      };
+    });
+    if (stats.length) return stats;
+    const emptyDate = registryDateRange.to || registryDateRange.from || today;
+    const parsed = new Date(`${emptyDate}T12:00:00`);
+    return [{ date: emptyDate, dayLabel: new Intl.DateTimeFormat(languageCode === 'es' ? 'es-MX' : 'en-US', { weekday: 'short' }).format(parsed), dateLabel: new Intl.DateTimeFormat(languageCode === 'es' ? 'es-MX' : 'en-US', { month: 'short', day: 'numeric' }).format(parsed), isToday: emptyDate === today, totalPieces: 0, voucherCount: 0, segments: [] }];
+  }, [analysis.days, languageCode, registryDateRange.from, registryDateRange.to]);
+
+  React.useEffect(() => {
+    if (!analysisOpen || analysisChartStats.some((stat) => stat.date === analysisSelectedDate)) return;
+    setAnalysisSelectedDate(analysisChartStats.find((stat) => stat.isToday)?.date ?? analysisChartStats[0]?.date ?? '');
+  }, [analysisChartStats, analysisOpen, analysisSelectedDate]);
 
   React.useEffect(() => {
     if (filteredVouchers.some((voucher) => voucher.id === selectedId)) return;
@@ -529,6 +639,23 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
     await loadVouchers();
   };
 
+  const updateReceptionItemCoating = async (item: ReceptionItem, action: 'sent' | 'returned') => {
+    if (updatingCoatingItemId) return;
+    setUpdatingCoatingItemId(item.id);
+    setError('');
+    const { error: coatingError } = await supabase.rpc('update_customer_reception_item_coating', {
+      p_item_id: item.id,
+      p_organization_id: organizationId,
+      p_action: action,
+    });
+    setUpdatingCoatingItemId('');
+    if (coatingError) {
+      setError(coatingError.message);
+      return;
+    }
+    await loadVouchers();
+  };
+
   const forceWaitingDelivery = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!selected) return;
@@ -629,6 +756,14 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
     });
   }, [existingOrderCustomerId, existingOrderSearch, existingOrders]);
 
+  const clearRegistryFilters = () => {
+    const today = new Date().toISOString().slice(0, 10);
+    setRegistryFilter('all');
+    setRegistryFilterOpen(false);
+    setRegistryOrderSearch('');
+    setRegistryDateRange({ from: today, to: today });
+  };
+
   return localizeClientsTree((
     <div className="client-receptions-workspace">
       <div className="client-receptions-toolbar">
@@ -637,26 +772,34 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
       </div>
       {error ? <div className="clients-feedback error">{error}</div> : null}
       <div className="client-reception-registry-filters">
-        <div className="client-reception-filter-buttons" aria-label="Filter reception vouchers by progress">
-          {([
+        <div className="client-reception-filter-dropdown" ref={registryFilterRef}>
+          <button type="button" aria-haspopup="menu" aria-expanded={registryFilterOpen} onClick={() => setRegistryFilterOpen((open) => !open)}><span><BarChart3 size={16} /> Filters</span><strong>{registryFilter === 'all' ? 'All' : labelStatus(registryFilter)}</strong><ChevronDown size={17} /></button>
+          {registryFilterOpen ? <div className="client-reception-filter-menu" role="menu" aria-label="Filter reception vouchers by progress">{([
             ['all', 'All'],
-            ['in-progress', 'In Progress'],
-            ['completed', 'Completed'],
+            ['reception', 'Reception'],
+            ['assign-orders', 'Assign Orders'],
+            ['manufacturing', 'Manufacturing'],
+            ['quality-inspection', 'Quality Inspection'],
+            ['coating', 'Coating'],
+            ['waiting-delivery', 'Waiting to Deliver'],
+            ['sent', 'Sent'],
+            ['discrepancy', 'Discrepancy'],
           ] as Array<[ReceptionRegistryFilter, string]>).map(([value, label]) => (
             <button
               type="button"
+              role="menuitemradio"
               className={registryFilter === value ? 'active' : ''}
-              aria-pressed={registryFilter === value}
-              onClick={() => setRegistryFilter(value)}
+              aria-checked={registryFilter === value}
+              onClick={() => { setRegistryFilter(value); setRegistryFilterOpen(false); }}
               key={value}
             >
-              {label}
+              <span>{label}</span>{registryFilter === value ? <Check size={15} /> : null}
             </button>
-          ))}
+          ))}</div> : null}
         </div>
         <label className="client-reception-order-search">
-          <span>Search Production Orders</span>
-          <span><Search size={17} /><input value={registryOrderSearch} onChange={(event) => setRegistryOrderSearch(event.target.value)} placeholder={translateClientsText(languageCode, 'Order number')} /></span>
+          <span>Search Orders, Serials or Tool IDs</span>
+          <span><Search size={17} /><input value={registryOrderSearch} onChange={(event) => setRegistryOrderSearch(event.target.value)} placeholder={translateClientsText(languageCode, 'Order, serial or Tool ID')} /></span>
         </label>
         <div className="client-reception-date-filters">
           <label>
@@ -666,6 +809,7 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
               value={registryDateRange.from}
               placeholder={translateClientsText(languageCode, 'Select date')}
               onChange={(from) => setRegistryDateRange((current) => ({ ...current, from }))}
+              onQuickRange={setRegistryDateRange}
             />
           </label>
           <label>
@@ -675,8 +819,11 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
               value={registryDateRange.to}
               placeholder={translateClientsText(languageCode, 'Select date')}
               onChange={(to) => setRegistryDateRange((current) => ({ ...current, to }))}
+              onQuickRange={setRegistryDateRange}
             />
           </label>
+          <button className="client-reception-analysis-button" type="button" onClick={() => { setAnalysisCustomerId(''); setAnalysisSelectedDate(''); setAnalysisOpen(true); }}><BarChart3 size={17} /> Reception Analysis</button>
+          <button className="client-reception-clear-filters" type="button" onClick={clearRegistryFilters}><RotateCcw size={16} /> Clear Filters</button>
         </div>
       </div>
       <div className="supplier-transfer-registry-layout client-receptions-layout">
@@ -756,6 +903,7 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
               </div>
               <div className="client-reception-actions">
                 {!['waiting-delivery', 'sent'].includes(selected.status) ? <button className="client-reception-override-action" type="button" onClick={() => { setOverrideCode(''); setOverrideError(''); setOverrideOpen(true); }}><ShieldAlert size={16} /> Skip to Waiting to Deliver</button> : null}
+                {selected.status === 'coating' ? <span className="client-reception-coating-guidance"><PaintBucket size={16} /> Confirm coating dispatch and return for each sub-reception below.</span> : null}
                 {selected.status === 'waiting-delivery' ? <span className="client-reception-delivery-guidance"><Truck size={16} /> Mark each completed sub-reception as sent below.</span> : null}
                 {selected.status === 'sent' ? <button type="button" disabled><Check size={16} /> All Sub-receptions Sent</button> : null}
               </div>
@@ -777,9 +925,13 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
                         <small>Order Status</small>
                         <strong className={item.productionStatus || 'not-assigned'}>{labelProductionStatus(item.productionStatus)}</strong>
                       </div>
+                      <div className="client-reception-item-coating">
+                        <small>Coating</small>
+                        {!item.coatingSentAt ? <button type="button" onClick={() => void updateReceptionItemCoating(item, 'sent')} disabled={Boolean(updatingCoatingItemId) || item.productionStatus !== 'completed'}><Send size={15} /> {updatingCoatingItemId === item.id ? 'Confirming...' : 'Confirm Sent'}</button> : !item.coatingReturnedAt ? <><span className="coating-date"><Check size={13} /> Sent {formatReceptionTimestamp(item.coatingSentAt, languageCode)}</span><button className="return" type="button" onClick={() => void updateReceptionItemCoating(item, 'returned')} disabled={Boolean(updatingCoatingItemId)}><RotateCcw size={15} /> {updatingCoatingItemId === item.id ? 'Confirming...' : 'Confirm Returned'}</button></> : <span className="coating-complete"><b><Check size={14} /> Returned</b><time dateTime={item.coatingReturnedAt}>{formatReceptionTimestamp(item.coatingReturnedAt, languageCode)}</time></span>}
+                      </div>
                       <div className="client-reception-item-delivery">
                         <small>Delivery</small>
-                        {item.sentAt ? <span className="sent"><b><Check size={14} /> Sent</b><time dateTime={item.sentAt}>{formatReceptionTimestamp(item.sentAt, languageCode)}</time></span> : item.productionStatus === 'completed' || selected.status === 'waiting-delivery' ? <button type="button" onClick={() => void markReceptionItemSent(item)} disabled={Boolean(sendingItemId)}><Truck size={15} /> {sendingItemId === item.id ? 'Sending...' : 'Mark as Sent'}</button> : <span className="pending">Pending completion</span>}
+                        {item.sentAt ? <span className="sent"><b><Check size={14} /> Sent</b><time dateTime={item.sentAt}>{formatReceptionTimestamp(item.sentAt, languageCode)}</time></span> : item.coatingReturnedAt || selected.status === 'waiting-delivery' ? <button type="button" onClick={() => void markReceptionItemSent(item)} disabled={Boolean(sendingItemId)}><Truck size={15} /> {sendingItemId === item.id ? 'Sending...' : 'Mark as Sent'}</button> : <span className="pending">Pending coating return</span>}
                       </div>
                     </article>
                   ))}
@@ -828,6 +980,60 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
         </div>
       ) : null}
 
+      {analysisOpen ? createPortal((
+        <div className="mes-modal-backdrop client-reception-analysis-backdrop" role="presentation">
+          <section className="client-reception-analysis-modal" role="dialog" aria-modal="true" aria-labelledby="reception-analysis-title">
+            <header>
+              <div><p className="eyebrow">Reception Intelligence</p><h3 id="reception-analysis-title">Reception Analysis</h3><p>{registryDateRange.from || 'All dates'} — {registryDateRange.to || 'Today'}</p></div>
+              <button type="button" aria-label="Close reception analysis" onClick={() => setAnalysisOpen(false)}><X size={20} /></button>
+            </header>
+            <div className="client-reception-analysis-overview">
+              <div className="client-reception-analysis-secondary-kpis">
+                <article><span><TrendingUp size={18} /></span><small>Most Pieces Received</small><strong>{analysis.highestVolumeClient?.customerName ?? '—'}</strong><em>{analysis.highestVolumeClient ? `${analysis.highestVolumeClient.pieces.toLocaleString()} pieces` : 'No data'}</em></article>
+                <article><span><TrendingDown size={18} /></span><small>Fewest Pieces Received</small><strong>{analysis.lowestVolumeClient?.customerName ?? '—'}</strong><em>{analysis.lowestVolumeClient ? `${analysis.lowestVolumeClient.pieces.toLocaleString()} pieces` : 'No data'}</em></article>
+                <article className="value"><span><CircleDollarSign size={18} /></span><small>Total Received Value</small><strong>—</strong><em>Pending valuation formula</em></article>
+              </div>
+              <div className="client-reception-analysis-filter">
+                <label>Client<select value={analysisCustomerId} onChange={(event) => setAnalysisCustomerId(event.target.value)}><option value="">All clients</option>{customers.map((customer) => <option value={customer.id} key={customer.id}>{customer.customerName}</option>)}</select></label>
+              </div>
+            </div>
+            <div className="client-reception-analysis-kpis">
+              <article><span><ClipboardCheck size={18} /></span><small>Receptions</small><strong>{analysisVouchers.length}</strong></article>
+              <article><span><Users size={18} /></span><small>Sub-receptions</small><strong>{analysis.items.length}</strong></article>
+              <article><span><PackageCheck size={18} /></span><small>Received Pieces</small><strong>{analysis.totalPieces.toLocaleString()}</strong></article>
+              <article><span><Check size={18} /></span><small>Completion Rate</small><strong>{analysisVouchers.length ? Math.round(analysis.completed / analysisVouchers.length * 100) : 0}%</strong></article>
+              <article><span><Clock3 size={18} /></span><small>Avg. Reception Cycle</small><strong>{analysis.averageCycleHours === null ? '—' : `${analysis.averageCycleHours.toFixed(1)} h`}</strong></article>
+              <article><span><PaintBucket size={18} /></span><small>Avg. Coating Time</small><strong>{analysis.averageCoatingHours === null ? '—' : `${analysis.averageCoatingHours.toFixed(1)} h`}</strong></article>
+            </div>
+            <section className="client-reception-analysis-chart">
+              <header><div><strong>Receptions by Day and Client</strong><small>Received pieces · segmented by client</small></div></header>
+              <WeeklyReceptionsChart stats={analysisChartStats} selectedDate={analysisSelectedDate} onSelectDate={setAnalysisSelectedDate} />
+            </section>
+            <section className="client-reception-analysis-list">
+              <header><strong>Reception and Sub-reception Detail</strong><span>{analysisVouchers.length} receptions</span></header>
+              <div>{analysisVouchers.map((voucher) => {
+                const currentStep = statusStep[voucher.status];
+                return <article key={voucher.id}>
+                  <div className="client-reception-analysis-voucher-header"><div><strong>{voucher.voucherNumber}</strong><small>{formatDate(voucher.expectedDate, languageCode)} · {voucher.quantityExpected.toLocaleString()} pieces · {voucher.items.length} sub-reception{voucher.items.length === 1 ? '' : 's'}</small></div><span className={`client-reception-status ${voucher.status}`}>{labelStatus(voucher.status)}</span></div>
+                  <ol className={`supplier-transfer-progress client-reception-progress${voucher.status === 'sent' ? ' completed' : ''}`}>{steps.map((step, index) => { const isCompleted = voucher.status === 'sent' || index < currentStep; return <li className={`${isCompleted ? 'complete' : ''} ${index === currentStep ? `current ${voucher.status === 'discrepancy' ? 'exception' : ''}` : ''}`} key={step}><span>{isCompleted ? <Check size={12} /> : index + 1}</span><strong>{index === currentStep && voucher.status === 'discrepancy' ? 'Discrepancy' : step}</strong></li>; })}</ol>
+                  <div className="client-reception-analysis-subreceptions">{voucher.items.filter((item) => !analysisCustomerId || item.customerId === analysisCustomerId).map((item, index) => <div className="client-reception-analysis-subrow" key={item.id}>
+                    <span className="client-reception-item-number">{index + 1}</span>
+                    <div className="client"><small>Client</small><strong>{item.customerName}</strong></div>
+                    <div className="client-reception-item-quantity"><small>Quantity</small><strong>{item.quantity.toLocaleString()}</strong></div>
+                    <div className="client-reception-item-produced"><small>Produced</small><strong>{item.completedQuantity.toLocaleString()}</strong></div>
+                    <div className="client-reception-item-scrap"><small>Scrap</small><strong>{item.scrapQuantity.toLocaleString()}</strong></div>
+                    <div className="order"><small>Production Order</small><strong>{item.productionOrderNumber || 'No production order'}</strong></div>
+                    <div className="client-reception-item-order-status"><small>Order Status</small><strong className={item.productionStatus || 'not-assigned'}>{labelProductionStatus(item.productionStatus)}</strong></div>
+                    <div className="process"><small>Coating</small><strong className={item.coatingReturnedAt ? 'done' : item.coatingSentAt ? 'active' : 'pending'}>{item.coatingReturnedAt ? 'Returned' : item.coatingSentAt ? 'At supplier' : 'Pending'}</strong></div>
+                    <div className="process"><small>Delivery</small><strong className={item.sentAt ? 'done' : 'pending'}>{item.sentAt ? 'Sent' : 'Pending'}</strong></div>
+                  </div>)}</div>
+                </article>;
+              })}</div>
+            </section>
+          </section>
+        </div>
+      ), document.body) : null}
+
       {deleteOpen && selected ? (
         <div className="mes-modal-backdrop production-order-form-backdrop client-reception-delete-backdrop" role="presentation">
           <section className="mes-order-modal client-reception-delete-modal" role="alertdialog" aria-modal="true" aria-labelledby="reception-delete-title">
@@ -853,7 +1059,7 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
               <span className="client-reception-override-icon"><ShieldAlert size={25} /></span>
               <p className="eyebrow">Administrative Override</p>
               <h3 id="reception-override-title">Skip to Waiting to Deliver?</h3>
-              <p>This bypasses Assign Orders, Manufacturing, and Quality Inspection for <strong>{selected.voucherNumber}</strong>. This action should only be used for an authorized exception.</p>
+              <p>This bypasses Assign Orders, Manufacturing, Quality Inspection, and Coating for <strong>{selected.voucherNumber}</strong>. This action should only be used for an authorized exception.</p>
               <label>
                 Confirmation Code
                 <input type="password" inputMode="numeric" autoComplete="off" value={overrideCode} onChange={(event) => setOverrideCode(event.target.value)} placeholder="Enter authorization code" autoFocus required />
