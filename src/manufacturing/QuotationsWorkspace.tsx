@@ -662,7 +662,9 @@ export function QuotationsWorkspace({
     surcharge,
   );
   const expediteOrderSurcharge = expedite.enabled
-    ? (totals.quotationTotal * Math.max(0, Number(expedite.percent) || 0)) / 100
+    ? (totals.recurringServiceSubtotal *
+        Math.max(0, Number(expedite.percent) || 0)) /
+      100
     : 0;
   const expediteCoatingSurcharge = expedite.enabled
     ? (coatPrice ?? 0) * 0.5
@@ -867,7 +869,7 @@ export function QuotationsWorkspace({
             category: "other",
             pricingType: "fixed",
             name: EXPEDITE_ORDER_ITEM,
-            description: `${expedite.percent}% priority-order surcharge`,
+            description: `${expedite.percent}% of the sharpening-service subtotal`,
             quantity: 1,
             unit: "service",
             hours: 0,
@@ -883,6 +885,7 @@ export function QuotationsWorkspace({
             notes: JSON.stringify({
               type: "expedite_order",
               percent: expedite.percent,
+              base: "sharpening_service",
             }),
           },
           {
@@ -2090,7 +2093,7 @@ export function QuotationsWorkspace({
                         {expedite.enabled ? (
                           <>
                             <dt>
-                              Expedite Order ({Number(expedite.percent).toFixed(2)}%)
+                              Expedite Order ({Number(expedite.percent).toFixed(2)}% of sharpening)
                             </dt>
                             <dd>${expediteOrderSurcharge.toFixed(2)}</dd>
                             <dt>Expedite coating (50%)</dt>

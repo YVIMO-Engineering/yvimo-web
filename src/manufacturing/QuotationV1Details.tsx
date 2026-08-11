@@ -446,7 +446,9 @@ function DetailContent({
           ) : null}
           {expediteOrderItem ? (
             <>
-              <dt>Expedite Order ({expeditePercent.toFixed(2)}%)</dt>
+              <dt>
+                Expedite Order ({expeditePercent.toFixed(2)}% of sharpening)
+              </dt>
               <dd>{money(expediteOrderItem.subtotal)}</dd>
             </>
           ) : null}

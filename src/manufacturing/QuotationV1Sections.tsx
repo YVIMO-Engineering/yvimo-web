@@ -190,7 +190,7 @@ export function QuotationV1Sections(p: Props) {
             />
             <span>
               <strong>Expedite Order</strong>
-              <small>Apply priority-order and expedited coating charges.</small>
+              <small>Extra percentage on sharpening, plus 50% on coating.</small>
             </span>
           </label>
           <label>
