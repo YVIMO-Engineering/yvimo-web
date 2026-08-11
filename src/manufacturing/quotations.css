@@ -78,6 +78,18 @@
 .quotation-service-history-icon { display:grid; width:42px; height:42px; place-items:center; border-radius:9px; background:#f5f3ff; color:#7c3aed; }
 .quotation-service-history button.active .quotation-service-history-icon { background:#ddd6fe; color:#5b21b6; }
 .quotation-service-history-check { justify-self:end; color:#7c3aed; }
+.quotation-expedite-order { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:20px; margin:0 14px 14px; border:1px solid #ddd6fe; border-radius:9px; padding:12px 14px; background:#fff; transition:border-color .15s,background .15s; }
+.quotation-expedite-order.active { border-color:#8b5cf6; background:#f5f3ff; }
+.quotation-expedite-order label { display:flex; align-items:center; gap:10px; color:#334155; }
+.quotation-expedite-order label:first-child { min-width:0; cursor:pointer; }
+.quotation-expedite-order label:first-child > span { display:flex; min-width:0; align-items:baseline; gap:8px; }
+.quotation-expedite-order label:first-child strong { white-space:nowrap; }
+.quotation-expedite-order label:first-child small { overflow:hidden; color:#64748b; font-size:.68rem; font-weight:400; text-overflow:ellipsis; white-space:nowrap; }
+.quotation-expedite-order input[type="checkbox"] { flex:0 0 18px; width:18px; height:18px; min-height:18px; margin:0; padding:0; accent-color:#7c3aed; cursor:pointer; }
+.quotation-expedite-order label:last-child { gap:7px; font-size:.72rem; font-weight:700; white-space:nowrap; }
+.quotation-expedite-order input[type="number"] { width:78px; min-height:36px; border:1px solid #cbd5e1; border-radius:7px; padding:0 8px; background:#fff; font:inherit; }
+.quotation-expedite-order input[type="number"]:disabled { background:#f8fafc; color:#94a3b8; }
+@media(max-width:700px){.quotation-expedite-order{grid-template-columns:1fr;gap:10px}.quotation-expedite-order label:first-child>span{display:grid;gap:2px}.quotation-expedite-order label:first-child small{white-space:normal}.quotation-expedite-order label:last-child{padding-left:28px}}
 .quotation-step-heading { grid-column:1/-1; display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:center; gap:12px; margin-bottom:2px; border-bottom:1px solid #ede9fe; padding:0 0 13px; }
 .quotation-step-heading > span,.quotation-step-summary > b { border-radius:999px; padding:5px 9px; background:#7c3aed; color:#fff; font-size:.66rem; font-weight:800; letter-spacing:.06em; text-transform:uppercase; white-space:nowrap; }
 .quotation-step-heading > div,.quotation-step-summary > span { display:grid; gap:2px; }
