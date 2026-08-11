@@ -6418,6 +6418,107 @@ body.work-center-map-expanded .logged-workspace {
   }
 }
 
+/* Compact Manufacturing Ops mode for 9–10 inch tablets. */
+@media (max-width: 1450px) {
+  .site-shell-mes-application .topbar .nav-links,
+  .site-shell-mes-application .topbar .header-slogan,
+  .site-shell-mes-application .topbar .expanded-menu-button,
+  .site-shell-mes-application .topbar .expanded-language-button,
+  .site-shell-mes-application .topbar .expanded-menu-panel {
+    display: none;
+  }
+
+  .site-shell-mes-application .topbar .brand {
+    top: calc(var(--header-height) / 2);
+    left: 50%;
+    transform: translate(-50%, -50%) scale(.64);
+  }
+
+  .site-shell-mes-application .topbar .compact-user-card,
+  .site-shell-mes-application .topbar .compact-language-button {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .logged-shell.supplier-context-shell {
+    grid-template-columns: 76px minmax(0, 1fr);
+  }
+
+  .supplier-shell-context-menu {
+    position: static;
+    grid-column: 2;
+    display: grid;
+    width: auto;
+    grid-template-columns: 145px minmax(0, 1fr);
+    align-items: center;
+    gap: 12px;
+    border: 1px solid rgba(255, 138, 31, .26);
+    border-radius: 9px;
+    margin: 14px clamp(14px, 2vw, 24px) 0;
+    padding: 10px 12px;
+    box-shadow: none;
+  }
+
+  .supplier-shell-context-menu > div { padding: 0 8px; }
+  .supplier-shell-context-menu nav { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 5px; }
+  .supplier-shell-context-menu button { justify-content: center; gap: 8px; min-height: 58px; padding: 8px 6px; text-align: center; }
+  .supplier-shell-context-menu button svg { width: 22px; height: 22px; }
+  .supplier-shell-context-menu button span { font-size: .8rem; line-height: 1.12; }
+  .logged-shell.supplier-context-shell .logged-workspace { grid-column: 2; min-width: 0; }
+
+  .clients-operations-workspace { margin-top: 10px; padding: 16px 18px 20px; }
+  .clients-operations-workspace .mes-screen-header { grid-template-columns: 170px minmax(0, 1fr) 170px; gap: 14px; }
+  .clients-operations-workspace .mes-workspace-heading h2 { font-size: clamp(25px, 2.5vw, 32px); }
+  .clients-operations-workspace .mes-workspace-heading p:last-child { max-width: 720px; font-size: .93rem; }
+
+  .client-reception-registry-filters {
+    display: grid;
+    grid-template-columns: 220px minmax(240px, 1fr);
+    align-items: end;
+    gap: 12px;
+  }
+  .client-reception-date-filters { grid-column: 1 / -1; grid-template-columns: repeat(2, minmax(160px, 1fr)) auto auto; }
+  .client-reception-order-search { max-width: none; }
+
+  .supplier-transfer-registry-layout.client-receptions-layout { grid-template-columns: minmax(0, 1fr); min-height: 0; }
+  .client-receptions-layout .supplier-active-transfers { max-height: 230px; }
+  .client-receptions-layout .supplier-active-transfer-list { display: flex; gap: 8px; padding: 8px; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x proximity; }
+  .client-receptions-layout .supplier-active-transfer-list article { flex: 0 0 270px; min-height: 138px; border: 1px solid rgba(18, 29, 41, .1); border-left: 4px solid transparent; border-radius: 8px; padding: 11px; scroll-snap-align: start; }
+  .client-receptions-layout .supplier-active-transfer-list article.active { border-left-color: #ff7a00; box-shadow: inset 3px 0 0 #ff7a00; }
+  .client-receptions-layout .supplier-active-transfers.registry-collapsed { display: grid; grid-template-rows: auto; max-height: 62px; }
+  .client-receptions-layout .supplier-active-transfers.registry-collapsed .supplier-active-transfer-list { display: none; }
+
+  .client-reception-registry-heading-actions { display: inline-flex !important; align-items: center; gap: 10px; }
+  .client-reception-registry-heading-actions > button { display: inline-flex; align-items: center; gap: 5px; min-height: 32px; border: 1px solid #d7e0eb; border-radius: 7px; padding: 0 9px; background: #fff; color: #475569; font: inherit; font-size: .68rem; font-weight: 900; cursor: pointer; }
+  .client-reception-registry-heading-actions > button[aria-expanded='true'] svg { transform: rotate(180deg); }
+
+  .supplier-transfer-detail-hero { padding: 14px 16px; }
+  .supplier-transfer-progress { padding-inline: 14px; }
+  .supplier-selected-transfer-grid { gap: 8px; padding-inline: 14px; }
+  .client-reception-actions, .client-reception-items, .client-reception-detail-bottom { margin-inline: 14px; }
+  .client-reception-item-summary { grid-template-columns: 34px minmax(120px, 1fr) repeat(3, 64px) minmax(160px, .8fr) minmax(110px, .5fr) minmax(170px, .7fr); gap: 8px; }
+  .client-reception-serial-row { grid-template-columns: minmax(115px, 1fr) minmax(100px, .7fr) repeat(3, minmax(128px, .8fr)); gap: 7px; }
+
+  .supplier-workspace-layout,
+  .supplier-transfer-combined-panel,
+  .supplier-docs-grid,
+  .supplier-documents-workspace { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 1100px) {
+  .supplier-shell-context-menu { grid-template-columns: 120px minmax(0, 1fr); }
+  .supplier-shell-context-menu button { min-height: 56px; gap: 5px; }
+  .supplier-shell-context-menu button svg { width: 20px; height: 20px; }
+  .supplier-shell-context-menu button span { font-size: .72rem; }
+  .clients-operations-workspace .mes-screen-header { grid-template-columns: 150px minmax(0, 1fr); }
+  .clients-operations-workspace .mes-screen-header .clients-header-actions { grid-column: 1 / -1; }
+  .client-reception-item-summary { grid-template-columns: 34px repeat(2, minmax(105px, 1fr)); }
+  .client-reception-item-summary > :nth-child(n+4) { min-width: 0; }
+  .client-reception-serials { padding-left: 0; }
+  .client-reception-serial-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .client-reception-serial-row .piece-stage { min-height: 58px; }
+}
+
 .supplier-active-transfer-list strong,
 .supplier-active-transfer-list em {
   min-width: 0;
@@ -7810,15 +7911,19 @@ body.work-center-map-expanded .logged-workspace {
 }
 
 .client-reception-items article {
-  display: grid;
-  grid-template-columns: 38px minmax(130px, 1fr) repeat(3, minmax(66px, 0.18fr)) minmax(240px, 0.72fr) minmax(125px, 0.34fr) minmax(185px, 0.5fr) minmax(170px, 0.46fr);
-  align-items: center;
-  gap: 12px;
+  display: block;
   border: 1px solid rgba(18, 29, 41, 0.1);
   border-left: 4px solid #ff7a00;
   border-radius: 9px;
   padding: 11px 12px;
   background: #f8fafc;
+}
+
+.client-reception-item-summary {
+  display: grid;
+  grid-template-columns: 38px minmax(130px, 1fr) repeat(3, minmax(66px, .18fr)) minmax(210px, .68fr) minmax(125px, .34fr) minmax(190px, .56fr);
+  align-items: center;
+  gap: 12px;
 }
 
 .client-reception-item-number {
@@ -7832,10 +7937,45 @@ body.work-center-map-expanded .logged-workspace {
   font-weight: 950;
 }
 
-.client-reception-items article > div {
+.client-reception-item-summary > div {
   display: grid;
   gap: 3px;
 }
+
+.client-reception-item-bulk-action button,
+.client-reception-serial-row button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 34px;
+  border: 1px solid #0284c7;
+  border-radius: 8px;
+  padding: 0 10px;
+  background: #0284c7;
+  color: #fff;
+  font: inherit;
+  font-size: .68rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.client-reception-item-bulk-action button.return { border-color: #7c3aed; background: #7c3aed; }
+.client-reception-item-bulk-action button.deliver { border-color: #10b981; background: #10b981; }
+.client-reception-item-bulk-action button:disabled,
+.client-reception-serial-row button:disabled { opacity: .55; cursor: not-allowed; }
+.client-reception-item-bulk-action .all-complete { display: inline-flex; align-items: center; gap: 5px; color: #047857; font-size: .72rem; font-weight: 900; }
+
+.client-reception-serials { margin-top: 12px; border-top: 1px solid #dbe3ed; padding: 12px 0 0 50px; }
+.client-reception-serials > header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.client-reception-serials > header strong { color: #334155; font-size: .75rem; text-transform: uppercase; letter-spacing: .04em; }
+.client-reception-serial-list { display: grid; gap: 6px; }
+.client-reception-serial-row { display: grid; grid-template-columns: minmax(130px, 1fr) minmax(110px, .8fr) repeat(3, minmax(145px, .75fr)); align-items: center; gap: 9px; border: 1px solid #dbe3ed; border-radius: 8px; padding: 8px 10px; background: #fff; }
+.client-reception-serial-row > span { display: grid; gap: 3px; min-width: 0; }
+.client-reception-serial-row > span > strong { overflow: hidden; color: #1e293b; font-size: .76rem; text-overflow: ellipsis; white-space: nowrap; }
+.client-reception-serial-row .piece-stage.done button { border-color: #a7f3d0; background: #ecfdf5; color: #047857; }
+.client-reception-serial-row .piece-stage.delivery:not(.done) button { border-color: #10b981; background: #10b981; }
+.client-reception-serials-empty { margin: 12px 0 0 50px; border-top: 1px solid #dbe3ed; padding-top: 10px; color: #64748b; font-size: .72rem; font-weight: 700; }
 
 .client-reception-items article small {
   color: #64748b;
@@ -8428,8 +8568,12 @@ body.work-center-map-expanded .logged-workspace {
   }
 
   .client-reception-items article {
-    grid-template-columns: 38px 1fr;
+    display: block;
   }
+
+  .client-reception-item-summary { grid-template-columns: 38px 1fr; }
+  .client-reception-serials, .client-reception-serials-empty { margin-left: 0; padding-left: 0; }
+  .client-reception-serial-row { grid-template-columns: 1fr 1fr; }
 
   .client-reception-form-items > div {
     grid-template-columns: 1fr;
@@ -37463,4 +37607,135 @@ body[data-screenshot-export="academy-track"] .academy-mobile-track-step button {
   .clients-asset-detail-actions > button {
     width: 100%;
   }
+}
+
+/* Final compact overrides stay after the desktop component rules. */
+@media (min-width: 1451px) {
+  .supplier-active-transfers > div:first-child > span:first-child { flex: 1 1 auto; white-space: nowrap; }
+  .client-reception-registry-heading-actions {
+    display: inline-flex !important;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 9px;
+  }
+  .client-reception-registry-heading-actions > strong { font-size: .84rem; white-space: nowrap; }
+  .client-reception-registry-heading-actions > button { display: none; }
+}
+
+@media (max-width: 1450px) {
+  .quality-shell-context-menu nav { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+  .clients-shell-context-menu nav { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .logged-workspace.manufacturing-workspace-active.mes-application-screen-active,
+  .clients-operations-workspace,
+  .clients-app-content,
+  .client-receptions-workspace,
+  .client-receptions-layout,
+  .supplier-transfer-combined-panel,
+  .supplier-selected-transfer-summary { width: 100%; min-width: 0; max-width: 100%; }
+
+  .client-receptions-toolbar { flex-wrap: wrap; padding-inline: 2px; }
+  .client-receptions-toolbar button { max-width: min(100%, 250px); white-space: normal; text-align: center; }
+
+  .client-reception-registry-filters {
+    display: grid;
+    grid-template-columns: minmax(180px, 220px) minmax(260px, 1fr);
+    align-items: end;
+    gap: 10px 14px;
+  }
+  .client-reception-filter-dropdown { width: 100%; min-width: 0; }
+  .client-reception-order-search { width: 100%; max-width: none; min-width: 0; }
+  .client-reception-order-search > span:first-child { white-space: nowrap; }
+  .client-reception-date-filters { grid-column: 1 / -1; grid-template-columns: repeat(2, minmax(170px, 1fr)) minmax(190px, auto) minmax(145px, auto); }
+  .client-reception-date-filters > * { min-width: 0; }
+
+  .client-receptions-layout .supplier-active-transfers { max-height: 320px; }
+  .client-receptions-layout .supplier-active-transfer-list { align-items: stretch; padding-bottom: 12px; }
+  .client-receptions-layout .supplier-active-transfer-list article { min-height: 228px; height: auto; padding-bottom: 14px; overflow: visible; }
+  .client-receptions-layout .client-reception-registry-dates { align-content: start; }
+  .client-receptions-layout .client-reception-registry-date { flex: 0 0 auto; }
+  .client-receptions-layout .supplier-active-transfers.registry-collapsed { max-height: 62px; }
+
+  .supplier-transfer-detail-hero { grid-template-columns: auto minmax(0, 1fr); }
+  .supplier-transfer-detail-hero .client-reception-hero-controls { min-width: 0; flex-wrap: wrap; }
+  .supplier-transfer-detail-hero .client-reception-hero-controls { grid-column: 1 / -1; justify-content: flex-end; }
+  .supplier-transfer-progress.client-reception-progress { width: 100%; min-width: 0; padding-inline: 4px; }
+  .supplier-transfer-progress.client-reception-progress li,
+  .supplier-transfer-progress.client-reception-progress li > strong { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+  .supplier-selected-transfer-grid { width: 100%; min-width: 0; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .supplier-selected-transfer-grid > span { min-width: 0; overflow: hidden; }
+  .supplier-selected-transfer-grid > span > strong { min-width: 0; overflow-wrap: anywhere; }
+  .client-reception-actions > * { min-width: 0; max-width: 100%; white-space: normal; }
+
+  .client-reception-item-summary {
+    grid-template-columns: 42px minmax(180px, 1.2fr) repeat(3, minmax(110px, 1fr));
+    grid-template-areas:
+      "number client quantity produced scrap"
+      ". order order status bulk";
+    align-items: center;
+    gap: 16px 12px;
+    padding: 8px 6px;
+  }
+  .client-reception-item-summary > .client-reception-item-number { grid-area: number; }
+  .client-reception-item-summary > div:nth-child(2) { grid-area: client; }
+  .client-reception-item-summary > .client-reception-item-quantity { grid-area: quantity; }
+  .client-reception-item-summary > .client-reception-item-produced { grid-area: produced; }
+  .client-reception-item-summary > .client-reception-item-scrap { grid-area: scrap; }
+  .client-reception-item-summary > .client-reception-item-order { grid-area: order; }
+  .client-reception-item-summary > .client-reception-item-order-status { grid-area: status; }
+  .client-reception-item-summary > .client-reception-item-bulk-action { grid-area: bulk; }
+  .client-reception-items article { padding: 15px 16px; }
+  .client-reception-items article small,
+  .client-reception-item-summary small { font-size: .75rem; line-height: 1.2; }
+  .client-reception-item-summary > div:nth-child(2) > strong { font-size: 1.12rem; line-height: 1.2; }
+  .client-reception-item-number { width: 38px; height: 38px; font-size: 1rem; }
+  .client-reception-item-quantity strong,
+  .client-reception-item-produced strong,
+  .client-reception-item-scrap strong { min-width: 54px; min-height: 46px; padding-inline: 14px; font-size: 1.18rem; }
+  .client-reception-item-order .client-reception-order-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+  .client-reception-item-order .client-reception-order-actions button,
+  .client-reception-item-bulk-action button {
+    width: 100%;
+    min-width: 0;
+    min-height: 54px;
+    border-radius: 10px;
+    padding: 8px 14px;
+    font-size: .83rem;
+    white-space: normal;
+    line-height: 1.2;
+  }
+  .client-reception-item-order > .assigned-order {
+    width: 100%;
+    min-width: 0;
+    min-height: 54px;
+    border-radius: 10px;
+    padding: 10px 16px;
+    font-size: 1.05rem;
+    line-height: 1.2;
+    text-align: center;
+    overflow-wrap: anywhere;
+  }
+  .client-reception-item-order-status strong { width: 100%; min-width: 0; min-height: 54px; border-radius: 10px; padding: 8px 12px; font-size: .78rem; }
+  .client-reception-item-bulk-action .all-complete { justify-content: center; width: 100%; min-height: 54px; border: 1px solid #a7f3d0; border-radius: 10px; padding: 8px 12px; background: #ecfdf5; font-size: .82rem; }
+  .client-reception-serial-row { grid-template-columns: minmax(115px, 1fr) minmax(100px, .7fr) repeat(3, minmax(128px, .8fr)); gap: 7px; }
+  .client-reception-serial-row button { width: 100%; min-height: 50px; border-radius: 10px; padding: 8px 10px; font-size: .78rem; line-height: 1.2; white-space: normal; }
+  .client-reception-serial-row > span > small { font-size: .76rem; line-height: 1.2; }
+  .client-reception-serial-row > span > strong { font-size: 1rem; line-height: 1.25; white-space: normal; overflow-wrap: anywhere; }
+}
+
+@media (max-width: 1100px) {
+  .client-reception-registry-filters { grid-template-columns: 190px minmax(0, 1fr); }
+  .client-reception-date-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .client-reception-analysis-button { grid-column: 1; }
+  .client-reception-clear-filters { grid-column: 2; }
+  .supplier-transfer-detail-hero { grid-template-columns: auto minmax(0, 1fr); }
+  .supplier-transfer-detail-hero .client-reception-hero-controls { grid-column: 1 / -1; justify-content: flex-start; }
+  .supplier-selected-transfer-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .client-reception-item-summary {
+    grid-template-columns: 42px minmax(160px, 1.2fr) repeat(3, minmax(90px, 1fr));
+    grid-template-areas:
+      "number client quantity produced scrap"
+      ". order order status bulk";
+  }
+  .client-reception-serials, .client-reception-serials-empty { margin-left: 0; padding-left: 0; }
+  .client-reception-serial-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
