@@ -28,7 +28,9 @@ type OrderRiskRow = {
 
 type RiskLevel = 'overdue' | 'high' | 'moderate' | 'low';
 
-type OrderSerialRow = { production_order_id: string; serial_number: string | null; assigned_station: string | null };
+type OrderSerialRow = { id: string; production_order_id: string; serial_number: string | null; tool_id: string | null; assigned_station: string | null };
+type CoatingProgressRow = { reception_item_id: string; production_serial_id: string; coating_sent_at: string | null; coating_returned_at: string | null };
+type CoatingSerialProgress = { id: string; serialNumber: string; toolId: string; coatingSentAt: string; coatingReturnedAt: string };
 type StationRow = { code: string; name: string; work_center_id: string };
 type WorkCenterRow = { id: string; code: string; name: string };
 type CoatingTrackingRow = {
@@ -40,7 +42,7 @@ type CoatingTrackingRow = {
   coatingSentAt: string;
   stationCodes: string[];
   assignedWorkCenter: string;
-  serialNumbers: string[];
+  serials: CoatingSerialProgress[];
 };
 
 const productionOrderDeepLinkKey = 'yvimo:mes:selectedProductionOrderNumber';
@@ -108,10 +110,11 @@ function leadTimeLabel(createdAt: string) {
   return `${days} day${days === 1 ? '' : 's'}`;
 }
 
-function coatingElapsedLabel(sentAt: string) {
+function coatingElapsedLabel(sentAt: string, returnedAt = '') {
   const start = new Date(sentAt);
   if (Number.isNaN(start.getTime())) return 'Not available';
-  const hours = Math.max(0, (Date.now() - start.getTime()) / 3_600_000);
+  const end = returnedAt ? new Date(returnedAt) : new Date();
+  const hours = Math.max(0, (end.getTime() - start.getTime()) / 3_600_000);
   if (hours < 24) return `${Math.floor(hours)}h ${Math.floor((hours % 1) * 60)}m`;
   const days = Math.floor(hours / 24);
   return `${days}d ${Math.floor(hours % 24)}h`;
@@ -142,7 +145,7 @@ export function OrderRisksWorkspace({ onNavigate, organizationId }: OrderRisksWo
   const [expandedSections, setExpandedSections] = React.useState<Record<string, boolean>>({ overdue: true, high: true, moderate: true, low: true, coating: true });
 
   const loadOrders = React.useCallback(async () => {
-    const [{ data, error: loadError }, { data: serialData, error: serialError }, { data: stationData, error: stationError }, { data: workCenterData, error: workCenterError }, { data: coatingData, error: coatingError }] = await Promise.all([
+    const [{ data, error: loadError }, { data: serialData, error: serialError }, { data: stationData, error: stationError }, { data: workCenterData, error: workCenterError }, { data: coatingData, error: coatingError }, { data: coatingProgressData, error: coatingProgressError }] = await Promise.all([
       supabase
         .from('mes_production_orders')
         .select('id, order_number, client_name, planned_quantity, completed_quantity, scrap_quantity, due_date, status, assigned_station, assigned_work_center, created_at')
@@ -151,8 +154,9 @@ export function OrderRisksWorkspace({ onNavigate, organizationId }: OrderRisksWo
         .order('due_date', { ascending: true }),
       supabase
         .from('mes_production_serials')
-        .select('production_order_id, serial_number, assigned_station')
-        .eq('organization_id', organizationId),
+        .select('id, production_order_id, serial_number, tool_id, assigned_station')
+        .eq('organization_id', organizationId)
+        .eq('result', 'good'),
       supabase
         .from('mes_work_center_stations')
         .select('code, name, work_center_id')
@@ -165,15 +169,17 @@ export function OrderRisksWorkspace({ onNavigate, organizationId }: OrderRisksWo
         .order('name', { ascending: true }),
       supabase
         .from('mes_customer_reception_items')
-        .select('id, production_order_id, production_order_number, customer_id, quantity, coating_sent_at, mes_customers(customer_name), mes_production_orders!production_order_id(assigned_station, assigned_work_center)')
+        .select('id, production_order_id, production_order_number, customer_id, quantity, mes_customers(customer_name), mes_production_orders!production_order_id(assigned_station, assigned_work_center)')
         .eq('organization_id', organizationId)
-        .not('coating_sent_at', 'is', null)
-        .is('coating_returned_at', null)
-        .order('coating_sent_at', { ascending: true }),
+        .not('production_order_id', 'is', null),
+      supabase
+        .from('mes_customer_reception_serial_progress')
+        .select('reception_item_id, production_serial_id, coating_sent_at, coating_returned_at')
+        .eq('organization_id', organizationId),
     ]);
 
-    if (loadError || serialError || stationError || workCenterError || coatingError) {
-      setError(loadError?.message ?? serialError?.message ?? stationError?.message ?? workCenterError?.message ?? coatingError?.message ?? 'Unable to load order risk data.');
+    if (loadError || serialError || stationError || workCenterError || coatingError || coatingProgressError) {
+      setError(loadError?.message ?? serialError?.message ?? stationError?.message ?? workCenterError?.message ?? coatingError?.message ?? coatingProgressError?.message ?? 'Unable to load order risk data.');
     } else {
       const serialsByOrder = ((serialData ?? []) as OrderSerialRow[]).reduce<Record<string, { serials: string[]; stations: string[] }>>((groups, serial) => {
         const group = groups[serial.production_order_id] ?? { serials: [], stations: [] };
@@ -191,22 +197,33 @@ export function OrderRisksWorkspace({ onNavigate, organizationId }: OrderRisksWo
       })));
       setStations((stationData ?? []) as StationRow[]);
       setWorkCenters((workCenterData ?? []) as WorkCenterRow[]);
+      const serialById = new Map(((serialData ?? []) as OrderSerialRow[]).map((serial) => [serial.id, serial]));
+      const progressByItem = ((coatingProgressData ?? []) as CoatingProgressRow[]).reduce<Record<string, CoatingProgressRow[]>>((groups, progress) => {
+        (groups[progress.reception_item_id] ??= []).push(progress);
+        return groups;
+      }, {});
       setCoatingTrackings((coatingData ?? []).map((item) => {
         const customer = Array.isArray(item.mes_customers) ? item.mes_customers[0] : item.mes_customers;
         const productionOrder = Array.isArray(item.mes_production_orders) ? item.mes_production_orders[0] : item.mes_production_orders;
         const productionOrderId = item.production_order_id ?? '';
+        const progressRows = progressByItem[item.id] ?? [];
+        const serials = progressRows.map((progress) => {
+          const serial = serialById.get(progress.production_serial_id);
+          return { id: progress.production_serial_id, serialNumber: serial?.serial_number ?? 'Unknown', toolId: serial?.tool_id ?? '', coatingSentAt: progress.coating_sent_at ?? '', coatingReturnedAt: progress.coating_returned_at ?? '' };
+        });
+        const sentTimes = serials.map((serial) => serial.coatingSentAt).filter(Boolean).sort();
         return {
           id: item.id,
           productionOrderId,
           orderNumber: item.production_order_number ?? '',
           customerName: customer?.customer_name ?? 'Customer not assigned',
           quantity: Number(item.quantity) || 0,
-          coatingSentAt: item.coating_sent_at ?? '',
+          coatingSentAt: sentTimes[0] ?? '',
           stationCodes: Array.from(new Set([productionOrder?.assigned_station, ...(serialsByOrder[productionOrderId]?.stations ?? [])].filter(Boolean) as string[])),
           assignedWorkCenter: productionOrder?.assigned_work_center ?? '',
-          serialNumbers: serialsByOrder[productionOrderId]?.serials ?? [],
+          serials,
         };
-      }));
+      }).filter((tracking) => tracking.coatingSentAt && tracking.serials.some((serial) => !serial.coatingReturnedAt)));
       setError('');
     }
     setLoading(false);
@@ -221,6 +238,7 @@ export function OrderRisksWorkspace({ onNavigate, organizationId }: OrderRisksWo
       { table: 'mes_work_center_stations', filter: `organization_id=eq.${organizationId}` },
       { table: 'mes_work_centers', filter: `organization_id=eq.${organizationId}` },
       { table: 'mes_customer_reception_items', filter: `organization_id=eq.${organizationId}` },
+      { table: 'mes_customer_reception_serial_progress', filter: `organization_id=eq.${organizationId}` },
     ], [organizationId]),
     onRefresh: loadOrders,
   });
@@ -251,7 +269,7 @@ export function OrderRisksWorkspace({ onNavigate, organizationId }: OrderRisksWo
     const matchesClient = clientFilter === 'all' || tracking.customerName === clientFilter;
     const matchesWorkCenter = workCenterFilter === 'all' || tracking.assignedWorkCenter === workCenterFilter;
     const matchesStations = selectedStations.length === 0 || selectedStations.some((station) => tracking.stationCodes.includes(station));
-    const matchesSearch = !normalizedSearch || tracking.orderNumber.toLocaleLowerCase().includes(normalizedSearch) || tracking.serialNumbers.some((serial) => serial.toLocaleLowerCase().includes(normalizedSearch));
+    const matchesSearch = !normalizedSearch || tracking.orderNumber.toLocaleLowerCase().includes(normalizedSearch) || tracking.serials.some((serial) => serial.serialNumber.toLocaleLowerCase().includes(normalizedSearch) || serial.toolId.toLocaleLowerCase().includes(normalizedSearch));
     return matchesClient && matchesWorkCenter && matchesStations && matchesSearch;
   });
   const setAllSectionsExpanded = (expanded: boolean) => setExpandedSections({ overdue: expanded, high: expanded, moderate: expanded, low: expanded, coating: expanded });
@@ -428,8 +446,17 @@ export function OrderRisksWorkspace({ onNavigate, organizationId }: OrderRisksWo
               <div className="order-risk-card-top"><span><small>Production order</small><strong>{tracking.orderNumber ? `#${tracking.orderNumber}` : 'Not assigned'}</strong></span><div className="order-risk-card-badges"><span className="order-risk-coating-status">At supplier</span><span className="order-risk-coating-time"><small>Elapsed Time</small><strong>{coatingElapsedLabel(tracking.coatingSentAt)}</strong></span></div></div>
               <p className="order-risk-client">{tracking.customerName}</p>
               <div className="order-risk-machines"><span><Factory size={14} /> Machines</span><div>{tracking.stationCodes.length ? tracking.stationCodes.map((code) => <em key={code}>{stationNameByCode.get(code) ? `${stationNameByCode.get(code)} · ${code}` : code}</em>) : <small>Not assigned</small>}</div></div>
-              <div className="order-risk-coating-timeline"><span className="done"><Check size={14} /><b>Sent to coating</b><time>{new Date(tracking.coatingSentAt).toLocaleString()}</time></span><i /><span><Clock3 size={14} /><b>Awaiting return</b><small>Supplier process active</small></span></div>
-              <div className="order-risk-quantities"><span><small>Sub-reception Qty.</small><strong>{tracking.quantity.toLocaleString()}</strong></span><span><small>Serials</small><strong>{tracking.serialNumbers.length}</strong></span><span><small>Elapsed</small><strong>{coatingElapsedLabel(tracking.coatingSentAt)}</strong></span></div>
+              <div className="order-risk-coating-timeline"><span className="done"><Check size={14} /><b>Order coating started</b><time>{new Date(tracking.coatingSentAt).toLocaleString()}</time></span><i /><span><Clock3 size={14} /><b>Order still in process</b><small>{tracking.serials.filter((serial) => Boolean(serial.coatingReturnedAt)).length} of {tracking.serials.length} serials returned</small></span></div>
+              <div className="order-risk-coating-serials">
+                <header><strong>Serial coating tracking</strong><span>{tracking.serials.length} serials in order</span></header>
+                <div>{tracking.serials.map((serial) => <section className={!serial.coatingSentAt ? 'pending' : serial.coatingReturnedAt ? 'returned' : 'active'} key={serial.id}>
+                  <span><small>Serial number</small><strong>{serial.serialNumber}</strong>{serial.toolId ? <em>{serial.toolId}</em> : null}</span>
+                  <span><small>Sent to coating</small>{serial.coatingSentAt ? <time>{new Date(serial.coatingSentAt).toLocaleString()}</time> : <b>Not sent yet</b>}</span>
+                  <span><small>Coating return</small>{serial.coatingReturnedAt ? <time>{new Date(serial.coatingReturnedAt).toLocaleString()}</time> : serial.coatingSentAt ? <b>In process</b> : <b>Waiting for dispatch</b>}</span>
+                  <span><small>Serial coating time</small><strong>{serial.coatingSentAt ? coatingElapsedLabel(serial.coatingSentAt, serial.coatingReturnedAt) : '—'}</strong></span>
+                </section>)}</div>
+              </div>
+              <div className="order-risk-quantities"><span><small>Sub-reception Qty.</small><strong>{tracking.quantity.toLocaleString()}</strong></span><span><small>Serials</small><strong>{tracking.serials.length}</strong></span><span><small>Order elapsed</small><strong>{coatingElapsedLabel(tracking.coatingSentAt)}</strong></span></div>
             </article>)}
           </div> : null}
         </section>

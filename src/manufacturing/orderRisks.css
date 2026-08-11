@@ -108,6 +108,23 @@
 .order-risk-coating-timeline > span time, .order-risk-coating-timeline > span small { color: #7a8598; font-size: 9px; }
 .order-risk-coating-timeline > span.done { border-color: #a7f3d0; background: #ecfdf5; color: #059669; }
 .order-risk-coating-timeline > i { height: 2px; background: linear-gradient(90deg, #10b981, #38bdf8); }
+.order-risk-section.coating .order-risk-card-grid { grid-template-columns: repeat(2, minmax(420px, 1fr)); }
+.order-risk-coating-serials { display: grid; gap: 8px; margin-top: 12px; }
+.order-risk-coating-serials > header { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.order-risk-coating-serials > header strong { color: #075985; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+.order-risk-coating-serials > header span { color: #64748b; font-size: 10px; font-weight: 800; }
+.order-risk-coating-serials > div { display: grid; gap: 6px; max-height: 350px; overflow-y: auto; padding-right: 3px; }
+.order-risk-coating-serials section { display: grid; grid-template-columns: minmax(105px, .8fr) repeat(3, minmax(115px, 1fr)); align-items: center; gap: 7px; border: 1px solid #dce8ef; border-left: 4px solid #94a3b8; border-radius: 8px; padding: 9px; background: #f8fafc; }
+.order-risk-coating-serials section.active { border-left-color: #0ea5e9; background: #f0f9ff; }
+.order-risk-coating-serials section.returned { border-left-color: #10b981; background: #ecfdf5; }
+.order-risk-coating-serials section > span { display: grid; gap: 3px; min-width: 0; }
+.order-risk-coating-serials section small { font-size: 8px; }
+.order-risk-coating-serials section strong { color: #172033; font-size: 12px; overflow-wrap: anywhere; }
+.order-risk-coating-serials section em { color: #64748b; font-size: 9px; font-style: normal; font-weight: 750; }
+.order-risk-coating-serials section time { color: #475569; font-size: 9px; font-weight: 750; line-height: 1.25; }
+.order-risk-coating-serials section b { width: fit-content; border-radius: 999px; padding: 5px 8px; background: #e2e8f0; color: #64748b; font-size: 9px; }
+.order-risk-coating-serials section.active b { background: #e0f2fe; color: #0369a1; }
+.order-risk-coating-serials section.returned b { background: #d1fae5; color: #047857; }
 @keyframes order-risk-pulse { from { background-position: 100% 0; } to { background-position: 0 0; } }
-@media (max-width: 1050px) { .order-risk-card-grid { grid-template-columns: repeat(2, minmax(240px, 1fr)); } .order-risks-filters { grid-template-columns: repeat(2, minmax(200px, 1fr)); } .order-risks-search { grid-column: 1 / -1; } .order-risks-filter-result { grid-column: 1 / -1; border-left: 0; border-top: 1px solid #e4d8cd; padding: 10px 0 0; } }
+@media (max-width: 1050px) { .order-risk-card-grid, .order-risk-section.coating .order-risk-card-grid { grid-template-columns: repeat(2, minmax(240px, 1fr)); } .order-risk-coating-serials section { grid-template-columns: repeat(2, minmax(0, 1fr)); } .order-risks-filters { grid-template-columns: repeat(2, minmax(200px, 1fr)); } .order-risks-search { grid-column: 1 / -1; } .order-risks-filter-result { grid-column: 1 / -1; border-left: 0; border-top: 1px solid #e4d8cd; padding: 10px 0 0; } }
 @media (max-width: 700px) { .order-risks-workspace { padding: 16px; } .order-risks-header { grid-template-columns: 1fr; } .order-risks-header > button { justify-self: start; } .order-risks-live { justify-self: center; } .order-risks-filters { grid-template-columns: 1fr; } .order-risk-card-grid { grid-template-columns: 1fr; } .order-risk-section-heading { grid-template-columns: auto 1fr auto; padding: 15px; } .order-risk-section-heading > strong { display: none; } .order-risk-section-toggle span { display: none; } .order-risk-section-toggle { min-width: 36px; padding: 0; } .order-risk-visibility-controls { justify-content: stretch; } .order-risk-visibility-controls > span { display: none; } .order-risk-visibility-controls button { flex: 1; justify-content: center; } }
