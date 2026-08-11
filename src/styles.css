@@ -11747,8 +11747,10 @@ body.work-center-map-expanded .logged-workspace {
 }
 
 .production-order-damage-table {
-  min-width: 900px;
+  min-width: 1180px;
 }
+
+.production-order-damage-cell { display: grid; gap: 8px; }
 
 .production-order-quality-result {
   display: inline-flex;

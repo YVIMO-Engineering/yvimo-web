@@ -28,6 +28,7 @@ import {
   ProductionOrderDetailsModal,
   type JobQueueSummary,
   type ProductionOrderDetailPiece,
+  type ProductionOrderDetailEvidenceRow,
   type ProductionOrderDetailQualityDocumentRow,
   type ProductionOrderDetailQualityInspectionRow,
   type ProductionOrderDetailQualityMeasurementRow,
@@ -1239,17 +1240,18 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
         { data: qualityInspectionData, error: qualityInspectionError },
         { data: qualityMeasurementData, error: qualityMeasurementError },
         { data: qualityDocumentData, error: qualityDocumentError },
+        { data: pieceEvidenceData, error: pieceEvidenceError },
         { data: statusCycleData, error: statusCycleError },
       ] = await Promise.all([
         supabase
           .from('mes_production_serials')
-          .select('id, production_order_id, piece_sequence, tool_id, serial_number, result, ready_for_quality, traceability_id, reported_at')
+          .select('id, production_order_id, piece_sequence, tool_id, serial_number, result, ready_for_quality, traceability_id, reported_at, before_notch, before_tooth_length, stock_to_remove')
           .eq('organization_id', organizationId)
           .eq('production_order_id', currentOrder.id)
           .order('piece_sequence', { ascending: true }),
         supabase
           .from('mes_operator_terminal_traceability')
-          .select('id, production_order_id, template_id, part_label, tool_id, serial_number, dimensions_unit, before_notch, before_tooth_length, damage_codes, stock_to_remove, after_tooth_length, payload, created_at')
+          .select('id, production_order_id, template_id, part_label, tool_id, serial_number, dimensions_unit, before_notch, before_tooth_length, damage_codes, damage_image_url, stock_to_remove, after_tooth_length, payload, created_at')
           .eq('organization_id', organizationId)
           .eq('production_order_id', currentOrder.id)
           .order('created_at', { ascending: false }),
@@ -1272,6 +1274,12 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
           .eq('production_order_id', currentOrder.id)
           .order('uploaded_at', { ascending: false }),
         supabase
+          .from('mes_production_piece_evidence')
+          .select('id, production_order_id, production_serial_id, stage, file_name, file_path, file_type, uploaded_at')
+          .eq('organization_id', organizationId)
+          .eq('production_order_id', currentOrder.id)
+          .order('uploaded_at', { ascending: false }),
+        supabase
           .from('mes_station_status_cycles')
           .select('production_order_id, order_number, station_code, serial_number, status, started_at, ended_at')
           .eq('organization_id', organizationId)
@@ -1283,6 +1291,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
       if (qualityInspectionError) throw qualityInspectionError;
       if (qualityMeasurementError) throw qualityMeasurementError;
       if (qualityDocumentError) throw qualityDocumentError;
+      if (pieceEvidenceError) throw pieceEvidenceError;
       if (statusCycleError) throw statusCycleError;
 
       const serialRows = (serialData ?? []) as ProductionOrderDetailSerialRow[];
@@ -1290,6 +1299,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
       const qualityInspectionRows = (qualityInspectionData ?? []) as ProductionOrderDetailQualityInspectionRow[];
       const qualityMeasurementRows = (qualityMeasurementData ?? []) as ProductionOrderDetailQualityMeasurementRow[];
       const qualityDocumentRows = (qualityDocumentData ?? []) as ProductionOrderDetailQualityDocumentRow[];
+      const pieceEvidenceRows = (pieceEvidenceData ?? []) as ProductionOrderDetailEvidenceRow[];
       const traceabilityById = new Map(traceabilityRows.map((traceability) => [traceability.id, traceability]));
       const traceabilityBySerial = new Map<string, ProductionOrderDetailTraceabilityRow>();
       const traceabilityBySequence = new Map<number, ProductionOrderDetailTraceabilityRow>();
@@ -1297,6 +1307,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
       const qualityInspectionBySerial = new Map<string, ProductionOrderDetailQualityInspectionRow>();
       const qualityMeasurementsBySerial = new Map<string, ProductionOrderDetailQualityMeasurementRow[]>();
       const qualityDocumentsBySerial = new Map<string, ProductionOrderDetailQualityDocumentRow[]>();
+      const evidenceByProductionSerial = new Map<string, ProductionOrderDetailEvidenceRow[]>();
       const timeSpentBySerial = new Map<string, number>();
       const runningTimeBySerial = new Map<string, number>();
       const setupTimeBySerial = new Map<string, number>();
@@ -1359,6 +1370,9 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
         if (!serialNumber) return;
         qualityDocumentsBySerial.set(serialNumber, [...(qualityDocumentsBySerial.get(serialNumber) ?? []), document]);
       });
+      pieceEvidenceRows.forEach((evidence) => {
+        evidenceByProductionSerial.set(evidence.production_serial_id, [...(evidenceByProductionSerial.get(evidence.production_serial_id) ?? []), evidence]);
+      });
 
       const lastKnownSequence = Math.max(
         currentOrder.plannedQuantity,
@@ -1411,6 +1425,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
           qualityInspection: resolvedSerialKey ? qualityInspectionBySerial.get(resolvedSerialKey) ?? null : null,
           qualityMeasurements: resolvedSerialKey ? qualityMeasurementsBySerial.get(resolvedSerialKey) ?? [] : [],
           qualityDocuments: resolvedSerialKey ? qualityDocumentsBySerial.get(resolvedSerialKey) ?? [] : [],
+          evidence: serial?.id ? evidenceByProductionSerial.get(serial.id) ?? [] : [],
         };
       });
 
@@ -1661,6 +1676,9 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
       ...current,
       toolId: serial.toolId,
       serialNumber: serial.serialNumber,
+      beforeNotch: serial.beforeNotch === null ? '' : String(serial.beforeNotch),
+      beforeToothLength: serial.beforeToothLength === null ? '' : String(serial.beforeToothLength),
+      stockToRemove: serial.stockToRemove === null ? '' : String(serial.stockToRemove),
     }));
   }, []);
 

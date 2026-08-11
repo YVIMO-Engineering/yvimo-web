@@ -747,11 +747,12 @@
 
 .mes-modal-backdrop.production-order-serial-backdrop {
   z-index: 310;
-  padding-left: 96px;
+  padding: 24px;
 }
 
-.production-order-serial-modal {
-  width: min(860px, calc(100vw - 32px));
+.mes-modal-backdrop.production-order-serial-backdrop .mes-order-modal.production-order-serial-modal {
+  width: min(1480px, calc(100vw - 48px));
+  max-width: none;
   max-height: min(720px, calc(100vh - 48px));
   overflow: hidden;
 }
@@ -783,6 +784,8 @@
 
 .production-order-serial-table {
   width: 100%;
+  min-width: 1075px;
+  table-layout: fixed;
   border-collapse: collapse;
   background: #ffffff;
 }
@@ -806,9 +809,27 @@
 }
 
 .production-order-serial-table td:first-child {
-  width: 92px;
+  width: 64px;
   color: #07111c;
   font-weight: 950;
+}
+
+.production-order-serial-table th:first-child { width: 60px; }
+.production-order-serial-table th:nth-child(2) { width: 145px; }
+.production-order-serial-table th:nth-child(3) { width: 165px; }
+.production-order-serial-table th:nth-child(4),
+.production-order-serial-table th:nth-child(5),
+.production-order-serial-table th:nth-child(6) { width: 120px; }
+.production-order-serial-table th:nth-child(7) { width: 135px; }
+.production-order-serial-table th:last-child { width: 210px; }
+
+@media (max-width: 760px) {
+  .mes-modal-backdrop.production-order-serial-backdrop { padding: 10px; }
+  .mes-modal-backdrop.production-order-serial-backdrop .mes-order-modal.production-order-serial-modal {
+    width: calc(100vw - 20px);
+    max-height: calc(100vh - 20px);
+    padding: 14px;
+  }
 }
 
 .production-order-serial-table input {
@@ -821,6 +842,91 @@
   color: #07111c;
   font-weight: 820;
 }
+
+.production-order-evidence-picker {
+  display: flex;
+  min-width: 150px;
+  min-height: 38px;
+  align-items: center;
+  gap: 7px;
+  border: 1px dashed #ff8a1f;
+  border-radius: 8px;
+  padding: 7px 9px;
+  background: #fff7ed;
+  color: #9a3f00;
+  cursor: pointer;
+}
+
+.production-order-evidence-picker span {
+  max-width: 125px;
+  overflow: hidden;
+  font-size: .68rem;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.production-order-evidence-picker input { display: none; }
+
+.production-quotation-dropdown > button {
+  display: flex;
+  width: 100%;
+  min-height: 42px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  border: 1px solid #d8e0e8;
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: #f8fafc;
+  color: #17202a;
+  text-align: left;
+  cursor: pointer;
+}
+
+.production-quotation-dropdown > button > span { display: grid; min-width: 0; gap: 2px; }
+.production-quotation-dropdown > button strong,
+.production-quotation-dropdown > button small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.production-quotation-dropdown > button strong { font-size: .72rem; }
+.production-quotation-dropdown > button small { color: #64748b; font-size: .58rem; }
+
+.production-quotation-dropdown-menu {
+  position: fixed;
+  z-index: 10050;
+  display: grid;
+  align-content: start;
+  overflow: auto;
+  border: 1px solid #ffb16b;
+  border-radius: 10px;
+  padding: 6px;
+  background: #fff;
+  box-shadow: 0 20px 50px rgba(15, 23, 42, .28);
+}
+
+.production-quotation-dropdown-search {
+  position: sticky;
+  z-index: 1;
+  top: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 5px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 0 10px;
+  background: #fff;
+  color: #64748b;
+}
+
+.production-quotation-dropdown-search input { width: 100%; min-height: 40px; border: 0; outline: 0; font: inherit; }
+.production-quotation-dropdown-menu > button { display: flex; align-items: center; justify-content: space-between; gap: 10px; border: 0; border-radius: 7px; padding: 9px 10px; background: transparent; color: #334155; text-align: left; cursor: pointer; }
+.production-quotation-dropdown-menu > button:hover,
+.production-quotation-dropdown-menu > button.selected { background: #fff7ed; color: #9a3f00; }
+.production-quotation-dropdown-menu > button span { display: grid; gap: 2px; }
+.production-quotation-dropdown-menu > button strong { font-size: .78rem; }
+.production-quotation-dropdown-menu > button small { color: #475569; font-size: .7rem; }
+.production-quotation-dropdown-menu > button em { color: #64748b; font-size: .64rem; font-style: normal; }
+.production-quotation-dropdown-menu > p { margin: 0; padding: 16px; color: #64748b; font-size: .72rem; text-align: center; }
 
 .production-order-serial-table .mes-order-dropdown {
   min-width: 260px;

@@ -112,7 +112,40 @@ type ProductionSerialAssignmentDraft = {
   toolId: string;
   serialNumber: string;
   assignedStation: string;
+  beforeNotch: string;
+  beforeToothLength: string;
+  stockToRemove: string;
+  receptionEvidenceFile: File | null;
+  receptionEvidenceName: string;
+  quotationId: string;
 };
+
+type ProductionQuotationOption = {
+  id: string;
+  quotationNumber: string;
+  clientName: string;
+  partId: string;
+  partType: string;
+  totalPrice: number;
+  currency: string;
+};
+
+function formatProductionQuotationValue(option: ProductionQuotationOption) {
+  return `${option.currency || 'USD'} ${option.totalPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+const productionPieceEvidenceBucket = 'mes-production-piece-evidence';
+const productionPieceEvidenceAccept = 'application/pdf,.pdf,image/*';
+const productionPieceEvidenceExtensions = /\.(?:pdf|jpe?g|png|webp|heic|heif|avif)$/i;
+const productionPieceEvidenceMimeTypes = new Set(['application/pdf', 'image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/heic', 'image/heif', 'image/avif']);
+
+function getProductionPieceEvidenceMimeType(file: File) {
+  if (file.type && file.type !== 'application/octet-stream') return file.type.toLowerCase();
+  const extension = file.name.toLowerCase().split('.').pop();
+  if (extension === 'pdf') return 'application/pdf';
+  if (extension === 'jpg' || extension === 'jpeg') return 'image/jpeg';
+  return extension ? `image/${extension}` : 'image/jpeg';
+}
 
 const productionOrderPartNameOptions: Array<{ value: ProductionOrderPartNameOption; label: string; pieceType?: QualityPieceType }> = [
   { value: 'hobs', label: 'Hobs', pieceType: 'hobs' },
@@ -225,6 +258,10 @@ type ProductionSerialInsertRow = {
   result: null;
   ready_for_quality: false;
   reported_at: null;
+  before_notch: number | null;
+  before_tooth_length: number | null;
+  stock_to_remove: number | null;
+  quotation_id: string | null;
 };
 
 type ProductionSerialAssignmentRow = {
@@ -233,6 +270,10 @@ type ProductionSerialAssignmentRow = {
   tool_id: string | null;
   serial_number: string;
   assigned_station?: string | null;
+  before_notch?: number | null;
+  before_tooth_length?: number | null;
+  stock_to_remove?: number | null;
+  quotation_id?: string | null;
 };
 
 type TraceabilityCaptureRow = {
@@ -380,6 +421,20 @@ export type ProductionOrderDetailSerialRow = {
   ready_for_quality: boolean;
   traceability_id: string | null;
   reported_at: string | null;
+  before_notch: number | null;
+  before_tooth_length: number | null;
+  stock_to_remove: number | null;
+};
+
+export type ProductionOrderDetailEvidenceRow = {
+  id: string;
+  production_order_id: string;
+  production_serial_id: string;
+  stage: 'reception' | 'after-sharpening' | 'after-coating';
+  file_name: string;
+  file_path: string;
+  file_type: string;
+  uploaded_at: string;
 };
 
 export type ProductionOrderDetailTraceabilityRow = {
@@ -393,6 +448,7 @@ export type ProductionOrderDetailTraceabilityRow = {
   before_notch: number | null;
   before_tooth_length: number | null;
   damage_codes: string[] | null;
+  damage_image_url: string | null;
   stock_to_remove: number | null;
   after_tooth_length: number | null;
   payload: Record<string, unknown> | null;
@@ -446,6 +502,7 @@ export type ProductionOrderDetailPiece = {
   qualityInspection: ProductionOrderDetailQualityInspectionRow | null;
   qualityMeasurements: ProductionOrderDetailQualityMeasurementRow[];
   qualityDocuments: ProductionOrderDetailQualityDocumentRow[];
+  evidence: ProductionOrderDetailEvidenceRow[];
 };
 
 export type ProductionOrderDetailsState = {
@@ -925,6 +982,70 @@ function MesOrderDropdown({ id, value, options, placeholder = 'Select option', d
   );
 }
 
+function ProductionQuotationDropdown({ id, value, options, onChange }: {
+  id: string;
+  value: string;
+  options: ProductionQuotationOption[];
+  onChange: (value: string) => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const [search, setSearch] = React.useState('');
+  const [position, setPosition] = React.useState<{ top: number; left: number; width: number; maxHeight: number } | null>(null);
+  const triggerRef = React.useRef<HTMLDivElement | null>(null);
+  const menuRef = React.useRef<HTMLDivElement | null>(null);
+  const selected = options.find((option) => option.id === value);
+  const filteredOptions = options.filter((option) => (
+    `${option.quotationNumber} ${option.clientName} ${option.partId} ${option.partType} ${formatProductionQuotationValue(option)}`.toLowerCase().includes(search.trim().toLowerCase())
+  ));
+  const updatePosition = React.useCallback(() => {
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const padding = 12;
+    const width = Math.min(420, window.innerWidth - (padding * 2));
+    const maxHeight = Math.min(360, Math.max(180, window.innerHeight - padding * 2));
+    const openUp = window.innerHeight - rect.bottom < 260 && rect.top > window.innerHeight - rect.bottom;
+    setPosition({
+      top: openUp ? Math.max(padding, rect.top - maxHeight - 6) : Math.min(window.innerHeight - maxHeight - padding, rect.bottom + 6),
+      left: Math.max(padding, Math.min(rect.left, window.innerWidth - width - padding)),
+      width,
+      maxHeight,
+    });
+  }, []);
+  React.useLayoutEffect(() => {
+    if (open) updatePosition();
+  }, [open, updatePosition]);
+  React.useEffect(() => {
+    if (!open) return undefined;
+    const close = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (!triggerRef.current?.contains(target) && !menuRef.current?.contains(target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', close);
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [open, updatePosition]);
+  const menu = open && position ? createPortal(
+    <div className="production-quotation-dropdown-menu" ref={menuRef} style={position} role="listbox" id={`${id}-listbox`}>
+      <div className="production-quotation-dropdown-search"><Search size={15} /><input autoFocus value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search quotation, client, Part ID or type" /></div>
+      <button className={!value ? 'selected' : ''} type="button" onClick={() => { onChange(''); setOpen(false); }}><span><strong>No quotation</strong><small>Leave this piece unlinked</small></span>{!value ? <Check size={15} /> : null}</button>
+      {filteredOptions.map((option) => <button className={option.id === value ? 'selected' : ''} type="button" role="option" aria-selected={option.id === value} key={option.id} onClick={() => { onChange(option.id); setOpen(false); setSearch(''); }}>
+        <span><strong>{option.quotationNumber}</strong><small>{option.clientName}</small><em>Part ID: {option.partId || 'N/A'} · {option.partType || 'N/A'} · {formatProductionQuotationValue(option)}</em></span>{option.id === value ? <Check size={15} /> : null}
+      </button>)}
+      {!filteredOptions.length ? <p>No quotations match this search.</p> : null}
+    </div>, document.body) : null;
+  return <div className={`production-quotation-dropdown${open ? ' open' : ''}`} ref={triggerRef}>
+    <button type="button" aria-expanded={open} aria-controls={`${id}-listbox`} onClick={() => { setSearch(''); setOpen((current) => !current); }}>
+      <span><strong>{selected?.quotationNumber ?? 'Select quotation'}</strong>{selected ? <small>{selected.clientName} · {formatProductionQuotationValue(selected)}</small> : null}</span><ChevronDown size={15} />
+    </button>
+    {menu}
+  </div>;
+}
+
 function mapProductionOrderRow(row: ProductionOrderRow): ProductionOrder {
   return {
     id: row.id,
@@ -1039,8 +1160,25 @@ function createSerialAssignmentDrafts(quantity: number, currentDrafts: Productio
   return Array.from({ length: nextQuantity }, (_, index) => {
     const pieceSequence = index + 1;
     const currentDraft = currentDrafts.find((draft) => draft.pieceSequence === pieceSequence);
-    return currentDraft ?? { pieceSequence, toolId: '', serialNumber: '', assignedStation: '' };
+    return currentDraft ?? {
+      pieceSequence,
+      toolId: '',
+      serialNumber: '',
+      assignedStation: '',
+      beforeNotch: '',
+      beforeToothLength: '',
+      stockToRemove: '',
+      receptionEvidenceFile: null,
+      receptionEvidenceName: '',
+      quotationId: '',
+    };
   });
+}
+
+function parseProductionSerialMeasurement(value: string) {
+  if (!value.trim()) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function validateSerialAssignmentDrafts(drafts: ProductionSerialAssignmentDraft[], requiresToolId = true) {
@@ -1536,6 +1674,7 @@ export function ProductionOrderDetailsModal({
   } | null>(null);
   const qualityPieces = details.pieces.filter((piece) => getProductionOrderDetailQualityInspection(piece) || getProductionOrderDetailQualityMeasurements(piece).length > 0 || getProductionOrderDetailQualityDocuments(piece).length > 0);
   const damagePieces = details.pieces.filter(hasProductionOrderDetailDamage);
+  const evidencePieces = details.pieces.filter((piece) => piece.evidence.length > 0 || hasProductionOrderDetailDamage(piece));
   React.useEffect(() => {
     let active = true;
     const loadOrderSummaryContext = async () => {
@@ -1645,6 +1784,18 @@ export function ProductionOrderDetailsModal({
     } catch (error) {
       console.error('Unable to open production order quality document', error);
       setPreviewError(error instanceof Error && error.message ? error.message : 'Unable to open document.');
+    }
+  };
+  const openPieceEvidencePreview = async (evidence: ProductionOrderDetailEvidenceRow) => {
+    setPreviewError('');
+    try {
+      const { data, error } = await supabase.storage.from(productionPieceEvidenceBucket).createSignedUrl(evidence.file_path, 60 * 10);
+      if (error || !data?.signedUrl) throw error ?? new Error('Unable to open evidence.');
+      const isPdf = evidence.file_type === 'application/pdf' || evidence.file_name.toLowerCase().endsWith('.pdf');
+      setPreview({ title: evidence.file_name, subtitle: formatTitleLabel(evidence.stage), url: data.signedUrl, type: isPdf ? 'pdf' : 'image' });
+    } catch (error) {
+      console.error('Unable to open production piece evidence', error);
+      setPreviewError(error instanceof Error && error.message ? error.message : 'Unable to open evidence.');
     }
   };
   const generateOrderDetailsPdf = async () => {
@@ -1937,8 +2088,8 @@ export function ProductionOrderDetailsModal({
             {qualityPieces.length ? <b>{qualityPieces.length}</b> : null}
           </button>
           <button type="button" className={activeView === 'damage' ? 'active' : ''} onClick={() => setActiveView('damage')} role="tab" aria-selected={activeView === 'damage'}>
-            <ImagePlus size={16} />Damage & Evidence
-            {damagePieces.length ? <b>{damagePieces.length}</b> : null}
+            <ImagePlus size={16} />Evidence & Damage
+            {evidencePieces.length ? <b>{evidencePieces.length}</b> : null}
           </button>
         </div>
         {activeView === 'production' ? <div className="production-order-details-table-wrap">
@@ -2077,53 +2228,63 @@ export function ProductionOrderDetailsModal({
         {activeView === 'damage' ? (
           <div className="production-order-details-table-wrap">
             {details.loading ? (
-              <div className="production-order-details-empty">Loading damage records...</div>
+              <div className="production-order-details-empty">Loading inspection evidence...</div>
             ) : details.error ? (
               <div className="production-order-details-empty error">{details.error}</div>
-            ) : damagePieces.length ? (
+            ) : details.pieces.length ? (
               <table className="production-order-details-table production-order-damage-table">
                 <thead>
                   <tr>
                     <th>Piece</th>
                     <th>Serial</th>
                     <th>Tool ID</th>
-                    <th>Damage Codes</th>
-                    <th>Evidence</th>
-                    <th>Reported</th>
+                    <th>Reception Inspection</th>
+                    <th>After Sharpening Inspection</th>
+                    <th>After Coating Inspection</th>
+                    <th>Registered Damage</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {damagePieces.map((piece) => {
+                  {details.pieces.map((piece) => {
                     const damageCodes = getProductionOrderDetailDamageCodes(piece.traceability);
                     const imageUrl = piece.traceability?.damage_image_url ?? '';
+                    const receptionEvidence = piece.evidence.find((evidence) => evidence.stage === 'reception');
+                    const sharpeningEvidence = piece.evidence.find((evidence) => evidence.stage === 'after-sharpening');
+                    const coatingEvidence = piece.evidence.find((evidence) => evidence.stage === 'after-coating');
+                    const renderEvidence = (evidence: ProductionOrderDetailEvidenceRow | undefined, label: string) => evidence ? (
+                      <div className="production-order-detail-actions">
+                        <button type="button" onClick={() => void openPieceEvidencePreview(evidence)}>
+                          {evidence.file_type === 'application/pdf' ? <FileText size={15} /> : <ImagePlus size={15} />}{label}
+                        </button>
+                      </div>
+                    ) : <span className="production-order-details-no-measurement">Pending</span>;
                     return (
                       <tr key={getProductionOrderDetailPieceKey(piece)}>
                         <td><strong>{piece.pieceSequence}</strong></td>
                         <td>{piece.serialNumber || '-'}</td>
                         <td>{piece.toolId || '-'}</td>
+                        <td>{renderEvidence(receptionEvidence, 'View reception')}</td>
+                        <td>{renderEvidence(sharpeningEvidence, 'View inspection')}</td>
+                        <td>{renderEvidence(coatingEvidence, 'View inspection')}</td>
                         <td>
-                          <div className="production-order-damage-tags">
-                            {damageCodes.map((code) => <b key={code}>{formatTitleLabel(code.replace(/^damage:/, 'damage '))}</b>)}
-                          </div>
-                        </td>
-                        <td>
-                          {imageUrl ? (
-                            <div className="production-order-detail-actions">
+                          {damageCodes.length || imageUrl ? <div className="production-order-damage-cell">
+                            <div className="production-order-damage-tags">{damageCodes.map((code) => <b key={code}>{formatTitleLabel(code.replace(/^damage:/, 'damage '))}</b>)}</div>
+                            {imageUrl ? <div className="production-order-detail-actions">
                               <button type="button" onClick={() => setPreview({ title: `Piece ${piece.pieceSequence} evidence`, subtitle: piece.serialNumber || 'Damage image', url: imageUrl, type: 'image' })}>
                                 <ImagePlus size={15} />Preview image
                               </button>
-                            </div>
-                          ) : <span className="production-order-details-no-measurement">No image</span>}
+                            </div> : null}
+                          </div> : <span className="production-order-details-no-measurement">None</span>}
                         </td>
-                        <td>{piece.reportedAt ? formatDate(toLocalIsoDate(piece.reportedAt)) : '-'}</td>
                       </tr>
                     );
                   })}
                 </tbody>
               </table>
             ) : (
-              <div className="production-order-details-empty">No damage or evidence images were reported for this order.</div>
+              <div className="production-order-details-empty">No serialized pieces are assigned to this order.</div>
             )}
+            {previewError ? <div className="production-order-details-empty error">{previewError}</div> : null}
           </div>
         ) : null}
       </section>
@@ -3307,6 +3468,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
   const [workCenterOptions, setWorkCenterOptions] = React.useState<MesOrderDropdownOption[]>([]);
   const [stationOptionsByWorkCenter, setStationOptionsByWorkCenter] = React.useState<Record<string, MesOrderDropdownOption[]>>({});
   const [customerOptions, setCustomerOptions] = React.useState<ProductionOrderCustomerOptionRow[]>([]);
+  const [quotationOptions, setQuotationOptions] = React.useState<ProductionQuotationOption[]>([]);
   const [customerOptionsMessage, setCustomerOptionsMessage] = React.useState('');
   const [workCenterOptionsMessage, setWorkCenterOptionsMessage] = React.useState('');
   const [page, setPage] = React.useState(restoredViewState.page);
@@ -3456,13 +3618,14 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
     { table: 'mes_work_centers', filter: `organization_id=eq.${organizationId}` },
     { table: 'mes_work_center_stations', filter: `organization_id=eq.${organizationId}` },
     { table: 'mes_customers', filter: `organization_id=eq.${organizationId}` },
+    { table: 'mes_quotations', filter: `organization_id=eq.${organizationId}` },
   ]), [organizationId]);
 
   const loadProductionOrders = React.useCallback(async (silent = false) => {
     const requestId = productionOrdersLoadRequestRef.current + 1;
     productionOrdersLoadRequestRef.current = requestId;
     if (!silent) setOrdersLoaded(false);
-    const [{ data, error }, { data: workCenterData, error: workCenterError }, { data: stationData, error: stationError }, { data: customerData, error: customerError }] = await Promise.all([
+    const [{ data, error }, { data: workCenterData, error: workCenterError }, { data: stationData, error: stationError }, { data: customerData, error: customerError }, { data: quotationData, error: quotationError }] = await Promise.all([
       supabase
         .from('mes_production_orders')
         .select('*')
@@ -3483,6 +3646,11 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
         .select('id, customer_name, legal_name, status')
         .eq('organization_id', organizationId)
         .order('customer_name', { ascending: true }),
+      supabase
+        .from('mes_quotations')
+        .select('id, quotation_number, client_name, tool_id, part_type, total_price, currency')
+        .eq('organization_id', organizationId)
+        .order('created_at', { ascending: false }),
     ]);
 
     if (requestId !== productionOrdersLoadRequestRef.current) return;
@@ -3495,6 +3663,20 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
       setCustomerOptionsMessage(nextCustomerOptions.some((customer) => customer.status === 'active')
         ? ''
         : 'No active customers configured yet. Add a customer from the Clients app.');
+    }
+    if (quotationError) {
+      console.error('Unable to load quotations for Production Orders', quotationError);
+      setQuotationOptions([]);
+    } else {
+      setQuotationOptions((quotationData ?? []).map((quotation) => ({
+        id: quotation.id as string,
+        quotationNumber: quotation.quotation_number as string,
+        clientName: quotation.client_name as string,
+        partId: quotation.tool_id as string,
+        partType: quotation.part_type as string,
+        totalPrice: Number(quotation.total_price) || 0,
+        currency: (quotation.currency as string | null) || 'USD',
+      })));
     }
     if (workCenterError || stationError) {
       setWorkCenterOptions([]);
@@ -3889,7 +4071,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
     try {
       let { data, error } = await supabase
         .from('mes_production_serials')
-        .select('piece_sequence, tool_id, serial_number, assigned_station')
+        .select('id, piece_sequence, tool_id, serial_number, assigned_station, before_notch, before_tooth_length, stock_to_remove, quotation_id')
         .eq('organization_id', organizationId)
         .eq('production_order_id', selectedOrder.id)
         .order('piece_sequence', { ascending: true });
@@ -3901,7 +4083,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
       if (missingAssignedStationColumn) {
         const fallbackResponse = await supabase
           .from('mes_production_serials')
-          .select('piece_sequence, tool_id, serial_number')
+          .select('id, piece_sequence, tool_id, serial_number, before_notch, before_tooth_length, stock_to_remove, quotation_id')
           .eq('organization_id', organizationId)
           .eq('production_order_id', selectedOrder.id)
           .order('piece_sequence', { ascending: true });
@@ -3912,12 +4094,29 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
       if (error) throw error;
       const serialRows = (data ?? []) as ProductionSerialAssignmentRow[];
       if (!serialRows.length) return;
+      const serialIds = serialRows.flatMap((serial) => serial.id ? [serial.id] : []);
+      const { data: evidenceData, error: evidenceError } = serialIds.length
+        ? await supabase
+          .from('mes_production_piece_evidence')
+          .select('production_serial_id, file_name')
+          .eq('organization_id', organizationId)
+          .eq('stage', 'reception')
+          .in('production_serial_id', serialIds)
+        : { data: [], error: null };
+      if (evidenceError) throw evidenceError;
+      const evidenceBySerialId = new Map((evidenceData ?? []).map((evidence) => [evidence.production_serial_id as string, evidence.file_name as string]));
       setAssignSerialsEnabled(true);
       setSerialAssignmentDrafts(createSerialAssignmentDrafts(selectedOrder.plannedQuantity, serialRows.map((serial) => ({
         pieceSequence: serial.piece_sequence,
         toolId: serial.tool_id ?? '',
         serialNumber: serial.serial_number ?? '',
         assignedStation: serial.assigned_station ?? '',
+        beforeNotch: serial.before_notch === null || serial.before_notch === undefined ? '' : String(serial.before_notch),
+        beforeToothLength: serial.before_tooth_length === null || serial.before_tooth_length === undefined ? '' : String(serial.before_tooth_length),
+        stockToRemove: serial.stock_to_remove === null || serial.stock_to_remove === undefined ? '' : String(serial.stock_to_remove),
+        receptionEvidenceFile: null,
+        receptionEvidenceName: serial.id ? evidenceBySerialId.get(serial.id) ?? '' : '',
+        quotationId: serial.quotation_id ?? '',
       }))));
     } catch (error) {
       console.error('Unable to load Production Order serial assignments', error);
@@ -3990,9 +4189,18 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
     }
   };
 
-  const setSerialAssignmentField = (pieceSequence: number, field: 'toolId' | 'serialNumber' | 'assignedStation', value: string) => {
+  const setSerialAssignmentField = (pieceSequence: number, field: 'toolId' | 'serialNumber' | 'assignedStation' | 'beforeNotch' | 'beforeToothLength' | 'stockToRemove', value: string) => {
     setSerialAssignmentDrafts((currentDrafts) => createSerialAssignmentDrafts(Number(formState.plannedQuantity) || 0, currentDrafts)
       .map((draft) => draft.pieceSequence === pieceSequence ? { ...draft, [field]: value } : draft));
+  };
+
+  const setSerialReceptionEvidence = (pieceSequence: number, file: File | null) => {
+    setSerialAssignmentDrafts((currentDrafts) => createSerialAssignmentDrafts(Number(formState.plannedQuantity) || 0, currentDrafts)
+      .map((draft) => draft.pieceSequence === pieceSequence ? {
+        ...draft,
+        receptionEvidenceFile: file,
+        receptionEvidenceName: file?.name ?? draft.receptionEvidenceName,
+      } : draft));
   };
 
   const toggleSerialAssignments = () => {
@@ -4012,6 +4220,44 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
     if (!assignSerialsEnabled) return;
     setSerialAssignmentDrafts((currentDrafts) => createSerialAssignmentDrafts(Number(formState.plannedQuantity) || 0, currentDrafts));
   }, [assignSerialsEnabled, formState.plannedQuantity]);
+
+  const uploadReceptionEvidence = async (orderId: string, serialId: string, draft: ProductionSerialAssignmentDraft) => {
+    const file = draft.receptionEvidenceFile;
+    if (!file) return;
+    const safeFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '-');
+    const filePath = `${organizationId}/${orderId}/${serialId}/reception/${Date.now()}-${safeFileName}`;
+    const fileType = getProductionPieceEvidenceMimeType(file);
+    const { data: existingEvidence } = await supabase
+      .from('mes_production_piece_evidence')
+      .select('file_path')
+      .eq('organization_id', organizationId)
+      .eq('production_serial_id', serialId)
+      .eq('stage', 'reception')
+      .maybeSingle();
+    const { error: uploadError } = await supabase.storage
+      .from(productionPieceEvidenceBucket)
+      .upload(filePath, file, { contentType: fileType });
+    if (uploadError) throw uploadError;
+    const { error: evidenceError } = await supabase
+      .from('mes_production_piece_evidence')
+      .upsert({
+        organization_id: organizationId,
+        production_order_id: orderId,
+        production_serial_id: serialId,
+        stage: 'reception',
+        file_name: file.name,
+        file_path: filePath,
+        file_type: fileType,
+        uploaded_at: new Date().toISOString(),
+      }, { onConflict: 'production_serial_id,stage' });
+    if (evidenceError) {
+      await supabase.storage.from(productionPieceEvidenceBucket).remove([filePath]);
+      throw evidenceError;
+    }
+    if (existingEvidence?.file_path && existingEvidence.file_path !== filePath) {
+      await supabase.storage.from(productionPieceEvidenceBucket).remove([existingEvidence.file_path]);
+    }
+  };
 
   const saveOrderForm = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -4053,6 +4299,24 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
         setSerialAssignmentModalOpen(true);
         return;
       }
+      const invalidMeasurement = normalizedSerialDrafts.some((draft) => (
+        [draft.beforeNotch, draft.beforeToothLength, draft.stockToRemove]
+          .some((value) => value.trim() && !Number.isFinite(Number(value)))
+      ));
+      if (invalidMeasurement) {
+        setOrderFormError('Before sharpening measurements and Stock to Remove must be valid numbers.');
+        setSerialAssignmentModalOpen(true);
+        return;
+      }
+      const invalidEvidence = normalizedSerialDrafts.find((draft) => draft.receptionEvidenceFile && (
+        !productionPieceEvidenceExtensions.test(draft.receptionEvidenceFile.name)
+        && !productionPieceEvidenceMimeTypes.has(draft.receptionEvidenceFile.type.toLowerCase())
+      ));
+      if (invalidEvidence) {
+        setOrderFormError(`Reception evidence for piece ${invalidEvidence.pieceSequence} must be a PDF or photo.`);
+        setSerialAssignmentModalOpen(true);
+        return;
+      }
     }
     const shouldCompleteAfterQualityDisable = formMode === 'edit'
       && selectedOrder?.status === 'waiting-inspection'
@@ -4086,7 +4350,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
             if (assignSerialsEnabled) {
               const { data: existingSerialsData, error: existingSerialsError } = await supabase
                 .from('mes_production_serials')
-                .select('id, piece_sequence, tool_id, serial_number, assigned_station')
+                .select('id, piece_sequence, tool_id, serial_number, assigned_station, before_notch, before_tooth_length, stock_to_remove, quotation_id')
                 .eq('organization_id', organizationId)
                 .eq('production_order_id', selectedOrder.id)
                 .abortSignal(controller.signal);
@@ -4100,15 +4364,20 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
                     .update({
                       tool_id: isWheelOrder ? null : draft.toolId.trim(),
                       serial_number: draft.serialNumber.trim(),
+                      before_notch: parseProductionSerialMeasurement(draft.beforeNotch),
+                      before_tooth_length: parseProductionSerialMeasurement(draft.beforeToothLength),
+                      stock_to_remove: parseProductionSerialMeasurement(draft.stockToRemove),
+                      quotation_id: draft.quotationId || null,
                       ...(serialStationColumnAvailable ? { assigned_station: formState.manufacturingType === 'multi-step' ? draft.assignedStation.trim() : null } : {}),
                     })
                     .eq('organization_id', organizationId)
                     .eq('id', existingSerial.id)
                     .abortSignal(controller.signal);
                   if (updateSerialError) throw updateSerialError;
+                  await uploadReceptionEvidence(selectedOrder.id, existingSerial.id, draft);
                   return;
                 }
-                const { error: insertSerialError } = await supabase
+                const { data: insertedSerial, error: insertSerialError } = await supabase
                   .from('mes_production_serials')
                   .insert({
                     organization_id: organizationId,
@@ -4116,13 +4385,20 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
                     piece_sequence: draft.pieceSequence,
                     tool_id: isWheelOrder ? null : draft.toolId.trim(),
                     serial_number: draft.serialNumber.trim(),
+                    before_notch: parseProductionSerialMeasurement(draft.beforeNotch),
+                    before_tooth_length: parseProductionSerialMeasurement(draft.beforeToothLength),
+                    stock_to_remove: parseProductionSerialMeasurement(draft.stockToRemove),
+                    quotation_id: draft.quotationId || null,
                     ...(serialStationColumnAvailable ? { assigned_station: formState.manufacturingType === 'multi-step' ? draft.assignedStation.trim() : null } : {}),
                     result: null,
                     ready_for_quality: false,
                     reported_at: null,
                   })
-                  .abortSignal(controller.signal);
+                  .abortSignal(controller.signal)
+                  .select('id')
+                  .single();
                 if (insertSerialError) throw insertSerialError;
+                await uploadReceptionEvidence(selectedOrder.id, insertedSerial.id as string, draft);
               }));
               const validSequences = normalizedSerialDrafts.map((draft) => draft.pieceSequence);
               const { error: staleSerialsError } = await supabase
@@ -4216,12 +4492,22 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
               result: null,
               ready_for_quality: false,
               reported_at: null,
+              before_notch: parseProductionSerialMeasurement(draft.beforeNotch),
+              before_tooth_length: parseProductionSerialMeasurement(draft.beforeToothLength),
+              stock_to_remove: parseProductionSerialMeasurement(draft.stockToRemove),
+              quotation_id: draft.quotationId || null,
             }));
-            const { error: serialsError } = await supabase
+            const { data: insertedSerials, error: serialsError } = await supabase
               .from('mes_production_serials')
               .insert(serialRows)
-              .abortSignal(controller.signal);
+              .abortSignal(controller.signal)
+              .select('id, piece_sequence');
             if (serialsError) throw serialsError;
+            const insertedSerialBySequence = new Map((insertedSerials ?? []).map((serial) => [serial.piece_sequence as number, serial.id as string]));
+            await Promise.all(normalizedSerialDrafts.map(async (draft) => {
+              const serialId = insertedSerialBySequence.get(draft.pieceSequence);
+              if (serialId) await uploadReceptionEvidence(nextOrder.id, serialId, draft);
+            }));
           }
           setTableMessage(null);
           setOrders((currentOrders) => [nextOrder, ...currentOrders]);
@@ -4278,18 +4564,19 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
         { data: qualityInspectionData, error: qualityInspectionError },
         { data: qualityMeasurementData, error: qualityMeasurementError },
         { data: qualityDocumentData, error: qualityDocumentError },
+        { data: pieceEvidenceData, error: pieceEvidenceError },
         { data: statusCycleData, error: statusCycleError },
         { data: stationAssignmentData, error: stationAssignmentError },
       ] = await Promise.all([
         supabase
           .from('mes_production_serials')
-          .select('id, production_order_id, piece_sequence, tool_id, serial_number, result, ready_for_quality, traceability_id, reported_at')
+          .select('id, production_order_id, piece_sequence, tool_id, serial_number, result, ready_for_quality, traceability_id, reported_at, before_notch, before_tooth_length, stock_to_remove')
           .eq('organization_id', organizationId)
           .eq('production_order_id', selectedOrder.id)
           .order('piece_sequence', { ascending: true }),
         supabase
           .from('mes_operator_terminal_traceability')
-          .select('id, production_order_id, template_id, part_label, tool_id, serial_number, dimensions_unit, before_notch, before_tooth_length, damage_codes, stock_to_remove, after_tooth_length, payload, created_at')
+          .select('id, production_order_id, template_id, part_label, tool_id, serial_number, dimensions_unit, before_notch, before_tooth_length, damage_codes, damage_image_url, stock_to_remove, after_tooth_length, payload, created_at')
           .eq('organization_id', organizationId)
           .eq('production_order_id', selectedOrder.id)
           .order('created_at', { ascending: false }),
@@ -4312,6 +4599,12 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
           .eq('production_order_id', selectedOrder.id)
           .order('uploaded_at', { ascending: false }),
         supabase
+          .from('mes_production_piece_evidence')
+          .select('id, production_order_id, production_serial_id, stage, file_name, file_path, file_type, uploaded_at')
+          .eq('organization_id', organizationId)
+          .eq('production_order_id', selectedOrder.id)
+          .order('uploaded_at', { ascending: false }),
+        supabase
           .from('mes_station_status_cycles')
           .select('production_order_id, order_number, station_code, serial_number, status, started_at, ended_at')
           .eq('organization_id', organizationId)
@@ -4329,6 +4622,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
       if (qualityInspectionError) throw qualityInspectionError;
       if (qualityMeasurementError) throw qualityMeasurementError;
       if (qualityDocumentError) throw qualityDocumentError;
+      if (pieceEvidenceError) throw pieceEvidenceError;
       if (statusCycleError) throw statusCycleError;
       if (stationAssignmentError) throw stationAssignmentError;
 
@@ -4337,6 +4631,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
       const qualityInspectionRows = (qualityInspectionData ?? []) as ProductionOrderDetailQualityInspectionRow[];
       const qualityMeasurementRows = (qualityMeasurementData ?? []) as ProductionOrderDetailQualityMeasurementRow[];
       const qualityDocumentRows = (qualityDocumentData ?? []) as ProductionOrderDetailQualityDocumentRow[];
+      const pieceEvidenceRows = (pieceEvidenceData ?? []) as ProductionOrderDetailEvidenceRow[];
       const traceabilityById = new Map(traceabilityRows.map((traceability) => [traceability.id, traceability]));
       const traceabilityBySerial = new Map<string, ProductionOrderDetailTraceabilityRow>();
       const traceabilityBySequence = new Map<number, ProductionOrderDetailTraceabilityRow>();
@@ -4344,6 +4639,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
       const qualityInspectionBySerial = new Map<string, ProductionOrderDetailQualityInspectionRow>();
       const qualityMeasurementsBySerial = new Map<string, ProductionOrderDetailQualityMeasurementRow[]>();
       const qualityDocumentsBySerial = new Map<string, ProductionOrderDetailQualityDocumentRow[]>();
+      const evidenceByProductionSerial = new Map<string, ProductionOrderDetailEvidenceRow[]>();
       const timeSpentBySerial = new Map<string, number>();
       const runningTimeBySerial = new Map<string, number>();
       const setupTimeBySerial = new Map<string, number>();
@@ -4407,6 +4703,9 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
         if (!serialNumber) return;
         qualityDocumentsBySerial.set(serialNumber, [...(qualityDocumentsBySerial.get(serialNumber) ?? []), document]);
       });
+      pieceEvidenceRows.forEach((evidence) => {
+        evidenceByProductionSerial.set(evidence.production_serial_id, [...(evidenceByProductionSerial.get(evidence.production_serial_id) ?? []), evidence]);
+      });
 
       const lastKnownSequence = Math.max(
         selectedOrder.plannedQuantity,
@@ -4463,6 +4762,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
           qualityInspection: resolvedSerialKey ? qualityInspectionBySerial.get(resolvedSerialKey) ?? null : null,
           qualityMeasurements: resolvedSerialKey ? qualityMeasurementsBySerial.get(resolvedSerialKey) ?? [] : [],
           qualityDocuments: resolvedSerialKey ? qualityDocumentsBySerial.get(resolvedSerialKey) ?? [] : [],
+          evidence: serial?.id ? evidenceByProductionSerial.get(serial.id) ?? [] : [],
         };
       });
 
@@ -5145,6 +5445,11 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
                     <th>Part</th>
                     {formState.pieceType !== 'wheel' ? <th>Tool ID</th> : null}
                     <th>Serial Number</th>
+                    <th>Before Sharpening<br />Notch Length</th>
+                    <th>Before Sharpening<br />Tooth Length</th>
+                    <th>Stock to Remove</th>
+                    <th>Reception Inspection</th>
+                    <th>Source Quotation</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -5158,6 +5463,32 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
                       ) : null}
                       <td>
                         <input value={draft.serialNumber} onChange={(event) => setSerialAssignmentField(draft.pieceSequence, 'serialNumber', event.target.value)} placeholder={`${formState.partNumber || 'PART'}-SN-${String(draft.pieceSequence).padStart(4, '0')}`} />
+                      </td>
+                      <td><input type="number" step="any" inputMode="decimal" value={draft.beforeNotch} onChange={(event) => setSerialAssignmentField(draft.pieceSequence, 'beforeNotch', event.target.value)} placeholder="0.000" /></td>
+                      <td><input type="number" step="any" inputMode="decimal" value={draft.beforeToothLength} onChange={(event) => setSerialAssignmentField(draft.pieceSequence, 'beforeToothLength', event.target.value)} placeholder="0.000" /></td>
+                      <td><input type="number" step="any" inputMode="decimal" value={draft.stockToRemove} onChange={(event) => setSerialAssignmentField(draft.pieceSequence, 'stockToRemove', event.target.value)} placeholder="0.000" /></td>
+                      <td>
+                        <label className="production-order-evidence-picker">
+                          <ImagePlus size={15} />
+                          <span>{draft.receptionEvidenceName || 'Photo / PDF'}</span>
+                          <input
+                            type="file"
+                            accept={productionPieceEvidenceAccept}
+                            onChange={(event) => {
+                              const file = event.target.files?.[0] ?? null;
+                              event.target.value = '';
+                              if (file) setSerialReceptionEvidence(draft.pieceSequence, file);
+                            }}
+                          />
+                        </label>
+                      </td>
+                      <td>
+                        <ProductionQuotationDropdown
+                          id={`production-piece-quotation-${draft.pieceSequence}`}
+                          value={draft.quotationId}
+                          options={quotationOptions}
+                          onChange={(quotationId) => setSerialAssignmentDrafts((current) => current.map((item) => item.pieceSequence === draft.pieceSequence ? { ...item, quotationId } : item))}
+                        />
                       </td>
                     </tr>
                   ))}

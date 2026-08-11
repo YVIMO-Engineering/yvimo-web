@@ -64,6 +64,9 @@ type ProductionSerialRow = {
   ready_for_quality: boolean;
   traceability_id: string | null;
   reported_at: string | null;
+  before_notch: number | null;
+  before_tooth_length: number | null;
+  stock_to_remove: number | null;
 };
 
 type OperatorTraceabilityRecordRow = {
@@ -96,6 +99,9 @@ export type OperatorProductionSerial = {
   readyForQuality: boolean;
   traceabilityId: string;
   reportedAt: string;
+  beforeNotch: number | null;
+  beforeToothLength: number | null;
+  stockToRemove: number | null;
 };
 
 export type OperatorTraceabilityRecord = {
@@ -141,6 +147,9 @@ function mapProductionSerialRow(row: ProductionSerialRow): OperatorProductionSer
     readyForQuality: row.ready_for_quality,
     traceabilityId: row.traceability_id ?? '',
     reportedAt: row.reported_at ?? '',
+    beforeNotch: row.before_notch,
+    beforeToothLength: row.before_tooth_length,
+    stockToRemove: row.stock_to_remove,
   };
 }
 
@@ -407,7 +416,7 @@ export async function fetchOperatorProductionSerials(
 ): Promise<OperatorProductionSerial[]> {
   let query = client
     .from('mes_production_serials')
-    .select('id, production_order_id, piece_sequence, tool_id, serial_number, result, ready_for_quality, traceability_id, reported_at')
+    .select('id, production_order_id, piece_sequence, tool_id, serial_number, result, ready_for_quality, traceability_id, reported_at, before_notch, before_tooth_length, stock_to_remove')
     .eq('organization_id', input.organizationId)
     .eq('production_order_id', input.orderId)
     .order('piece_sequence', { ascending: true });
