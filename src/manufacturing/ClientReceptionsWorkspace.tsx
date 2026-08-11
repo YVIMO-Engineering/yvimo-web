@@ -1,6 +1,6 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { AlertTriangle, BarChart3, CalendarDays, Check, ChevronDown, CircleDollarSign, ClipboardCheck, Clock3, FileText, PackageCheck, PaintBucket, Pencil, Plus, RotateCcw, Search, Send, ShieldAlert, TrendingDown, TrendingUp, Trash2, Truck, Users, X } from 'lucide-react';
+import { AlertTriangle, BarChart3, CalendarDays, Check, ChevronDown, CircleDollarSign, ClipboardCheck, Clock3, FileText, PackageCheck, PaintBucket, Pencil, Plus, RotateCcw, Search, Send, ShieldAlert, TrendingDown, TrendingUp, Trash2, Truck, Upload, Users, X } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { MesOrderDatePicker } from './MesWorkspaces';
 import { localizeClientsTree, translateClientsText, type ClientsLanguageCode } from './clientsI18n';
@@ -47,6 +47,22 @@ type ReceptionSerial = {
   coatingReturnedAt: string;
   sentAt: string;
 };
+
+type CoatingEvidenceAction = 'coating-sent' | 'coating-returned';
+type CoatingEvidenceTarget = { item: ReceptionItem; action: CoatingEvidenceAction; serials: ReceptionSerial[] };
+
+const productionPieceEvidenceBucket = 'mes-production-piece-evidence';
+const coatingEvidenceAccept = 'application/pdf,.pdf,image/*';
+const coatingEvidenceExtensions = /\.(?:pdf|jpe?g|png|webp|heic|heif|avif)$/i;
+const coatingEvidenceMimeTypes = new Set(['application/pdf', 'image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/heic', 'image/heif', 'image/avif']);
+
+function getCoatingEvidenceMimeType(file: File) {
+  if (file.type && file.type !== 'application/octet-stream') return file.type.toLowerCase();
+  const extension = file.name.toLowerCase().split('.').pop();
+  if (extension === 'pdf') return 'application/pdf';
+  if (extension === 'jpg' || extension === 'jpeg') return 'image/jpeg';
+  return extension ? `image/${extension}` : 'image/jpeg';
+}
 
 type ReceptionVoucher = {
   id: string;
@@ -272,6 +288,10 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
   const [existingOrderError, setExistingOrderError] = React.useState('');
   const [existingOrderCustomerMenuOpen, setExistingOrderCustomerMenuOpen] = React.useState(false);
   const [existingOrderMenuOpen, setExistingOrderMenuOpen] = React.useState(false);
+  const [coatingEvidenceTarget, setCoatingEvidenceTarget] = React.useState<CoatingEvidenceTarget | null>(null);
+  const [coatingEvidenceFiles, setCoatingEvidenceFiles] = React.useState<Record<string, File>>({});
+  const [coatingEvidenceError, setCoatingEvidenceError] = React.useState('');
+  const [coatingEvidenceSaving, setCoatingEvidenceSaving] = React.useState(false);
   const [form, setForm] = React.useState(emptyForm);
   const registryFilterRef = React.useRef<HTMLDivElement>(null);
 
@@ -679,7 +699,7 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
   };
 
   const updateSerialProgress = async (item: ReceptionItem, action: 'coating-sent' | 'coating-returned' | 'sent', serialId?: string) => {
-    if (updatingSerialKey) return;
+    if (updatingSerialKey) return false;
     const operationKey = `${item.id}:${serialId ?? 'all'}:${action}`;
     setUpdatingSerialKey(operationKey);
     setError('');
@@ -692,9 +712,74 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
     setUpdatingSerialKey('');
     if (progressError) {
       setError(progressError.message);
-      return;
+      return false;
     }
     await loadVouchers();
+    return true;
+  };
+
+  const openCoatingEvidence = (item: ReceptionItem, action: CoatingEvidenceAction, serialId?: string) => {
+    const serials = serialId ? item.serials.filter((serial) => serial.id === serialId) : item.serials.filter((serial) => (
+      action === 'coating-sent' ? !serial.coatingSentAt : serial.coatingSentAt && !serial.coatingReturnedAt
+    ));
+    if (!serials.length) return;
+    setCoatingEvidenceTarget({ item, action, serials });
+    setCoatingEvidenceFiles({});
+    setCoatingEvidenceError('');
+  };
+
+  const confirmCoatingEvidence = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!coatingEvidenceTarget || coatingEvidenceSaving) return;
+    const missingSerial = coatingEvidenceTarget.serials.find((serial) => !coatingEvidenceFiles[serial.id]);
+    if (missingSerial) {
+      setCoatingEvidenceError(`Add evidence for serial ${missingSerial.serialNumber}.`);
+      return;
+    }
+    const invalidSerial = coatingEvidenceTarget.serials.find((serial) => {
+      const file = coatingEvidenceFiles[serial.id];
+      return file && !coatingEvidenceExtensions.test(file.name) && !coatingEvidenceMimeTypes.has(file.type.toLowerCase());
+    });
+    if (invalidSerial) {
+      setCoatingEvidenceError(`Evidence for serial ${invalidSerial.serialNumber} must be a PDF or photo.`);
+      return;
+    }
+    setCoatingEvidenceSaving(true);
+    setCoatingEvidenceError('');
+    try {
+      const stage = coatingEvidenceTarget.action === 'coating-sent' ? 'after-sharpening' : 'after-coating';
+      for (const serial of coatingEvidenceTarget.serials) {
+        const file = coatingEvidenceFiles[serial.id];
+        const safeFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '-');
+        const filePath = `${organizationId}/${coatingEvidenceTarget.item.productionOrderId}/${serial.id}/${stage}/${Date.now()}-${safeFileName}`;
+        const fileType = getCoatingEvidenceMimeType(file);
+        const { error: uploadError } = await supabase.storage.from(productionPieceEvidenceBucket).upload(filePath, file, { contentType: fileType });
+        if (uploadError) throw uploadError;
+        const { error: evidenceError } = await supabase.from('mes_production_piece_evidence').upsert({
+          organization_id: organizationId,
+          production_order_id: coatingEvidenceTarget.item.productionOrderId,
+          production_serial_id: serial.id,
+          stage,
+          file_name: file.name,
+          file_path: filePath,
+          file_type: fileType,
+          uploaded_at: new Date().toISOString(),
+        }, { onConflict: 'production_serial_id,stage' });
+        if (evidenceError) {
+          await supabase.storage.from(productionPieceEvidenceBucket).remove([filePath]);
+          throw evidenceError;
+        }
+      }
+      const progressSaved = await updateSerialProgress(coatingEvidenceTarget.item, coatingEvidenceTarget.action, coatingEvidenceTarget.serials.length === 1 ? coatingEvidenceTarget.serials[0].id : undefined);
+      if (!progressSaved) throw new Error('The evidence was saved, but coating progress could not be updated.');
+      setCoatingEvidenceTarget(null);
+      setCoatingEvidenceFiles({});
+    } catch (evidenceError) {
+      console.error('Unable to save coating inspection evidence', evidenceError);
+      setCoatingEvidenceError(evidenceError instanceof Error ? evidenceError.message : 'Unable to save inspection evidence.');
+    } finally {
+      setCoatingEvidenceSaving(false);
+    }
   };
 
   const forceWaitingDelivery = async (event: React.FormEvent) => {
@@ -962,15 +1047,15 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
                         <div className="client-reception-item-order"><small>Production Order</small>{item.productionOrderId ? <strong className="assigned-order">{item.productionOrderNumber}</strong> : <div className="client-reception-order-actions"><button type="button" onClick={() => registerProductionOrder(item)}><Plus size={15} /> Assign New Order</button><button type="button" className="existing" onClick={() => void openExistingOrderModal(item)}><Search size={15} /> Assign Existing Order</button></div>}</div>
                         <div className="client-reception-item-order-status"><small>Order Status</small><strong className={item.productionStatus || 'not-assigned'}>{labelProductionStatus(item.productionStatus)}</strong></div>
                         <div className="client-reception-item-bulk-action"><small>Process all pieces</small>
-                          {!item.coatingSentAt ? <button type="button" onClick={() => void (item.serials.length ? updateSerialProgress(item, 'coating-sent') : updateReceptionItemCoating(item, 'sent'))} disabled={Boolean(updatingSerialKey || updatingCoatingItemId) || item.productionStatus !== 'completed'}><Send size={15} /> Send All to Coating</button> : !item.coatingReturnedAt ? <button className="return" type="button" onClick={() => void (item.serials.length ? updateSerialProgress(item, 'coating-returned') : updateReceptionItemCoating(item, 'returned'))} disabled={Boolean(updatingSerialKey || updatingCoatingItemId)}><RotateCcw size={15} /> Receive Coating All</button> : !item.sentAt ? <button className="deliver" type="button" onClick={() => void (item.serials.length ? updateSerialProgress(item, 'sent') : markReceptionItemSent(item))} disabled={Boolean(updatingSerialKey || sendingItemId)}><Truck size={15} /> Send All</button> : <span className="all-complete"><Check size={14} /> All Sent</span>}
+                          {!item.coatingSentAt ? <button type="button" onClick={() => void (item.serials.length ? openCoatingEvidence(item, 'coating-sent') : updateReceptionItemCoating(item, 'sent'))} disabled={Boolean(updatingSerialKey || updatingCoatingItemId) || item.productionStatus !== 'completed'}><Send size={15} /> Send All to Coating</button> : !item.coatingReturnedAt ? <button className="return" type="button" onClick={() => void (item.serials.length ? openCoatingEvidence(item, 'coating-returned') : updateReceptionItemCoating(item, 'returned'))} disabled={Boolean(updatingSerialKey || updatingCoatingItemId)}><RotateCcw size={15} /> Receive Coating All</button> : !item.sentAt ? <button className="deliver" type="button" onClick={() => void (item.serials.length ? updateSerialProgress(item, 'sent') : markReceptionItemSent(item))} disabled={Boolean(updatingSerialKey || sendingItemId)}><Truck size={15} /> Send All</button> : <span className="all-complete"><Check size={14} /> All Sent</span>}
                         </div>
                       </div>
                       {item.serials.length ? <div className="client-reception-serials"><header><strong>Serial numbers in this order</strong><span>{item.serials.length} pieces</span></header><div className="client-reception-serial-list">
                         {item.serials.map((serial) => <div className="client-reception-serial-row" key={serial.id}>
                           <span><small>Serial Number</small><strong>{serial.serialNumber}</strong></span>
                           <span><small>Tool ID</small><strong>{serial.toolId || 'Not specified'}</strong></span>
-                          <span className={`piece-stage ${serial.coatingSentAt ? 'done' : ''}`}><small>Coating dispatch</small><button type="button" onClick={() => void updateSerialProgress(item, 'coating-sent', serial.id)} disabled={Boolean(updatingSerialKey) || Boolean(serial.coatingSentAt) || item.productionStatus !== 'completed'}>{serial.coatingSentAt ? <><Check size={14} /><span><b>Sent</b><time>{formatReceptionTimestamp(serial.coatingSentAt, languageCode)}</time></span></> : <><Send size={14} /> Send to Coating</>}</button></span>
-                          <span className={`piece-stage ${serial.coatingReturnedAt ? 'done' : ''}`}><small>Coating return</small><button type="button" onClick={() => void updateSerialProgress(item, 'coating-returned', serial.id)} disabled={Boolean(updatingSerialKey) || !serial.coatingSentAt || Boolean(serial.coatingReturnedAt)}>{serial.coatingReturnedAt ? <><Check size={14} /><span><b>Received</b><time>{formatReceptionTimestamp(serial.coatingReturnedAt, languageCode)}</time></span></> : <><RotateCcw size={14} /> Receive Coating</>}</button></span>
+                          <span className={`piece-stage ${serial.coatingSentAt ? 'done' : ''}`}><small>Coating dispatch</small><button type="button" onClick={() => openCoatingEvidence(item, 'coating-sent', serial.id)} disabled={Boolean(updatingSerialKey) || Boolean(serial.coatingSentAt) || item.productionStatus !== 'completed'}>{serial.coatingSentAt ? <><Check size={14} /><span><b>Sent</b><time>{formatReceptionTimestamp(serial.coatingSentAt, languageCode)}</time></span></> : <><Send size={14} /> Send to Coating</>}</button></span>
+                          <span className={`piece-stage ${serial.coatingReturnedAt ? 'done' : ''}`}><small>Coating return</small><button type="button" onClick={() => openCoatingEvidence(item, 'coating-returned', serial.id)} disabled={Boolean(updatingSerialKey) || !serial.coatingSentAt || Boolean(serial.coatingReturnedAt)}>{serial.coatingReturnedAt ? <><Check size={14} /><span><b>Received</b><time>{formatReceptionTimestamp(serial.coatingReturnedAt, languageCode)}</time></span></> : <><RotateCcw size={14} /> Receive Coating</>}</button></span>
                           <span className={`piece-stage delivery ${serial.sentAt ? 'done' : ''}`}><small>Delivery</small><button type="button" onClick={() => void updateSerialProgress(item, 'sent', serial.id)} disabled={Boolean(updatingSerialKey) || !serial.coatingReturnedAt || Boolean(serial.sentAt)}>{serial.sentAt ? <><Check size={14} /><span><b>Sent</b><time>{formatReceptionTimestamp(serial.sentAt, languageCode)}</time></span></> : <><Truck size={14} /> Send</>}</button></span>
                         </div>)}
                       </div></div> : item.productionOrderId ? <div className="client-reception-serials-empty">Serial numbers will appear when completed pieces are reported for this order.</div> : null}
@@ -1020,6 +1105,41 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
           </section>
         </div>
       ) : null}
+
+      {coatingEvidenceTarget ? createPortal((
+        <div className="mes-modal-backdrop client-reception-coating-evidence-backdrop" role="presentation">
+          <section className="mes-order-modal client-reception-coating-evidence-modal" role="dialog" aria-modal="true" aria-labelledby="coating-evidence-title">
+            <button className="supplier-modal-close" type="button" onClick={() => setCoatingEvidenceTarget(null)} disabled={coatingEvidenceSaving}><X size={18} /></button>
+            <form onSubmit={confirmCoatingEvidence}>
+              <span className="client-reception-coating-evidence-icon"><Upload size={24} /></span>
+              <p className="eyebrow">Piece Inspection Evidence</p>
+              <h3 id="coating-evidence-title">{coatingEvidenceTarget.action === 'coating-sent' ? 'Confirm coating dispatch' : 'Confirm coating return'}</h3>
+              <p>{coatingEvidenceTarget.action === 'coating-sent'
+                ? 'Attach the inspection performed after sharpening before sending each piece to coating.'
+                : 'Attach the inspection performed after coating before receiving each piece back.'}</p>
+              <div className="client-reception-coating-evidence-list">
+                {coatingEvidenceTarget.serials.map((serial) => {
+                  const file = coatingEvidenceFiles[serial.id];
+                  return <label key={serial.id}>
+                    <span><strong>{serial.serialNumber}</strong><small>{serial.toolId || 'Tool ID not specified'}</small></span>
+                    <span className={file ? 'selected' : ''}><Upload size={15} />{file?.name || 'Add photo or PDF'}</span>
+                    <input type="file" accept={coatingEvidenceAccept} onChange={(event) => {
+                      const nextFile = event.target.files?.[0];
+                      event.target.value = '';
+                      if (nextFile) setCoatingEvidenceFiles((current) => ({ ...current, [serial.id]: nextFile }));
+                    }} />
+                  </label>;
+                })}
+              </div>
+              {coatingEvidenceError ? <div className="clients-feedback error" role="alert">{coatingEvidenceError}</div> : null}
+              <div className="client-reception-coating-evidence-actions">
+                <button type="button" className="secondary" onClick={() => setCoatingEvidenceTarget(null)} disabled={coatingEvidenceSaving}>Cancel</button>
+                <button type="submit" disabled={coatingEvidenceSaving || coatingEvidenceTarget.serials.some((serial) => !coatingEvidenceFiles[serial.id])}>{coatingEvidenceSaving ? 'Saving evidence...' : 'Save evidence and confirm'}</button>
+              </div>
+            </form>
+          </section>
+        </div>
+      ), document.body) : null}
 
       {analysisOpen ? createPortal((
         <div className="mes-modal-backdrop client-reception-analysis-backdrop" role="presentation">
