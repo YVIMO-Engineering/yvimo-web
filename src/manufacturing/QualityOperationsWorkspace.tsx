@@ -335,6 +335,22 @@ type QualityProductionSerialRecord = {
 };
 
 const qualityDocumentsBucket = 'mes-quality-inspection-documents';
+const qualityDocumentAccept = 'application/pdf,.pdf,image/*';
+const qualityPhotoMimeTypes = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif', 'image/heic', 'image/heif', 'image/avif']);
+const qualityPhotoExtensions = /\.(?:jpe?g|png|webp|gif|heic|heif|avif)$/i;
+const isAcceptedQualityDocument = (file: File) => (
+  file.type === 'application/pdf'
+  || file.name.toLowerCase().endsWith('.pdf')
+  || qualityPhotoMimeTypes.has(file.type.toLowerCase())
+  || qualityPhotoExtensions.test(file.name)
+);
+const getQualityDocumentMimeType = (file: File) => {
+  if (file.type && file.type !== 'application/octet-stream') return file.type.toLowerCase();
+  const extension = file.name.toLowerCase().split('.').pop();
+  if (extension === 'pdf') return 'application/pdf';
+  if (extension === 'jpg' || extension === 'jpeg') return 'image/jpeg';
+  return extension && qualityPhotoMimeTypes.has(`image/${extension}`) ? `image/${extension}` : 'image/jpeg';
+};
 const getQualityDocumentPreviewUrl = (fileUrl: string) => `${fileUrl}#toolbar=1&navpanes=0&scrollbar=1&view=FitH`;
 const qualityMeasurementUnitOptions: Array<{ value: QualityMeasurementUnit; label: string; symbol: string }> = [
   { value: 'microns', label: 'Microns (mm)', symbol: 'mm' },
@@ -1242,6 +1258,11 @@ function InspectionDocuments({ order, serial, documents, onUploadDocument, onOpe
       setUploadMessage({ type: 'error', text: 'No file was selected.' });
       return;
     }
+    const unsupportedFile = files.find((file) => !isAcceptedQualityDocument(file));
+    if (unsupportedFile) {
+      setUploadMessage({ type: 'error', text: `${unsupportedFile.name} is not a supported PDF or photo.` });
+      return;
+    }
     if (uploading) return;
     setUploading(true);
     setUploadMessage({ type: 'info', text: files.length === 1 ? 'Uploading file...' : `Uploading ${files.length} files...` });
@@ -1284,11 +1305,11 @@ function InspectionDocuments({ order, serial, documents, onUploadDocument, onOpe
         }}
       >
         <Upload size={18} />
-        <strong>{uploading ? 'Uploading PDF' : dragActive ? 'Drop PDF here' : 'Upload PDF'}</strong>
-        <span>{serialDocuments.length ? `${serialDocuments.length} files attached` : 'Click or drag PDF files here'}</span>
+        <strong>{uploading ? 'Uploading files' : dragActive ? 'Drop files here' : 'Upload PDF or photos'}</strong>
+        <span>{serialDocuments.length ? `${serialDocuments.length} files attached` : 'Click or drag PDF and image files here'}</span>
         <input
           type="file"
-          accept="application/pdf,.pdf"
+          accept={qualityDocumentAccept}
           multiple
           disabled={uploading}
           onChange={(event) => {
@@ -2088,10 +2109,11 @@ export function QualityOperationsWorkspace({ onNavigate, activeTab, organization
   }, [inspectionDocuments, organizationId, selectedInspectionOrder, selectedInspectionSerial, productionSerialRecords]);
   const handleUploadDocument = React.useCallback(async (file: File) => {
     if (!selectedInspectionOrder) return;
+    if (!isAcceptedQualityDocument(file)) throw new Error('Only PDF and supported photo files can be uploaded.');
     const safeFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '-');
     const storagePath = `${organizationId}/${selectedInspectionOrder.id}/${selectedInspectionSerial}/${Date.now()}-${safeFileName}`;
     const filePath = isDemoQualityOrder(selectedInspectionOrder) ? URL.createObjectURL(file) : storagePath;
-    const normalizedFileType = file.type && file.type !== 'application/octet-stream' ? file.type : 'application/pdf';
+    const normalizedFileType = getQualityDocumentMimeType(file);
     let nextDocument: QualityInspectionDocument = {
       id: `quality-document-${Date.now()}`,
       production_order_id: selectedInspectionOrder.id,
