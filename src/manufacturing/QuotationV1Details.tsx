@@ -337,7 +337,15 @@ function DetailContent({
           </strong>
           <div>
             <span>Expedite Order</span>
-            <b>{expediteOrderItem ? `Yes · ${expeditePercent.toFixed(2)}%` : "No"}</b>
+            <b>
+              {expediteOrderItem && expediteCoatingItem
+                ? `Sharpening ${expeditePercent.toFixed(2)}% + coating 50%`
+                : expediteOrderItem
+                  ? `Sharpening ${expeditePercent.toFixed(2)}%`
+                  : expediteCoatingItem
+                    ? "Coating 50%"
+                    : "No"}
+            </b>
           </div>
           <div>
             <span>Sharpening program</span>

@@ -13010,6 +13010,44 @@ body.work-center-map-expanded .logged-workspace {
   color: #059669;
 }
 
+@media (max-width: 1366px) {
+  .mes-modal-backdrop.production-order-details-backdrop {
+    --production-order-details-top-gap: 18px;
+    box-sizing: border-box;
+    padding-right: 18px;
+    padding-left: calc(var(--sidebar-width, 86px) + 18px);
+  }
+
+  .production-order-details-modal {
+    width: 100%;
+    max-width: 100%;
+    padding: 16px;
+  }
+
+  .production-order-details-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .production-order-details-summary article.status,
+  .production-order-details-summary article.priority,
+  .production-order-details-summary article.quantity,
+  .production-order-details-summary article.time-spent,
+  .production-order-details-summary article.work-center,
+  .production-order-details-summary article.station,
+  .production-order-details-summary article.schedule,
+  .production-order-details-summary article.reception {
+    grid-column: auto;
+    min-width: 0;
+  }
+
+  .production-order-details-table-wrap {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    overscroll-behavior-x: contain;
+  }
+}
+
 @media (max-width: 1050px) {
   .daily-production-report-kpis {
     grid-template-columns: repeat(2, minmax(0, 1fr));

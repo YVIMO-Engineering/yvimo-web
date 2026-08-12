@@ -86,10 +86,14 @@
 .quotation-expedite-order label:first-child strong { white-space:nowrap; }
 .quotation-expedite-order label:first-child small { overflow:hidden; color:#64748b; font-size:.68rem; font-weight:400; text-overflow:ellipsis; white-space:nowrap; }
 .quotation-expedite-order input[type="checkbox"] { flex:0 0 18px; width:18px; height:18px; min-height:18px; margin:0; padding:0; accent-color:#7c3aed; cursor:pointer; }
-.quotation-expedite-order label:last-child { gap:7px; font-size:.72rem; font-weight:700; white-space:nowrap; }
 .quotation-expedite-order input[type="number"] { width:78px; min-height:36px; border:1px solid #cbd5e1; border-radius:7px; padding:0 8px; background:#fff; font:inherit; }
 .quotation-expedite-order input[type="number"]:disabled { background:#f8fafc; color:#94a3b8; }
-@media(max-width:700px){.quotation-expedite-order{grid-template-columns:1fr;gap:10px}.quotation-expedite-order label:first-child>span{display:grid;gap:2px}.quotation-expedite-order label:first-child small{white-space:normal}.quotation-expedite-order label:last-child{padding-left:28px}}
+.quotation-expedite-options { display:flex; align-items:center; justify-content:flex-end; gap:14px; }
+.quotation-expedite-options label { gap:6px; font-size:.72rem; font-weight:750; white-space:nowrap; cursor:pointer; }
+.quotation-expedite-options label small { color:#7c3aed; font-size:.66rem; }
+.quotation-expedite-percent { display:flex; align-items:center; gap:7px; border-right:1px solid #ddd6fe; padding-right:14px; color:#334155; font-size:.72rem; font-weight:700; white-space:nowrap; }
+@media(max-width:900px){.quotation-expedite-order{grid-template-columns:1fr;gap:10px}.quotation-expedite-options{justify-content:flex-start;padding-left:28px}}
+@media(max-width:700px){.quotation-expedite-order label:first-child>span{display:grid;gap:2px}.quotation-expedite-order label:first-child small{white-space:normal}.quotation-expedite-options{display:grid;grid-template-columns:1fr;padding-left:28px}.quotation-expedite-percent{grid-row:2;border-right:0;padding-right:0}}
 .quotation-step-heading { grid-column:1/-1; display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:center; gap:12px; margin-bottom:2px; border-bottom:1px solid #ede9fe; padding:0 0 13px; }
 .quotation-step-heading > span,.quotation-step-summary > b { border-radius:999px; padding:5px 9px; background:#7c3aed; color:#fff; font-size:.66rem; font-weight:800; letter-spacing:.06em; text-transform:uppercase; white-space:nowrap; }
 .quotation-step-heading > div,.quotation-step-summary > span { display:grid; gap:2px; }

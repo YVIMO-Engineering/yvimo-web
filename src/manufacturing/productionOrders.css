@@ -757,6 +757,29 @@
   overflow: hidden;
 }
 
+@media (max-width: 1366px) {
+  .mes-modal-backdrop.production-order-serial-backdrop {
+    box-sizing: border-box;
+    width: 100%;
+    padding: 16px;
+  }
+
+  .mes-modal-backdrop.production-order-serial-backdrop .mes-order-modal.production-order-serial-modal {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    max-height: calc(100dvh - 32px);
+    padding: 18px;
+  }
+
+  .production-order-serial-table-wrap {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    overscroll-behavior-x: contain;
+  }
+}
+
 .production-order-serial-modal-heading {
   display: flex;
   align-items: center;

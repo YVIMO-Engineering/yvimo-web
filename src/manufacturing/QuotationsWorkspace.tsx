@@ -516,6 +516,8 @@ export function QuotationsWorkspace({
   const [damageNote, setDamageNote] = React.useState("");
   const [expedite, setExpedite] = React.useState({
     enabled: false,
+    sharpeningEnabled: true,
+    coatingEnabled: true,
     percent: "30",
   });
   const [program, setProgram] = React.useState({
@@ -616,9 +618,11 @@ export function QuotationsWorkspace({
         : true;
   const expeditePricingValid =
     !expedite.enabled ||
-    (expedite.percent.trim() !== "" &&
-      Number.isFinite(Number(expedite.percent)) &&
-      Number(expedite.percent) >= 0);
+    ((expedite.sharpeningEnabled || expedite.coatingEnabled) &&
+      (!expedite.sharpeningEnabled ||
+        (expedite.percent.trim() !== "" &&
+          Number.isFinite(Number(expedite.percent)) &&
+          Number(expedite.percent) >= 0)));
   const formComplete = Boolean(
     form.customerId &&
     form.toolId.trim() &&
@@ -661,12 +665,12 @@ export function QuotationsWorkspace({
     coatPrice ?? 0,
     surcharge,
   );
-  const expediteOrderSurcharge = expedite.enabled
+  const expediteOrderSurcharge = expedite.enabled && expedite.sharpeningEnabled
     ? (totals.recurringServiceSubtotal *
         Math.max(0, Number(expedite.percent) || 0)) /
       100
     : 0;
-  const expediteCoatingSurcharge = expedite.enabled
+  const expediteCoatingSurcharge = expedite.enabled && expedite.coatingEnabled
     ? (coatPrice ?? 0) * 0.5
     : 0;
   const totalServiceHours = quotationItems
@@ -864,6 +868,7 @@ export function QuotationsWorkspace({
     };
     const expediteItems: QuotationItem[] = expedite.enabled
       ? [
+          ...(expedite.sharpeningEnabled ? [
           {
             id: crypto.randomUUID(),
             category: "other",
@@ -887,7 +892,8 @@ export function QuotationsWorkspace({
               percent: expedite.percent,
               base: "sharpening_service",
             }),
-          },
+          }] : []),
+          ...(expedite.coatingEnabled ? [
           {
             id: crypto.randomUUID(),
             category: "other",
@@ -907,7 +913,7 @@ export function QuotationsWorkspace({
             isRecurring: false,
             isCustomerVisible: true,
             notes: JSON.stringify({ type: "expedite_coating", percent: 50 }),
-          },
+          }] : []),
         ]
       : [];
     const persistedItems = [
@@ -971,7 +977,7 @@ export function QuotationsWorkspace({
     setDamagePercent("25");
     setDamageFixedAmount("0");
     setDamageNote("");
-    setExpedite({ enabled: false, percent: "30" });
+    setExpedite({ enabled: false, sharpeningEnabled: true, coatingEnabled: true, percent: "30" });
     setProgram({
       sharpeningProgramId: "",
       measurementProgramId: "",
@@ -1022,6 +1028,9 @@ export function QuotationsWorkspace({
     const savedExpedite = loadedItems.find(
       (item) => item.name === EXPEDITE_ORDER_ITEM,
     );
+    const savedExpediteCoating = loadedItems.find(
+      (item) => item.name === EXPEDITE_COATING_ITEM,
+    );
     let damageSettings: {
       method?: DamagePricingMethod;
       percent?: string;
@@ -1051,7 +1060,9 @@ export function QuotationsWorkspace({
     );
     setDamageNote(damageSettings.note ?? savedDamage?.description ?? "");
     setExpedite({
-      enabled: Boolean(savedExpedite),
+      enabled: Boolean(savedExpedite || savedExpediteCoating),
+      sharpeningEnabled: Boolean(savedExpedite),
+      coatingEnabled: Boolean(savedExpediteCoating),
       percent: String(expediteSettings.percent ?? "30"),
     });
     setProgram({
@@ -2090,14 +2101,18 @@ export function QuotationsWorkspace({
                             <dd>${totals.otherSubtotal.toFixed(2)}</dd>
                           </>
                         ) : null}
-                        {expedite.enabled ? (
+                        {expedite.enabled && (expedite.sharpeningEnabled || expedite.coatingEnabled) ? (
                           <>
+                            {expedite.sharpeningEnabled ? <>
                             <dt>
                               Expedite Order ({Number(expedite.percent).toFixed(2)}% of sharpening)
                             </dt>
                             <dd>${expediteOrderSurcharge.toFixed(2)}</dd>
+                            </> : null}
+                            {expedite.coatingEnabled ? <>
                             <dt>Expedite coating (50%)</dt>
                             <dd>${expediteCoatingSurcharge.toFixed(2)}</dd>
+                            </> : null}
                           </>
                         ) : null}
                         <dt className="quotation-hours-total">

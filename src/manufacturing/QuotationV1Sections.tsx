@@ -32,7 +32,12 @@ type Props = {
     programStatus: string;
   };
   onProgram: (v: Props["program"]) => void;
-  expedite: { enabled: boolean; percent: string };
+  expedite: {
+    enabled: boolean;
+    sharpeningEnabled: boolean;
+    coatingEnabled: boolean;
+    percent: string;
+  };
   onExpedite: (v: Props["expedite"]) => void;
   damageStep?: React.ReactNode;
 };
@@ -193,20 +198,50 @@ export function QuotationV1Sections(p: Props) {
               <small>Extra percentage on sharpening, plus 50% on coating.</small>
             </span>
           </label>
-          <label>
-            Extra charge
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              disabled={!p.expedite.enabled}
-              value={p.expedite.percent}
-              onChange={(e) =>
-                p.onExpedite({ ...p.expedite, percent: e.target.value })
-              }
-            />
-            <span>%</span>
-          </label>
+          {p.expedite.enabled ? (
+            <div className="quotation-expedite-options">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={p.expedite.sharpeningEnabled}
+                  onChange={(e) =>
+                    p.onExpedite({
+                      ...p.expedite,
+                      sharpeningEnabled: e.target.checked,
+                    })
+                  }
+                />
+                Sharpening service
+              </label>
+              <span className="quotation-expedite-percent">
+                Extra charge
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  disabled={!p.expedite.sharpeningEnabled}
+                  value={p.expedite.percent}
+                  onChange={(e) =>
+                    p.onExpedite({ ...p.expedite, percent: e.target.value })
+                  }
+                />
+                <span>%</span>
+              </span>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={p.expedite.coatingEnabled}
+                  onChange={(e) =>
+                    p.onExpedite({
+                      ...p.expedite,
+                      coatingEnabled: e.target.checked,
+                    })
+                  }
+                />
+                Coating <small>50%</small>
+              </label>
+            </div>
+          ) : null}
         </div>
         {p.serviceHistory !== "first_time" ? (
           <div className="quotation-program-grid">
