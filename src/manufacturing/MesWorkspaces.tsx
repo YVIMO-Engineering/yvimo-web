@@ -1,6 +1,6 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { Activity, AlertTriangle, ArrowLeft, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleHelp, CircleX, Copy, Database, Download, Eye, Factory, Frown, FileText, ImagePlus, LoaderCircle, Maximize2, Meh, Minimize2, Minus, Pencil, Plus, Power, RadioTower, RotateCcw, Ruler, Search, Smile, Timer, Wrench, X } from 'lucide-react';
+import { Activity, AlertTriangle, ArrowLeft, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleHelp, CircleX, Clock3, Copy, Database, Download, Eye, Factory, Frown, FileText, ImagePlus, LoaderCircle, Maximize2, Meh, Minimize2, Minus, PaintBucket, Pencil, Plus, Power, RadioTower, RotateCcw, Ruler, Search, Smile, Timer, Wrench, X } from 'lucide-react';
 import { GoogleWorkCentersMap } from '../components/maps/GoogleWorkCentersMap';
 import { resolveGooglePlacesAddressMatch, searchGooglePlacesAddressMatches, type GooglePlacesAddressMatch } from '../lib/maps/googlePlacesAddressLookup';
 import { supabase } from '../lib/supabaseClient';
@@ -529,6 +529,22 @@ export type ProductionOrderDetailsState = {
   timeSpentMs: number;
 };
 
+type ProductionOrderCoatingSerial = {
+  id: string;
+  serialNumber: string;
+  toolId: string;
+  coatingSentAt: string;
+  coatingReturnedAt: string;
+};
+
+type ProductionOrderCoatingTracking = {
+  receptionItemId: string;
+  quantity: number;
+  coatingSentAt: string;
+  coatingReturnedAt: string;
+  serials: ProductionOrderCoatingSerial[];
+};
+
 type ConfirmationState = {
   title: string;
   message: string;
@@ -607,8 +623,12 @@ const formatProductionPieceStatus = (status: ProductionOrderDetailPiece['status'
 };
 const isProductionWorkCycle = (status: string) => status === 'running' || status === 'setup';
 
-const formatDate = (value: string) =>
-  new Intl.DateTimeFormat('en-US', { month: 'short', day: '2-digit', year: 'numeric' }).format(new Date(`${value}T12:00:00`));
+const formatDate = (value: string) => {
+  if (!value) return 'N/A';
+  const date = new Date(`${value}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return 'N/A';
+  return new Intl.DateTimeFormat('en-US', { month: 'short', day: '2-digit', year: 'numeric' }).format(date);
+};
 
 const formatDateInputLabel = (value: string) =>
   new Intl.DateTimeFormat('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }).format(new Date(`${value}T12:00:00`));
@@ -1744,7 +1764,7 @@ export function ProductionOrderDetailsModal({
   onPieceReleased?: () => Promise<void> | void;
   onClose: () => void;
 }) {
-  const [activeView, setActiveView] = React.useState<'production' | 'quality' | 'damage'>('production');
+  const [activeView, setActiveView] = React.useState<'production' | 'quality' | 'damage' | 'coating'>('production');
   const [preview, setPreview] = React.useState<ProductionOrderDetailPreview | null>(null);
   const [previewError, setPreviewError] = React.useState('');
   const [pdfGenerating, setPdfGenerating] = React.useState(false);
@@ -1758,6 +1778,8 @@ export function ProductionOrderDetailsModal({
     voucherNumber: string;
     sentAt: string | null;
   } | null>(null);
+  const [coatingTracking, setCoatingTracking] = React.useState<ProductionOrderCoatingTracking | null>(null);
+  const [coatingLoading, setCoatingLoading] = React.useState(true);
   const qualityPieces = details.pieces.filter((piece) => getProductionOrderDetailQualityInspection(piece) || getProductionOrderDetailQualityMeasurements(piece).length > 0 || getProductionOrderDetailQualityDocuments(piece).length > 0);
   const damagePieces = details.pieces.filter(hasProductionOrderDetailDamage);
   const evidencePieces = details.pieces.filter((piece) => piece.evidence.length > 0 || hasProductionOrderDetailDamage(piece));
@@ -1802,6 +1824,66 @@ export function ProductionOrderDetailsModal({
       active = false;
     };
   }, [organizationId, order.id, order.assignedStation]);
+  React.useEffect(() => {
+    let active = true;
+    const loadCoatingTracking = async () => {
+      setCoatingLoading(true);
+      const { data: itemData, error: itemError } = await supabase
+        .from('mes_customer_reception_items')
+        .select('id, quantity, coating_sent_at, coating_returned_at')
+        .eq('organization_id', organizationId)
+        .eq('production_order_id', order.id)
+        .limit(1)
+        .maybeSingle();
+      if (!active) return;
+      if (itemError || !itemData?.id) {
+        setCoatingTracking(null);
+        setCoatingLoading(false);
+        return;
+      }
+      const [{ data: progressData, error: progressError }, { data: serialData, error: serialError }] = await Promise.all([
+        supabase.from('mes_customer_reception_serial_progress').select('production_serial_id, coating_sent_at, coating_returned_at').eq('organization_id', organizationId).eq('reception_item_id', itemData.id),
+        supabase.from('mes_production_serials').select('id, serial_number, tool_id').eq('organization_id', organizationId).eq('production_order_id', order.id).order('piece_sequence'),
+      ]);
+      if (!active) return;
+      if (progressError || serialError) {
+        setCoatingTracking(null);
+        setCoatingLoading(false);
+        return;
+      }
+      const progressBySerial = new Map((progressData ?? []).map((progress) => [progress.production_serial_id as string, progress]));
+      const serials = (serialData ?? []).map((serial) => {
+        const progress = progressBySerial.get(serial.id);
+        return {
+          id: serial.id as string,
+          serialNumber: (serial.serial_number as string | null) ?? 'Not assigned',
+          toolId: (serial.tool_id as string | null) ?? '',
+          coatingSentAt: (progress?.coating_sent_at as string | null) ?? '',
+          coatingReturnedAt: (progress?.coating_returned_at as string | null) ?? '',
+        };
+      });
+      const sentTimes = serials.map((serial) => serial.coatingSentAt).filter(Boolean).sort();
+      const returnedTimes = serials.map((serial) => serial.coatingReturnedAt).filter(Boolean).sort();
+      setCoatingTracking({
+        receptionItemId: itemData.id,
+        quantity: Number(itemData.quantity) || 0,
+        coatingSentAt: (itemData.coating_sent_at as string | null) ?? sentTimes[0] ?? '',
+        coatingReturnedAt: (itemData.coating_returned_at as string | null) ?? returnedTimes.at(-1) ?? '',
+        serials,
+      });
+      setCoatingLoading(false);
+    };
+    void loadCoatingTracking();
+    return () => { active = false; };
+  }, [organizationId, order.id]);
+  const coatingElapsedLabel = (sentAt: string, returnedAt = '') => {
+    const start = new Date(sentAt);
+    if (Number.isNaN(start.getTime())) return 'Not available';
+    const end = returnedAt ? new Date(returnedAt) : new Date();
+    const hours = Math.max(0, (end.getTime() - start.getTime()) / 3_600_000);
+    if (hours < 24) return `${Math.floor(hours)}h ${Math.floor((hours % 1) * 60)}m`;
+    return `${Math.floor(hours / 24)}d ${Math.floor(hours % 24)}h`;
+  };
   const createdDate = order.createdAt || '';
   const leadTimeEnd = associatedReception?.sentAt || new Date().toISOString();
   const leadTimeDays = (() => {
@@ -2177,6 +2259,10 @@ export function ProductionOrderDetailsModal({
             <ImagePlus size={16} />Evidence & Damage
             {evidencePieces.length ? <b>{evidencePieces.length}</b> : null}
           </button>
+          <button type="button" className={activeView === 'coating' ? 'active' : ''} onClick={() => setActiveView('coating')} role="tab" aria-selected={activeView === 'coating'}>
+            <PaintBucket size={16} />Coating
+            {coatingTracking?.serials.length ? <b>{coatingTracking.serials.length}</b> : null}
+          </button>
         </div>
         {activeView === 'production' ? <div className="production-order-details-table-wrap">
           {details.loading ? (
@@ -2337,11 +2423,15 @@ export function ProductionOrderDetailsModal({
                     const receptionEvidence = piece.evidence.find((evidence) => evidence.stage === 'reception');
                     const sharpeningEvidence = piece.evidence.find((evidence) => evidence.stage === 'after-sharpening');
                     const coatingEvidence = piece.evidence.find((evidence) => evidence.stage === 'after-coating');
-                    const renderEvidence = (evidence: ProductionOrderDetailEvidenceRow | undefined, label: string) => evidence ? (
-                      <div className="production-order-detail-actions">
+                    const coatingProgress = coatingTracking?.serials.find((serial) => serial.id === piece.serialId);
+                    const renderEvidence = (evidence: ProductionOrderDetailEvidenceRow | undefined, label: string, confirmationLabel: string) => evidence ? (
+                      <div className="production-order-evidence-confirmation">
+                        <div className="production-order-detail-actions">
                         <button type="button" onClick={() => void openPieceEvidencePreview(evidence)}>
                           {evidence.file_type === 'application/pdf' ? <FileText size={15} /> : <ImagePlus size={15} />}{label}
                         </button>
+                        </div>
+                        <span><Check size={14} /><span><b>{confirmationLabel}</b><time>{new Date(evidence.uploaded_at).toLocaleString()}</time></span></span>
                       </div>
                     ) : <span className="production-order-details-no-measurement">Pending</span>;
                     return (
@@ -2349,9 +2439,15 @@ export function ProductionOrderDetailsModal({
                         <td><strong>{piece.pieceSequence}</strong></td>
                         <td>{piece.serialNumber || '-'}</td>
                         <td>{piece.toolId || '-'}</td>
-                        <td>{renderEvidence(receptionEvidence, 'View reception')}</td>
-                        <td>{renderEvidence(sharpeningEvidence, 'View inspection')}</td>
-                        <td>{renderEvidence(coatingEvidence, 'View inspection')}</td>
+                        <td>{renderEvidence(receptionEvidence, 'View reception', 'Reception inspected')}</td>
+                        <td><div className="production-order-evidence-stage-stack">
+                          {renderEvidence(sharpeningEvidence, 'View inspection', 'Sharpening inspected')}
+                          <span className={coatingProgress?.coatingSentAt ? 'confirmed' : 'pending'}>{coatingProgress?.coatingSentAt ? <Check size={14} /> : <Clock3 size={14} />}<span><b>Coating dispatch</b><time>{coatingProgress?.coatingSentAt ? new Date(coatingProgress.coatingSentAt).toLocaleString() : 'Pending'}</time></span></span>
+                        </div></td>
+                        <td><div className="production-order-evidence-stage-stack">
+                          {renderEvidence(coatingEvidence, 'View inspection', 'Coating inspected')}
+                          <span className={coatingProgress?.coatingReturnedAt ? 'confirmed' : 'pending'}>{coatingProgress?.coatingReturnedAt ? <Check size={14} /> : <Clock3 size={14} />}<span><b>Coating return</b><time>{coatingProgress?.coatingReturnedAt ? new Date(coatingProgress.coatingReturnedAt).toLocaleString() : 'Pending'}</time></span></span>
+                        </div></td>
                         <td>
                           {damageCodes.length || imageUrl ? <div className="production-order-damage-cell">
                             <div className="production-order-damage-tags">{damageCodes.map((code) => <b key={code}>{formatTitleLabel(code.replace(/^damage:/, 'damage '))}</b>)}</div>
@@ -2371,6 +2467,19 @@ export function ProductionOrderDetailsModal({
               <div className="production-order-details-empty">No serialized pieces are assigned to this order.</div>
             )}
             {previewError ? <div className="production-order-details-empty error">{previewError}</div> : null}
+          </div>
+        ) : null}
+        {activeView === 'coating' ? (
+          <div className="production-order-coating-view">
+            {coatingLoading ? <div className="production-order-details-empty">Loading coating tracking...</div> : coatingTracking ? (
+              <article className="production-order-coating-card">
+                <div className="production-order-coating-top"><span><small>Production order</small><strong>#{order.orderNumber}</strong></span><div><b className={coatingTracking.coatingReturnedAt ? 'returned' : coatingTracking.coatingSentAt ? 'active' : 'pending'}>{coatingTracking.coatingReturnedAt ? 'Returned' : coatingTracking.coatingSentAt ? 'At supplier' : 'Pending dispatch'}</b><span><small>Elapsed time</small><strong>{coatingTracking.coatingSentAt ? coatingElapsedLabel(coatingTracking.coatingSentAt, coatingTracking.coatingReturnedAt) : '—'}</strong></span></div></div>
+                <p className="production-order-coating-client">{order.clientName?.trim() || 'Unassigned client'}</p>
+                <div className="production-order-coating-timeline"><span className={coatingTracking.coatingSentAt ? 'done' : ''}>{coatingTracking.coatingSentAt ? <Check size={14} /> : <Clock3 size={14} />}<b>Order coating started</b><time>{coatingTracking.coatingSentAt ? new Date(coatingTracking.coatingSentAt).toLocaleString() : 'Waiting for first dispatch'}</time></span><i /><span className={coatingTracking.coatingReturnedAt ? 'done' : ''}>{coatingTracking.coatingReturnedAt ? <Check size={14} /> : <Clock3 size={14} />}<b>{coatingTracking.coatingReturnedAt ? 'Order coating completed' : 'Order still in process'}</b><small>{coatingTracking.serials.filter((serial) => Boolean(serial.coatingReturnedAt)).length} of {coatingTracking.serials.length} serials returned</small></span></div>
+                <div className="production-order-coating-serials"><header><strong>Serial coating tracking</strong><span>{coatingTracking.serials.length} serials in order</span></header><div>{coatingTracking.serials.map((serial) => <section className={!serial.coatingSentAt ? 'pending' : serial.coatingReturnedAt ? 'returned' : 'active'} key={serial.id}><span><small>Serial number</small><strong>{serial.serialNumber}</strong>{serial.toolId ? <em>{serial.toolId}</em> : null}</span><span><small>Sent to coating</small>{serial.coatingSentAt ? <time>{new Date(serial.coatingSentAt).toLocaleString()}</time> : <b>Not sent yet</b>}</span><span><small>Coating return</small>{serial.coatingReturnedAt ? <time>{new Date(serial.coatingReturnedAt).toLocaleString()}</time> : serial.coatingSentAt ? <b>In process</b> : <b>Waiting for dispatch</b>}</span><span><small>Serial coating time</small><strong>{serial.coatingSentAt ? coatingElapsedLabel(serial.coatingSentAt, serial.coatingReturnedAt) : '—'}</strong></span></section>)}</div></div>
+                <div className="production-order-coating-totals"><span><small>Sub-reception Qty.</small><strong>{coatingTracking.quantity.toLocaleString()}</strong></span><span><small>Serials</small><strong>{coatingTracking.serials.length}</strong></span><span><small>Order elapsed</small><strong>{coatingTracking.coatingSentAt ? coatingElapsedLabel(coatingTracking.coatingSentAt, coatingTracking.coatingReturnedAt) : '—'}</strong></span></div>
+              </article>
+            ) : <div className="production-order-details-empty">No coating tracking has been recorded for this order yet.</div>}
           </div>
         ) : null}
       </section>

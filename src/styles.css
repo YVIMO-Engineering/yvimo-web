@@ -11770,6 +11770,50 @@ body.work-center-map-expanded .logged-workspace {
   min-width: 1020px;
 }
 
+.production-order-evidence-confirmation { display: grid; gap: 7px; min-width: 165px; }
+.production-order-evidence-confirmation > span { display: flex; align-items: center; gap: 7px; border: 1px solid #a7f3d0; border-radius: 9px; padding: 7px 9px; background: #ecfdf5; color: #059669; }
+.production-order-evidence-confirmation > span > span { display: grid; gap: 2px; }
+.production-order-evidence-confirmation b { font-size: .68rem; }
+.production-order-evidence-confirmation time { color: #64748b; font-size: .61rem; font-weight: 700; }
+.production-order-evidence-stage-stack { display: grid; gap: 7px; min-width: 170px; }
+.production-order-evidence-stage-stack > span { display: flex; align-items: center; gap: 7px; border: 1px solid #dbe3ed; border-radius: 9px; padding: 7px 9px; background: #f8fafc; color: #64748b; }
+.production-order-evidence-stage-stack > span.confirmed { border-color: #a7f3d0; background: #ecfdf5; color: #059669; }
+.production-order-evidence-stage-stack > span > span { display: grid; gap: 2px; }
+.production-order-evidence-stage-stack > span b { font-size: .68rem; }
+.production-order-evidence-stage-stack > span time { color: #64748b; font-size: .61rem; font-weight: 700; }
+
+.production-order-coating-view { min-height: 0; overflow: auto; padding: 14px; background: #f8fafc; }
+.production-order-coating-card { display: grid; gap: 16px; border: 1px solid #dbe3ed; border-radius: 16px; padding: 20px; background: #fff; box-shadow: 0 8px 24px rgba(15, 23, 42, .05); }
+.production-order-coating-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.production-order-coating-top > span, .production-order-coating-top > div > span { display: grid; gap: 4px; }
+.production-order-coating-top small, .production-order-coating-serials small, .production-order-coating-totals small { color: #64748b; font-size: .62rem; font-weight: 900; letter-spacing: .05em; text-transform: uppercase; }
+.production-order-coating-top > span > strong { font-size: 1.15rem; }
+.production-order-coating-top > div { display: flex; align-items: center; gap: 10px; }
+.production-order-coating-top > div > b { border: 1px solid #7dd3fc; border-radius: 999px; padding: 7px 12px; background: #e0f2fe; color: #0369a1; font-size: .7rem; text-transform: uppercase; }
+.production-order-coating-top > div > b.returned { border-color: #86efac; background: #dcfce7; color: #047857; }
+.production-order-coating-top > div > b.pending { border-color: #cbd5e1; background: #f1f5f9; color: #64748b; }
+.production-order-coating-top > div > span { border: 1px solid #bae6fd; border-radius: 9px; padding: 7px 11px; background: #f0f9ff; }
+.production-order-coating-client { margin: 0; color: #475569; font-size: 1rem; font-weight: 900; }
+.production-order-coating-timeline { display: grid; grid-template-columns: minmax(0, 1fr) 44px minmax(0, 1fr); align-items: center; }
+.production-order-coating-timeline > span { display: grid; grid-template-columns: auto 1fr; column-gap: 9px; border: 1px solid #dbe3ed; border-radius: 10px; padding: 11px; background: #f8fafc; }
+.production-order-coating-timeline > span.done { border-color: #a7f3d0; background: #ecfdf5; color: #047857; }
+.production-order-coating-timeline > span svg { grid-row: span 2; align-self: center; }
+.production-order-coating-timeline > span b { font-size: .7rem; text-transform: uppercase; }
+.production-order-coating-timeline > span time, .production-order-coating-timeline > span small { color: #64748b; font-size: .62rem; font-weight: 700; }
+.production-order-coating-timeline > i { height: 2px; background: #38bdf8; }
+.production-order-coating-serials { display: grid; gap: 8px; }
+.production-order-coating-serials > header { display: flex; justify-content: space-between; color: #075985; font-size: .72rem; text-transform: uppercase; }
+.production-order-coating-serials > div { display: grid; gap: 8px; max-height: 360px; overflow: auto; padding-right: 5px; }
+.production-order-coating-serials section { display: grid; grid-template-columns: 1.2fr 1fr 1fr 1fr; gap: 12px; border: 1px solid #dbe3ed; border-left: 4px solid #94a3b8; border-radius: 10px; padding: 11px 13px; background: #f8fafc; }
+.production-order-coating-serials section.active { border-left-color: #38bdf8; background: #f0f9ff; }
+.production-order-coating-serials section.returned { border-color: #a7f3d0; border-left: 4px solid #10b981; background: #ecfdf5; }
+.production-order-coating-serials section > span { display: grid; gap: 3px; }
+.production-order-coating-serials section strong, .production-order-coating-serials section time, .production-order-coating-serials section b { font-size: .72rem; }
+.production-order-coating-serials section em { color: #64748b; font-size: .62rem; font-style: normal; font-weight: 800; }
+.production-order-coating-totals { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.production-order-coating-totals > span { display: grid; gap: 3px; border-radius: 10px; padding: 10px 12px; background: #f1f5f9; }
+.production-order-coating-totals strong { font-size: .85rem; }
+
 .production-order-damage-table {
   min-width: 1180px;
 }

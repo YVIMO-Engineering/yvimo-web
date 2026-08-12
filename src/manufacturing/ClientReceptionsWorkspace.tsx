@@ -2,7 +2,8 @@ import React from 'react';
 import { createPortal } from 'react-dom';
 import { AlertTriangle, BarChart3, CalendarDays, Check, ChevronDown, CircleDollarSign, ClipboardCheck, Clock3, FileText, PackageCheck, PaintBucket, Pencil, Plus, RotateCcw, Search, Send, ShieldAlert, TrendingDown, TrendingUp, Trash2, Truck, Upload, Users, X } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
-import { MesOrderDatePicker } from './MesWorkspaces';
+import { MesOrderDatePicker, ProductionOrderDetailsModal, type ProductionOrderDetailEvidenceRow, type ProductionOrderDetailPiece, type ProductionOrderDetailsState, type ProductionOrderDetailTraceabilityRow } from './MesWorkspaces';
+import type { ProductionOrder } from './mesTypes';
 import { localizeClientsTree, translateClientsText, type ClientsLanguageCode } from './clientsI18n';
 import { WeeklyReceptionsChart, type DailyReceptionStat } from './statistics/WeeklyReceptionsChart';
 import './statisticsWorkspace.css';
@@ -292,8 +293,68 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
   const [coatingEvidenceFiles, setCoatingEvidenceFiles] = React.useState<Record<string, File>>({});
   const [coatingEvidenceError, setCoatingEvidenceError] = React.useState('');
   const [coatingEvidenceSaving, setCoatingEvidenceSaving] = React.useState(false);
+  const [orderDetails, setOrderDetails] = React.useState<{ order: ProductionOrder; details: ProductionOrderDetailsState } | null>(null);
   const [form, setForm] = React.useState(emptyForm);
   const registryFilterRef = React.useRef<HTMLDivElement>(null);
+
+  const openOrderDetails = async (item: ReceptionItem) => {
+    if (!item.productionOrderId) return;
+    const loadingOrder: ProductionOrder = {
+      id: item.productionOrderId,
+      orderNumber: item.productionOrderNumber,
+      partNumber: '',
+      partName: '',
+      plannedQuantity: item.quantity,
+      completedQuantity: item.completedQuantity,
+      scrapQuantity: item.scrapQuantity,
+      status: (item.productionStatus || 'planned') as ProductionOrder['status'],
+      priority: 'normal',
+      dueDate: '',
+      assignedWorkCenter: '',
+      plannedShifts: [],
+      manufacturingType: 'multi-step',
+      productionFlow: '',
+      assignedStation: '',
+    };
+    setOrderDetails({ order: loadingOrder, details: { loading: true, error: '', pieces: [], timeSpentMs: 0 } });
+
+    const [{ data: orderRow, error: orderError }, { data: serialRows, error: serialError }, { data: traceabilityRows, error: traceabilityError }, { data: evidenceRows, error: evidenceError }] = await Promise.all([
+      supabase.from('mes_production_orders').select('*').eq('organization_id', organizationId).eq('id', item.productionOrderId).single(),
+      supabase.from('mes_production_serials').select('id, piece_sequence, tool_id, serial_number, result, traceability_id, reported_at').eq('organization_id', organizationId).eq('production_order_id', item.productionOrderId).order('piece_sequence'),
+      supabase.from('mes_operator_terminal_traceability').select('id, production_order_id, template_id, part_label, tool_id, serial_number, dimensions_unit, before_notch, before_tooth_length, damage_codes, damage_image_url, stock_to_remove, after_tooth_length, payload, created_at').eq('organization_id', organizationId).eq('production_order_id', item.productionOrderId).order('created_at', { ascending: false }),
+      supabase.from('mes_production_piece_evidence').select('id, production_order_id, production_serial_id, stage, file_name, file_path, file_type, uploaded_at').eq('organization_id', organizationId).eq('production_order_id', item.productionOrderId),
+    ]);
+    if (orderError || serialError || traceabilityError || evidenceError || !orderRow) {
+      setOrderDetails((current) => current ? { ...current, details: { loading: false, error: 'Unable to load order details.', pieces: [], timeSpentMs: 0 } } : null);
+      return;
+    }
+
+    const row = orderRow as Record<string, any>;
+    const order: ProductionOrder = {
+      id: row.id, orderNumber: row.order_number, partNumber: row.part_number, partName: row.part_name,
+      clientName: row.client_name ?? '', customerId: row.customer_id ?? '', plannedQuantity: Number(row.planned_quantity) || 0,
+      completedQuantity: Number(row.completed_quantity) || 0, scrapQuantity: Number(row.scrap_quantity) || 0,
+      status: row.status, priority: row.priority, dueDate: row.due_date, assignedWorkCenter: row.assigned_work_center ?? '',
+      plannedShifts: row.planned_shifts ?? [], manufacturingType: row.manufacturing_type ?? 'multi-step',
+      productionFlow: row.production_flow ?? '', assignedStation: row.assigned_station ?? '', pieceType: row.piece_type ?? 'hobs',
+      qualityChecksEnabled: row.quality_checks_enabled ?? false, qualityChecks: row.quality_checks ?? [],
+      qualityCheckLimits: row.quality_check_limits ?? {}, qualityMeasurementUnit: row.quality_measurement_unit ?? 'microns',
+      createdAt: row.created_at ?? undefined, updatedAt: row.updated_at ?? undefined,
+    };
+    const traces = (traceabilityRows ?? []) as ProductionOrderDetailTraceabilityRow[];
+    const traceById = new Map(traces.map((trace) => [trace.id, trace]));
+    const traceBySerial = new Map(traces.filter((trace) => trace.serial_number).map((trace) => [trace.serial_number!.trim().toLowerCase(), trace]));
+    const evidenceBySerial = new Map<string, ProductionOrderDetailEvidenceRow[]>();
+    ((evidenceRows ?? []) as ProductionOrderDetailEvidenceRow[]).forEach((evidence) => evidenceBySerial.set(evidence.production_serial_id, [...(evidenceBySerial.get(evidence.production_serial_id) ?? []), evidence]));
+    const serials = (serialRows ?? []) as Array<{ id: string; piece_sequence: number; tool_id: string; serial_number: string; result: 'good' | 'scrap' | null; traceability_id: string | null; reported_at: string | null }>;
+    const pieces: ProductionOrderDetailPiece[] = serials.map((serial) => ({
+      serialId: serial.id, pieceSequence: serial.piece_sequence, toolId: serial.tool_id ?? '', serialNumber: serial.serial_number ?? '',
+      status: serial.result ?? 'not-started', reportedAt: serial.reported_at ?? '', timeSpentMs: 0, runningTimeMs: 0, setupTimeMs: 0,
+      traceability: (serial.traceability_id ? traceById.get(serial.traceability_id) : null) ?? traceBySerial.get(serial.serial_number.trim().toLowerCase()) ?? null,
+      qualityInspection: null, qualityMeasurements: [], qualityDocuments: [], evidence: evidenceBySerial.get(serial.id) ?? [],
+    }));
+    setOrderDetails({ order, details: { loading: false, error: '', pieces, timeSpentMs: 0 } });
+  };
 
   React.useEffect(() => {
     if (!registryFilterOpen) return undefined;
@@ -1044,7 +1105,7 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
                         <div className="client-reception-item-quantity"><small>Quantity</small><strong>{item.quantity.toLocaleString()}</strong></div>
                         <div className="client-reception-item-produced"><small>Produced</small><strong>{item.completedQuantity.toLocaleString()}</strong></div>
                         <div className="client-reception-item-scrap"><small>Scrap</small><strong>{item.scrapQuantity.toLocaleString()}</strong></div>
-                        <div className="client-reception-item-order"><small>Production Order</small>{item.productionOrderId ? <strong className="assigned-order">{item.productionOrderNumber}</strong> : <div className="client-reception-order-actions"><button type="button" onClick={() => registerProductionOrder(item)}><Plus size={15} /> Assign New Order</button><button type="button" className="existing" onClick={() => void openExistingOrderModal(item)}><Search size={15} /> Assign Existing Order</button></div>}</div>
+                        <div className="client-reception-item-order"><small>Production Order</small>{item.productionOrderId ? <button type="button" className="assigned-order" onClick={() => void openOrderDetails(item)} aria-label={`Open Production Order ${item.productionOrderNumber} details`}>{item.productionOrderNumber}</button> : <div className="client-reception-order-actions"><button type="button" onClick={() => registerProductionOrder(item)}><Plus size={15} /> Assign New Order</button><button type="button" className="existing" onClick={() => void openExistingOrderModal(item)}><Search size={15} /> Assign Existing Order</button></div>}</div>
                         <div className="client-reception-item-order-status"><small>Order Status</small><strong className={item.productionStatus || 'not-assigned'}>{labelProductionStatus(item.productionStatus)}</strong></div>
                         <div className="client-reception-item-bulk-action"><small>Process all pieces</small>
                           {item.sentAt ? <span className="all-complete"><Check size={14} /> All Sent</span> : selected.status === 'waiting-delivery' ? <button className="deliver" type="button" onClick={() => void (item.serials.length ? updateSerialProgress(item, 'sent') : markReceptionItemSent(item))} disabled={Boolean(updatingSerialKey || sendingItemId)}><Truck size={15} /> Send All</button> : !item.coatingSentAt ? <button type="button" onClick={() => void (item.serials.length ? openCoatingEvidence(item, 'coating-sent') : updateReceptionItemCoating(item, 'sent'))} disabled={Boolean(updatingSerialKey || updatingCoatingItemId) || item.productionStatus !== 'completed'}><Send size={15} /> Send All to Coating</button> : !item.coatingReturnedAt ? <button className="return" type="button" onClick={() => void (item.serials.length ? openCoatingEvidence(item, 'coating-returned') : updateReceptionItemCoating(item, 'returned'))} disabled={Boolean(updatingSerialKey || updatingCoatingItemId)}><RotateCcw size={15} /> Receive Coating All</button> : <button className="deliver" type="button" onClick={() => void (item.serials.length ? updateSerialProgress(item, 'sent') : markReceptionItemSent(item))} disabled={Boolean(updatingSerialKey || sendingItemId)}><Truck size={15} /> Send All</button>}
@@ -1254,6 +1315,8 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
           </section>
         </div>
       ) : null}
+
+      {orderDetails ? <ProductionOrderDetailsModal order={orderDetails.order} details={orderDetails.details} organizationId={organizationId} onNavigate={onNavigate} onClose={() => setOrderDetails(null)} /> : null}
     </div>
   ), languageCode);
 }
