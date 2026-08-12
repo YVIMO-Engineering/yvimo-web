@@ -982,10 +982,9 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
   const stationImageUrl = selectedStation?.imageUrl ?? snapshot?.station?.imageUrl ?? '';
   const stationOrders = snapshot
     ? snapshot.activeOrders.filter((order) => (
-      order.assignedWorkCenter === workCenterCode
-      && (order.manufacturingType === 'multi-step'
+      order.manufacturingType === 'multi-step'
         ? snapshot.multiStepStationsByOrder[order.id]?.includes(stationCode)
-        : order.assignedStation === stationCode)
+        : order.assignedWorkCenter === workCenterCode && order.assignedStation === stationCode
     ))
     : [fallbackCurrentOrder];
   const currentOrder = stationOrders.find((order) => order.orderNumber === selectedStation?.currentJob)
@@ -1469,8 +1468,9 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
       const activeOrders = current.activeOrders.map((candidate) => {
         if (candidate.id === resolvedOrder.id) return resolvedOrder;
         if (
-          candidate.assignedWorkCenter === resolvedOrder.assignedWorkCenter
-          && candidate.assignedStation === resolvedOrder.assignedStation
+          candidate.manufacturingType === 'single-operation'
+          && candidate.assignedWorkCenter === workCenterCode
+          && candidate.assignedStation === stationCode
           && candidate.status === 'running'
         ) {
           return { ...candidate, status: 'paused' as const };
@@ -1797,10 +1797,9 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
   React.useEffect(() => {
     if (!snapshot) return;
     const stationActiveOrders = snapshot.activeOrders.filter((order) => (
-      order.assignedWorkCenter === workCenterCode
-      && (order.manufacturingType === 'multi-step'
+      order.manufacturingType === 'multi-step'
         ? snapshot.multiStepStationsByOrder[order.id]?.includes(stationCode)
-        : order.assignedStation === stationCode)
+        : order.assignedWorkCenter === workCenterCode && order.assignedStation === stationCode
     ));
     const nextOrder = stationActiveOrders.find((order) => order.orderNumber === selectedStation?.currentJob)
       ?? stationActiveOrders.find((order) => order.status === 'running')
@@ -2331,7 +2330,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
 
     setSwitchOrderLoading(true);
     try {
-      const targetStationCode = order.assignedStation || stationCode;
+      const targetStationCode = stationCode;
       const nextOrder = await switchOperatorActiveOrder({
         orderId: order.id,
         organizationId,
@@ -2339,8 +2338,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
         shift: selectedShift,
         comment: `Operator Terminal active order changed from ${currentOrder?.orderNumber ?? 'none'} to ${order.orderNumber}`,
       });
-      setSelectedWorkCenterCode(order.assignedWorkCenter);
-      setSelectedStationCode(targetStationCode);
+      setSelectedWorkCenterCode(workCenterCode);
       setSelectedOrderId(nextOrder.id);
       applyOrder(nextOrder);
       syncSwitchedOrder(nextOrder);

@@ -785,6 +785,30 @@ export async function switchOperatorActiveOrder(
 
   const selectedOrder = selectedData as ProductionOrderRow;
   const stationCode = input.stationCode || selectedOrder.assigned_station || '';
+  const { data: stationData } = await client
+    .from('mes_work_center_stations')
+    .select('work_center_id, mes_work_centers!inner(code)')
+    .eq('organization_id', input.organizationId)
+    .eq('code', stationCode)
+    .maybeSingle();
+  const workCenterRelation = stationData?.mes_work_centers as { code?: string } | Array<{ code?: string }> | null | undefined;
+  const targetWorkCenterCode = (Array.isArray(workCenterRelation) ? workCenterRelation[0]?.code : workCenterRelation?.code) || selectedOrder.assigned_work_center;
+
+  if (selectedOrder.manufacturing_type === 'multi-step') {
+    const { data: assignedSerial, error: assignedSerialError } = await client
+      .from('mes_production_serials')
+      .select('id')
+      .eq('organization_id', input.organizationId)
+      .eq('production_order_id', input.orderId)
+      .eq('assigned_station', stationCode)
+      .is('result', null)
+      .limit(1)
+      .maybeSingle();
+
+    if (assignedSerialError || !assignedSerial) {
+      throw new Error('This Multi-step order has no pending pieces assigned to the selected station.');
+    }
+  }
 
   await client
     .from('mes_production_orders')
@@ -798,7 +822,9 @@ export async function switchOperatorActiveOrder(
 
   const { data: updatedData, error: updateError } = await client
     .from('mes_production_orders')
-    .update({ status: 'paused' })
+    .update(selectedOrder.manufacturing_type === 'multi-step'
+      ? { status: 'paused' }
+      : { status: 'paused', assigned_work_center: targetWorkCenterCode, assigned_station: stationCode })
     .eq('id', input.orderId)
     .eq('organization_id', input.organizationId)
     .select('*')
@@ -821,7 +847,7 @@ export async function switchOperatorActiveOrder(
     .insert({
       production_order_id: input.orderId,
       organization_id: input.organizationId,
-      work_center_code: selectedOrder.assigned_work_center,
+      work_center_code: targetWorkCenterCode,
       station_code: stationCode,
       event_type: 'job-paused',
       comment: input.comment ?? null,
