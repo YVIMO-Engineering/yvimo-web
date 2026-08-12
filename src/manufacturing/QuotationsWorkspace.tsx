@@ -419,6 +419,14 @@ const blankForm = {
 };
 const EXPEDITE_ORDER_ITEM = "Expedite Order surcharge";
 const EXPEDITE_COATING_ITEM = "Expedite coating surcharge";
+const quotationPdfFilename = (quotation: Quotation) => {
+  const safe = (value: string) =>
+    value.trim().replace(/[<>:"/\\|?*\u0000-\u001f]+/g, "-").replace(/\s+/g, " ");
+  const now = new Date();
+  const part = (value: number) => String(value).padStart(2, "0");
+  const timestamp = `${now.getFullYear()}${part(now.getMonth() + 1)}${part(now.getDate())}-${part(now.getHours())}${part(now.getMinutes())}${part(now.getSeconds())}`;
+  return `${safe(quotation.quotation_number)} ${safe(quotation.client_name)} ${safe(quotation.tool_id)} ${safe(quotation.serial_number)} ${timestamp}.pdf`;
+};
 
 function QuotationDropdown({
   value,
@@ -1137,7 +1145,7 @@ export function QuotationsWorkspace({
     try {
       await exportElementScreenshotToSinglePagePdf(
         quotationPdfRef.current,
-        `${selectedQuotation.quotation_number}.pdf`,
+        quotationPdfFilename(selectedQuotation),
       );
       setPdfStatus("generated");
       window.setTimeout(() => setPdfStatus("idle"), 3000);
