@@ -5566,7 +5566,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
           </section>
         </div>
       ) : null}
-      {formMode && serialAssignmentModalOpen ? (
+      {formMode && serialAssignmentModalOpen && typeof document !== 'undefined' ? createPortal(
         <div className="mes-modal-backdrop production-order-serial-backdrop" role="presentation">
           <section className="mes-order-modal production-order-serial-modal" role="dialog" aria-modal="true" aria-labelledby="production-order-serial-title">
             <div className="production-order-serial-modal-heading">
@@ -5658,11 +5658,11 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
               <button type="button" onClick={() => setSerialAssignmentModalOpen(false)}>Done</button>
             </div>
           </section>
-        </div>
+        </div>, document.body
       ) : null}
-      {formMode && stationAssignmentModalOpen ? (
+      {formMode && stationAssignmentModalOpen && typeof document !== 'undefined' ? createPortal(
         <div className="mes-modal-backdrop production-order-serial-backdrop" role="presentation">
-          <section className="mes-order-modal production-order-serial-modal" role="dialog" aria-modal="true" aria-labelledby="production-order-station-title">
+          <section className="mes-order-modal production-order-serial-modal production-order-station-assignment-modal" role="dialog" aria-modal="true" aria-labelledby="production-order-station-title">
             <div className="production-order-serial-modal-heading">
               <div>
                 <p className="eyebrow">Multi-step Order</p>
@@ -5671,7 +5671,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
               <button type="button" aria-label="Close station assignments" onClick={() => setStationAssignmentModalOpen(false)}><CircleX size={18} /></button>
             </div>
             <div className="production-order-serial-table-wrap">
-              <table className="production-order-serial-table">
+              <table className="production-order-serial-table production-order-station-assignment-table">
                 <thead><tr><th>Part</th><th>Serial Number</th><th>Compatible stations (select at least one)</th></tr></thead>
                 <tbody>
                   {serialAssignmentDrafts.map((draft) => (
@@ -5703,7 +5703,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
               <button type="button" onClick={() => setStationAssignmentModalOpen(false)}>Done</button>
             </div>
           </section>
-        </div>
+        </div>, document.body
       ) : null}
       {confirmation ? (
         <div className="mes-modal-backdrop production-order-confirm-backdrop" role="presentation">

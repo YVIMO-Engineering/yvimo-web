@@ -751,6 +751,7 @@
 }
 
 .mes-modal-backdrop.production-order-serial-backdrop .mes-order-modal.production-order-serial-modal {
+  grid-template-rows: auto minmax(0, 1fr) auto;
   width: min(1480px, calc(100vw - 48px));
   max-width: none;
   max-height: min(820px, calc(100vh - 48px));
@@ -769,6 +770,7 @@
     width: 100%;
     max-width: 100%;
     max-height: calc(100dvh - 32px);
+    height: calc(100dvh - 32px);
     padding: 18px;
   }
 
@@ -776,8 +778,60 @@
     width: 100%;
     min-width: 0;
     max-width: 100%;
-    overscroll-behavior-x: contain;
+    overflow-x: hidden;
+    overscroll-behavior-x: none;
   }
+
+  .production-order-serial-table {
+    width: 100%;
+    min-width: 0;
+    table-layout: fixed;
+  }
+
+  .production-order-serial-table th,
+  .production-order-serial-table td {
+    min-width: 0;
+    padding-right: 7px;
+    padding-left: 7px;
+    overflow-wrap: anywhere;
+  }
+
+  .production-order-serial-table th:first-child { width: 6%; }
+  .production-order-serial-table th:nth-child(2) { width: 16%; }
+  .production-order-serial-table th:nth-child(3) { width: 18%; }
+  .production-order-serial-table th:last-child { width: 19%; }
+
+  .production-order-serial-table input,
+  .production-order-serial-table .production-quotation-dropdown,
+  .production-order-serial-table .production-asset-dropdown,
+  .production-order-serial-table .production-order-evidence-picker {
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .production-order-serial-table .production-quotation-dropdown > button,
+  .production-order-serial-table .production-order-evidence-picker {
+    min-width: 0;
+    padding-right: 8px;
+    padding-left: 8px;
+  }
+
+  .production-order-station-assignment-table th:first-child { width: 12%; }
+  .production-order-station-assignment-table th:nth-child(2) { width: 24%; }
+  .production-order-station-assignment-table th:nth-child(3) { width: 64%; }
+
+  .production-order-station-assignment-table .production-order-compatible-stations {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    min-width: 0;
+  }
+
+  .production-order-station-assignment-table .production-order-compatible-stations label {
+    min-width: 0;
+    white-space: normal;
+  }
+
 }
 
 .production-order-serial-modal-heading {

@@ -13012,40 +13012,100 @@ body.work-center-map-expanded .logged-workspace {
 
 @media (max-width: 1366px) {
   .mes-modal-backdrop.production-order-details-backdrop {
-    --production-order-details-top-gap: 18px;
+    --production-order-details-top-gap: 12px;
+    --production-order-details-bottom-gap: 12px;
+    --production-order-details-top-offset: 12px;
     box-sizing: border-box;
-    padding-right: 18px;
-    padding-left: calc(var(--sidebar-width, 86px) + 18px);
+    padding: 12px;
   }
 
   .production-order-details-modal {
     width: 100%;
+    height: calc(100dvh - 24px);
     max-width: 100%;
-    padding: 16px;
+    gap: 8px;
+    padding: 12px;
+  }
+
+  .production-order-details-header {
+    padding-bottom: 7px;
+  }
+
+  .production-order-details-header h3 {
+    font-size: 1.55rem;
   }
 
   .production-order-details-summary {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    gap: 6px;
   }
 
   .production-order-details-summary article.status,
   .production-order-details-summary article.priority,
+  .production-order-details-summary article.work-center,
+  .production-order-details-summary article.station { grid-column: span 2; }
   .production-order-details-summary article.quantity,
   .production-order-details-summary article.time-spent,
-  .production-order-details-summary article.work-center,
-  .production-order-details-summary article.station,
   .production-order-details-summary article.schedule,
-  .production-order-details-summary article.reception {
-    grid-column: auto;
-    min-width: 0;
+  .production-order-details-summary article.reception { grid-column: span 4; }
+
+  .production-order-details-summary article {
+    min-height: 0;
+    gap: 3px;
+    padding: 6px 7px;
   }
+
+  .production-order-details-summary article.time-spent > strong { font-size: 1.15rem; }
+  .production-order-details-summary article.quantity > div,
+  .production-order-details-summary article.schedule > div,
+  .production-order-details-summary article.reception > div { gap: 4px; }
+  .production-order-details-summary article.quantity > div > span,
+  .production-order-details-summary article.schedule > div > span,
+  .production-order-details-summary article.reception > div > span { padding: 3px 5px; }
+
+  .production-order-details-view-switch { padding: 3px; }
+  .production-order-details-view-switch button { min-height: 32px; padding: 5px 9px; }
 
   .production-order-details-table-wrap {
     width: 100%;
     min-width: 0;
     max-width: 100%;
-    overscroll-behavior-x: contain;
+    overflow-x: hidden;
+    overscroll-behavior-x: none;
   }
+
+  .production-order-details-table {
+    width: 100%;
+    min-width: 0;
+    table-layout: fixed;
+  }
+
+  .production-order-details-table th,
+  .production-order-details-table td {
+    min-width: 0;
+    padding: 7px 5px;
+    overflow-wrap: anywhere;
+  }
+
+  .production-order-details-table th:nth-child(1) { width: 8%; }
+  .production-order-details-table th:nth-child(2) { width: 5%; }
+  .production-order-details-table th:nth-child(3) { width: 8%; }
+  .production-order-details-table th:nth-child(4) { width: 9%; }
+  .production-order-details-table th:nth-child(5) { width: 9%; }
+  .production-order-details-table th:nth-child(6) { width: 39%; }
+  .production-order-details-table th:nth-child(7) { width: 13%; }
+  .production-order-details-table th:nth-child(8) { width: 9%; }
+
+  .production-order-details-measures {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px;
+  }
+
+  .production-order-details-measures span { padding: 4px 5px; font-size: 0.67rem; }
+  .production-order-details-piece-times { min-width: 0; gap: 3px; }
+  .production-order-details-piece-times > span { display: grid; gap: 2px; }
+  .production-order-details-time-pill { min-width: 0; width: fit-content; padding: 3px 5px; }
+  .production-order-release-piece { min-height: 28px; padding: 0 6px; font-size: 0.61rem; }
 }
 
 @media (max-width: 1050px) {
@@ -13069,13 +13129,15 @@ body.work-center-map-expanded .logged-workspace {
 
 @media (max-width: 900px) {
   .mes-modal-backdrop.production-order-details-backdrop {
-    --production-order-details-top-gap: 24px;
-    padding-right: 18px;
-    padding-left: calc(var(--sidebar-width, 86px) + 18px);
+    --production-order-details-top-gap: 8px;
+    --production-order-details-bottom-gap: 8px;
+    --production-order-details-top-offset: 8px;
+    padding: 8px;
   }
 
   .production-order-details-modal {
     width: 100%;
+    height: calc(100dvh - 16px);
     padding-top: 14px;
     padding-bottom: 12px;
   }
