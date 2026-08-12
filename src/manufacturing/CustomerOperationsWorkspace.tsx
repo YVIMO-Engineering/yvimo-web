@@ -35,7 +35,9 @@ import { supabase } from '../lib/supabaseClient';
 import { useSupabaseRealtimeRefresh } from '../lib/useSupabaseRealtimeRefresh';
 import { ClientBalancesWorkspace } from './ClientBalancesWorkspace';
 import { ClientReceptionsWorkspace } from './ClientReceptionsWorkspace';
+import { ProductionOrderDetailsModal, type ProductionOrderDetailsState, type ProductionOrderDetailPiece, type ProductionOrderDetailTraceabilityRow } from './MesWorkspaces';
 import { localizeClientsTree, translateClientsText, type ClientsLanguageCode } from './clientsI18n';
+import type { ProductionOrder } from './mesTypes';
 
 export type ClientsContextTab =
   | 'customers'
@@ -556,9 +558,12 @@ type CustomerToolDocumentRow = {
 };
 
 type AssetLifeTraceabilityRow = {
+  production_order_id: string;
   tool_id: string | null;
   serial_number: string | null;
   dimensions_unit: string;
+  before_notch: number | null;
+  before_tooth_length: number | null;
   stock_to_remove: number | null;
   after_tooth_length: number | null;
   payload: Record<string, unknown> | null;
@@ -641,6 +646,7 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
   const [toolDefinitions, setToolDefinitions] = React.useState<CustomerToolDefinition[]>([]);
   const [assetLifeTraceability, setAssetLifeTraceability] = React.useState<AssetLifeTraceabilityRow[]>([]);
   const [assetServices, setAssetServices] = React.useState<CustomerAssetService[]>([]);
+  const [assetOrderDetails, setAssetOrderDetails] = React.useState<{ order: ProductionOrder; details: ProductionOrderDetailsState } | null>(null);
   const [assetAttachments, setAssetAttachments] = React.useState<CustomerAssetAttachment[]>([]);
   const [selectedAssetId, setSelectedAssetId] = React.useState<string | null>(restoredAssetView.selectedAssetId);
   const [assetLoading, setAssetLoading] = React.useState(false);
@@ -732,7 +738,7 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
         .eq('organization_id', organizationId),
       supabase.from('mes_customer_tool_ids').select('id, tool_id, internal_tool_id, part_type, minimum_life, measurement_unit').eq('organization_id', organizationId).order('tool_id'),
       supabase.from('mes_customer_tool_id_documents').select('id, tool_definition_id, storage_bucket, file_name, file_path, file_type, created_at').eq('organization_id', organizationId).order('created_at'),
-      supabase.from('mes_operator_terminal_traceability').select('tool_id, serial_number, dimensions_unit, stock_to_remove, after_tooth_length, payload, created_at').eq('organization_id', organizationId).order('created_at', { ascending: false }),
+      supabase.from('mes_operator_terminal_traceability').select('production_order_id, tool_id, serial_number, dimensions_unit, before_notch, before_tooth_length, stock_to_remove, after_tooth_length, payload, created_at').eq('organization_id', organizationId).order('created_at', { ascending: false }),
     ]);
 
     const firstError = assetResponse.error || serviceResponse.error || attachmentResponse.error || productionSerialResponse.error || toolResponse.error || toolDocumentResponse.error || traceabilityResponse.error;
@@ -1412,10 +1418,29 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
     if (storageResult.error) setAssetError(`The drawing was removed from this Tool ID, but its stored file could not be deleted: ${storageResult.error.message}`);
   };
 
-  const openProductionOrder = (orderNumber: string) => {
-    if (!orderNumber) return;
-    window.sessionStorage.setItem('yvimo:mes:selectedProductionOrderNumber', orderNumber);
-    onNavigate('/workspace/manufacturing-ops/mes/orders');
+  const openProductionOrder = async (productionOrderId: string | null) => {
+    if (!productionOrderId) return;
+    setAssetOrderDetails({
+      order: { id: productionOrderId, orderNumber: '', partNumber: '', partName: '', plannedQuantity: 0, completedQuantity: 0, scrapQuantity: 0, status: 'planned', priority: 'normal', dueDate: '', assignedWorkCenter: '', plannedShifts: [], manufacturingType: 'multi-step', productionFlow: '', assignedStation: '' },
+      details: { loading: true, error: '', pieces: [], timeSpentMs: 0 },
+    });
+    const [{ data: orderRow, error: orderError }, { data: serialRows, error: serialError }, { data: traceabilityRows, error: traceabilityError }] = await Promise.all([
+      supabase.from('mes_production_orders').select('*').eq('organization_id', organizationId).eq('id', productionOrderId).single(),
+      supabase.from('mes_production_serials').select('id, piece_sequence, tool_id, serial_number, result, traceability_id, reported_at').eq('organization_id', organizationId).eq('production_order_id', productionOrderId).order('piece_sequence'),
+      supabase.from('mes_operator_terminal_traceability').select('id, production_order_id, template_id, part_label, tool_id, serial_number, dimensions_unit, before_notch, before_tooth_length, damage_codes, damage_image_url, stock_to_remove, after_tooth_length, payload, created_at').eq('organization_id', organizationId).eq('production_order_id', productionOrderId).order('created_at', { ascending: false }),
+    ]);
+    if (orderError || serialError || traceabilityError || !orderRow) {
+      setAssetOrderDetails((current) => current ? { ...current, details: { loading: false, error: 'Unable to load order details.', pieces: [], timeSpentMs: 0 } } : null);
+      return;
+    }
+    const row = orderRow as Record<string, any>;
+    const order: ProductionOrder = { id: row.id, orderNumber: row.order_number, partNumber: row.part_number, partName: row.part_name, clientName: row.client_name ?? '', customerId: row.customer_id ?? '', plannedQuantity: Number(row.planned_quantity) || 0, completedQuantity: Number(row.completed_quantity) || 0, scrapQuantity: Number(row.scrap_quantity) || 0, status: row.status, priority: row.priority, dueDate: row.due_date, assignedWorkCenter: row.assigned_work_center ?? '', plannedShifts: row.planned_shifts ?? [], manufacturingType: row.manufacturing_type ?? 'multi-step', productionFlow: row.production_flow ?? '', assignedStation: row.assigned_station ?? '', pieceType: row.piece_type ?? 'hobs', qualityChecksEnabled: row.quality_checks_enabled ?? false, qualityChecks: row.quality_checks ?? [], qualityCheckLimits: row.quality_check_limits ?? {}, qualityMeasurementUnit: row.quality_measurement_unit ?? 'microns', createdAt: row.created_at ?? undefined, updatedAt: row.updated_at ?? undefined };
+    const traces = (traceabilityRows ?? []) as ProductionOrderDetailTraceabilityRow[];
+    const traceById = new Map(traces.map((trace) => [trace.id, trace]));
+    const traceBySerial = new Map(traces.filter((trace) => trace.serial_number).map((trace) => [trace.serial_number!.trim().toLowerCase(), trace]));
+    const serials = (serialRows ?? []) as Array<{ id:string;piece_sequence:number;tool_id:string;serial_number:string;result:'good'|'scrap'|null;traceability_id:string|null;reported_at:string|null }>;
+    const pieces: ProductionOrderDetailPiece[] = serials.map((serial) => ({ serialId: serial.id, pieceSequence: serial.piece_sequence, toolId: serial.tool_id ?? '', serialNumber: serial.serial_number ?? '', status: serial.result ?? 'not-started', reportedAt: serial.reported_at ?? '', timeSpentMs: 0, runningTimeMs: 0, setupTimeMs: 0, traceability: (serial.traceability_id ? traceById.get(serial.traceability_id) : null) ?? traceBySerial.get(serial.serial_number.trim().toLowerCase()) ?? null, qualityInspection: null, qualityMeasurements: [], qualityDocuments: [], evidence: [] }));
+    setAssetOrderDetails({ order, details: { loading: false, error: '', pieces, timeSpentMs: 0 } });
   };
 
   const customerFilterOptions = React.useMemo<Array<CustomerDropdownOption<string>>>(() => [
@@ -1491,12 +1516,23 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
   const selectedAssetSharpeningCount = selectedAssetServices.filter((service) => service.result !== 'skipped').length;
   const selectedAssetTool = selectedAsset?.toolDefinitionId ? toolDefinitions.find((tool) => tool.id === selectedAsset.toolDefinitionId) ?? null : null;
   const isSelectedAssetShaver = /shaver/i.test(selectedAsset?.assetType ?? '') || /shaver/i.test(selectedAssetTool?.partType ?? '');
-  const matchingToolMeasurements = selectedAssetTool
-    ? assetLifeTraceability.filter((record) => record.tool_id?.trim().toLowerCase() === selectedAssetTool.toolId.trim().toLowerCase() && (isSelectedAssetShaver || record.dimensions_unit === selectedAssetTool.measurementUnit))
+  const normalizeLifeUnit = (value: string | null | undefined) => {
+    const unit = value?.trim().toLowerCase() ?? '';
+    if (['in', 'inch', 'inches', '"'].includes(unit)) return 'in';
+    if (['mm', 'millimeter', 'millimeters', 'millimetre', 'millimetres'].includes(unit)) return 'mm';
+    return unit;
+  };
+  const selectedAssetSerialKey = selectedAsset?.serialNumber.trim().toLowerCase() ?? '';
+  const selectedToolIdKey = selectedAssetTool?.toolId.trim().toLowerCase() ?? '';
+  const selectedToolUnit = normalizeLifeUnit(selectedAssetTool?.measurementUnit);
+  const compatibleLifeUnit = (record: AssetLifeTraceabilityRow) =>
+    isSelectedAssetShaver || normalizeLifeUnit(record.dimensions_unit) === selectedToolUnit;
+  const matchingSerialMeasurements = selectedAsset && selectedAssetTool
+    ? assetLifeTraceability.filter((record) => record.serial_number?.trim().toLowerCase() === selectedAssetSerialKey && compatibleLifeUnit(record))
     : [];
-  const selectedSerialMeasurement = selectedAsset
-    ? matchingToolMeasurements.find((record) => record.serial_number?.trim().toLowerCase() === selectedAsset.serialNumber.trim().toLowerCase()) ?? null
-    : null;
+  const matchingToolMeasurements = selectedAssetTool
+    ? assetLifeTraceability.filter((record) => record.tool_id?.trim().toLowerCase() === selectedToolIdKey && compatibleLifeUnit(record))
+    : [];
   const getLifeMeasurement = (record: AssetLifeTraceabilityRow | null) => {
     if (!record || !selectedAssetTool) return null;
     const payload = record.payload ?? {};
@@ -1511,20 +1547,29 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
     }
     return null;
   };
-  const explicitMaterialRemovalValues = matchingToolMeasurements.map((record) => Number(record.stock_to_remove)).filter((value) => Number.isFinite(value) && value > 0);
-  const measuredDimensions = matchingToolMeasurements.map((record) => getLifeMeasurement(record)).filter((value): value is number => value !== null);
+  const selectedSerialMeasurement = matchingSerialMeasurements.find((record) => getLifeMeasurement(record) !== null) ?? null;
+  const combinedLifeMeasurements = Array.from(new Set([...matchingSerialMeasurements, ...matchingToolMeasurements]));
+  const validLifeMeasurements = combinedLifeMeasurements.filter((record) => getLifeMeasurement(record) !== null);
+  const selectedSerialRemovalValues = matchingSerialMeasurements.map((record) => Number(record.stock_to_remove)).filter((value) => Number.isFinite(value) && value > 0);
+  const toolRemovalValues = validLifeMeasurements.map((record) => Number(record.stock_to_remove)).filter((value) => Number.isFinite(value) && value > 0);
+  const explicitMaterialRemovalValues = selectedSerialRemovalValues.length ? selectedSerialRemovalValues : toolRemovalValues;
+  const measuredDimensions = validLifeMeasurements.map((record) => getLifeMeasurement(record)).filter((value): value is number => value !== null);
   const derivedMaterialRemovalValues = measuredDimensions.slice(0, -1).map((value, index) => measuredDimensions[index + 1] - value).filter((value) => value > 0);
   const materialRemovalValues = explicitMaterialRemovalValues.length ? explicitMaterialRemovalValues : derivedMaterialRemovalValues;
   const averageMaterialRemoval = materialRemovalValues.length ? materialRemovalValues.reduce((sum, value) => sum + value, 0) / materialRemovalValues.length : null;
+  const excludedLifeMeasurementCount = combinedLifeMeasurements.length - validLifeMeasurements.length;
   const currentLifeMeasurement = getLifeMeasurement(selectedSerialMeasurement);
   const rawShaverSharpeningNumber = selectedSerialMeasurement?.payload?.shaver_sharpening_number;
   const parsedShaverSharpeningNumber = typeof rawShaverSharpeningNumber === 'number'
     ? rawShaverSharpeningNumber
     : typeof rawShaverSharpeningNumber === 'string' ? Number.parseInt(rawShaverSharpeningNumber, 10) : NaN;
   const currentShaverSharpeningNumber = Number.isFinite(parsedShaverSharpeningNumber) ? Math.max(0, parsedShaverSharpeningNumber) : null;
-  const dimensionalSharpeningsRemaining = selectedAssetTool && selectedAssetTool.minimumLife !== null && currentLifeMeasurement !== null && averageMaterialRemoval
-    ? Math.max(0, Math.floor((currentLifeMeasurement - selectedAssetTool.minimumLife) / averageMaterialRemoval))
+  const dimensionalLifeRatio = selectedAssetTool && selectedAssetTool.minimumLife !== null && currentLifeMeasurement !== null && averageMaterialRemoval
+    ? (currentLifeMeasurement - selectedAssetTool.minimumLife) / averageMaterialRemoval
     : null;
+  const dimensionalSharpeningsRemaining = dimensionalLifeRatio === null
+    ? null
+    : Math.max(0, Math.floor(dimensionalLifeRatio + 1e-9));
   const selectedAssetSharpeningsRemaining = isSelectedAssetShaver
     ? currentShaverSharpeningNumber === null ? null : Math.max(0, SHAVER_MAX_SHARPENINGS - currentShaverSharpeningNumber)
     : dimensionalSharpeningsRemaining;
@@ -1908,8 +1953,11 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
                           <div className="clients-asset-life-metrics">
                             <span className={`remaining-${selectedAssetSharpeningsRemaining === null ? 'unknown' : selectedAssetSharpeningsRemaining === 0 ? 'critical' : selectedAssetSharpeningsRemaining <= 4 ? 'warning' : 'healthy'}`}><small>Remaining Sharpenings</small><b>{selectedAssetSharpeningsRemaining === null ? '—' : `${isSelectedAssetShaver ? '' : '~'}${selectedAssetSharpeningsRemaining}`}</b></span>
                             <span><small>{isSelectedAssetShaver ? 'Current Sharpening' : 'Average Removal'}</small><b>{isSelectedAssetShaver ? (currentShaverSharpeningNumber === null ? '—' : `${currentShaverSharpeningNumber} of ${SHAVER_MAX_SHARPENINGS}`) : (averageMaterialRemoval === null ? '—' : `${averageMaterialRemoval.toFixed(4)} ${selectedAssetTool?.measurementUnit ?? ''}`)}</b></span>
+                            <span><small>Minimum Life EOL</small><b>{selectedAssetTool?.minimumLife === null || selectedAssetTool?.minimumLife === undefined ? '—' : `${selectedAssetTool.minimumLife.toFixed(4)} ${selectedAssetTool.measurementUnit}`}</b></span>
                           </div>
                           {selectedAssetSharpeningsRemaining === null ? <p className="clients-asset-life-hint">{isSelectedAssetShaver ? 'Record the current sharpening number to calculate remaining life.' : 'Link a configured Tool ID and compatible measurements.'}</p> : null}
+                          {!isSelectedAssetShaver && excludedLifeMeasurementCount > 0 ? <p className="clients-asset-life-hint">{excludedLifeMeasurementCount} service record{excludedLifeMeasurementCount === 1 ? ' was' : 's were'} excluded because the life measurement was not captured.</p> : null}
+                          {!isSelectedAssetShaver && selectedAssetSharpeningsRemaining === 1 ? <p className="clients-asset-life-hint clients-asset-life-eol-warning">Next sharpening reaches EOL.</p> : null}
                         </div>
                         <span><small>Last Service</small><b>{formatAssetDate(selectedAsset.lastServiceAt, languageCode)}</b></span>
                         <span><small>Last Inspection</small><b>{formatAssetDate(selectedAsset.lastInspectionAt, languageCode)}</b></span>
@@ -1931,21 +1979,40 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
                             <tbody>
                               {selectedAssetServices.map((service) => {
                                 const serviceAttachments = selectedAssetAttachments.filter((attachment) => attachment.serviceEventId === service.id);
+                                const serviceMeasurement = service.productionOrderId
+                                  ? assetLifeTraceability.find((record) => record.production_order_id === service.productionOrderId && record.serial_number?.trim().toLowerCase() === selectedAssetSerialKey) ?? null
+                                  : null;
+                                const measurementUnit = normalizeLifeUnit(serviceMeasurement?.dimensions_unit) || selectedAssetTool?.measurementUnit || '';
+                                const formatServiceMeasurement = (value: number | null | undefined) => {
+                                  const parsed = Number(value);
+                                  return value !== null && value !== undefined && Number.isFinite(parsed) ? `${parsed.toFixed(4)} ${measurementUnit}` : 'N/A';
+                                };
                                 return (
-                                  <tr key={service.id}>
-                                    <td><span className="clients-asset-service-name"><Wrench size={17} /><b>Sharpening</b></span></td>
-                                    <td><b>{formatAssetDate(service.serviceDate, languageCode)}</b></td>
-                                    <td>{service.orderNumber ? <button className="clients-asset-order-link" type="button" onClick={() => openProductionOrder(service.orderNumber)}>{service.orderNumber}</button> : <span className="clients-asset-no-evidence">Not linked</span>}</td>
-                                    <td><em className={`clients-service-result ${service.result}`}>{service.result}</em>{service.remainingLifePercent !== null ? <small>{service.remainingLifePercent}% life</small> : null}</td>
-                                    <td>
-                                      {serviceAttachments.length ? <div className="clients-asset-service-files">{serviceAttachments.map((attachment) => (
-                                        <button type="button" key={attachment.id} onClick={() => void openAssetAttachment(attachment)}>
-                                          {attachment.attachmentType === 'photo' ? <Camera size={15} /> : <FileText size={15} />}
-                                          <span>{attachment.fileName}</span><ExternalLink size={13} />
-                                        </button>
-                                      ))}</div> : <span className="clients-asset-no-evidence">No evidence</span>}
-                                    </td>
-                                  </tr>
+                                  <React.Fragment key={service.id}>
+                                    <tr>
+                                      <td><span className="clients-asset-service-name"><Wrench size={17} /><b>Sharpening</b></span></td>
+                                      <td><b>{formatAssetDate(service.serviceDate, languageCode)}</b></td>
+                                      <td>{service.orderNumber ? <button className="clients-asset-order-link" type="button" onClick={() => void openProductionOrder(service.productionOrderId)}>{service.orderNumber}</button> : <span className="clients-asset-no-evidence">Not linked</span>}</td>
+                                      <td><em className={`clients-service-result ${service.result}`}>{service.result}</em>{service.remainingLifePercent !== null ? <small>{service.remainingLifePercent}% life</small> : null}</td>
+                                      <td>
+                                        {serviceAttachments.length ? <div className="clients-asset-service-files">{serviceAttachments.map((attachment) => (
+                                          <button type="button" key={attachment.id} onClick={() => void openAssetAttachment(attachment)}>
+                                            {attachment.attachmentType === 'photo' ? <Camera size={15} /> : <FileText size={15} />}
+                                            <span>{attachment.fileName}</span><ExternalLink size={13} />
+                                          </button>
+                                        ))}</div> : <span className="clients-asset-no-evidence">No evidence</span>}
+                                      </td>
+                                    </tr>
+                                    <tr className="clients-asset-service-measurements">
+                                      <td colSpan={5}>
+                                        <div>
+                                          <span><small>Before sharpening</small><b>{formatServiceMeasurement(serviceMeasurement?.before_tooth_length ?? serviceMeasurement?.before_notch)}</b></span>
+                                          <span><small>Stock to remove</small><b>{formatServiceMeasurement(serviceMeasurement?.stock_to_remove)}</b></span>
+                                          <span><small>After sharpening</small><b>{formatServiceMeasurement(serviceMeasurement?.after_tooth_length)}</b></span>
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  </React.Fragment>
                                 );
                               })}
                               {selectedAssetAttachments.filter((attachment) => !attachment.serviceEventId).map((attachment) => (
@@ -2493,6 +2560,16 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
             </div>
           </div>
         </div>
+      ) : null}
+      {assetOrderDetails ? (
+        <ProductionOrderDetailsModal
+          order={assetOrderDetails.order}
+          details={assetOrderDetails.details}
+          organizationId={organizationId}
+          onNavigate={onNavigate}
+          onPieceReleased={loadAssets}
+          onClose={() => setAssetOrderDetails(null)}
+        />
       ) : null}
     </section>
   ), languageCode);
