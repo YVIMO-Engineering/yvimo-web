@@ -1676,6 +1676,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
       ...current,
       toolId: serial.toolId,
       serialNumber: serial.serialNumber,
+      beforeHeight: serial.beforeHeight === null ? '' : String(serial.beforeHeight),
       beforeNotch: serial.beforeNotch === null ? '' : String(serial.beforeNotch),
       beforeToothLength: serial.beforeToothLength === null ? '' : String(serial.beforeToothLength),
       stockToRemove: serial.stockToRemove === null ? '' : String(serial.stockToRemove),

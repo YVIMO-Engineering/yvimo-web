@@ -753,7 +753,7 @@
 .mes-modal-backdrop.production-order-serial-backdrop .mes-order-modal.production-order-serial-modal {
   width: min(1480px, calc(100vw - 48px));
   max-width: none;
-  max-height: min(720px, calc(100vh - 48px));
+  max-height: min(820px, calc(100vh - 48px));
   overflow: hidden;
 }
 
@@ -799,7 +799,7 @@
 }
 
 .production-order-serial-table-wrap {
-  max-height: 440px;
+  max-height: 540px;
   overflow: auto;
   border: 1px solid #d8e0e8;
   border-radius: 8px;
@@ -818,6 +818,15 @@
   border-bottom: 1px solid #e2e8f0;
   padding: 10px;
   text-align: left;
+}
+
+.production-order-serial-table tbody td {
+  padding-top: 15px;
+  padding-bottom: 15px;
+}
+
+.production-order-serial-table tbody tr:not(:last-child) td {
+  border-bottom-color: #fed7aa;
 }
 
 .production-order-serial-table th {
@@ -951,8 +960,63 @@
 .production-quotation-dropdown-menu > button em { color: #64748b; font-size: .64rem; font-style: normal; }
 .production-quotation-dropdown-menu > p { margin: 0; padding: 16px; color: #64748b; font-size: .72rem; text-align: center; }
 
+.production-asset-dropdown-menu .production-asset-create {
+  border: 1px dashed #fb923c;
+  background: #fff7ed;
+  color: #9a3412;
+}
+
+.production-asset-dropdown-menu .production-asset-create strong {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.production-asset-dropdown > button {
+  min-height: 48px;
+}
+
 .production-order-serial-table .mes-order-dropdown {
   min-width: 260px;
+}
+
+.production-order-compatible-stations {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-width: 320px;
+}
+
+.production-order-compatible-stations label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 0;
+  padding: 5px 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  background: #f8fafc;
+  cursor: pointer;
+  font-size: 0.7rem;
+  font-weight: 750;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+.production-order-compatible-stations input[type="checkbox"] {
+  flex: 0 0 14px;
+  width: 14px;
+  height: 14px;
+  min-height: 14px;
+  margin: 0;
+  padding: 0;
+  accent-color: #f97316;
+}
+
+.production-order-compatible-stations label:has(input:checked) {
+  color: #7c2d12;
+  border-color: #fb923c;
+  background: #fff7ed;
 }
 
 .production-order-serial-missing {

@@ -67,6 +67,9 @@ type ProductionSerialRow = {
   before_notch: number | null;
   before_tooth_length: number | null;
   stock_to_remove: number | null;
+  assigned_station?: string | null;
+  compatible_stations?: string[] | null;
+  before_height?: number | null;
 };
 
 type OperatorTraceabilityRecordRow = {
@@ -102,6 +105,7 @@ export type OperatorProductionSerial = {
   beforeNotch: number | null;
   beforeToothLength: number | null;
   stockToRemove: number | null;
+  beforeHeight: number | null;
 };
 
 export type OperatorTraceabilityRecord = {
@@ -150,6 +154,7 @@ function mapProductionSerialRow(row: ProductionSerialRow): OperatorProductionSer
     beforeNotch: row.before_notch,
     beforeToothLength: row.before_tooth_length,
     stockToRemove: row.stock_to_remove,
+    beforeHeight: row.before_height ?? null,
   };
 }
 
@@ -255,14 +260,17 @@ export async function fetchOperatorTerminalSnapshot(organizationId: string, clie
   if (multiStepOrderIds.length) {
     const { data: serialStationData, error: serialStationError } = await client
       .from('mes_production_serials')
-      .select('production_order_id, assigned_station, result, reported_at')
+      .select('production_order_id, assigned_station, compatible_stations, result, reported_at')
       .eq('organization_id', organizationId)
       .in('production_order_id', multiStepOrderIds);
     if (serialStationError) throw serialStationError;
     (serialStationData ?? []).forEach((serial) => {
-      if (!serial.assigned_station || serial.result) return;
+      if (serial.result) return;
       const stations = multiStepStationsByOrder[serial.production_order_id] ?? [];
-      if (!stations.includes(serial.assigned_station)) stations.push(serial.assigned_station);
+      const compatibleStations = serial.compatible_stations?.length ? serial.compatible_stations : serial.assigned_station ? [serial.assigned_station] : [];
+      compatibleStations.forEach((stationCode: string) => {
+        if (!stations.includes(stationCode)) stations.push(stationCode);
+      });
       multiStepStationsByOrder[serial.production_order_id] = stations;
     });
     orders
@@ -416,11 +424,11 @@ export async function fetchOperatorProductionSerials(
 ): Promise<OperatorProductionSerial[]> {
   let query = client
     .from('mes_production_serials')
-    .select('id, production_order_id, piece_sequence, tool_id, serial_number, result, ready_for_quality, traceability_id, reported_at, before_notch, before_tooth_length, stock_to_remove')
+    .select('id, production_order_id, piece_sequence, tool_id, serial_number, result, ready_for_quality, traceability_id, reported_at, before_height, before_notch, before_tooth_length, stock_to_remove, assigned_station, compatible_stations')
     .eq('organization_id', input.organizationId)
     .eq('production_order_id', input.orderId)
     .order('piece_sequence', { ascending: true });
-  if (input.stationCode) query = query.eq('assigned_station', input.stationCode);
+  if (input.stationCode) query = query.or(`assigned_station.eq.${input.stationCode},compatible_stations.cs.{${input.stationCode}}`);
   const { data, error } = await query;
 
   if (error) throw error;
@@ -797,15 +805,16 @@ export async function switchOperatorActiveOrder(
   if (selectedOrder.manufacturing_type === 'multi-step') {
     const { data: assignedSerial, error: assignedSerialError } = await client
       .from('mes_production_serials')
-      .select('id')
+      .select('id, assigned_station, compatible_stations')
       .eq('organization_id', input.organizationId)
       .eq('production_order_id', input.orderId)
-      .eq('assigned_station', stationCode)
       .is('result', null)
-      .limit(1)
-      .maybeSingle();
+      .limit(100);
 
-    if (assignedSerialError || !assignedSerial) {
+    const hasCompatibleSerial = (assignedSerial ?? []).some((serial) => (
+      serial.assigned_station === stationCode || serial.compatible_stations?.includes(stationCode)
+    ));
+    if (assignedSerialError || !hasCompatibleSerial) {
       throw new Error('This Multi-step order has no pending pieces assigned to the selected station.');
     }
   }

@@ -112,6 +112,8 @@ type ProductionSerialAssignmentDraft = {
   toolId: string;
   serialNumber: string;
   assignedStation: string;
+  compatibleStations: string[];
+  beforeHeight: string;
   beforeNotch: string;
   beforeToothLength: string;
   stockToRemove: string;
@@ -128,6 +130,17 @@ type ProductionQuotationOption = {
   partType: string;
   totalPrice: number;
   currency: string;
+};
+
+type ProductionAssetOption = {
+  id: string;
+  customerId: string;
+  customerName: string;
+  serialNumber: string;
+  toolId: string;
+  internalToolId: string;
+  assetType: string;
+  status: string;
 };
 
 function formatProductionQuotationValue(option: ProductionQuotationOption) {
@@ -255,9 +268,11 @@ type ProductionSerialInsertRow = {
   tool_id: string | null;
   serial_number: string;
   assigned_station?: string | null;
+  compatible_stations?: string[];
   result: null;
   ready_for_quality: false;
   reported_at: null;
+  before_height: number | null;
   before_notch: number | null;
   before_tooth_length: number | null;
   stock_to_remove: number | null;
@@ -270,6 +285,8 @@ type ProductionSerialAssignmentRow = {
   tool_id: string | null;
   serial_number: string;
   assigned_station?: string | null;
+  compatible_stations?: string[] | null;
+  before_height?: number | null;
   before_notch?: number | null;
   before_tooth_length?: number | null;
   stock_to_remove?: number | null;
@@ -1046,6 +1063,73 @@ function ProductionQuotationDropdown({ id, value, options, onChange }: {
   </div>;
 }
 
+function ProductionAssetDropdown({ id, value, placeholder, options, searchPlaceholder, kind, onSelect, onCreate }: {
+  id: string;
+  value: string;
+  placeholder: string;
+  options: ProductionAssetOption[];
+  searchPlaceholder: string;
+  kind: 'tool' | 'serial';
+  onSelect: (option: ProductionAssetOption) => void;
+  onCreate: (value: string) => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const [search, setSearch] = React.useState('');
+  const [position, setPosition] = React.useState<{ top: number; left: number; width: number; maxHeight: number } | null>(null);
+  const triggerRef = React.useRef<HTMLDivElement | null>(null);
+  const menuRef = React.useRef<HTMLDivElement | null>(null);
+  const normalizedSearch = search.trim().toLowerCase();
+  const filtered = options.filter((option) => (
+    `${option.serialNumber} ${option.toolId} ${option.internalToolId} ${option.assetType} ${option.customerName}`.toLowerCase().includes(normalizedSearch)
+  ));
+  const selected = options.find((option) => (kind === 'tool' ? option.toolId : option.serialNumber) === value);
+  const updatePosition = React.useCallback(() => {
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const padding = 12;
+    const width = Math.min(420, window.innerWidth - padding * 2);
+    const maxHeight = Math.min(360, Math.max(180, window.innerHeight - padding * 2));
+    const openUp = window.innerHeight - rect.bottom < 260 && rect.top > window.innerHeight - rect.bottom;
+    setPosition({
+      top: openUp ? Math.max(padding, rect.top - maxHeight - 6) : Math.min(window.innerHeight - maxHeight - padding, rect.bottom + 6),
+      left: Math.max(padding, Math.min(rect.left, window.innerWidth - width - padding)),
+      width,
+      maxHeight,
+    });
+  }, []);
+  React.useLayoutEffect(() => { if (open) updatePosition(); }, [open, updatePosition]);
+  React.useEffect(() => {
+    if (!open) return undefined;
+    const close = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (!triggerRef.current?.contains(target) && !menuRef.current?.contains(target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', close);
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [open, updatePosition]);
+  const menu = open && position ? createPortal(
+    <div className="production-quotation-dropdown-menu production-asset-dropdown-menu" ref={menuRef} style={position} role="listbox" id={`${id}-listbox`}>
+      <div className="production-quotation-dropdown-search"><Search size={15} /><input autoFocus value={search} onChange={(event) => setSearch(event.target.value)} placeholder={searchPlaceholder} /></div>
+      {search.trim() ? <button className="production-asset-create" type="button" onClick={() => { onCreate(search.trim()); setOpen(false); setSearch(''); }}><span><strong><Plus size={14} /> Create new: {search.trim()}</strong><small>Use this value for the new production piece</small></span></button> : null}
+      {filtered.map((option) => <button type="button" role="option" key={`${kind}-${option.id}`} onClick={() => { onSelect(option); setOpen(false); setSearch(''); }}>
+        <span><strong>{kind === 'tool' ? option.toolId : option.serialNumber}</strong><small>{kind === 'tool' ? `Serial: ${option.serialNumber}` : `Tool ID: ${option.toolId || 'Not linked'}`}{option.internalToolId ? ` · Internal: ${option.internalToolId}` : ''}</small><em>{option.customerName} · {option.assetType} · {option.status}</em></span>
+      </button>)}
+      {!filtered.length && !search.trim() ? <p>No registered assets are available for this client.</p> : null}
+    </div>, document.body) : null;
+  return <div className={`production-quotation-dropdown production-asset-dropdown${open ? ' open' : ''}`} ref={triggerRef}>
+    <button type="button" aria-expanded={open} aria-controls={`${id}-listbox`} onClick={() => { setSearch(''); setOpen((current) => !current); }}>
+      <span><strong>{value || placeholder}</strong>{value && selected ? <small>{selected.customerName} · {selected.assetType}</small> : value ? <small>New value</small> : null}</span><ChevronDown size={15} />
+    </button>
+    {menu}
+  </div>;
+}
+
 function mapProductionOrderRow(row: ProductionOrderRow): ProductionOrder {
   return {
     id: row.id,
@@ -1165,6 +1249,8 @@ function createSerialAssignmentDrafts(quantity: number, currentDrafts: Productio
       toolId: '',
       serialNumber: '',
       assignedStation: '',
+      compatibleStations: [],
+      beforeHeight: '',
       beforeNotch: '',
       beforeToothLength: '',
       stockToRemove: '',
@@ -3469,6 +3555,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
   const [stationOptionsByWorkCenter, setStationOptionsByWorkCenter] = React.useState<Record<string, MesOrderDropdownOption[]>>({});
   const [customerOptions, setCustomerOptions] = React.useState<ProductionOrderCustomerOptionRow[]>([]);
   const [quotationOptions, setQuotationOptions] = React.useState<ProductionQuotationOption[]>([]);
+  const [assetOptions, setAssetOptions] = React.useState<ProductionAssetOption[]>([]);
   const [customerOptionsMessage, setCustomerOptionsMessage] = React.useState('');
   const [workCenterOptionsMessage, setWorkCenterOptionsMessage] = React.useState('');
   const [page, setPage] = React.useState(restoredViewState.page);
@@ -3533,6 +3620,12 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
 
   const selectedOrder = orders.find((order) => order.orderNumber === selectedOrderNumber) ?? null;
   const selectedWorkCenterStationOptions = stationOptionsByWorkCenter[formState.assignedWorkCenter] ?? [];
+  const selectedCustomerAssetOptions = React.useMemo(() => assetOptions.filter((asset) => (
+    !formState.customerId || asset.customerId === formState.customerId
+  )), [assetOptions, formState.customerId]);
+  const usesHobMeasurements = ['hobs', 'skiving'].includes(formState.pieceType) || formState.pieceType === 'other';
+  const usesShaperMeasurements = formState.pieceType === 'shaper';
+  const usesStockToRemove = usesHobMeasurements || usesShaperMeasurements;
   const activeCustomerFormOptions = React.useMemo<MesOrderDropdownOption[]>(() => {
     const options = customerOptions
       .filter((customer) => customer.status === 'active' || customer.id === formState.customerId)
@@ -3619,13 +3712,15 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
     { table: 'mes_work_center_stations', filter: `organization_id=eq.${organizationId}` },
     { table: 'mes_customers', filter: `organization_id=eq.${organizationId}` },
     { table: 'mes_quotations', filter: `organization_id=eq.${organizationId}` },
+    { table: 'mes_customer_assets', filter: `organization_id=eq.${organizationId}` },
+    { table: 'mes_customer_tool_ids', filter: `organization_id=eq.${organizationId}` },
   ]), [organizationId]);
 
   const loadProductionOrders = React.useCallback(async (silent = false) => {
     const requestId = productionOrdersLoadRequestRef.current + 1;
     productionOrdersLoadRequestRef.current = requestId;
     if (!silent) setOrdersLoaded(false);
-    const [{ data, error }, { data: workCenterData, error: workCenterError }, { data: stationData, error: stationError }, { data: customerData, error: customerError }, { data: quotationData, error: quotationError }] = await Promise.all([
+    const [{ data, error }, { data: workCenterData, error: workCenterError }, { data: stationData, error: stationError }, { data: customerData, error: customerError }, { data: quotationData, error: quotationError }, { data: assetData, error: assetError }] = await Promise.all([
       supabase
         .from('mes_production_orders')
         .select('*')
@@ -3651,6 +3746,11 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
         .select('id, quotation_number, client_name, tool_id, part_type, total_price, currency')
         .eq('organization_id', organizationId)
         .order('created_at', { ascending: false }),
+      supabase
+        .from('mes_customer_assets')
+        .select('id, customer_id, serial_number, asset_type, status, tool_definition:mes_customer_tool_ids(tool_id, internal_tool_id), customer:mes_customers(customer_name)')
+        .eq('organization_id', organizationId)
+        .order('updated_at', { ascending: false }),
     ]);
 
     if (requestId !== productionOrdersLoadRequestRef.current) return;
@@ -3677,6 +3777,25 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
         totalPrice: Number(quotation.total_price) || 0,
         currency: (quotation.currency as string | null) || 'USD',
       })));
+    }
+    if (assetError) {
+      console.error('Unable to load customer Assets for Production Orders', assetError);
+      setAssetOptions([]);
+    } else {
+      setAssetOptions((assetData ?? []).map((asset) => {
+        const tool = Array.isArray(asset.tool_definition) ? asset.tool_definition[0] : asset.tool_definition;
+        const customer = Array.isArray(asset.customer) ? asset.customer[0] : asset.customer;
+        return {
+          id: asset.id as string,
+          customerId: asset.customer_id as string,
+          customerName: customer?.customer_name ?? 'Unknown client',
+          serialNumber: asset.serial_number as string,
+          toolId: tool?.tool_id ?? '',
+          internalToolId: tool?.internal_tool_id ?? '',
+          assetType: asset.asset_type as string,
+          status: asset.status as string,
+        };
+      }));
     }
     if (workCenterError || stationError) {
       setWorkCenterOptions([]);
@@ -4071,7 +4190,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
     try {
       let { data, error } = await supabase
         .from('mes_production_serials')
-        .select('id, piece_sequence, tool_id, serial_number, assigned_station, before_notch, before_tooth_length, stock_to_remove, quotation_id')
+        .select('id, piece_sequence, tool_id, serial_number, assigned_station, compatible_stations, before_height, before_notch, before_tooth_length, stock_to_remove, quotation_id')
         .eq('organization_id', organizationId)
         .eq('production_order_id', selectedOrder.id)
         .order('piece_sequence', { ascending: true });
@@ -4111,6 +4230,8 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
         toolId: serial.tool_id ?? '',
         serialNumber: serial.serial_number ?? '',
         assignedStation: serial.assigned_station ?? '',
+        compatibleStations: serial.compatible_stations?.length ? serial.compatible_stations : serial.assigned_station ? [serial.assigned_station] : [],
+        beforeHeight: serial.before_height === null || serial.before_height === undefined ? '' : String(serial.before_height),
         beforeNotch: serial.before_notch === null || serial.before_notch === undefined ? '' : String(serial.before_notch),
         beforeToothLength: serial.before_tooth_length === null || serial.before_tooth_length === undefined ? '' : String(serial.before_tooth_length),
         stockToRemove: serial.stock_to_remove === null || serial.stock_to_remove === undefined ? '' : String(serial.stock_to_remove),
@@ -4189,9 +4310,20 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
     }
   };
 
-  const setSerialAssignmentField = (pieceSequence: number, field: 'toolId' | 'serialNumber' | 'assignedStation' | 'beforeNotch' | 'beforeToothLength' | 'stockToRemove', value: string) => {
+  const setSerialAssignmentField = (pieceSequence: number, field: 'toolId' | 'serialNumber' | 'assignedStation' | 'beforeHeight' | 'beforeNotch' | 'beforeToothLength' | 'stockToRemove', value: string) => {
     setSerialAssignmentDrafts((currentDrafts) => createSerialAssignmentDrafts(Number(formState.plannedQuantity) || 0, currentDrafts)
       .map((draft) => draft.pieceSequence === pieceSequence ? { ...draft, [field]: value } : draft));
+  };
+
+  const toggleSerialCompatibleStation = (pieceSequence: number, stationCode: string) => {
+    setSerialAssignmentDrafts((currentDrafts) => createSerialAssignmentDrafts(Number(formState.plannedQuantity) || 0, currentDrafts)
+      .map((draft) => {
+        if (draft.pieceSequence !== pieceSequence) return draft;
+        const compatibleStations = draft.compatibleStations.includes(stationCode)
+          ? draft.compatibleStations.filter((code) => code !== stationCode)
+          : [...draft.compatibleStations, stationCode];
+        return { ...draft, compatibleStations, assignedStation: compatibleStations[0] ?? '' };
+      }));
   };
 
   const setSerialReceptionEvidence = (pieceSequence: number, file: File | null) => {
@@ -4281,8 +4413,8 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
         setStationAssignmentModalOpen(true);
         return;
       }
-      if (normalizedSerialDrafts.some((draft) => !draft.assignedStation.trim())) {
-        setOrderFormError('Select a Station for every serialized piece in this Multi-step order.');
+      if (normalizedSerialDrafts.some((draft) => draft.compatibleStations.length === 0)) {
+        setOrderFormError('Select at least one compatible Station for every serialized piece in this Multi-step order.');
         setStationAssignmentModalOpen(true);
         return;
       }
@@ -4300,7 +4432,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
         return;
       }
       const invalidMeasurement = normalizedSerialDrafts.some((draft) => (
-        [draft.beforeNotch, draft.beforeToothLength, draft.stockToRemove]
+        [draft.beforeHeight, draft.beforeNotch, draft.beforeToothLength, draft.stockToRemove]
           .some((value) => value.trim() && !Number.isFinite(Number(value)))
       ));
       if (invalidMeasurement) {
@@ -4350,7 +4482,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
             if (assignSerialsEnabled) {
               const { data: existingSerialsData, error: existingSerialsError } = await supabase
                 .from('mes_production_serials')
-                .select('id, piece_sequence, tool_id, serial_number, assigned_station, before_notch, before_tooth_length, stock_to_remove, quotation_id')
+                .select('id, piece_sequence, tool_id, serial_number, assigned_station, compatible_stations, before_height, before_notch, before_tooth_length, stock_to_remove, quotation_id')
                 .eq('organization_id', organizationId)
                 .eq('production_order_id', selectedOrder.id)
                 .abortSignal(controller.signal);
@@ -4364,11 +4496,13 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
                     .update({
                       tool_id: isWheelOrder ? null : draft.toolId.trim(),
                       serial_number: draft.serialNumber.trim(),
+                      before_height: parseProductionSerialMeasurement(draft.beforeHeight),
                       before_notch: parseProductionSerialMeasurement(draft.beforeNotch),
                       before_tooth_length: parseProductionSerialMeasurement(draft.beforeToothLength),
                       stock_to_remove: parseProductionSerialMeasurement(draft.stockToRemove),
                       quotation_id: draft.quotationId || null,
                       ...(serialStationColumnAvailable ? { assigned_station: formState.manufacturingType === 'multi-step' ? draft.assignedStation.trim() : null } : {}),
+                      compatible_stations: formState.manufacturingType === 'multi-step' ? draft.compatibleStations : [],
                     })
                     .eq('organization_id', organizationId)
                     .eq('id', existingSerial.id)
@@ -4385,11 +4519,13 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
                     piece_sequence: draft.pieceSequence,
                     tool_id: isWheelOrder ? null : draft.toolId.trim(),
                     serial_number: draft.serialNumber.trim(),
+                    before_height: parseProductionSerialMeasurement(draft.beforeHeight),
                     before_notch: parseProductionSerialMeasurement(draft.beforeNotch),
                     before_tooth_length: parseProductionSerialMeasurement(draft.beforeToothLength),
                     stock_to_remove: parseProductionSerialMeasurement(draft.stockToRemove),
                     quotation_id: draft.quotationId || null,
                     ...(serialStationColumnAvailable ? { assigned_station: formState.manufacturingType === 'multi-step' ? draft.assignedStation.trim() : null } : {}),
+                    compatible_stations: formState.manufacturingType === 'multi-step' ? draft.compatibleStations : [],
                     result: null,
                     ready_for_quality: false,
                     reported_at: null,
@@ -4488,7 +4624,9 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
               piece_sequence: draft.pieceSequence,
               tool_id: isWheelOrder ? null : draft.toolId.trim(),
               serial_number: draft.serialNumber.trim(),
+              before_height: parseProductionSerialMeasurement(draft.beforeHeight),
               ...(serialStationColumnAvailable ? { assigned_station: formState.manufacturingType === 'multi-step' ? draft.assignedStation.trim() : null } : {}),
+              compatible_stations: formState.manufacturingType === 'multi-step' ? draft.compatibleStations : [],
               result: null,
               ready_for_quality: false,
               reported_at: null,
@@ -5257,7 +5395,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
                   options={workCenterOptions}
                   onChange={(assignedWorkCenter) => {
                     setFormState((current) => ({ ...current, assignedWorkCenter, assignedStation: '' }));
-                    setSerialAssignmentDrafts((currentDrafts) => currentDrafts.map((draft) => ({ ...draft, assignedStation: '' })));
+                    setSerialAssignmentDrafts((currentDrafts) => currentDrafts.map((draft) => ({ ...draft, assignedStation: '', compatibleStations: [] })));
                   }}
                 />
                 {workCenterOptionsMessage ? <small className="mes-form-field-note">{workCenterOptionsMessage}</small> : null}
@@ -5398,7 +5536,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
               {formState.manufacturingType === 'multi-step' ? (
                 <div className="production-order-serial-assignment mes-order-form-wide">
                   <div className="production-order-serial-summary">
-                    <span>{serialAssignmentDrafts.filter((draft) => draft.serialNumber.trim() && draft.assignedStation.trim()).length} of {serialAssignmentDrafts.length} pieces assigned to a station</span>
+                    <span>{serialAssignmentDrafts.filter((draft) => draft.serialNumber.trim() && draft.compatibleStations.length > 0).length} of {serialAssignmentDrafts.length} pieces assigned to compatible stations</span>
                     <button type="button" onClick={() => setStationAssignmentModalOpen(true)}>Assign stations</button>
                   </div>
                 </div>
@@ -5445,9 +5583,10 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
                     <th>Part</th>
                     {formState.pieceType !== 'wheel' ? <th>Tool ID</th> : null}
                     <th>Serial Number</th>
-                    <th>Before Sharpening<br />Notch Length</th>
-                    <th>Before Sharpening<br />Tooth Length</th>
-                    <th>Stock to Remove</th>
+                    {usesShaperMeasurements ? <th>Before Sharpening<br />Height</th> : null}
+                    {usesHobMeasurements ? <th>Before Sharpening<br />Notch Length</th> : null}
+                    {usesHobMeasurements ? <th>Before Sharpening<br />Tooth Length</th> : null}
+                    {usesStockToRemove ? <th>Stock to Remove</th> : null}
                     <th>Reception Inspection</th>
                     <th>Source Quotation</th>
                   </tr>
@@ -5458,15 +5597,34 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
                       <td>{draft.pieceSequence}</td>
                       {formState.pieceType !== 'wheel' ? (
                         <td>
-                          <input value={draft.toolId} onChange={(event) => setSerialAssignmentField(draft.pieceSequence, 'toolId', event.target.value)} placeholder={`TOOL-${String(draft.pieceSequence).padStart(4, '0')}`} />
+                          <ProductionAssetDropdown
+                            id={`production-piece-tool-${draft.pieceSequence}`}
+                            kind="tool"
+                            value={draft.toolId}
+                            placeholder="Select Tool ID"
+                            searchPlaceholder="Search Tool ID, serial or internal ID"
+                            options={selectedCustomerAssetOptions.filter((asset) => asset.toolId)}
+                            onSelect={(asset) => setSerialAssignmentDrafts((current) => current.map((item) => item.pieceSequence === draft.pieceSequence ? { ...item, toolId: asset.toolId } : item))}
+                            onCreate={(toolId) => setSerialAssignmentField(draft.pieceSequence, 'toolId', toolId)}
+                          />
                         </td>
                       ) : null}
                       <td>
-                        <input value={draft.serialNumber} onChange={(event) => setSerialAssignmentField(draft.pieceSequence, 'serialNumber', event.target.value)} placeholder={`${formState.partNumber || 'PART'}-SN-${String(draft.pieceSequence).padStart(4, '0')}`} />
+                        <ProductionAssetDropdown
+                          id={`production-piece-serial-${draft.pieceSequence}`}
+                          kind="serial"
+                          value={draft.serialNumber}
+                          placeholder="Select Serial Number"
+                          searchPlaceholder="Search serial, Tool ID or internal ID"
+                          options={selectedCustomerAssetOptions}
+                          onSelect={(asset) => setSerialAssignmentDrafts((current) => current.map((item) => item.pieceSequence === draft.pieceSequence ? { ...item, serialNumber: asset.serialNumber, toolId: asset.toolId || item.toolId } : item))}
+                          onCreate={(serialNumber) => setSerialAssignmentField(draft.pieceSequence, 'serialNumber', serialNumber)}
+                        />
                       </td>
-                      <td><input type="number" step="any" inputMode="decimal" value={draft.beforeNotch} onChange={(event) => setSerialAssignmentField(draft.pieceSequence, 'beforeNotch', event.target.value)} placeholder="0.000" /></td>
-                      <td><input type="number" step="any" inputMode="decimal" value={draft.beforeToothLength} onChange={(event) => setSerialAssignmentField(draft.pieceSequence, 'beforeToothLength', event.target.value)} placeholder="0.000" /></td>
-                      <td><input type="number" step="any" inputMode="decimal" value={draft.stockToRemove} onChange={(event) => setSerialAssignmentField(draft.pieceSequence, 'stockToRemove', event.target.value)} placeholder="0.000" /></td>
+                      {usesShaperMeasurements ? <td><input type="number" step="any" inputMode="decimal" value={draft.beforeHeight} onChange={(event) => setSerialAssignmentField(draft.pieceSequence, 'beforeHeight', event.target.value)} placeholder="0.000" /></td> : null}
+                      {usesHobMeasurements ? <td><input type="number" step="any" inputMode="decimal" value={draft.beforeNotch} onChange={(event) => setSerialAssignmentField(draft.pieceSequence, 'beforeNotch', event.target.value)} placeholder="0.000" /></td> : null}
+                      {usesHobMeasurements ? <td><input type="number" step="any" inputMode="decimal" value={draft.beforeToothLength} onChange={(event) => setSerialAssignmentField(draft.pieceSequence, 'beforeToothLength', event.target.value)} placeholder="0.000" /></td> : null}
+                      {usesStockToRemove ? <td><input type="number" step="any" inputMode="decimal" value={draft.stockToRemove} onChange={(event) => setSerialAssignmentField(draft.pieceSequence, 'stockToRemove', event.target.value)} placeholder="0.000" /></td> : null}
                       <td>
                         <label className="production-order-evidence-picker">
                           <ImagePlus size={15} />
@@ -5514,22 +5672,26 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
             </div>
             <div className="production-order-serial-table-wrap">
               <table className="production-order-serial-table">
-                <thead><tr><th>Part</th><th>Serial Number</th><th>Station</th></tr></thead>
+                <thead><tr><th>Part</th><th>Serial Number</th><th>Compatible stations (select at least one)</th></tr></thead>
                 <tbody>
                   {serialAssignmentDrafts.map((draft) => (
                     <tr key={draft.pieceSequence}>
                       <td>{draft.pieceSequence}</td>
                       <td>{draft.serialNumber.trim() || <span className="production-order-serial-missing">Serial pending</span>}</td>
                       <td>
-                        <MesOrderDropdown
-                          id={`production-order-piece-station-${draft.pieceSequence}`}
-                          value={draft.assignedStation}
-                          placeholder={formState.assignedWorkCenter ? 'Select station' : 'Select work center first'}
-                          options={selectedWorkCenterStationOptions}
-                          disabled={!formState.assignedWorkCenter}
-                          placement="bottom"
-                          onChange={(assignedStation) => setSerialAssignmentField(draft.pieceSequence, 'assignedStation', assignedStation)}
-                        />
+                        <div className="production-order-compatible-stations">
+                          {selectedWorkCenterStationOptions.map((station) => (
+                            <label key={station.value}>
+                              <input
+                                type="checkbox"
+                                checked={draft.compatibleStations.includes(station.value)}
+                                onChange={() => toggleSerialCompatibleStation(draft.pieceSequence, station.value)}
+                              />
+                              <span>{station.label}</span>
+                            </label>
+                          ))}
+                          {!selectedWorkCenterStationOptions.length ? <small>Select a Work Center with configured stations.</small> : null}
+                        </div>
                       </td>
                     </tr>
                   ))}
