@@ -983,7 +983,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
   const stationOrders = snapshot
     ? snapshot.activeOrders.filter((order) => (
       order.manufacturingType === 'multi-step'
-        ? snapshot.multiStepStationsByOrder[order.id]?.includes(stationCode)
+        ? order.assignedWorkCenter === workCenterCode && snapshot.multiStepStationsByOrder[order.id]?.includes(stationCode)
         : order.assignedWorkCenter === workCenterCode && order.assignedStation === stationCode
     ))
     : [fallbackCurrentOrder];
@@ -1585,10 +1585,15 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
       const preferredStationCode = selectedStationCodeRef.current;
       const isOrderAvailableAtPreferredStation = (order: ProductionOrder) => !preferredStationCode
         || (order.manufacturingType === 'multi-step'
-          ? normalizedSnapshot.multiStepStationsByOrder[order.id]?.includes(preferredStationCode)
+          ? normalizedSnapshot.stationOptions.some((station) => (
+              station.code === preferredStationCode
+              && station.workCenterCode === order.assignedWorkCenter
+            )) && normalizedSnapshot.multiStepStationsByOrder[order.id]?.includes(preferredStationCode)
           : order.assignedStation === preferredStationCode);
       const eligibleOrders = normalizedSnapshot.activeOrders.filter(isOrderAvailableAtPreferredStation);
-      const restoredOrder = eligibleOrders.find((order) => order.id === storedOrderId)
+      const preferredStation = normalizedSnapshot.stationOptions.find((station) => station.code === preferredStationCode);
+      const restoredOrder = eligibleOrders.find((order) => order.orderNumber === preferredStation?.currentJob)
+        ?? eligibleOrders.find((order) => order.id === storedOrderId)
         ?? eligibleOrders.find((order) => order.status === 'running')
         ?? eligibleOrders.find((order) => order.status === 'paused')
         ?? eligibleOrders.find((order) => order.status === 'released')
@@ -1605,7 +1610,16 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
       setSelectedOrderId(restoredOrder?.id ?? '');
       setSelectedWorkCenterCode(restoredOrder?.assignedWorkCenter ?? normalizedSnapshot.workCenter?.code ?? normalizedSnapshot.workCenterOptions[0]?.code ?? '');
       setSelectedStationCode(preferredStationCode || restoredOrder?.assignedStation || normalizedSnapshot.station?.code || '');
-      if (restoredOrder) applyOrder(restoredOrder);
+      if (restoredOrder) {
+        applyOrder(restoredOrder);
+        if (preferredStationCode && restoredOrder.status === 'running' && preferredStation?.currentJob !== restoredOrder.orderNumber) {
+          const { error: stationSyncError } = await supabase.from('mes_work_center_stations')
+            .update({ current_job: restoredOrder.orderNumber, last_event: 'Job running' })
+            .eq('organization_id', organizationId)
+            .eq('id', preferredStation.id);
+          if (stationSyncError) console.warn('Unable to reconcile Operator Terminal station job', stationSyncError);
+        }
+      }
     } catch (error) {
       console.error('Unable to load Operator Terminal snapshot', error);
       setTerminalMessage('Operator Terminal backend is not available yet. Showing demo terminal data.');
@@ -1799,7 +1813,7 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
     if (!snapshot) return;
     const stationActiveOrders = snapshot.activeOrders.filter((order) => (
       order.manufacturingType === 'multi-step'
-        ? snapshot.multiStepStationsByOrder[order.id]?.includes(stationCode)
+        ? order.assignedWorkCenter === workCenterCode && snapshot.multiStepStationsByOrder[order.id]?.includes(stationCode)
         : order.assignedWorkCenter === workCenterCode && order.assignedStation === stationCode
     ));
     const nextOrder = stationActiveOrders.find((order) => order.orderNumber === selectedStation?.currentJob)

@@ -1333,14 +1333,15 @@ function getJobQueueSummary(
   orders: ProductionOrder[],
   machine: JobQueueMachine | null,
   focusOrderId?: string,
+  multiStepStationsByOrder: Record<string, string[]> = {},
 ): JobQueueSummary | null {
   if (!machine?.workCenterCode || !machine.stationCode) return null;
 
   const stationOrders = orders
     .filter((order) => (
-      order.manufacturingType === 'single-operation'
-      && order.assignedWorkCenter === machine.workCenterCode
-      && order.assignedStation === machine.stationCode
+      (order.manufacturingType === 'multi-step'
+        ? order.assignedWorkCenter === machine.workCenterCode && multiStepStationsByOrder[order.id]?.includes(machine.stationCode)
+        : order.assignedWorkCenter === machine.workCenterCode && order.assignedStation === machine.stationCode)
       && ['released', 'running', 'paused'].includes(order.status)
     ))
     .sort((firstOrder, secondOrder) => {
@@ -6070,13 +6071,13 @@ function getProductionOrderRemainingQuantity(order: ProductionOrder) {
   return Math.max(0, order.plannedQuantity - order.completedQuantity - order.scrapQuantity);
 }
 
-function getActiveStationOrders(orders: ProductionOrder[], workCenter: MesWorkCenter | null, station: WorkCenterStation | null) {
+function getActiveStationOrders(orders: ProductionOrder[], workCenter: MesWorkCenter | null, station: WorkCenterStation | null, multiStepStationsByOrder: Record<string, string[]> = {}) {
   if (!workCenter || !station) return [];
 
   return orders.filter((order) => (
-    order.manufacturingType === 'single-operation'
-    && order.assignedWorkCenter === workCenter.code
-    && order.assignedStation === station.code
+    (order.manufacturingType === 'multi-step'
+      ? order.assignedWorkCenter === workCenter.code && multiStepStationsByOrder[order.id]?.includes(station.code)
+      : order.assignedWorkCenter === workCenter.code && order.assignedStation === station.code)
     && ['planned', 'released', 'running', 'paused'].includes(order.status)
     && getProductionOrderRemainingQuantity(order) > 0
   ));
@@ -7199,6 +7200,7 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
   const [productionOrders, setProductionOrders] = React.useState<ProductionOrder[]>([]);
   const [productionEvents, setProductionEvents] = React.useState<WorkCenterProductionEventRow[]>([]);
   const [stationStatusCycles, setStationStatusCycles] = React.useState<StationStatusCycleRow[]>([]);
+  const [multiStepStationsByOrder, setMultiStepStationsByOrder] = React.useState<Record<string, string[]>>({});
   const [cycleReportOpen, setCycleReportOpen] = React.useState(false);
   const [cycleReportDateRange, setCycleReportDateRange] = React.useState<MesOrderDateRange>(() => getMesOrderQuickRange('today'));
   const [cycleReportDownloading, setCycleReportDownloading] = React.useState(false);
@@ -7253,16 +7255,17 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
     if (!silent) setWorkCentersLoading(true);
     setWorkCentersError('');
 
-    const [{ data: workCenterRows, error: workCenterError }, { data: stationRows, error: stationError }, { data: productionOrderRows, error: productionOrderError }, { data: productionEventRows, error: productionEventError }, { data: statusCycleRows, error: statusCycleError }] = await Promise.all([
+    const [{ data: workCenterRows, error: workCenterError }, { data: stationRows, error: stationError }, { data: productionOrderRows, error: productionOrderError }, { data: productionEventRows, error: productionEventError }, { data: statusCycleRows, error: statusCycleError }, { data: serialStationRows, error: serialStationError }] = await Promise.all([
       supabase.from('mes_work_centers').select('*').eq('organization_id', organizationId).order('created_at', { ascending: false }),
       supabase.from('mes_work_center_stations').select('*').eq('organization_id', organizationId).order('created_at', { ascending: true }),
       supabase.from('mes_production_orders').select('*').eq('organization_id', organizationId).order('due_date', { ascending: true }),
       supabase.from('mes_operator_terminal_events').select('production_order_id, station_code, created_at, payload').eq('organization_id', organizationId).eq('event_type', 'production-good').order('created_at', { ascending: false }),
       supabase.from('mes_station_status_cycles').select('id, work_center_id, station_id, station_code, status, production_order_id, order_number, serial_number, client_name, started_at, ended_at').eq('organization_id', organizationId).order('started_at', { ascending: false }),
+      supabase.from('mes_production_serials').select('production_order_id, assigned_station, compatible_stations, result').eq('organization_id', organizationId),
     ]);
 
-    if (workCenterError || stationError || productionOrderError || productionEventError || statusCycleError) {
-      setWorkCentersError(workCenterError?.message ?? stationError?.message ?? productionOrderError?.message ?? productionEventError?.message ?? statusCycleError?.message ?? 'Could not load Work Centers.');
+    if (workCenterError || stationError || productionOrderError || productionEventError || statusCycleError || serialStationError) {
+      setWorkCentersError(workCenterError?.message ?? stationError?.message ?? productionOrderError?.message ?? productionEventError?.message ?? statusCycleError?.message ?? serialStationError?.message ?? 'Could not load Work Centers.');
       if (silent) return;
       setWorkCenters([]);
       setProductionOrders([]);
@@ -7289,6 +7292,15 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
     setProductionOrders((productionOrderRows as ProductionOrderRow[] | null ?? []).map(mapProductionOrderRow));
     setProductionEvents((productionEventRows as WorkCenterProductionEventRow[] | null) ?? []);
     setStationStatusCycles((statusCycleRows as StationStatusCycleRow[] | null) ?? []);
+    const nextMultiStepStationsByOrder: Record<string, string[]> = {};
+    (serialStationRows ?? []).forEach((serial) => {
+      if (serial.result) return;
+      const stations = nextMultiStepStationsByOrder[serial.production_order_id] ?? [];
+      const compatibleStations = serial.compatible_stations?.length ? serial.compatible_stations : serial.assigned_station ? [serial.assigned_station] : [];
+      compatibleStations.forEach((stationCode: string) => { if (!stations.includes(stationCode)) stations.push(stationCode); });
+      nextMultiStepStationsByOrder[serial.production_order_id] = stations;
+    });
+    setMultiStepStationsByOrder(nextMultiStepStationsByOrder);
     setSelectedWorkCenterId((currentId) => (nextWorkCenters.some((workCenter) => workCenter.id === currentId) ? currentId : nextWorkCenters[0]?.id ?? ''));
     setSelectedStationId((currentId) => (nextWorkCenters.some((workCenter) => workCenter.stations.some((station) => station.id === currentId)) ? currentId : ''));
     setWorkCentersLoading(false);
@@ -7338,19 +7350,20 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
   const selectedWorkCenter = workCenters.find((workCenter) => workCenter.id === selectedWorkCenterId) ?? workCenters[0] ?? null;
   const selectedStations = selectedWorkCenter ? getStationsForWorkCenter(selectedWorkCenter) : [];
   const selectedStation = selectedStations.find((station) => station.id === selectedStationId) ?? selectedStations[0] ?? null;
+  const selectedStationActiveCycle = selectedStation ? stationStatusCycles.find((cycle) => cycle.station_id === selectedStation.id && !cycle.ended_at) : null;
   const getStationJobQueueSummary = React.useCallback((workCenter: MesWorkCenter | null, station: WorkCenterStation | null) => (
     getJobQueueSummary(productionOrders, workCenter && station ? {
       workCenterCode: workCenter.code,
       stationCode: station.code,
       stationName: station.name,
-    } : null)
-  ), [productionOrders]);
+    } : null, undefined, multiStepStationsByOrder)
+  ), [multiStepStationsByOrder, productionOrders]);
   const selectedStationQueueSummary = getStationJobQueueSummary(selectedWorkCenter, selectedStation);
-  const selectedStationCurrentJob = selectedStationQueueSummary?.currentJob?.orderNumber ?? selectedStation?.currentJob ?? null;
+  const selectedStationCurrentJob = selectedStationActiveCycle?.order_number ?? selectedStationQueueSummary?.currentJob?.orderNumber ?? selectedStation?.currentJob ?? null;
   const selectedStationQueueCount = selectedStationQueueSummary?.queuedJobs.length ?? selectedStation?.queueCount ?? 0;
   const todayIsoDate = getTodayIsoDate();
   const selectedStationPlanningMetrics = getStationPlanningMetrics(
-    getActiveStationOrders(productionOrders, selectedWorkCenter, selectedStation),
+    getActiveStationOrders(productionOrders, selectedWorkCenter, selectedStation, multiStepStationsByOrder),
     todayIsoDate,
   );
   const workCenterPlanningSummaries = React.useMemo(() => new Map(workCenters.map((workCenter) => [
@@ -8865,8 +8878,12 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
               {filteredStations.map((station) => {
                 const stationSelected = station.id === selectedStation?.id;
                 const stationQueueSummary = getStationJobQueueSummary(selectedWorkCenter, station);
-                const stationCurrentJob = stationQueueSummary?.currentJob?.orderNumber ?? station.currentJob ?? 'Unassigned';
-                const stationCurrentOrder = stationQueueSummary?.currentJob ?? productionOrders.find((order) => order.orderNumber === station.currentJob) ?? null;
+                const activeStatusCycle = stationStatusCycles.find((cycle) => cycle.station_id === station.id && !cycle.ended_at);
+                const stationCurrentJob = activeStatusCycle?.order_number ?? stationQueueSummary?.currentJob?.orderNumber ?? station.currentJob ?? 'Unassigned';
+                const stationCurrentOrder = productionOrders.find((order) => order.id === activeStatusCycle?.production_order_id)
+                  ?? stationQueueSummary?.currentJob
+                  ?? productionOrders.find((order) => order.orderNumber === station.currentJob)
+                  ?? null;
                 const stationQueueCount = stationQueueSummary?.queuedJobs.length ?? station.queueCount;
                 const lastProductionEvent = productionEvents.find((event) => event.station_code === station.code);
                 const lastProducedOrder = lastProductionEvent?.production_order_id
@@ -8876,9 +8893,8 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
                   ? lastProductionEvent.payload.serial_number
                   : 'Not recorded';
                 const processCustomColor = customCapabilityColors[station.processStep];
-                const activeStatusCycle = stationStatusCycles.find((cycle) => cycle.station_id === station.id && !cycle.ended_at);
                 const stationPlanningMetrics = getStationPlanningMetrics(
-                  getActiveStationOrders(productionOrders, selectedWorkCenter, station),
+                  getActiveStationOrders(productionOrders, selectedWorkCenter, station, multiStepStationsByOrder),
                   todayIsoDate,
                 );
                 return (
