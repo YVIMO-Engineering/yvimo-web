@@ -798,9 +798,14 @@ export async function switchOperatorActiveOrder(
     .select('work_center_id, mes_work_centers!inner(code)')
     .eq('organization_id', input.organizationId)
     .eq('code', stationCode)
+    .eq('mes_work_centers.code', selectedOrder.assigned_work_center)
     .maybeSingle();
   const workCenterRelation = stationData?.mes_work_centers as { code?: string } | Array<{ code?: string }> | null | undefined;
-  const targetWorkCenterCode = (Array.isArray(workCenterRelation) ? workCenterRelation[0]?.code : workCenterRelation?.code) || selectedOrder.assigned_work_center;
+  const targetWorkCenterCode = (Array.isArray(workCenterRelation) ? workCenterRelation[0]?.code : workCenterRelation?.code) || '';
+
+  if (!stationData || targetWorkCenterCode !== selectedOrder.assigned_work_center) {
+    throw new Error('The selected station does not belong to the production order Work Center.');
+  }
 
   if (selectedOrder.manufacturing_type === 'multi-step') {
     const { data: assignedSerial, error: assignedSerialError } = await client
@@ -833,7 +838,7 @@ export async function switchOperatorActiveOrder(
     .from('mes_production_orders')
     .update(selectedOrder.manufacturing_type === 'multi-step'
       ? { status: 'paused' }
-      : { status: 'paused', assigned_work_center: targetWorkCenterCode, assigned_station: stationCode })
+      : { status: 'paused', assigned_station: stationCode })
     .eq('id', input.orderId)
     .eq('organization_id', input.organizationId)
     .select('*')
@@ -849,7 +854,8 @@ export async function switchOperatorActiveOrder(
       last_event: 'Order selected - awaiting operator start',
     })
     .eq('organization_id', input.organizationId)
-    .eq('code', stationCode);
+    .eq('code', stationCode)
+    .eq('work_center_id', stationData.work_center_id);
 
   await client
     .from('mes_operator_terminal_events')
