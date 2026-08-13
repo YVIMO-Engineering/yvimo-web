@@ -129,6 +129,7 @@ type ProductionQuotationOption = {
   clientName: string;
   partId: string;
   partType: string;
+  serialNumber: string;
   totalPrice: number;
   currency: string;
 };
@@ -1045,7 +1046,7 @@ function ProductionQuotationDropdown({ id, value, options, onChange }: {
   const menuRef = React.useRef<HTMLDivElement | null>(null);
   const selected = options.find((option) => option.id === value);
   const filteredOptions = options.filter((option) => (
-    `${option.quotationNumber} ${option.clientName} ${option.partId} ${option.partType} ${formatProductionQuotationValue(option)}`.toLowerCase().includes(search.trim().toLowerCase())
+    `${option.quotationNumber} ${option.clientName} ${option.partId} ${option.serialNumber} ${option.partType} ${formatProductionQuotationValue(option)}`.toLowerCase().includes(search.trim().toLowerCase())
   ));
   const updatePosition = React.useCallback(() => {
     const rect = triggerRef.current?.getBoundingClientRect();
@@ -1081,10 +1082,10 @@ function ProductionQuotationDropdown({ id, value, options, onChange }: {
   }, [open, updatePosition]);
   const menu = open && position ? createPortal(
     <div className="production-quotation-dropdown-menu" ref={menuRef} style={position} role="listbox" id={`${id}-listbox`}>
-      <div className="production-quotation-dropdown-search"><Search size={15} /><input autoFocus value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search quotation, client, Part ID or type" /></div>
+      <div className="production-quotation-dropdown-search"><Search size={15} /><input autoFocus value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search quotation, client, Part ID, serial or type" /></div>
       <button className={!value ? 'selected' : ''} type="button" onClick={() => { onChange(''); setOpen(false); }}><span><strong>No quotation</strong><small>Leave this piece unlinked</small></span>{!value ? <Check size={15} /> : null}</button>
       {filteredOptions.map((option) => <button className={option.id === value ? 'selected' : ''} type="button" role="option" aria-selected={option.id === value} key={option.id} onClick={() => { onChange(option.id); setOpen(false); setSearch(''); }}>
-        <span><strong>{option.quotationNumber}</strong><small>{option.clientName}</small><em>Part ID: {option.partId || 'N/A'} · {option.partType || 'N/A'} · {formatProductionQuotationValue(option)}</em></span>{option.id === value ? <Check size={15} /> : null}
+        <span><strong>{option.quotationNumber}</strong><small>{option.clientName}</small><em>Part ID: {option.partId || 'N/A'} · Serial: {option.serialNumber || 'N/A'} · {option.partType || 'N/A'} · {formatProductionQuotationValue(option)}</em></span>{option.id === value ? <Check size={15} /> : null}
       </button>)}
       {!filteredOptions.length ? <p>No quotations match this search.</p> : null}
     </div>, document.body) : null;
@@ -4003,7 +4004,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
         .order('customer_name', { ascending: true }),
       supabase
         .from('mes_quotations')
-        .select('id, quotation_number, client_name, tool_id, part_type, total_price, currency')
+        .select('id, quotation_number, client_name, tool_id, serial_number, part_type, total_price, currency')
         .eq('organization_id', organizationId)
         .order('created_at', { ascending: false }),
       supabase
@@ -4039,6 +4040,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
         quotationNumber: quotation.quotation_number as string,
         clientName: quotation.client_name as string,
         partId: quotation.tool_id as string,
+        serialNumber: (quotation.serial_number as string | null) || '',
         partType: quotation.part_type as string,
         totalPrice: Number(quotation.total_price) || 0,
         currency: (quotation.currency as string | null) || 'USD',

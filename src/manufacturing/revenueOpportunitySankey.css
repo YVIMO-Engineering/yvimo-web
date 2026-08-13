@@ -1,0 +1,49 @@
+.price-mini-bridge {
+  display: none !important;
+}
+
+.price-sankey {
+  max-height: 620px;
+}
+
+.price-sankey .price-node-card .card-bg {
+  fill: #fff;
+  stroke: #dbe4ed;
+  stroke-width: 1;
+  filter: drop-shadow(0 4px 7px #0f172a24);
+}
+
+.price-sankey .price-node-card.loss .card-accent {
+  fill: #ef4444;
+}
+
+.price-sankey .price-node-card.gain .card-accent {
+  fill: #2563eb;
+}
+
+.price-sankey .price-node-card.aligned .card-accent {
+  fill: #10b981;
+}
+
+.price-sankey .price-node-card .node-detail {
+  fill: #64748b;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.price-sankey .price-node-card .node-amount {
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.price-sankey .price-node-card.loss .node-amount {
+  fill: #dc2626;
+}
+
+.price-sankey .price-node-card.gain .node-amount {
+  fill: #2563eb;
+}
+
+.price-sankey .price-node-card.aligned .node-amount {
+  fill: #059669;
+}
