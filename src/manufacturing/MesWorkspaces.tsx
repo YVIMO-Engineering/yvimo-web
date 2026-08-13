@@ -1,6 +1,6 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { Activity, AlertTriangle, ArrowLeft, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleHelp, CircleX, Clock3, Copy, Database, Download, Eye, Factory, Frown, FileText, ImagePlus, LoaderCircle, Maximize2, Meh, Minimize2, Minus, PaintBucket, Pencil, Plus, Power, RadioTower, RotateCcw, Ruler, Search, Smile, Timer, Wrench, X } from 'lucide-react';
+import { Activity, AlertTriangle, ArrowLeft, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleHelp, CircleX, Clock3, Copy, Database, Download, Eye, Factory, Frown, FileText, ImagePlus, LoaderCircle, Maximize2, Meh, Minimize2, Minus, Move, PaintBucket, Pencil, Plus, Power, RadioTower, RotateCcw, Ruler, Search, Smile, Timer, Wrench, X, ZoomIn, ZoomOut } from 'lucide-react';
 import { GoogleWorkCentersMap } from '../components/maps/GoogleWorkCentersMap';
 import { resolveGooglePlacesAddressMatch, searchGooglePlacesAddressMatches, type GooglePlacesAddressMatch } from '../lib/maps/googlePlacesAddressLookup';
 import { supabase } from '../lib/supabaseClient';
@@ -1768,6 +1768,10 @@ export function ProductionOrderDetailsModal({
   const [activeView, setActiveView] = React.useState<'production' | 'quality' | 'damage' | 'coating'>('production');
   const [preview, setPreview] = React.useState<ProductionOrderDetailPreview | null>(null);
   const [previewError, setPreviewError] = React.useState('');
+  const [previewZoom, setPreviewZoom] = React.useState(1);
+  const [previewPosition, setPreviewPosition] = React.useState({ x: 0, y: 0 });
+  const [previewDownloading, setPreviewDownloading] = React.useState(false);
+  const previewDragRef = React.useRef<{ pointerId: number; x: number; y: number; originX: number; originY: number } | null>(null);
   const [pdfGenerating, setPdfGenerating] = React.useState(false);
   const [releasePiece, setReleasePiece] = React.useState<ProductionOrderDetailPiece | null>(null);
   const [releaseCode, setReleaseCode] = React.useState('');
@@ -1965,6 +1969,37 @@ export function ProductionOrderDetailsModal({
     } catch (error) {
       console.error('Unable to open production piece evidence', error);
       setPreviewError(error instanceof Error && error.message ? error.message : 'Unable to open evidence.');
+    }
+  };
+  React.useEffect(() => {
+    setPreviewZoom(1);
+    setPreviewPosition({ x: 0, y: 0 });
+    previewDragRef.current = null;
+  }, [preview?.url]);
+  const changePreviewZoom = (nextZoom: number) => {
+    const zoom = Math.min(5, Math.max(1, nextZoom));
+    setPreviewZoom(zoom);
+    if (zoom === 1) setPreviewPosition({ x: 0, y: 0 });
+  };
+  const downloadPreview = async () => {
+    if (!preview || previewDownloading) return;
+    setPreviewDownloading(true);
+    try {
+      const response = await fetch(preview.url);
+      if (!response.ok) throw new Error('Unable to download evidence.');
+      const objectUrl = URL.createObjectURL(await response.blob());
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = preview.title || 'evidence';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1_000);
+    } catch (error) {
+      console.error('Unable to download production order evidence', error);
+      window.open(preview.url, '_blank', 'noopener,noreferrer');
+    } finally {
+      setPreviewDownloading(false);
     }
   };
   const generateOrderDetailsPdf = async () => {
@@ -2441,10 +2476,7 @@ export function ProductionOrderDetailsModal({
                         <td>{piece.serialNumber || '-'}</td>
                         <td>{piece.toolId || '-'}</td>
                         <td>{renderEvidence(receptionEvidence, 'View reception', 'Reception inspected')}</td>
-                        <td><div className="production-order-evidence-stage-stack">
-                          {renderEvidence(sharpeningEvidence, 'View inspection', 'Sharpening inspected')}
-                          <span className={coatingProgress?.coatingSentAt ? 'confirmed' : 'pending'}>{coatingProgress?.coatingSentAt ? <Check size={14} /> : <Clock3 size={14} />}<span><b>Coating dispatch</b><time>{coatingProgress?.coatingSentAt ? new Date(coatingProgress.coatingSentAt).toLocaleString() : 'Pending'}</time></span></span>
-                        </div></td>
+                        <td>{renderEvidence(sharpeningEvidence, 'View inspection', 'Sharpening inspected')}</td>
                         <td><div className="production-order-evidence-stage-stack">
                           {renderEvidence(coatingEvidence, 'View inspection', 'Coating inspected')}
                           <span className={coatingProgress?.coatingReturnedAt ? 'confirmed' : 'pending'}>{coatingProgress?.coatingReturnedAt ? <Check size={14} /> : <Clock3 size={14} />}<span><b>Coating return</b><time>{coatingProgress?.coatingReturnedAt ? new Date(coatingProgress.coatingReturnedAt).toLocaleString() : 'Pending'}</time></span></span>
@@ -2518,12 +2550,47 @@ export function ProductionOrderDetailsModal({
                 <span>{preview.subtitle}</span>
                 <strong id="production-order-preview-title">{preview.title}</strong>
               </div>
-              <div className={`supplier-document-preview production-order-preview-frame ${preview.type}`}>
+              <div
+                className={`supplier-document-preview production-order-preview-frame ${preview.type}${previewZoom > 1 ? ' zoomed' : ''}`}
+                onWheel={preview.type === 'image' ? (event) => {
+                  event.preventDefault();
+                  changePreviewZoom(previewZoom + (event.deltaY < 0 ? 0.25 : -0.25));
+                } : undefined}
+                onPointerDown={preview.type === 'image' && previewZoom > 1 ? (event) => {
+                  event.currentTarget.setPointerCapture(event.pointerId);
+                  previewDragRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, originX: previewPosition.x, originY: previewPosition.y };
+                } : undefined}
+                onPointerMove={preview.type === 'image' ? (event) => {
+                  const drag = previewDragRef.current;
+                  if (!drag || drag.pointerId !== event.pointerId) return;
+                  setPreviewPosition({ x: drag.originX + event.clientX - drag.x, y: drag.originY + event.clientY - drag.y });
+                } : undefined}
+                onPointerUp={preview.type === 'image' ? (event) => {
+                  if (previewDragRef.current?.pointerId === event.pointerId) previewDragRef.current = null;
+                } : undefined}
+                onPointerCancel={preview.type === 'image' ? () => { previewDragRef.current = null; } : undefined}
+                onDoubleClick={preview.type === 'image' ? () => changePreviewZoom(previewZoom > 1 ? 1 : 2) : undefined}
+              >
                 {preview.type === 'pdf'
                   ? <iframe src={`${preview.url}#toolbar=1&navpanes=0&scrollbar=1&view=FitH`} title={`Preview ${preview.title}`} />
-                  : <img src={preview.url} alt={preview.title} />}
+                  : <>
+                    <img
+                      src={preview.url}
+                      alt={preview.title}
+                      draggable={false}
+                      style={{ transform: `translate3d(${previewPosition.x}px, ${previewPosition.y}px, 0) scale(${previewZoom})` }}
+                    />
+                    <div className="production-order-preview-controls" aria-label="Image controls">
+                      <button type="button" onClick={() => changePreviewZoom(previewZoom - 0.25)} disabled={previewZoom <= 1} aria-label="Zoom out"><ZoomOut size={18} /></button>
+                      <output aria-label="Current zoom">{Math.round(previewZoom * 100)}%</output>
+                      <button type="button" onClick={() => changePreviewZoom(previewZoom + 0.25)} disabled={previewZoom >= 5} aria-label="Zoom in"><ZoomIn size={18} /></button>
+                      <button type="button" onClick={() => changePreviewZoom(1)} disabled={previewZoom === 1 && previewPosition.x === 0 && previewPosition.y === 0} aria-label="Reset image"><RotateCcw size={17} /></button>
+                    </div>
+                    {previewZoom > 1 ? <span className="production-order-preview-pan-hint"><Move size={14} /> Drag to pan</span> : null}
+                  </>}
               </div>
               <div className="supplier-modal-actions">
+                <button type="button" onClick={() => void downloadPreview()} disabled={previewDownloading}><Download size={17} />{previewDownloading ? 'Downloading...' : 'Download'}</button>
                 <button type="button" onClick={() => setPreview(null)}>Close</button>
               </div>
             </div>

@@ -11900,21 +11900,115 @@ body.work-center-map-expanded .logged-workspace {
 }
 
 .production-order-preview-modal {
-  width: min(84vw, 980px);
+  width: min(94vw, 1200px);
+  max-height: calc(100dvh - var(--header-height, 96px) - 42px);
+  overflow: hidden;
+}
+
+.production-order-preview-modal > div {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  max-height: calc(100dvh - var(--header-height, 96px) - 86px);
 }
 
 .production-order-preview-frame.image {
+  position: relative;
   display: grid;
   place-items: center;
-  padding: 12px;
+  height: min(70dvh, 760px);
+  min-height: 280px;
+  padding: 0;
+  overflow: hidden;
+  touch-action: none;
+  cursor: zoom-in;
+  user-select: none;
+}
+
+.production-order-preview-frame.image.zoomed {
+  cursor: grab;
+}
+
+.production-order-preview-frame.image.zoomed:active {
+  cursor: grabbing;
 }
 
 .production-order-preview-frame.image img {
+  position: absolute;
+  inset: 0;
   display: block;
+  width: auto;
   max-width: 100%;
+  height: auto;
   max-height: 100%;
+  margin: auto;
   border-radius: 6px;
-  object-fit: contain;
+  transform-origin: center;
+  transition: transform 120ms ease-out;
+  pointer-events: none;
+}
+
+.production-order-preview-frame.image.zoomed img {
+  transition: none;
+}
+
+.production-order-preview-controls {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.82);
+  color: #fff;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.25);
+  backdrop-filter: blur(8px);
+}
+
+.production-order-preview-controls button {
+  display: inline-grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.production-order-preview-controls button:hover:not(:disabled),
+.production-order-preview-controls button:focus-visible {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.production-order-preview-controls button:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.production-order-preview-controls output {
+  min-width: 52px;
+  text-align: center;
+  font-size: 0.75rem;
+  font-weight: 900;
+}
+
+.production-order-preview-pan-hint {
+  position: absolute;
+  bottom: 18px;
+  left: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 8px;
+  padding: 7px 9px;
+  background: rgba(15, 23, 42, 0.76);
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 800;
+  pointer-events: none;
 }
 
 .mes-modal-backdrop.pending-work-report-backdrop {
