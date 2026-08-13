@@ -15,6 +15,7 @@ import {
   ChevronRight,
   Check,
   CircuitBoard,
+  CircleDollarSign,
   ClipboardCheck,
   Cloud,
   Code2,
@@ -45,6 +46,7 @@ import {
   Star,
   TerminalSquare,
   Truck,
+  TrendingUp,
   UserPlus,
   Users,
   Workflow,
@@ -66,6 +68,7 @@ import { CustomerOperationsWorkspace, type ClientsContextTab } from './manufactu
 import { translateClientsText } from './manufacturing/clientsI18n';
 import { OrderRisksWorkspace } from './manufacturing/OrderRisksWorkspace';
 import { ImportCostingWorkspace } from './manufacturing/ImportCostingWorkspace';
+import { RevenueOpportunityWorkspace } from './manufacturing/RevenueOpportunityWorkspace';
 import './manufacturing/customerOperations.css';
 import './manufacturing/clientBalances.css';
 import './styles.css';
@@ -3344,6 +3347,14 @@ function LoggedDashboardPage({
       path: '/workspace/manufacturing-ops/intelligence/throughput',
     },
     {
+      label: 'Revenue Opportunity',
+      description: 'Compare legacy and YVIMO pricing, quantify revenue gaps, and identify realistic operational upside.',
+      icon: CircleDollarSign,
+      path: '/workspace/manufacturing-ops/intelligence/revenue-opportunity',
+      implemented: true,
+      tone: 'green',
+    },
+    {
       label: 'Production Reports',
       description: 'Prepare production summaries, KPI reports, and execution history snapshots.',
       icon: FileUp,
@@ -3408,7 +3419,7 @@ function LoggedDashboardPage({
     const positionsByModule: Record<string, number[]> = {
       MES: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
       APS: [1, 4, 5, 6, 8],
-      'Operations Intelligence': [1, 2, 3, 4, 5, 8],
+      'Operations Intelligence': [1, 2, 3, 4, 5, 6, 8],
     };
     return positionsByModule[moduleLabel]?.[index] ?? index + 1;
   };
@@ -3442,6 +3453,8 @@ function LoggedDashboardPage({
     || activePath === '/workspace/manufacturing-ops/mes/traceability';
   const isOrderRisksPage = activePath === '/workspace/manufacturing-ops/intelligence/order-risks';
   const isImportCostingPage = activePath === '/workspace/manufacturing-ops/intelligence/import-costing';
+  const isRevenueOpportunitySection = activePath.startsWith('/workspace/manufacturing-ops/intelligence/revenue-opportunity');
+  const activeRevenueSection = activePath.endsWith('/optimization') ? 'optimization' : 'price-misalignment';
   const supplierContextTabs: Array<{
     value: SupplierContextTab;
     label: string;
@@ -3525,6 +3538,12 @@ function LoggedDashboardPage({
     }
     if (activePath === '/workspace/manufacturing-ops/intelligence/import-costing') {
       return <ImportCostingWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} />;
+    }
+    if (activePath === '/workspace/manufacturing-ops/intelligence/revenue-opportunity') {
+      return <RevenueOpportunityWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} activeSection={activeRevenueSection} />;
+    }
+    if (activePath === '/workspace/manufacturing-ops/intelligence/revenue-opportunity/price-misalignment' || activePath === '/workspace/manufacturing-ops/intelligence/revenue-opportunity/optimization') {
+      return <RevenueOpportunityWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} activeSection={activeRevenueSection} />;
     }
     if (activePath === '/workspace/manufacturing-ops/mes/orders') {
       return <ProductionOrdersWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} />;
@@ -4109,8 +4128,8 @@ function LoggedDashboardPage({
     <main className={[
       'logged-shell',
       isOperatorTerminalPage ? 'operator-terminal-shell' : '',
-      isCompactMesApplicationPage || isOrderRisksPage || isImportCostingPage ? 'compact-mes-application-shell' : '',
-      isSupplierOperationsPage || isQualityOperationsPage || isClientsOperationsPage ? 'supplier-context-shell' : '',
+      isCompactMesApplicationPage || isOrderRisksPage || isImportCostingPage || isRevenueOpportunitySection ? 'compact-mes-application-shell' : '',
+      isSupplierOperationsPage || isQualityOperationsPage || isClientsOperationsPage || isRevenueOpportunitySection ? 'supplier-context-shell' : '',
       isSupplierAccessOverview ? 'supplier-access-shell' : '',
       isSupplierAccessOverview && supplierCustomerPickerOpen ? 'supplier-customer-picker-open' : '',
     ].filter(Boolean).join(' ')}>
@@ -4336,6 +4355,16 @@ function LoggedDashboardPage({
                 </button>
               );
             })}
+          </nav>
+        </aside>
+      ) : null}
+
+      {isRevenueOpportunitySection ? (
+        <aside className="supplier-shell-context-menu clients-shell-context-menu revenue-shell-context-menu" aria-label="Revenue Opportunity sections">
+          <div><span>OPS INTELLIGENCE</span><strong>Revenue Opportunity</strong></div>
+          <nav>
+            <button type="button" className={activeRevenueSection === 'price-misalignment' ? 'active' : ''} onClick={() => onNavigate('/workspace/manufacturing-ops/intelligence/revenue-opportunity/price-misalignment')}><CircleDollarSign size={18} /><span>Price Misalignment</span></button>
+            <button type="button" className={activeRevenueSection === 'optimization' ? 'active' : ''} onClick={() => onNavigate('/workspace/manufacturing-ops/intelligence/revenue-opportunity/optimization')}><TrendingUp size={18} /><span>Revenue Optimization</span></button>
           </nav>
         </aside>
       ) : null}

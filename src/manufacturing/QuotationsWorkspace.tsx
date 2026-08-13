@@ -37,6 +37,7 @@ type Props = {
 type QuotationStatus = "draft" | "sent" | "approved" | "declined";
 type PartType = "Hob" | "Shaper" | "Shaper with shank" | "Shaver" | "Other";
 type Customer = { id: string; customer_name: string };
+type LegacyPrice = { id: string; client_name: string; tool_id: string; serial_number: string; price: number; currency: string; usage_count: number; last_used_at: string | null; is_active: boolean; updated_at: string };
 type Quotation = {
   id: string;
   quotation_number: string;
@@ -494,6 +495,8 @@ export function QuotationsWorkspace({
   organizationLogoUrl = "",
 }: Props) {
   const [quotations, setQuotations] = React.useState<Quotation[]>([]);
+  const [legacyPrices, setLegacyPrices] = React.useState<LegacyPrice[]>([]);
+  const [registerSection, setRegisterSection] = React.useState<"quotations" | "legacy">("quotations");
   const [customers, setCustomers] = React.useState<Customer[]>([]);
   const [search, setSearch] = React.useState("");
   const [view, setView] = React.useState<"all" | QuotationStatus>("all");
@@ -538,7 +541,7 @@ export function QuotationsWorkspace({
 
   const loadData = React.useCallback(async () => {
     setLoading(true);
-    const [quotationResult, customerResult, itemResult] = await Promise.all([
+    const [quotationResult, customerResult, itemResult, legacyResult] = await Promise.all([
       supabase
         .from("mes_quotations")
         .select("*")
@@ -555,6 +558,11 @@ export function QuotationsWorkspace({
         .select("*")
         .eq("organization_id", organizationId)
         .order("sort_order"),
+      supabase
+        .from("mes_legacy_prices")
+        .select("id, client_name, tool_id, serial_number, price, currency, usage_count, last_used_at, is_active, updated_at")
+        .eq("organization_id", organizationId)
+        .order("last_used_at", { ascending: false, nullsFirst: false }),
     ]);
     if (!quotationResult.error)
       setQuotations((quotationResult.data ?? []) as Quotation[]);
@@ -592,6 +600,7 @@ export function QuotationsWorkspace({
       }
       setItemsByQuotation(grouped);
     }
+    if (!legacyResult.error) setLegacyPrices((legacyResult.data ?? []) as LegacyPrice[]);
     setLoading(false);
   }, [organizationId]);
   React.useEffect(() => {
@@ -1198,7 +1207,11 @@ export function QuotationsWorkspace({
             </p>
           </div>
         </div>
-        <section className="quotations-toolbar">
+        <nav className="quotations-register-tabs" aria-label="Quotation registers">
+          <button type="button" className={registerSection === "quotations" ? "active" : ""} onClick={() => setRegisterSection("quotations")}>YVIMO Quotations</button>
+          <button type="button" className={registerSection === "legacy" ? "active legacy" : "legacy"} onClick={() => setRegisterSection("legacy")}>Legacy Prices <span>{legacyPrices.length}</span></button>
+        </nav>
+        <section className={`quotations-toolbar${registerSection === "legacy" ? " quotations-section-hidden" : ""}`}>
           <div className="quotations-toolbar-actions">
             <button
               className="quotations-new-button"
@@ -1250,14 +1263,14 @@ export function QuotationsWorkspace({
             ) : null}
           </div>
           <label className="production-orders-search production-orders-overview-search">
-            <span>Search quotations</span>
+            <span>{registerSection === "legacy" ? "Search legacy prices" : "Search quotations"}</span>
             <div>
               <Search size={17} />
               <input
                 type="search"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Quotation, client, tool, serial, status"
+                placeholder={registerSection === "legacy" ? "Client, Tool ID, serial or price" : "Quotation, client, tool, serial, status"}
               />
             </div>
           </label>
@@ -1267,7 +1280,13 @@ export function QuotationsWorkspace({
             {message}
           </div>
         ) : null}
-        <section className="production-orders-main-panel quotations-table-panel">
+        {registerSection === "legacy" ? <section className="production-orders-main-panel quotations-table-panel legacy-prices-panel">
+          <div className="production-orders-panel-title"><div className="production-orders-panel-copy"><span>Historical price register</span><strong>Legacy Prices by Tool ID + Serial Number</strong></div><span>{legacyPrices.length} records</span></div>
+          <div className="mes-table-wrap production-orders-table-wrap"><table className="mes-table production-orders-table quotations-table"><thead><tr><th>Client</th><th>Tool ID</th><th>Serial Number</th><th>Legacy Price</th><th>Uses</th><th>Last used</th><th>Status</th></tr></thead><tbody>
+            {legacyPrices.filter((item) => `${item.client_name} ${item.tool_id} ${item.serial_number} ${item.price}`.toLowerCase().includes(search.toLowerCase())).map((item) => <tr key={item.id}><td><strong>{item.client_name || "—"}</strong></td><td><strong>{item.tool_id}</strong></td><td><strong>{item.serial_number}</strong></td><td><strong>{item.currency} {Number(item.price).toFixed(2)}</strong></td><td>{item.usage_count}</td><td>{item.last_used_at ? new Date(item.last_used_at).toLocaleDateString() : "Not used yet"}</td><td><span className={`quotation-status ${item.is_active ? "approved" : "declined"}`}>{item.is_active ? "active" : "inactive"}</span></td></tr>)}
+            {!legacyPrices.length ? <tr><td className="production-orders-table-empty" colSpan={7}><div><span>Legacy Prices</span><strong>No historical prices have been registered yet.</strong></div></td></tr> : null}
+          </tbody></table></div>
+        </section> : <section className="production-orders-main-panel quotations-table-panel">
           <div className="production-orders-panel-title">
             <div className="production-orders-panel-copy">
               <span>Quotation register</span>
@@ -1391,7 +1410,7 @@ export function QuotationsWorkspace({
               </button>
             </div>
           </div>
-        </section>
+        </section>}
         {selectedQuotation ? (
           <div className="quotation-pdf-stage" aria-hidden="true">
             <article className="quotation-pdf-document" ref={quotationPdfRef}>

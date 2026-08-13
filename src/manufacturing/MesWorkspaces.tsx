@@ -120,6 +120,7 @@ type ProductionSerialAssignmentDraft = {
   receptionEvidenceFile: File | null;
   receptionEvidenceName: string;
   quotationId: string;
+  legacyPriceId: string;
 };
 
 type ProductionQuotationOption = {
@@ -129,6 +130,16 @@ type ProductionQuotationOption = {
   partId: string;
   partType: string;
   totalPrice: number;
+  currency: string;
+};
+
+type ProductionLegacyPriceOption = {
+  id: string;
+  customerId: string;
+  clientName: string;
+  toolId: string;
+  serialNumber: string;
+  price: number;
   currency: string;
 };
 
@@ -277,6 +288,7 @@ type ProductionSerialInsertRow = {
   before_tooth_length: number | null;
   stock_to_remove: number | null;
   quotation_id: string | null;
+  legacy_price_id: string | null;
 };
 
 type ProductionSerialAssignmentRow = {
@@ -291,6 +303,7 @@ type ProductionSerialAssignmentRow = {
   before_tooth_length?: number | null;
   stock_to_remove?: number | null;
   quotation_id?: string | null;
+  legacy_price_id?: string | null;
 };
 
 type TraceabilityCaptureRow = {
@@ -1083,6 +1096,73 @@ function ProductionQuotationDropdown({ id, value, options, onChange }: {
   </div>;
 }
 
+function ProductionLegacyPriceDropdown({ id, value, toolId, serialNumber, options, onChange, onCreate }: {
+  id: string;
+  value: string;
+  toolId: string;
+  serialNumber: string;
+  options: ProductionLegacyPriceOption[];
+  onChange: (value: string) => void;
+  onCreate: (price: number, currency: string) => Promise<void>;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const [search, setSearch] = React.useState('');
+  const [price, setPrice] = React.useState('');
+  const [saving, setSaving] = React.useState(false);
+  const [position, setPosition] = React.useState<{ top: number; left: number; width: number; maxHeight: number } | null>(null);
+  const triggerRef = React.useRef<HTMLDivElement | null>(null);
+  const menuRef = React.useRef<HTMLDivElement | null>(null);
+  const selected = options.find((option) => option.id === value);
+  const exact = options.find((option) => option.toolId.trim().toLowerCase() === toolId.trim().toLowerCase() && option.serialNumber.trim().toLowerCase() === serialNumber.trim().toLowerCase());
+  const filtered = options.filter((option) => `${option.toolId} ${option.serialNumber} ${option.clientName} ${option.price} ${option.currency}`.toLowerCase().includes(search.toLowerCase()));
+  const updatePosition = React.useCallback(() => {
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const padding = 12;
+    const width = Math.min(380, window.innerWidth - padding * 2);
+    const maxHeight = Math.min(390, Math.max(220, window.innerHeight - padding * 2));
+    const openUp = window.innerHeight - rect.bottom < 300 && rect.top > window.innerHeight - rect.bottom;
+    setPosition({
+      top: openUp ? Math.max(padding, rect.top - maxHeight - 6) : Math.min(window.innerHeight - maxHeight - padding, rect.bottom + 6),
+      left: Math.max(padding, Math.min(rect.right - width, window.innerWidth - width - padding)),
+      width,
+      maxHeight,
+    });
+  }, []);
+  React.useLayoutEffect(() => { if (open) updatePosition(); }, [open, updatePosition]);
+  React.useEffect(() => {
+    if (!open) return undefined;
+    const close = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (!triggerRef.current?.contains(target) && !menuRef.current?.contains(target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', close);
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [open, updatePosition]);
+  const menu = open && position ? createPortal(<div className="production-legacy-price-menu" ref={menuRef} style={position} id={`${id}-listbox`} role="listbox">
+    <label><Search size={14} /><input autoFocus value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search Tool ID, serial or price" /></label>
+    <button type="button" className={!value ? 'selected' : ''} onClick={() => { onChange(''); setOpen(false); }}><span><strong>No legacy price</strong><small>Leave this piece without historical price</small></span></button>
+    {exact && exact.id !== value ? <button type="button" className="recommended" onClick={() => { onChange(exact.id); setOpen(false); }}><span><strong>Recommended · {exact.currency} {exact.price.toFixed(2)}</strong><small>Exact Tool ID + Serial match</small></span><Check size={15} /></button> : null}
+    {filtered.filter((option) => option.id !== exact?.id).slice(0, 30).map((option) => <button type="button" role="option" aria-selected={option.id === value} key={option.id} onClick={() => { onChange(option.id); setOpen(false); }}><span><strong>{option.currency} {option.price.toFixed(2)}</strong><small>{option.toolId} · {option.serialNumber} · {option.clientName}</small></span></button>)}
+    <form onSubmit={async (event) => { event.preventDefault(); const amount = Number(price); if (!Number.isFinite(amount) || amount < 0 || !toolId.trim() || !serialNumber.trim()) return; setSaving(true); try { await onCreate(amount, 'USD'); setPrice(''); setOpen(false); } finally { setSaving(false); } }}>
+      <span>Register price for this Tool ID + Serial</span><div><b>USD</b><input type="number" min="0" step="0.01" value={price} onChange={(event) => setPrice(event.target.value)} placeholder="0.00" /><button type="submit" disabled={saving || !toolId.trim() || !serialNumber.trim()}>{saving ? 'Saving' : 'Add'}</button></div>
+      {(!toolId.trim() || !serialNumber.trim()) ? <small>Select Tool ID and Serial Number first.</small> : null}
+    </form>
+  </div>, document.body) : null;
+  return <div className={`production-legacy-price-dropdown${open ? ' open' : ''}`} ref={triggerRef}>
+    <button type="button" aria-expanded={open} aria-controls={`${id}-listbox`} onClick={() => { setSearch(''); setOpen((current) => !current); }}>
+      <span><strong>{selected ? `${selected.currency} ${selected.price.toFixed(2)}` : exact ? `${exact.currency} ${exact.price.toFixed(2)} suggested` : 'Select / enter price'}</strong>{selected ? <small>{selected.toolId} · {selected.serialNumber}</small> : null}</span><ChevronDown size={15} />
+    </button>
+    {menu}
+  </div>;
+}
+
 function ProductionAssetDropdown({ id, value, placeholder, options, searchPlaceholder, kind, onSelect, onCreate }: {
   id: string;
   value: string;
@@ -1277,6 +1357,7 @@ function createSerialAssignmentDrafts(quantity: number, currentDrafts: Productio
       receptionEvidenceFile: null,
       receptionEvidenceName: '',
       quotationId: '',
+      legacyPriceId: '',
     };
   });
 }
@@ -3732,6 +3813,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
   const [stationOptionsByWorkCenter, setStationOptionsByWorkCenter] = React.useState<Record<string, MesOrderDropdownOption[]>>({});
   const [customerOptions, setCustomerOptions] = React.useState<ProductionOrderCustomerOptionRow[]>([]);
   const [quotationOptions, setQuotationOptions] = React.useState<ProductionQuotationOption[]>([]);
+  const [legacyPriceOptions, setLegacyPriceOptions] = React.useState<ProductionLegacyPriceOption[]>([]);
   const [assetOptions, setAssetOptions] = React.useState<ProductionAssetOption[]>([]);
   const [customerOptionsMessage, setCustomerOptionsMessage] = React.useState('');
   const [workCenterOptionsMessage, setWorkCenterOptionsMessage] = React.useState('');
@@ -3889,6 +3971,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
     { table: 'mes_work_center_stations', filter: `organization_id=eq.${organizationId}` },
     { table: 'mes_customers', filter: `organization_id=eq.${organizationId}` },
     { table: 'mes_quotations', filter: `organization_id=eq.${organizationId}` },
+    { table: 'mes_legacy_prices', filter: `organization_id=eq.${organizationId}` },
     { table: 'mes_customer_assets', filter: `organization_id=eq.${organizationId}` },
     { table: 'mes_customer_tool_ids', filter: `organization_id=eq.${organizationId}` },
   ]), [organizationId]);
@@ -3897,7 +3980,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
     const requestId = productionOrdersLoadRequestRef.current + 1;
     productionOrdersLoadRequestRef.current = requestId;
     if (!silent) setOrdersLoaded(false);
-    const [{ data, error }, { data: workCenterData, error: workCenterError }, { data: stationData, error: stationError }, { data: customerData, error: customerError }, { data: quotationData, error: quotationError }, { data: assetData, error: assetError }] = await Promise.all([
+    const [{ data, error }, { data: workCenterData, error: workCenterError }, { data: stationData, error: stationError }, { data: customerData, error: customerError }, { data: quotationData, error: quotationError }, { data: legacyPriceData, error: legacyPriceError }, { data: assetData, error: assetError }] = await Promise.all([
       supabase
         .from('mes_production_orders')
         .select('*')
@@ -3923,6 +4006,12 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
         .select('id, quotation_number, client_name, tool_id, part_type, total_price, currency')
         .eq('organization_id', organizationId)
         .order('created_at', { ascending: false }),
+      supabase
+        .from('mes_legacy_prices')
+        .select('id, customer_id, client_name, tool_id, serial_number, price, currency')
+        .eq('organization_id', organizationId)
+        .eq('is_active', true)
+        .order('last_used_at', { ascending: false }),
       supabase
         .from('mes_customer_assets')
         .select('id, customer_id, serial_number, asset_type, status, tool_definition:mes_customer_tool_ids(tool_id, internal_tool_id), customer:mes_customers(customer_name)')
@@ -3953,6 +4042,15 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
         partType: quotation.part_type as string,
         totalPrice: Number(quotation.total_price) || 0,
         currency: (quotation.currency as string | null) || 'USD',
+      })));
+    }
+    if (legacyPriceError) {
+      console.error('Unable to load legacy prices for Production Orders', legacyPriceError);
+      setLegacyPriceOptions([]);
+    } else {
+      setLegacyPriceOptions((legacyPriceData ?? []).map((item) => ({
+        id: item.id as string, customerId: (item.customer_id as string | null) ?? '', clientName: item.client_name as string,
+        toolId: item.tool_id as string, serialNumber: item.serial_number as string, price: Number(item.price) || 0, currency: (item.currency as string | null) || 'USD',
       })));
     }
     if (assetError) {
@@ -4367,7 +4465,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
     try {
       let { data, error } = await supabase
         .from('mes_production_serials')
-        .select('id, piece_sequence, tool_id, serial_number, assigned_station, compatible_stations, before_height, before_notch, before_tooth_length, stock_to_remove, quotation_id')
+        .select('id, piece_sequence, tool_id, serial_number, assigned_station, compatible_stations, before_height, before_notch, before_tooth_length, stock_to_remove, quotation_id, legacy_price_id')
         .eq('organization_id', organizationId)
         .eq('production_order_id', selectedOrder.id)
         .order('piece_sequence', { ascending: true });
@@ -4379,7 +4477,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
       if (missingAssignedStationColumn) {
         const fallbackResponse = await supabase
           .from('mes_production_serials')
-          .select('id, piece_sequence, tool_id, serial_number, before_notch, before_tooth_length, stock_to_remove, quotation_id')
+          .select('id, piece_sequence, tool_id, serial_number, before_notch, before_tooth_length, stock_to_remove, quotation_id, legacy_price_id')
           .eq('organization_id', organizationId)
           .eq('production_order_id', selectedOrder.id)
           .order('piece_sequence', { ascending: true });
@@ -4415,6 +4513,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
         receptionEvidenceFile: null,
         receptionEvidenceName: serial.id ? evidenceBySerialId.get(serial.id) ?? '' : '',
         quotationId: serial.quotation_id ?? '',
+        legacyPriceId: serial.legacy_price_id ?? '',
       }))));
     } catch (error) {
       console.error('Unable to load Production Order serial assignments', error);
@@ -4659,7 +4758,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
             if (assignSerialsEnabled) {
               const { data: existingSerialsData, error: existingSerialsError } = await supabase
                 .from('mes_production_serials')
-                .select('id, piece_sequence, tool_id, serial_number, assigned_station, compatible_stations, before_height, before_notch, before_tooth_length, stock_to_remove, quotation_id')
+                .select('id, piece_sequence, tool_id, serial_number, assigned_station, compatible_stations, before_height, before_notch, before_tooth_length, stock_to_remove, quotation_id, legacy_price_id')
                 .eq('organization_id', organizationId)
                 .eq('production_order_id', selectedOrder.id)
                 .abortSignal(controller.signal);
@@ -4678,6 +4777,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
                       before_tooth_length: parseProductionSerialMeasurement(draft.beforeToothLength),
                       stock_to_remove: parseProductionSerialMeasurement(draft.stockToRemove),
                       quotation_id: draft.quotationId || null,
+                      legacy_price_id: draft.legacyPriceId || null,
                       ...(serialStationColumnAvailable ? { assigned_station: formState.manufacturingType === 'multi-step' ? draft.assignedStation.trim() : null } : {}),
                       compatible_stations: formState.manufacturingType === 'multi-step' ? draft.compatibleStations : [],
                     })
@@ -4701,6 +4801,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
                     before_tooth_length: parseProductionSerialMeasurement(draft.beforeToothLength),
                     stock_to_remove: parseProductionSerialMeasurement(draft.stockToRemove),
                     quotation_id: draft.quotationId || null,
+                    legacy_price_id: draft.legacyPriceId || null,
                     ...(serialStationColumnAvailable ? { assigned_station: formState.manufacturingType === 'multi-step' ? draft.assignedStation.trim() : null } : {}),
                     compatible_stations: formState.manufacturingType === 'multi-step' ? draft.compatibleStations : [],
                     result: null,
@@ -4811,6 +4912,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
               before_tooth_length: parseProductionSerialMeasurement(draft.beforeToothLength),
               stock_to_remove: parseProductionSerialMeasurement(draft.stockToRemove),
               quotation_id: draft.quotationId || null,
+              legacy_price_id: draft.legacyPriceId || null,
             }));
             const { data: insertedSerials, error: serialsError } = await supabase
               .from('mes_production_serials')
@@ -5765,7 +5867,8 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
                     {usesHobMeasurements ? <th>Before Sharpening<br />Tooth Length</th> : null}
                     {usesStockToRemove ? <th>Stock to Remove</th> : null}
                     <th>Reception Inspection</th>
-                    <th>Source Quotation</th>
+                    <th className="production-quotation-column">Source Quotation</th>
+                    <th className="production-legacy-price-column">Legacy Price</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -5817,12 +5920,39 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
                           />
                         </label>
                       </td>
-                      <td>
+                      <td className="production-quotation-column">
                         <ProductionQuotationDropdown
                           id={`production-piece-quotation-${draft.pieceSequence}`}
                           value={draft.quotationId}
                           options={quotationOptions}
                           onChange={(quotationId) => setSerialAssignmentDrafts((current) => current.map((item) => item.pieceSequence === draft.pieceSequence ? { ...item, quotationId } : item))}
+                        />
+                      </td>
+                      <td className="production-legacy-price-column">
+                        <ProductionLegacyPriceDropdown
+                          id={`production-piece-legacy-price-${draft.pieceSequence}`}
+                          value={draft.legacyPriceId}
+                          toolId={draft.toolId}
+                          serialNumber={draft.serialNumber}
+                          options={legacyPriceOptions.filter((option) => !formState.customerId || !option.customerId || option.customerId === formState.customerId)}
+                          onChange={(legacyPriceId) => setSerialAssignmentDrafts((current) => current.map((item) => item.pieceSequence === draft.pieceSequence ? { ...item, legacyPriceId } : item))}
+                          onCreate={async (price, currency) => {
+                            const { data, error } = await supabase.from('mes_legacy_prices').upsert({
+                              organization_id: organizationId,
+                              customer_id: formState.customerId || null,
+                              client_name: formState.clientName.trim(),
+                              tool_id: draft.toolId.trim(),
+                              serial_number: draft.serialNumber.trim(),
+                              price,
+                              currency,
+                              last_used_at: new Date().toISOString(),
+                              is_active: true,
+                            }, { onConflict: 'organization_id,identity_key' }).select('id, customer_id, client_name, tool_id, serial_number, price, currency').single();
+                            if (error) throw error;
+                            const created = { id: data.id as string, customerId: (data.customer_id as string | null) ?? '', clientName: data.client_name as string, toolId: data.tool_id as string, serialNumber: data.serial_number as string, price: Number(data.price), currency: data.currency as string };
+                            setLegacyPriceOptions((current) => [created, ...current.filter((item) => item.id !== created.id)]);
+                            setSerialAssignmentDrafts((current) => current.map((item) => item.pieceSequence === draft.pieceSequence ? { ...item, legacyPriceId: created.id } : item));
+                          }}
                         />
                       </td>
                     </tr>

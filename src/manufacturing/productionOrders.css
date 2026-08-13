@@ -778,13 +778,13 @@
     width: 100%;
     min-width: 0;
     max-width: 100%;
-    overflow-x: hidden;
-    overscroll-behavior-x: none;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
   }
 
   .production-order-serial-table {
     width: 100%;
-    min-width: 0;
+    min-width: 1320px;
     table-layout: fixed;
   }
 
@@ -799,12 +799,14 @@
   .production-order-serial-table th:first-child { width: 6%; }
   .production-order-serial-table th:nth-child(2) { width: 16%; }
   .production-order-serial-table th:nth-child(3) { width: 18%; }
-  .production-order-serial-table th:last-child { width: 19%; }
+  .production-order-serial-table .production-quotation-column { width: 165px; }
+  .production-order-serial-table .production-legacy-price-column { width: 175px; }
 
   .production-order-serial-table input,
   .production-order-serial-table .production-quotation-dropdown,
   .production-order-serial-table .production-asset-dropdown,
-  .production-order-serial-table .production-order-evidence-picker {
+  .production-order-serial-table .production-order-evidence-picker,
+  .production-order-serial-table .production-legacy-price-dropdown {
     box-sizing: border-box;
     width: 100%;
     min-width: 0;
@@ -907,7 +909,21 @@
 .production-order-serial-table th:nth-child(5),
 .production-order-serial-table th:nth-child(6) { width: 120px; }
 .production-order-serial-table th:nth-child(7) { width: 135px; }
-.production-order-serial-table th:last-child { width: 210px; }
+.production-order-serial-table .production-quotation-column { width: 165px; }
+.production-order-serial-table .production-legacy-price-column { width: 175px; }
+.production-order-serial-table .production-quotation-column .production-quotation-dropdown,
+.production-order-serial-table .production-legacy-price-column .production-legacy-price-dropdown { width:100%; min-width:0; max-width:100%; }
+.production-order-serial-table .production-quotation-column .production-quotation-dropdown > button,
+.production-order-serial-table .production-legacy-price-column .production-legacy-price-dropdown > button { width:100%; min-width:0; max-width:100%; }
+.production-order-serial-modal { width: min(98vw, 1880px); }
+.production-legacy-price-dropdown { position: relative; min-width: 0; }
+.production-legacy-price-dropdown > button { display:flex; width:100%; min-height:52px; align-items:center; justify-content:space-between; gap:8px; border:1px solid #d5e0eb; border-radius:8px; padding:7px 10px; background:#f8fafc; color:#172033; font:inherit; text-align:left; }
+.production-legacy-price-dropdown > button span { display:grid; gap:2px; }.production-legacy-price-dropdown > button strong { font-size:.72rem; }.production-legacy-price-dropdown > button small { color:#64748b; font-size:.58rem; }
+.production-legacy-price-menu { position:fixed; z-index:1400; display:grid; overflow:auto; border:1px solid #a7f3d0; border-radius:10px; padding:7px; background:#fff; box-shadow:0 18px 45px #0f172a35; }
+.production-legacy-price-menu > label { display:flex; align-items:center; gap:7px; border:1px solid #cbd5e1; border-radius:7px; padding:0 9px; }.production-legacy-price-menu > label input { min-height:38px; border:0; padding:0; }
+.production-legacy-price-menu > button { display:flex; align-items:center; justify-content:space-between; border:0; border-radius:7px; padding:9px; background:#fff; color:#172033; text-align:left; }.production-legacy-price-menu > button:hover,.production-legacy-price-menu > button.recommended { background:#ecfdf5; color:#047857; }
+.production-legacy-price-menu > button span { display:grid; gap:3px; }.production-legacy-price-menu > button strong { font-size:.72rem; }.production-legacy-price-menu > button small { color:#64748b; font-size:.6rem; }
+.production-legacy-price-menu form { display:grid; gap:6px; margin-top:5px; border-top:1px solid #d1fae5; padding:9px 4px 3px; color:#047857; font-size:.65rem; font-weight:850; }.production-legacy-price-menu form div { display:flex; align-items:center; gap:6px; }.production-legacy-price-menu form b { font-size:.68rem; }.production-legacy-price-menu form input { min-height:38px; }.production-legacy-price-menu form button { min-height:38px; border:0; border-radius:7px; padding:0 12px; background:#059669; color:#fff; font-weight:900; }
 
 @media (max-width: 760px) {
   .mes-modal-backdrop.production-order-serial-backdrop { padding: 10px; }
