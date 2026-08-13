@@ -45,8 +45,15 @@
 .statistics-view-tabs button { display: inline-flex; min-height: 34px; align-items: center; justify-content: center; gap: 6px; border: 1px solid transparent; border-radius: 7px; padding: 0 12px; background: transparent; color: #5b6d82; font: inherit; font-size: .68rem; font-weight: 950; cursor: pointer; }
 .statistics-view-tabs button:hover { border-color: #ddd6fe; background: #faf8ff; color: #6d28d9; }
 .statistics-view-tabs button.active { border-color: #a78bfa; background: #f3efff; color: #6d28d9; box-shadow: 0 4px 12px #7c3aed18; }
+.statistics-view-tabs button.income:hover, .statistics-view-tabs button.income.active { border-color: #6ee7b7; background: #ecfdf5; color: #047857; box-shadow: 0 4px 12px #05966918; }
 .statistics-metric-cards { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 11px; }
 .statistics-reception-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.statistics-income-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.statistics-income-metrics article.green { border-left-color: #10b981; background: linear-gradient(135deg, #f0fdf8, #fff); }
+.statistics-income-metrics article.green:nth-child(2) { border-left-color: #059669; }
+.statistics-income-metrics article.green:nth-child(3) { border-left-color: #34d399; }
+.statistics-income-metrics article.green:nth-child(4) { border-left-color: #0d9488; }
+.statistics-income-metrics article.green strong { overflow: hidden; font-size: clamp(1.05rem, 1.45vw, 1.55rem); text-overflow: ellipsis; white-space: nowrap; }
 .statistics-metric-cards article { display: flex; min-height: 78px; align-items: center; gap: 11px; border: 1px solid #dbe4ed; border-left: 5px solid #f97316; border-radius: 11px; padding: 9px 12px; background: #fff; box-shadow: 0 6px 18px #0f172a08; }
 .statistics-metric-cards article > svg { flex: 0 0 auto; color: #f97316; }
 .statistics-metric-cards article span { display: grid; min-width: 0; }
@@ -76,6 +83,23 @@
   background: linear-gradient(90deg, #2563eb, #8b5cf6, #f97316);
 }
 .statistics-heading-icon.reception { border-color: #c4b5fd; background: #f5f3ff; color: #7c3aed; }
+.statistics-income-panel { border-top-color: #059669; }
+.statistics-income-panel .statistics-production-heading { background: linear-gradient(90deg, #ecfdf5, #fff); }
+.statistics-income-panel .statistics-production-heading small { color: #047857; }
+.statistics-heading-icon.income { border-color: #6ee7b7; background: #d1fae5; color: #047857; }
+.statistics-chart-key .income-flow i { width: 22px; height: 7px; border-radius: 999px; background: linear-gradient(90deg, #047857, #34d399); }
+.statistics-sankey-wrap { min-width: 0; overflow: auto; padding: 8px 12px 4px; background: linear-gradient(180deg, #fff, #f6fdf9); }
+.statistics-income-sankey { display: block; width: 100%; min-width: 900px; min-height: 420px; max-height: 610px; }
+.statistics-sankey-links path { fill: none; opacity: .28; transition: opacity .18s ease; }
+.statistics-sankey-links path:hover { opacity: .62; }
+.statistics-sankey-column-title { fill: #047857; font-size: 11px; font-weight: 950; letter-spacing: 1.1px; }
+.statistics-sankey-nodes .label { fill: #122438; font-size: 12px; font-weight: 950; }
+.statistics-sankey-nodes .value { fill: #65768a; font-size: 9px; font-weight: 750; }
+.statistics-sankey-nodes rect { filter: drop-shadow(0 3px 4px #064e3b30); }
+.statistics-income-empty { display: grid; min-height: 420px; place-content: center; justify-items: center; gap: 8px; padding: 32px; background: linear-gradient(180deg, #fff, #f0fdf8); color: #64748b; text-align: center; }
+.statistics-income-empty::before { content: '$'; display: grid; width: 58px; height: 58px; place-items: center; border: 1px solid #a7f3d0; border-radius: 50%; background: #d1fae5; color: #047857; font-size: 1.65rem; font-weight: 950; }
+.statistics-income-empty strong { color: #12352c; font-size: 1.05rem; }
+.statistics-income-empty span { max-width: 440px; font-size: .74rem; font-weight: 700; line-height: 1.5; }
 .statistics-weekly-chart-layout { display: grid; min-height: 0; grid-template-columns: minmax(0, 1fr) 310px; gap: 0; }
 .statistics-chart-wrap { min-width: 0; padding: 8px 10px 0; background: linear-gradient(#fff, #fbfdff); }
 .statistics-production-chart { display: block; width: 100%; height: 100%; min-height: 420px; overflow: visible; }
@@ -269,6 +293,7 @@
 @media (max-width: 1180px) {
   .statistics-metric-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .statistics-reception-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .statistics-income-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .statistics-weekly-chart-layout { grid-template-columns: 1fr; }
   .statistics-day-tooltip { margin: 0 16px 16px; }
 }
@@ -341,6 +366,8 @@
   .statistics-week-navigation strong, .statistics-metric-cards strong, .statistics-production-heading h3, .statistics-day-tooltip h4, .statistics-day-tooltip dd { color: #eff6ff; }
   .statistics-metric-cards article.blue, .statistics-metric-cards article.green { background: #17212d; }
   .statistics-production-heading, .statistics-chart-wrap { background: #17212d; }
+  .statistics-income-panel .statistics-production-heading, .statistics-sankey-wrap, .statistics-income-empty { background: #17212d; }
+  .statistics-sankey-nodes .label, .statistics-income-empty strong { fill: #eff6ff; color: #eff6ff; }
   .statistics-grid-line { stroke: #344355; }
   .statistics-axis-line { stroke: #64748b; }
   .statistics-axis-value, .statistics-axis-label, .statistics-axis-date, .statistics-chart-key, .statistics-chart-footer { color: #9fb0c4; fill: #9fb0c4; }

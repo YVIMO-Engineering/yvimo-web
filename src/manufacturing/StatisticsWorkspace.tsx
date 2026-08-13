@@ -1,10 +1,11 @@
 import React from 'react';
-import { ArrowLeft, BarChart3, Boxes, ChevronLeft, ChevronRight, PackageCheck, RefreshCw, Target, Users, X } from 'lucide-react';
+import { ArrowLeft, BarChart3, Boxes, ChevronLeft, ChevronRight, CircleDollarSign, FileText, PackageCheck, RefreshCw, Target, TrendingUp, Users, WalletCards, X } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { useSupabaseRealtimeRefresh } from '../lib/useSupabaseRealtimeRefresh';
 import { ProductionMetricCards } from './statistics/ProductionMetricCards';
 import { WeeklyProductionChart } from './statistics/WeeklyProductionChart';
 import { WeeklyReceptionsChart, type DailyReceptionStat } from './statistics/WeeklyReceptionsChart';
+import { formatIncome, IncomeSankeyChart, type IncomeProductionRow } from './statistics/IncomeSankeyChart';
 import { ManualAlertDialog, StatisticsAlertHistory, StatisticsAlertSlider } from './statistics/StatisticsAlerts';
 import { buildAutomaticStatisticsAlerts, type StatisticsAlert, type StatisticsAlertType } from './statistics/statisticsAlerts';
 import {
@@ -22,7 +23,7 @@ type StatisticsWorkspaceProps = {
   organizationId: string;
 };
 
-type StatisticsView = 'production' | 'receptions';
+type StatisticsView = 'production' | 'receptions' | 'income';
 type ReceptionVoucherStatRow = { id: string; expected_date: string | null; created_at: string };
 type ReceptionItemStatRow = {
   reception_voucher_id: string;
@@ -51,6 +52,7 @@ export function StatisticsWorkspace({ onNavigate, organizationId }: StatisticsWo
   const [targetOrders, setTargetOrders] = React.useState<ProductionTargetOrder[]>([]);
   const [receptionVouchers, setReceptionVouchers] = React.useState<ReceptionVoucherStatRow[]>([]);
   const [receptionItems, setReceptionItems] = React.useState<ReceptionItemStatRow[]>([]);
+  const [incomeRows, setIncomeRows] = React.useState<IncomeProductionRow[]>([]);
   const [selectedDate, setSelectedDate] = React.useState(today);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState('');
@@ -102,7 +104,7 @@ export function StatisticsWorkspace({ onNavigate, organizationId }: StatisticsWo
     const rangeStart = new Date(`${weekRange.from}T00:00:00`);
     const rangeEnd = new Date(`${weekRange.to}T00:00:00`);
     rangeEnd.setDate(rangeEnd.getDate() + 1);
-    const [eventsResponse, targetResponse, receptionResponse] = await Promise.all([
+    const [eventsResponse, targetResponse, receptionResponse, incomeResponse] = await Promise.all([
       supabase
         .from('mes_operator_terminal_events')
         .select('id, event_type, quantity, created_at')
@@ -125,6 +127,15 @@ export function StatisticsWorkspace({ onNavigate, organizationId }: StatisticsWo
         .gte('expected_date', weekRange.from)
         .lte('expected_date', weekRange.to)
         .order('expected_date', { ascending: true }),
+      supabase
+        .from('mes_production_serials')
+        .select('id, serial_number, production_order_id, quotation_id, reported_at, mes_production_orders(order_number), mes_quotations(quotation_number, client_name, total_price, currency)')
+        .eq('organization_id', organizationId)
+        .eq('result', 'good')
+        .not('quotation_id', 'is', null)
+        .gte('reported_at', rangeStart.toISOString())
+        .lt('reported_at', rangeEnd.toISOString())
+        .order('reported_at', { ascending: true }),
     ]);
     const receptionIds = (receptionResponse.data ?? []).map((voucher) => voucher.id);
     const receptionItemsResponse = receptionIds.length
@@ -133,7 +144,7 @@ export function StatisticsWorkspace({ onNavigate, organizationId }: StatisticsWo
         .select('reception_voucher_id, customer_id, quantity, mes_customers(customer_name)')
         .in('reception_voucher_id', receptionIds)
       : { data: [], error: null };
-    const queryError = eventsResponse.error || targetResponse.error || receptionResponse.error || receptionItemsResponse.error;
+    const queryError = eventsResponse.error || targetResponse.error || receptionResponse.error || receptionItemsResponse.error || incomeResponse.error;
     if (queryError) {
       setError(queryError.message);
       if (!silent) {
@@ -141,12 +152,14 @@ export function StatisticsWorkspace({ onNavigate, organizationId }: StatisticsWo
         setTargetOrders([]);
         setReceptionVouchers([]);
         setReceptionItems([]);
+        setIncomeRows([]);
       }
     } else {
       setEvents((eventsResponse.data ?? []) as ProductionStatisticsEvent[]);
       setTargetOrders((targetResponse.data ?? []) as ProductionTargetOrder[]);
       setReceptionVouchers((receptionResponse.data ?? []) as ReceptionVoucherStatRow[]);
       setReceptionItems((receptionItemsResponse.data ?? []) as ReceptionItemStatRow[]);
+      setIncomeRows((incomeResponse.data ?? []) as unknown as IncomeProductionRow[]);
       setError('');
       setLastUpdatedAt(new Date().toISOString());
     }
@@ -202,6 +215,8 @@ export function StatisticsWorkspace({ onNavigate, organizationId }: StatisticsWo
       { table: 'mes_station_status_cycles', filter: `organization_id=eq.${organizationId}` },
       { table: 'mes_customer_reception_vouchers', filter: `organization_id=eq.${organizationId}` },
       { table: 'mes_customer_reception_items' },
+      { table: 'mes_production_serials', filter: `organization_id=eq.${organizationId}` },
+      { table: 'mes_quotations', filter: `organization_id=eq.${organizationId}` },
     ],
     onRefresh: () => { void loadStatistics(true); void loadAlerts(); },
     enabled: Boolean(organizationId),
@@ -252,6 +267,29 @@ export function StatisticsWorkspace({ onNavigate, organizationId }: StatisticsWo
   const weeklyReceptionVouchers = receptionStats.reduce((sum, day) => sum + day.voucherCount, 0);
   const weeklyReceptionClients = new Set(receptionStats.flatMap((day) => day.segments.map((segment) => segment.customerId))).size;
   const todayReceptionPieces = receptionStats.find((day) => day.isToday)?.totalPieces ?? 0;
+  const incomeCurrency = React.useMemo(() => {
+    const currencies = incomeRows.map((row) => {
+      const quotation = Array.isArray(row.mes_quotations) ? row.mes_quotations[0] : row.mes_quotations;
+      return quotation?.currency || 'USD';
+    });
+    return currencies[0] ?? 'USD';
+  }, [incomeRows]);
+  const incomeSummary = React.useMemo(() => {
+    let total = 0;
+    let todayTotal = 0;
+    const quotations = new Set<string>();
+    const clients = new Set<string>();
+    incomeRows.forEach((row) => {
+      const quotation = Array.isArray(row.mes_quotations) ? row.mes_quotations[0] : row.mes_quotations;
+      if (!quotation) return;
+      const value = Math.max(0, Number(quotation.total_price) || 0);
+      total += value;
+      if (toLocalDateInput(new Date(row.reported_at)) === today) todayTotal += value;
+      quotations.add(row.quotation_id);
+      clients.add(quotation.client_name);
+    });
+    return { total, todayTotal, quotations: quotations.size, clients: clients.size, pieces: incomeRows.length };
+  }, [incomeRows, today]);
   const alertHistory = React.useMemo(() => {
     const byId = new Map<string, StatisticsAlert>();
     [...automaticAlerts, ...manualAlerts].forEach((alert) => byId.set(alert.id, alert));
@@ -302,7 +340,7 @@ export function StatisticsWorkspace({ onNavigate, organizationId }: StatisticsWo
           <div className="statistics-compact-heading">
             <p className="eyebrow">MES / Statistics</p>
             <h2>Statistics</h2>
-            <span>{activeView === 'production' ? 'Live weekly production overview' : 'Live weekly reception overview'}</span>
+            <span>{activeView === 'production' ? 'Live weekly production overview' : activeView === 'receptions' ? 'Live weekly reception overview' : 'Live weekly income overview'}</span>
           </div>
           <label className="statistics-week-picker"><span>Week containing</span><input type="date" value={weekAnchor} onChange={(event) => setWeekAnchor(event.target.value || today)} /></label>
           <div className="statistics-week-navigation">
@@ -315,6 +353,7 @@ export function StatisticsWorkspace({ onNavigate, organizationId }: StatisticsWo
           <nav className="statistics-view-tabs" aria-label="Statistics view">
             <button type="button" className={activeView === 'production' ? 'active' : ''} aria-pressed={activeView === 'production'} onClick={() => setActiveView('production')}><BarChart3 size={16} /> Production</button>
             <button type="button" className={activeView === 'receptions' ? 'active' : ''} aria-pressed={activeView === 'receptions'} onClick={() => setActiveView('receptions')}><PackageCheck size={16} /> Receptions</button>
+            <button type="button" className={activeView === 'income' ? 'active income' : 'income'} aria-pressed={activeView === 'income'} onClick={() => setActiveView('income')}><CircleDollarSign size={16} /> Income</button>
           </nav>
           <div className="statistics-live-state"><span><i /> Live {activeView}</span><small>{lastUpdatedAt ? `Updated ${new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' }).format(new Date(lastUpdatedAt))}` : 'Connecting'}</small></div>
         </section>
@@ -335,7 +374,7 @@ export function StatisticsWorkspace({ onNavigate, organizationId }: StatisticsWo
               </footer>
             </section>
           </>
-        ) : (
+        ) : activeView === 'receptions' ? (
           <>
             <div className="statistics-metric-cards statistics-reception-metrics">
               <article><Boxes size={25} /><span><small>Weekly received</small><strong>{weeklyReceptionPieces}</strong><em>pieces across all clients</em></span></article>
@@ -356,6 +395,27 @@ export function StatisticsWorkspace({ onNavigate, organizationId }: StatisticsWo
               <footer className="statistics-chart-footer">
                 <span>Bars show received pieces by client; matching lines connect each client's next reception, even across inactive days.</span>
                 <em>Live updates every 30 seconds and when reception vouchers change.</em>
+              </footer>
+            </section>
+          </>
+        ) : (
+          <>
+            <div className="statistics-metric-cards statistics-income-metrics">
+              <article className="green"><CircleDollarSign size={25} /><span><small>Weekly income</small><strong>{formatIncome(incomeSummary.total, incomeCurrency)}</strong><em>from {incomeSummary.pieces} produced pieces</em></span></article>
+              <article className="green"><TrendingUp size={25} /><span><small>Income today</small><strong>{formatIncome(incomeSummary.todayTotal, incomeCurrency)}</strong><em>recognized as pieces are produced</em></span></article>
+              <article className="green"><FileText size={25} /><span><small>Source quotations</small><strong>{incomeSummary.quotations}</strong><em>linked quotations this week</em></span></article>
+              <article className="green"><WalletCards size={25} /><span><small>Income clients</small><strong>{incomeSummary.clients}</strong><em>revenue-generating clients</em></span></article>
+            </div>
+            <section className="statistics-production-panel statistics-income-panel">
+              <div className="statistics-production-heading">
+                <div><span className="statistics-heading-icon income"><CircleDollarSign size={22} /></span><span><small>Weekly realized income flow</small><h3>{weekLabel}</h3></span></div>
+                <div className="statistics-chart-key"><span className="income-flow"><i /> Income value</span><span>Client → Quotation → Production order</span></div>
+              </div>
+              {error ? <div className="statistics-message error" role="alert">{error}</div> : null}
+              {loading && !incomeRows.length ? <div className="statistics-chart-loading">Loading weekly income...</div> : <IncomeSankeyChart rows={incomeRows} currency={incomeCurrency} />}
+              <footer className="statistics-chart-footer">
+                <span>Income is recognized when a good serialized piece linked to a quotation is reported.</span>
+                <em>Live updates every 30 seconds and when production or quotations change.</em>
               </footer>
             </section>
           </>
