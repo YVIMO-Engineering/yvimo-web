@@ -118,10 +118,16 @@ const hobEvo = [
   [613.74, 707.49, 707.49, 707.49, 1287.07, 1287.07],
   [613.74, 826.79, 826.79, 826.79, 1764.37, 1764.37],
 ];
-const shaperDiameters = [
-  79.37, 101.6, 127, 152.44, 177.8, 203.2, 254, 263, 266.7, 279.4, 292.1,
-];
+const hobTables: Record<string, number[][]> = {
+  "Strip & Alcrona": hobAlcrona,
+  "Strip & Alcrona EVO": hobEvo,
+};
 const shaperThicknesses = [44.45, 50.8, 76.2];
+const shaperDiameterBrackets: Record<string, number[]> = {
+  "Alcrona Pro": [79.37, 101.6, 127, 152.44, 177.8, 203.2, 254, 292.1],
+  "A-TiN": [79.37, 101.6, 127, 152.44, 254],
+  "Alcrona EVO": [79.37, 101.6, 127, 152.44, 254, 266.7, 279.4, 292.1],
+};
 const shaperTables: Record<string, number[][]> = {
   "Alcrona Pro": [
     [38.17, 43.43, 61.33],
@@ -131,7 +137,7 @@ const shaperTables: Record<string, number[][]> = {
     [87.14, 87.14, 127.57],
     [95.64, 95.64, 140.01],
     [106.26, 106.26, 155.57],
-    [109.61, 0, 0],
+    [109.61, 109.61, 109.61],
   ],
   "A-TiN": [
     [17.94, 20.71, 30.12],
@@ -283,6 +289,10 @@ const shankEvo = [
     436.62, 473.01, 509.4, 545.78, 582.17, 618.56,
   ],
 ];
+const shankTables: Record<string, number[][]> = {
+  "Strip & Alcrona": shankAlcrona,
+  "Strip & EVO": shankEvo,
+};
 
 const findBracket = (value: number, limits: number[]) =>
   limits.findIndex((limit) => value <= limit);
@@ -293,31 +303,27 @@ function coatingPrice(
   diameter: number,
 ) {
   if (partType === "Hob") {
+    const table = hobTables[coating];
+    if (!table) return null;
     const r = findBracket(length, hobLengths);
     const c = findBracket(diameter, hobDiameters);
-    return r < 0 || c < 0
-      ? null
-      : (coating === "Strip & Alcrona EVO" ? hobEvo : hobAlcrona)[r][c];
+    return r < 0 || c < 0 ? null : table[r]?.[c] ?? null;
   }
   if (partType === "Shaper") {
     const table = shaperTables[coating];
-    const diameterBrackets =
-      coating === "A-TiN"
-        ? [79.37, 101.6, 127, 152.44, 254]
-        : coating === "Alcrona EVO"
-          ? [79.37, 101.6, 127, 152.44, 254, 266.7, 279.4, 292.1]
-          : shaperDiameters.slice(0, table?.length);
+    const diameterBrackets = shaperDiameterBrackets[coating];
+    if (!table || !diameterBrackets) return null;
     const r = findBracket(diameter, diameterBrackets);
     const c = findBracket(length, shaperThicknesses);
     const price = r < 0 || c < 0 ? 0 : table?.[r]?.[c];
     return price ? price : null;
   }
   if (partType === "Shaper with shank") {
+    const table = shankTables[coating];
+    if (!table) return null;
     const r = findBracket(diameter, shankDiameters);
     const c = findBracket(length, shankLengths);
-    return r < 0 || c < 0
-      ? null
-      : (coating === "Strip & EVO" ? shankEvo : shankAlcrona)[r][c];
+    return r < 0 || c < 0 ? null : table[r]?.[c] ?? null;
   }
   return null;
 }
@@ -355,12 +361,8 @@ function coatingPriceSource(
     };
   }
   if (partType === "Shaper") {
-    const diameterBrackets =
-      coating === "A-TiN"
-        ? [79.37, 101.6, 127, 152.44, 254]
-        : coating === "Alcrona EVO"
-          ? [79.37, 101.6, 127, 152.44, 254, 266.7, 279.4, 292.1]
-          : shaperDiameters.slice(0, shaperTables[coating]?.length);
+    const diameterBrackets = shaperDiameterBrackets[coating];
+    if (!diameterBrackets) return null;
     const row = findBracket(diameter, diameterBrackets);
     const column = findBracket(length, shaperThicknesses);
     return {
