@@ -1,6 +1,6 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { Activity, AlertTriangle, ArrowLeft, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleHelp, CircleX, Clock3, Copy, Database, Download, Eye, Factory, Frown, FileText, ImagePlus, LoaderCircle, Maximize2, Meh, Minimize2, Minus, Move, PaintBucket, Pencil, Plus, Power, RadioTower, RotateCcw, Ruler, Search, Smile, Timer, Wrench, X, ZoomIn, ZoomOut } from 'lucide-react';
+import { Activity, AlertTriangle, ArrowLeft, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleHelp, CircleX, ClipboardPlus, Clock3, Copy, Database, Download, Eye, Factory, Frown, FileText, ImagePlus, LoaderCircle, Maximize2, Meh, Minimize2, Minus, Move, PaintBucket, Pencil, Plus, Power, RadioTower, RotateCcw, Ruler, Search, Send, Smile, Timer, Truck, Wrench, X, ZoomIn, ZoomOut } from 'lucide-react';
 import { GoogleWorkCentersMap } from '../components/maps/GoogleWorkCentersMap';
 import { resolveGooglePlacesAddressMatch, searchGooglePlacesAddressMatches, type GooglePlacesAddressMatch } from '../lib/maps/googlePlacesAddressLookup';
 import { supabase } from '../lib/supabaseClient';
@@ -13,6 +13,7 @@ import './productionOrdersDateFilterResponsive.css';
 import './productionOrdersClientFilter.css';
 import './productionOrdersContrast.css';
 import './productionOrderSaveFeedback.css';
+import './traceabilityReceptionEvents.css';
 
 type WorkspaceProps = {
   onNavigate: (path: string) => void;
@@ -9900,6 +9901,10 @@ type TraceabilityEventTone =
   | 'inventory-consumed'
   | 'maintenance'
   | 'offline'
+  | 'reception-created'
+  | 'coating-dispatched'
+  | 'coating-received'
+  | 'reception-sent'
   | 'adjustment';
 
 function getTraceabilityEventTone(eventType: string): TraceabilityEventTone {
@@ -9916,6 +9921,10 @@ function getTraceabilityEventTone(eventType: string): TraceabilityEventTone {
   if (eventType === 'manufacturing-completed') return 'waiting-inspection';
   if (eventType === 'operation-completed') return 'order-completed';
   if (eventType === 'quality-inspection-saved' || eventType === 'quality-inspection-skipped') return 'quality-inspection';
+  if (eventType === 'reception-created') return 'reception-created';
+  if (eventType === 'coating-dispatched') return 'coating-dispatched';
+  if (eventType === 'coating-received') return 'coating-received';
+  if (eventType === 'reception-sent') return 'reception-sent';
   return 'adjustment';
 }
 
@@ -9936,6 +9945,10 @@ function renderTraceabilityEventIcon(eventType: string) {
   if (eventType === 'quality-inspection-saved') return <Eye {...iconProps} />;
   if (eventType === 'quality-inspection-skipped') return <Minus {...iconProps} />;
   if (eventType === 'measurement-corrected') return <Pencil {...iconProps} />;
+  if (eventType === 'reception-created') return <ClipboardPlus {...iconProps} />;
+  if (eventType === 'coating-dispatched') return <Send {...iconProps} />;
+  if (eventType === 'coating-received') return <PaintBucket {...iconProps} />;
+  if (eventType === 'reception-sent') return <Truck {...iconProps} />;
   return <CircleHelp {...iconProps} />;
 }
 
@@ -9960,6 +9973,10 @@ function getTraceabilityEventLabel(event: TraceabilityOperatorEventRow) {
     'maintenance-ended': 'Maintenance Completed',
     'station-offline': 'Station Offline',
     'station-online': 'Station Online',
+    'reception-created': 'New Reception',
+    'coating-dispatched': 'Coating Dispatch',
+    'coating-received': 'Coating Reception',
+    'reception-sent': 'Reception Sent',
     adjustment: 'Adjustment',
   };
   return eventLabels[eventType] ?? formatTitleLabel(eventType);
@@ -10004,7 +10021,15 @@ function getTraceabilityEventSummary(event: TraceabilityOperatorEventRow) {
     return skipReason ? `${summary}: ${skipReason}` : summary;
   }
   if (event.event_type === 'measurement-corrected') return 'Measurement was corrected from the Operator Terminal';
+  if (event.event_type === 'reception-created') return `Reception ${String(event.payload?.voucher_number ?? '')} was registered`.trim();
+  if (event.event_type === 'coating-dispatched') return 'The sub-reception was dispatched for coating';
+  if (event.event_type === 'coating-received') return 'The coated sub-reception was received back';
+  if (event.event_type === 'reception-sent') return 'The completed sub-reception was sent to the client';
   return 'Operator event captured';
+}
+
+function isTraceabilityReceptionEvent(eventType: string) {
+  return ['reception-created', 'coating-dispatched', 'coating-received', 'reception-sent'].includes(eventType);
 }
 
 function getTraceabilityEventShift(event: TraceabilityOperatorEventRow) {
@@ -10195,7 +10220,7 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
           )
         `)
         .eq('organization_id', organizationId)
-        .in('event_type', ['production-scrap', 'downtime-started', 'downtime-ended', 'job-paused', 'job-started', 'job-resumed', 'manufacturing-completed', 'operation-completed', 'adjustment', 'quality-inspection-saved', 'quality-inspection-skipped', 'measurement-corrected', 'inventory-received', 'inventory-consumed', 'maintenance-started', 'maintenance-ended', 'station-offline', 'station-online'])
+        .in('event_type', ['production-scrap', 'downtime-started', 'downtime-ended', 'job-paused', 'job-started', 'job-resumed', 'manufacturing-completed', 'operation-completed', 'adjustment', 'quality-inspection-saved', 'quality-inspection-skipped', 'measurement-corrected', 'inventory-received', 'inventory-consumed', 'maintenance-started', 'maintenance-ended', 'station-offline', 'station-online', 'reception-created', 'coating-dispatched', 'coating-received', 'reception-sent'])
         .order('created_at', { ascending: false })
         .limit(300),
       supabase
@@ -10292,7 +10317,7 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
         filter: `organization_id=eq.${organizationId}`,
       }, (payload) => {
         const newEvent = payload.new as Partial<{ id: string; event_type: string }>;
-        if (newEvent.event_type && !['production-scrap', 'downtime-started', 'downtime-ended', 'job-paused', 'job-started', 'job-resumed', 'manufacturing-completed', 'operation-completed', 'adjustment', 'quality-inspection-saved', 'quality-inspection-skipped', 'measurement-corrected', 'inventory-received', 'inventory-consumed', 'maintenance-started', 'maintenance-ended', 'station-offline', 'station-online'].includes(newEvent.event_type)) return;
+        if (newEvent.event_type && !['production-scrap', 'downtime-started', 'downtime-ended', 'job-paused', 'job-started', 'job-resumed', 'manufacturing-completed', 'operation-completed', 'adjustment', 'quality-inspection-saved', 'quality-inspection-skipped', 'measurement-corrected', 'inventory-received', 'inventory-consumed', 'maintenance-started', 'maintenance-ended', 'station-offline', 'station-online', 'reception-created', 'coating-dispatched', 'coating-received', 'reception-sent'].includes(newEvent.event_type)) return;
         const eventId = typeof newEvent.id === 'string' ? newEvent.id : '';
         if (eventId) markCaptureAsNew(`event-${eventId}`);
         void loadTraceability(true);
@@ -10418,25 +10443,35 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
     const orderSearch = filters.orderSearch.trim().toLowerCase();
     const partSearch = filters.partSearch.trim().toLowerCase();
     const isQualityEvent = isTraceabilityQualityEvent(event.event_type);
+    const isReceptionEvent = isTraceabilityReceptionEvent(event.event_type);
     const matchesRecordCategory = isQualityEvent ? filters.showQuality : filters.showEvents;
-    const measurementOnlyFilterActive = Boolean(filters.serialSearch.trim() || filters.toolSearch.trim() || filters.shifts.length > 0);
+    const serialSearch = filters.serialSearch.trim().toLowerCase();
+    const measurementOnlyFilterActive = Boolean(filters.toolSearch.trim() || filters.shifts.length > 0 || (serialSearch && !isReceptionEvent));
     const eventDate = toLocalIsoDate(event.created_at);
     const eventOrder = event.mes_production_orders;
     const matchesOrderSearch = !orderSearch
       || (event.production_order_id ? contextOrderIds.has(event.production_order_id) : false)
-      || Boolean(eventOrder?.order_number.toLowerCase().includes(orderSearch));
+      || Boolean(eventOrder?.order_number.toLowerCase().includes(orderSearch))
+      || (isReceptionEvent && `${String(event.payload?.voucher_number ?? '')} ${String(event.payload?.production_order_number ?? '')}`.toLowerCase().includes(orderSearch));
     const matchesPartSearch = !partSearch
       || Boolean(eventOrder && (
         eventOrder.part_number.toLowerCase().includes(partSearch)
         || eventOrder.part_name.toLowerCase().includes(partSearch)
-      ));
+      ))
+      || (isReceptionEvent && `${String(event.payload?.customer_reference ?? '')} ${String(event.payload?.lot_serial ?? '')}`.toLowerCase().includes(partSearch));
+    const eventClientId = String(event.payload?.customer_id ?? '');
+    const eventClientName = String(event.payload?.client_name ?? '').trim().toLowerCase();
+    const matchesEventClient = !filters.client
+      || Boolean(event.production_order_id && matchingClientOrderIds.has(event.production_order_id))
+      || (isReceptionEvent && (eventClientId === filters.client || Boolean(selectedClientName && eventClientName === selectedClientName)));
     return matchesRecordCategory
-      && (!filters.client || Boolean(event.production_order_id && matchingClientOrderIds.has(event.production_order_id)))
+      && matchesEventClient
       && (!filters.workCenter || event.work_center_code === filters.workCenter)
       && (!filters.station || event.station_code === filters.station)
       && !measurementOnlyFilterActive
       && matchesOrderSearch
       && matchesPartSearch
+      && (!serialSearch || String(event.payload?.lot_serial ?? '').toLowerCase().includes(serialSearch))
       && (!filters.dateFrom || eventDate >= filters.dateFrom)
       && (!filters.dateTo || eventDate <= filters.dateTo);
   });
@@ -10717,6 +10752,7 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
             const correctionComparison = event.event_type === 'measurement-corrected' ? getTraceabilityCorrectionComparison(event) : null;
             const isQualityEvent = isTraceabilityQualityEvent(event.event_type);
             const isInventoryEvent = event.event_type === 'inventory-received' || event.event_type === 'inventory-consumed';
+            const isReceptionEvent = isTraceabilityReceptionEvent(event.event_type);
             const isAdministrativeRelease = isAdministrativePieceReleaseEvent(event);
             const showEventQuantity = !isQualityEvent && !isAdministrativeRelease && event.event_type !== 'measurement-corrected';
             const qualityStatusConfig = {
@@ -10741,7 +10777,16 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
                     </div>
                     {renderTraceabilityCaptureTime(event.created_at, getTraceabilityEventShift(event))}
                   </div>
-                  {isInventoryEvent ? (
+                  {isReceptionEvent ? (
+                    <div className="traceability-event-detail-grid">
+                      <span><b>Reception Voucher</b>{String(event.payload?.voucher_number ?? 'N/A')}</span>
+                      <span><b>Production Order</b>{order?.order_number ?? String(event.payload?.production_order_number || 'Not assigned')}</span>
+                      <span><b>Client</b>{String(event.payload?.client_name || eventClientName || 'Unassigned client')}</span>
+                      <span><b>Quantity</b>{String(event.payload?.quantity ?? event.quantity ?? 'N/A')}</span>
+                      {event.payload?.customer_reference ? <span><b>Customer Reference</b>{String(event.payload.customer_reference)}</span> : null}
+                      {event.payload?.lot_serial ? <span><b>Lot / Serial</b>{String(event.payload.lot_serial)}</span> : null}
+                    </div>
+                  ) : isInventoryEvent ? (
                     <div className="traceability-event-detail-grid">
                       <span><b>Inventory Item</b>{String(event.payload?.inventory_item_title ?? 'N/A')}</span>
                       <span><b>Section</b>{String(event.payload?.inventory_section_name ?? 'N/A')}</span>
@@ -10761,8 +10806,8 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
                   <div className="mes-event-meta traceability-capture-meta">
                     <span><Factory size={15} /><b>Work Center</b>{event.work_center_code || 'No work center'}</span>
                     {!isInventoryEvent ? <span><RadioTower size={15} /><b>Station</b>{event.station_code || 'No station'}</span> : null}
-                    {!isQualityEvent ? <span><AlertTriangle size={15} /><b>Reason</b>{event.reason || 'No reason entered'}</span> : null}
-                    {!isQualityEvent && !isInventoryEvent ? <span><Activity size={15} /><b>Status</b>{order?.status ? formatTraceabilityStatus(order.status) : 'Unknown'}</span> : null}
+                    {!isQualityEvent && !isReceptionEvent ? <span><AlertTriangle size={15} /><b>Reason</b>{event.reason || 'No reason entered'}</span> : null}
+                    {!isQualityEvent && !isInventoryEvent && !isReceptionEvent ? <span><Activity size={15} /><b>Status</b>{order?.status ? formatTraceabilityStatus(order.status) : 'Unknown'}</span> : null}
                     {isInventoryEvent ? <span><Database size={15} /><b>Minimum</b>{String(event.payload?.minimum_quantity ?? 'N/A')}</span> : null}
                   </div>
                   {isQualityEvent ? (

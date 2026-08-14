@@ -28,6 +28,7 @@ import { useSupabaseRealtimeRefresh } from '../lib/useSupabaseRealtimeRefresh';
 import { mockProductionOrders } from './mesMockData';
 import { qualityInspectionsByPieceType, qualityPieceTypes, qualityReportOnlyInspection } from './qualityInspectionConfig';
 import type { ProductionOrder, ProductionOrderPriority, ProductionOrderStatus, QualityCheckLimit, QualityMeasurementUnit, QualityPieceType } from './mesTypes';
+import './qualityDashboardAnalytics.css';
 
 export type QualityContextTab =
   | 'dashboard'
@@ -768,6 +769,81 @@ function getQualityDashboardData(orders: ProductionOrder[], measurements: Qualit
   return { kpis, queues };
 }
 
+type QualityParetoIssue = { name: string; count: number; share: number; cumulative: number };
+
+function QualityParetoChart({ measurements }: { measurements: QualityMeasurementRecord[] }) {
+  const issues = React.useMemo<QualityParetoIssue[]>(() => {
+    const counts = new Map<string, number>();
+    measurements.filter((measurement) => measurement.result === 'nok').forEach((measurement) => {
+      const name = measurement.inspection_name?.trim() || 'Unknown inspection';
+      counts.set(name, (counts.get(name) ?? 0) + 1);
+    });
+    const ranked = [...counts.entries()].sort((first, second) => second[1] - first[1]);
+    const visible = ranked.length > 8
+      ? [...ranked.slice(0, 7), ['Other issues', ranked.slice(7).reduce((sum, [, count]) => sum + count, 0)] as [string, number]]
+      : ranked;
+    const total = visible.reduce((sum, [, count]) => sum + count, 0);
+    let running = 0;
+    return visible.map(([name, count]) => {
+      running += count;
+      return { name, count, share: total ? count / total * 100 : 0, cumulative: total ? running / total * 100 : 0 };
+    });
+  }, [measurements]);
+
+  if (!issues.length) return <div className="quality-chart-empty"><CheckCircle2 size={30} /><strong>No quality issues detected for this period.</strong><span>No NOK inspection results were recorded in the selected date range.</span></div>;
+  const width = 720; const height = 310; const left = 48; const right = 42; const top = 24; const bottom = 62;
+  const plotWidth = width - left - right; const plotHeight = height - top - bottom;
+  const maxCount = Math.max(1, ...issues.map((issue) => issue.count));
+  const slot = plotWidth / issues.length; const barWidth = Math.min(48, slot * .58);
+  const points = issues.map((issue, index) => ({ x: left + slot * index + slot / 2, y: top + plotHeight * (1 - issue.cumulative / 100) }));
+  const linePath = points.map((point, index) => `${index ? 'L' : 'M'} ${point.x} ${point.y}`).join(' ');
+  return <div className="quality-pareto-wrap"><svg className="quality-pareto" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Pareto chart of top quality issues">
+    {[0, 25, 50, 75, 100].map((percentage) => { const y = top + plotHeight * (1 - percentage / 100); return <g key={percentage}><line x1={left} x2={width - right} y1={y} y2={y} className="grid" /><text x={left - 9} y={y + 4} textAnchor="end" className="axis-label">{Math.round(maxCount * percentage / 100)}</text><text x={width - right + 8} y={y + 4} className="axis-label">{percentage}%</text></g>; })}
+    <line x1={left} x2={width - right} y1={top + plotHeight * .2} y2={top + plotHeight * .2} className="pareto-80" /><text x={left + 5} y={top + plotHeight * .2 - 6} className="pareto-80-label">80% reference</text>
+    {issues.map((issue, index) => { const x = left + slot * index + (slot - barWidth) / 2; const barHeight = issue.count / maxCount * plotHeight; return <g className="pareto-bar" key={issue.name}><title>{`${issue.name}\nNOK Results: ${issue.count}\nShare of NOK: ${issue.share.toFixed(1)}%\nCumulative: ${issue.cumulative.toFixed(1)}%`}</title><rect x={x} y={top + plotHeight - barHeight} width={barWidth} height={barHeight} rx="6" /><text x={x + barWidth / 2} y={top + plotHeight - barHeight - 7} textAnchor="middle" className="bar-value">{issue.count}</text><text x={x + barWidth / 2} y={height - 36} textAnchor="middle" className="category">{issue.name.length > 13 ? `${issue.name.slice(0, 12)}…` : issue.name}</text><text x={x + barWidth / 2} y={height - 20} textAnchor="middle" className="category-share">{issue.share.toFixed(1)}%</text></g>; })}
+    <path d={linePath} className="pareto-line" />{points.map((point, index) => <circle key={issues[index].name} cx={point.x} cy={point.y} r="5" className="pareto-point"><title>{`${issues[index].name}: ${issues[index].cumulative.toFixed(1)}% cumulative`}</title></circle>)}
+  </svg><div className="quality-chart-legend"><span><i className="bars" />NOK results</span><span><i className="line" />Cumulative %</span></div></div>;
+}
+
+function QualityFlowChart({ measurements, inspectedSerials }: { measurements: QualityMeasurementRecord[]; inspectedSerials: QualitySerialInspectionRecord[] }) {
+  const model = React.useMemo(() => {
+    const evaluated = measurements.filter((measurement) => measurement.result === 'ok' || measurement.result === 'nok');
+    const outcomes = new Map(inspectedSerials.map((record) => [`${record.production_order_id}::${record.serial_number}`, record.result]));
+    const ok = evaluated.filter((measurement) => measurement.result === 'ok'); const nok = evaluated.filter((measurement) => measurement.result === 'nok');
+    const released = ok.filter((measurement) => { const result = outcomes.get(`${measurement.production_order_id}::${measurement.serial_number}`); return result && result !== 'nok'; }).length;
+    const held = nok.filter((measurement) => outcomes.get(`${measurement.production_order_id}::${measurement.serial_number}`) === 'nok').length;
+    return { total: evaluated.length, ok: ok.length, nok: nok.length, released, pendingRelease: ok.length - released, held, pendingReview: nok.length - held };
+  }, [inspectedSerials, measurements]);
+  if (!model.total) return <div className="quality-chart-empty"><ClipboardCheck size={30} /><strong>No inspected results for this period.</strong><span>Quality flow will appear after inspection measurements are recorded.</span></div>;
+  const nodes = [
+    { id: 'inspected', label: 'Inspected Results', value: model.total, x: 20, y: 137, tone: 'neutral' },
+    { id: 'ok', label: 'OK', value: model.ok, x: 280, y: 55, tone: 'ok' },
+    { id: 'nok', label: 'NOK', value: model.nok, x: 280, y: 220, tone: 'nok' },
+    { id: 'released', label: 'Released', value: model.released, x: 550, y: 18, tone: 'ok' },
+    { id: 'pending-release', label: 'Pending Release', value: model.pendingRelease, x: 550, y: 92, tone: 'pending' },
+    { id: 'hold', label: 'Quality Hold', value: model.held, x: 550, y: 185, tone: 'nok' },
+    { id: 'pending-review', label: 'Pending Review', value: model.pendingReview, x: 550, y: 259, tone: 'pending' },
+  ];
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const links = [
+    ['inspected', 'ok', model.ok, model.total, 'ok'], ['inspected', 'nok', model.nok, model.total, 'nok'],
+    ['ok', 'released', model.released, model.ok, 'ok'], ['ok', 'pending-release', model.pendingRelease, model.ok, 'pending'],
+    ['nok', 'hold', model.held, model.nok, 'nok'], ['nok', 'pending-review', model.pendingReview, model.nok, 'pending'],
+  ].filter(([, , value]) => Number(value) > 0) as Array<[string, string, number, number, string]>;
+  const max = Math.max(1, ...links.map(([, , value]) => value));
+  return <svg className="quality-flow" viewBox="0 0 720 330" role="img" aria-label="Quality inspection results flow">
+    <g className="flow-links">{links.map(([sourceId, targetId, value, parent, tone]) => { const source = byId.get(sourceId)!; const target = byId.get(targetId)!; return <path key={`${sourceId}-${targetId}`} className={tone} strokeWidth={Math.max(5, value / max * 30)} d={`M ${source.x + 145} ${source.y + 27} C ${source.x + 205} ${source.y + 27}, ${target.x - 60} ${target.y + 27}, ${target.x} ${target.y + 27}`}><title>{`${source.label} → ${target.label}\n${value} results\n${(value / Math.max(1, parent) * 100).toFixed(1)}% of ${source.label}`}</title></path>; })}</g>
+    <g className="flow-nodes">{nodes.map((node) => <g key={node.id} className={node.tone} transform={`translate(${node.x} ${node.y})`}><rect width="145" height="54" rx="9" /><rect className="accent" width="6" height="54" rx="3" /><text x="16" y="22" className="label">{node.label}</text><text x="16" y="42" className="value">{node.value.toLocaleString()} <tspan>results</tspan></text></g>)}</g>
+  </svg>;
+}
+
+function QualityDashboardAnalytics({ measurements, inspectedSerials }: { measurements: QualityMeasurementRecord[]; inspectedSerials: QualitySerialInspectionRecord[] }) {
+  return <section className="quality-dashboard-analytics" aria-label="Quality analysis charts">
+    <article><header><span><small>Quality Pareto</small><h3>Top Quality Issues</h3></span><em>What should we attack first?</em></header><QualityParetoChart measurements={measurements} /></article>
+    <article><header><span><small>Process visibility</small><h3>Quality Flow</h3></span><em>Inspection results · selected period</em></header><QualityFlowChart measurements={measurements} inspectedSerials={inspectedSerials} /></article>
+  </section>;
+}
+
 function QualityDashboard({ orders, measurements, documents, inspectedSerials, productionSerials }: {
   orders: ProductionOrder[];
   measurements: QualityMeasurementRecord[];
@@ -788,6 +864,8 @@ function QualityDashboard({ orders, measurements, documents, inspectedSerials, p
           </article>
         ))}
       </section>
+
+      <QualityDashboardAnalytics measurements={measurements} inspectedSerials={inspectedSerials} />
 
       <section className="quality-dashboard-tray" aria-label="Quality operational queues">
         <div className="quality-dashboard-panel-grid">
@@ -2226,7 +2304,7 @@ export function QualityOperationsWorkspace({ onNavigate, activeTab, organization
   const actionLabel = isDashboard ? 'New Inspection' : activeConfig!.actionLabel;
   const dashboardMeasurements = React.useMemo(() => measurementRecords.filter((measurement) => isQualityDateInRange(measurement.measured_at, dashboardDateRange)), [dashboardDateRange, measurementRecords]);
   const dashboardDocuments = React.useMemo(() => inspectionDocuments.filter((document) => isQualityDateOnOrBefore(document.uploaded_at, dashboardDateRange.to)), [dashboardDateRange.to, inspectionDocuments]);
-  const dashboardInspectedSerials = React.useMemo(() => serialInspectionRecords.filter((record) => isQualityDateOnOrBefore(record.inspected_at, dashboardDateRange.to)), [dashboardDateRange.to, serialInspectionRecords]);
+  const dashboardInspectedSerials = React.useMemo(() => serialInspectionRecords.filter((record) => isQualityDateInRange(record.inspected_at, dashboardDateRange)), [dashboardDateRange, serialInspectionRecords]);
   const dashboardProductionSerials = React.useMemo(() => productionSerialRecords.filter((record) => record.reported_at && isQualityDateOnOrBefore(record.reported_at, dashboardDateRange.to)), [dashboardDateRange.to, productionSerialRecords]);
   const isInspectionsPage = activeTab === 'inspections';
   const pendingInspectionOrders = React.useMemo(() => qualityEnabledOrders.filter((order) => getPendingQualityOrderSerials(order, serialInspectionRecords, productionSerialRecords).length > 0), [qualityEnabledOrders, serialInspectionRecords, productionSerialRecords]);

@@ -1,0 +1,23 @@
+.traceability-event-row.event-tone-reception-created {
+  --traceability-event-color: #0891b2;
+  --traceability-event-soft: rgba(8, 145, 178, .11);
+  --traceability-event-glow: rgba(8, 145, 178, .27);
+}
+
+.traceability-event-row.event-tone-coating-dispatched {
+  --traceability-event-color: #c026d3;
+  --traceability-event-soft: rgba(192, 38, 211, .1);
+  --traceability-event-glow: rgba(192, 38, 211, .26);
+}
+
+.traceability-event-row.event-tone-coating-received {
+  --traceability-event-color: #65a30d;
+  --traceability-event-soft: rgba(101, 163, 13, .12);
+  --traceability-event-glow: rgba(101, 163, 13, .27);
+}
+
+.traceability-event-row.event-tone-reception-sent {
+  --traceability-event-color: #16a34a;
+  --traceability-event-soft: rgba(22, 163, 74, .11);
+  --traceability-event-glow: rgba(22, 163, 74, .27);
+}
