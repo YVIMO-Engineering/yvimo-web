@@ -4266,6 +4266,7 @@ function QuickCheckRunner({ activity, attempt, pointsCelebration, earnedPointsVi
   const [answers, setAnswers] = React.useState<Record<string, string>>(attempt?.status === 'completed' ? savedAnswers : {});
   const [checked, setChecked] = React.useState(attempt?.status === 'completed');
   const [busy, setBusy] = React.useState(false);
+  const [saveError, setSaveError] = React.useState<string | null>(null);
   const completed = attempt?.status === 'completed';
   const result = questions.map((question) => isQuickCheckAnswerCorrect(question, answers[question.id]));
   const answeredCount = questions.filter((question) => Boolean(answers[question.id])).length;
@@ -4274,8 +4275,12 @@ function QuickCheckRunner({ activity, attempt, pointsCelebration, earnedPointsVi
   const allAnswered = totalQuestions > 0 && answeredCount === totalQuestions;
 
   const submit = async () => {
-    setChecked(true);
-    if (!allAnswered || completed) return;
+    setSaveError(null);
+    if (!allAnswered) {
+      setChecked(true);
+      return;
+    }
+    if (completed) return;
     setBusy(true);
     try {
       const score = totalQuestions > 0 ? Math.round((correctCount / totalQuestions) * 100) : 0;
@@ -4285,6 +4290,10 @@ function QuickCheckRunner({ activity, attempt, pointsCelebration, earnedPointsVi
         totalQuestions,
         type: activity.type,
       });
+      setChecked(true);
+    } catch (caught) {
+      setChecked(false);
+      setSaveError(getReadableErrorMessage(caught, t('We could not save your result. Please try again.')));
     } finally {
       setBusy(false);
     }
@@ -4321,6 +4330,15 @@ function QuickCheckRunner({ activity, attempt, pointsCelebration, earnedPointsVi
           <span>
             <strong>{t('Answer every question')}</strong>
             <em>{t('Complete all questions before checking your score.')}</em>
+          </span>
+        </p>
+      ) : null}
+      {saveError ? (
+        <p className="academy-feedback bad" role="alert">
+          <X size={18} />
+          <span>
+            <strong>{t('Result not saved')}</strong>
+            <em>{saveError}</em>
           </span>
         </p>
       ) : null}
