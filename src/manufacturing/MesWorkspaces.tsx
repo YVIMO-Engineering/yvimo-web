@@ -3540,16 +3540,9 @@ function PendingWorkReportModal({
   const [copied, setCopied] = React.useState(false);
   const [downloadingPdf, setDownloadingPdf] = React.useState(false);
   const [selectedSunburstKey, setSelectedSunburstKey] = React.useState('');
+  const pendingSunburstSvgRef = React.useRef<SVGSVGElement | null>(null);
   const [visibleCategories, setVisibleCategories] = React.useState<Set<PendingWorkCategory>>(() => new Set(pendingWorkCategories));
   const visibleReport = React.useMemo(() => getVisiblePendingWorkReport(report, visibleCategories), [report, visibleCategories]);
-  const pendingLoadChart = React.useMemo(() => visibleReport.stations.map((station) => {
-    const categories = station.lines.flatMap((line) => line.orderBreakdown).reduce<Record<PendingWorkCategory, number>>((totals, order) => ({
-      ...totals,
-      [order.category]: totals[order.category] + order.quantity,
-    }), { manufacturing: 0, inspection: 0, quotation: 0 });
-    return { key: station.key, label: station.label, total: station.totalQuantity, categories };
-  }).sort((left, right) => right.total - left.total || left.label.localeCompare(right.label)), [visibleReport.stations]);
-  const pendingLoadMaximum = Math.max(1, ...pendingLoadChart.map((station) => station.total));
   const pendingSunburst = React.useMemo(() => {
     type SunburstSegment = { key: string; level: 'machine' | 'client' | 'order'; label: string; value: number; startAngle: number; endAngle: number; innerRadius: number; outerRadius: number; color: string; machineLabel: string; clientLabel?: string; orderNumber?: string };
     const colors = ['#2563eb', '#f97316', '#14b8a6', '#8b5cf6', '#ec4899', '#eab308', '#06b6d4', '#ef4444'];
@@ -3615,11 +3608,54 @@ function PendingWorkReportModal({
       console.error('Unable to copy pending work report', error);
     }
   };
+  const renderPendingSunburstForPdf = async () => {
+    const sourceSvg = pendingSunburstSvgRef.current;
+    if (!sourceSvg) return '';
+    const svg = sourceSvg.cloneNode(true) as SVGSVGElement;
+    svg.setAttribute('width', '1240');
+    svg.setAttribute('height', '1180');
+    svg.querySelectorAll('[tabindex]').forEach((node) => node.removeAttribute('tabindex'));
+    const style = document.createElementNS('http://www.w3.org/2000/svg', 'style');
+    style.textContent = `
+      .pending-work-sunburst-segment path { stroke: #fff; stroke-width: 2.2; }
+      .pending-work-sunburst-segment.level-client path { opacity: .76; }
+      .pending-work-sunburst-segment.level-order path { opacity: .52; }
+      .pending-work-sunburst-segment text { fill: #fff; font: 950 11px Arial, sans-serif; paint-order: stroke; stroke: rgba(7,17,28,.34); stroke-width: 2px; stroke-linejoin: round; }
+      .pending-work-sunburst-segment.level-client text { font-size: 9.5px; }
+      .pending-work-sunburst-segment.level-order text { fill: #17202a; font-size: 8.5px; stroke: rgba(255,255,255,.9); stroke-width: 2.2px; }
+      .pending-work-sunburst-center { fill: #fff; stroke: #ff8a1f; stroke-width: 3; }
+      .pending-work-sunburst-total { fill: #07111c; font: 950 27px Arial, sans-serif; }
+      .pending-work-sunburst-caption { fill: #64748b; font: 900 8px Arial, sans-serif; letter-spacing: .08em; }
+    `;
+    svg.prepend(style);
+    const serializedSvg = new XMLSerializer().serializeToString(svg);
+    const imageUrl = URL.createObjectURL(new Blob([serializedSvg], { type: 'image/svg+xml;charset=utf-8' }));
+    try {
+      const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const nextImage = new Image();
+        nextImage.onload = () => resolve(nextImage);
+        nextImage.onerror = reject;
+        nextImage.src = imageUrl;
+      });
+      const canvas = document.createElement('canvas');
+      canvas.width = 1240;
+      canvas.height = 1180;
+      const context = canvas.getContext('2d');
+      if (!context) return '';
+      context.fillStyle = '#ffffff';
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      return canvas.toDataURL('image/png', 1);
+    } finally {
+      URL.revokeObjectURL(imageUrl);
+    }
+  };
   const downloadReportPdf = async () => {
     if (downloadingPdf) return;
     setDownloadingPdf(true);
     try {
       const { default: jsPDF } = await import('jspdf');
+      const sunburstImage = await renderPendingSunburstForPdf();
       const pdf = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'letter' });
       const margin = 36;
       const pageWidth = pdf.internal.pageSize.getWidth();
@@ -3669,6 +3705,48 @@ function PendingWorkReportModal({
       pdf.line(margin, cursorY + 48, pageWidth - margin, cursorY + 48);
       cursorY += 62;
 
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(9);
+      pdf.setTextColor(194, 65, 12);
+      pdf.text('PENDING WORK SUNBURST', margin, cursorY);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(8);
+      pdf.setTextColor(82, 97, 117);
+      pdf.text('Machine  →  Client  →  Production Order', margin, cursorY + 14);
+      if (sunburstImage) pdf.addImage(sunburstImage, 'PNG', margin - 4, cursorY + 22, 500, 470, undefined, 'FAST');
+      const legendX = margin + 515;
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(8);
+      pdf.setTextColor(71, 85, 105);
+      pdf.text('MACHINES', legendX, cursorY + 32);
+      visibleReport.stations.forEach((station, index) => {
+        const legendY = cursorY + 48 + (index * 29);
+        const color = pendingSunburst.colors[index % pendingSunburst.colors.length];
+        const red = Number.parseInt(color.slice(1, 3), 16);
+        const green = Number.parseInt(color.slice(3, 5), 16);
+        const blue = Number.parseInt(color.slice(5, 7), 16);
+        pdf.setFillColor(red, green, blue);
+        pdf.roundedRect(legendX, legendY, 10, 10, 2, 2, 'F');
+        pdf.setTextColor(38, 56, 74);
+        pdf.setFontSize(8);
+        pdf.text(station.label, legendX + 17, legendY + 8, { maxWidth: 135 });
+        pdf.setFont('helvetica', 'bold');
+        pdf.text(String(station.totalQuantity), pageWidth - margin, legendY + 8, { align: 'right' });
+        pdf.setFont('helvetica', 'normal');
+      });
+
+      pdf.addPage();
+      cursorY = margin;
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(14);
+      pdf.setTextColor(7, 17, 28);
+      pdf.text('Pending Work Summary', margin, cursorY + 12);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(8);
+      pdf.setTextColor(82, 97, 117);
+      pdf.text(`Generated ${formatTimestamp(visibleReport.generatedAt)}`, pageWidth - margin, cursorY + 12, { align: 'right' });
+      cursorY += 28;
+
       const kpis = [
         ['TOTAL PENDING', visibleReport.totalQuantity, [255, 247, 237], [194, 65, 12]],
         ['MANUFACTURING', visibleReport.subtotals.manufacturing, [239, 246, 255], [37, 99, 235]],
@@ -3692,46 +3770,6 @@ function PendingWorkReportModal({
         pdf.text('PIECES', x + kpiWidth - 10, cursorY + 37, { align: 'right' });
       });
       cursorY += 60;
-
-      if (pendingLoadChart.length) {
-        const pdfChartStations = pendingLoadChart.slice(0, 8);
-        const chartHeight = 31 + (pdfChartStations.length * 21) + 11;
-        const labelWidth = 130;
-        const totalsWidth = 74;
-        const barWidth = contentWidth - labelWidth - totalsWidth - 24;
-        ensureSpace(chartHeight);
-        pdf.setFillColor(248, 250, 252);
-        pdf.setDrawColor(203, 213, 225);
-        pdf.roundedRect(margin, cursorY, contentWidth, chartHeight, 5, 5, 'FD');
-        pdf.setFont('helvetica', 'bold');
-        pdf.setFontSize(8.5);
-        pdf.setTextColor(38, 56, 74);
-        pdf.text('BOTTLENECK MAP · PENDING LOAD BY MACHINE', margin + 10, cursorY + 18);
-        pdfChartStations.forEach((station, index) => {
-          const rowY = cursorY + 29 + (index * 21);
-          let barX = margin + labelWidth;
-          pdf.setFontSize(7.5);
-          pdf.setTextColor(38, 56, 74);
-          pdf.text(station.label, margin + 10, rowY + 10, { maxWidth: labelWidth - 16 });
-          pdf.setFillColor(226, 232, 240);
-          pdf.roundedRect(barX, rowY + 2, barWidth, 10, 3, 3, 'F');
-          ([
-            { value: station.categories.manufacturing, color: [37, 99, 235] as [number, number, number] },
-            { value: station.categories.inspection, color: [20, 184, 166] as [number, number, number] },
-            { value: station.categories.quotation, color: [124, 58, 237] as [number, number, number] },
-          ]).forEach((segment) => {
-            const segmentWidth = (segment.value / pendingLoadMaximum) * barWidth;
-            if (segmentWidth <= 0) return;
-            pdf.setFillColor(...segment.color);
-            pdf.rect(barX, rowY + 2, segmentWidth, 10, 'F');
-            barX += segmentWidth;
-          });
-          pdf.setFontSize(7);
-          pdf.setTextColor(194, 65, 12);
-          pdf.text(`${station.total} pending`, pageWidth - margin - 10, rowY + 10, { align: 'right' });
-        });
-        cursorY += chartHeight + 14;
-      }
 
       sectionTitle('PENDING WORK', `${visibleReport.totalOrders} open orders`);
       visibleReport.stations.forEach((station) => {
@@ -3869,7 +3907,7 @@ function PendingWorkReportModal({
             <div className="pending-work-sunburst-levels"><span>Inner · Machine</span><span>Middle · Client</span><span>Outer · Order</span></div>
           </header>
           {pendingSunburst.segments.length ? <div className="pending-work-sunburst-stage">
-            <svg className="pending-work-sunburst" viewBox="0 0 620 590" role="img" aria-label="Pending work hierarchy by machine, client, and production order">
+            <svg className="pending-work-sunburst" ref={pendingSunburstSvgRef} viewBox="0 0 620 590" role="img" aria-label="Pending work hierarchy by machine, client, and production order">
               {pendingSunburst.segments.map((segment) => {
                 const angle = (segment.startAngle + segment.endAngle) / 2;
                 const radius = (segment.innerRadius + segment.outerRadius) / 2;
