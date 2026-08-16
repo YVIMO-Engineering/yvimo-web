@@ -1,9 +1,17 @@
-.production-orders-client-filter {
-  display: grid;
-  flex: 0 0 180px;
-  gap: 4px;
+.production-orders-scope-filters {
+  display: flex;
+  flex: 1 1 390px;
+  gap: 10px;
   margin-right: auto;
   margin-left: auto;
+  min-width: 300px;
+  max-width: 450px;
+}
+
+.production-orders-client-filter {
+  display: grid;
+  flex: 1 1 0;
+  gap: 4px;
   min-width: 0;
 }
 
@@ -27,6 +35,17 @@
 
 .production-orders-client-filter .mes-order-dropdown > button > span {
   color: inherit;
+}
+
+.mes-order-dropdown-menu.production-orders-work-center-menu {
+  gap: 4px;
+  padding: 7px;
+}
+
+.mes-order-dropdown-menu.production-orders-work-center-menu button {
+  min-height: 44px;
+  padding: 8px 12px;
+  line-height: 1.35;
 }
 
 .production-order-work-center-card {
@@ -76,6 +95,15 @@
 }
 
 @media (max-width: 760px) {
+  .production-orders-scope-filters {
+    display: grid;
+    grid-template-columns: 1fr;
+    margin: 0;
+    min-width: 0;
+    max-width: none;
+    width: 100%;
+  }
+
   .production-orders-client-filter {
     flex-basis: auto;
     margin-right: 0;

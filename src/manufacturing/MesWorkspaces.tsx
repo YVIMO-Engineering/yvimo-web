@@ -23,6 +23,12 @@ type WorkspaceProps = {
 const productionOrderDeepLinkKey = 'yvimo:mes:selectedProductionOrderNumber';
 const productionOrderDetailsDeepLinkKey = 'yvimo:mes:openProductionOrderDetails';
 const productionOrdersViewStateKeyPrefix = 'yvimo:mes:production-orders:view';
+const productionOrdersWorkCenterFilterKeyPrefix = 'yvimo:mes:production-orders:work-center';
+
+function loadProductionOrdersWorkCenterFilter(organizationId: string) {
+  if (typeof window === 'undefined') return 'all';
+  return window.localStorage.getItem(`${productionOrdersWorkCenterFilterKeyPrefix}:${organizationId}`) || 'all';
+}
 
 type ProductionOrdersViewState = {
   selectedOrderNumber: string;
@@ -225,6 +231,7 @@ type ProductionOrderStationOptionRow = {
 
 type WorkCenterProductionEventRow = {
   production_order_id: string | null;
+  work_center_code: string;
   station_code: string;
   created_at: string;
   payload: Record<string, unknown> | null;
@@ -601,6 +608,7 @@ type MesOrderDropdownProps = {
   placeholder?: string;
   disabled?: boolean;
   placement?: 'auto' | 'bottom';
+  menuClassName?: string;
   onChange: (value: string) => void;
 };
 
@@ -911,7 +919,7 @@ export function MesOrderDatePicker({
   );
 }
 
-function MesOrderDropdown({ id, value, options, placeholder = 'Select option', disabled = false, placement = 'auto', onChange }: MesOrderDropdownProps) {
+function MesOrderDropdown({ id, value, options, placeholder = 'Select option', disabled = false, placement = 'auto', menuClassName = '', onChange }: MesOrderDropdownProps) {
   const [open, setOpen] = React.useState(false);
   const [menuPosition, setMenuPosition] = React.useState<MesOrderDropdownMenuPosition | null>(null);
   const triggerRef = React.useRef<HTMLDivElement | null>(null);
@@ -925,7 +933,8 @@ function MesOrderDropdown({ id, value, options, placeholder = 'Select option', d
     const viewportPadding = 16;
     const availableBelow = window.innerHeight - rect.bottom - viewportPadding;
     const availableAbove = rect.top - viewportPadding;
-    const desiredMenuHeight = Math.min(280, Math.max(88, (options.length * 38) + 12));
+    const optionHeight = menuClassName ? 48 : 38;
+    const desiredMenuHeight = Math.min(320, Math.max(88, (options.length * optionHeight) + 12));
     const minimumUsefulHeight = Math.min(desiredMenuHeight, 140);
     const openUp = availableBelow < minimumUsefulHeight && availableAbove > availableBelow
       ? true
@@ -941,7 +950,7 @@ function MesOrderDropdown({ id, value, options, placeholder = 'Select option', d
       width: menuWidth,
       maxHeight,
     });
-  }, [disabled, options.length, placement]);
+  }, [disabled, menuClassName, options.length, placement]);
 
   React.useLayoutEffect(() => {
     if (!open || disabled) return;
@@ -972,7 +981,7 @@ function MesOrderDropdown({ id, value, options, placeholder = 'Select option', d
   const dropdownMenu = open && !disabled && menuPosition
     ? createPortal(
       <div
-        className="mes-order-dropdown-menu"
+        className={['mes-order-dropdown-menu', menuClassName].filter(Boolean).join(' ')}
         id={`${id}-listbox`}
         role="listbox"
         ref={menuRef}
@@ -3192,6 +3201,11 @@ function getDailyProductionPeriodLabel(dateRange: MesOrderDateRange) {
 
 function DailyProductionReportModal({ report, onClose }: { report: DailyProductionReport; onClose: () => void }) {
   const [downloadingPdf, setDownloadingPdf] = React.useState(false);
+  const chartMachines = React.useMemo(() => [...report.machines].sort((left, right) => (
+    (right.goodQuantity + right.scrapQuantity + right.inspectionCount)
+    - (left.goodQuantity + left.scrapQuantity + left.inspectionCount)
+  )), [report.machines]);
+  const chartMaximum = Math.max(1, ...chartMachines.map((machine) => machine.goodQuantity + machine.scrapQuantity + machine.inspectionCount));
   const downloadPdf = async () => {
     if (downloadingPdf) return;
     setDownloadingPdf(true);
@@ -3250,7 +3264,59 @@ function DailyProductionReportModal({ report, onClose }: { report: DailyProducti
         pdf.setFontSize(7);
         pdf.text(card.unit.toUpperCase(), cardX + 10, cursorY + 50);
       });
-      cursorY += summaryHeight + 26;
+      cursorY += summaryHeight + 18;
+
+      if (chartMachines.length) {
+        const pdfChartMachines = chartMachines.slice(0, 8);
+        const chartWidth = pageWidth - (margin * 2);
+        const labelWidth = 145;
+        const valueWidth = 94;
+        const barWidth = chartWidth - labelWidth - valueWidth - 24;
+        const rowHeight = 22;
+        const chartHeight = 31 + (pdfChartMachines.length * rowHeight) + 12;
+        ensureSpace(chartHeight);
+        pdf.setFillColor(248, 250, 252);
+        pdf.setDrawColor(216, 224, 232);
+        pdf.roundedRect(margin, cursorY, chartWidth, chartHeight, 6, 6, 'FD');
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(9);
+        pdf.setTextColor(38, 56, 74);
+        pdf.text('ACTIVITY BY MACHINE', margin + 12, cursorY + 18);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(7);
+        pdf.setTextColor(71, 85, 105);
+        pdf.text('Good produced', pageWidth - margin - 176, cursorY + 18);
+        pdf.text('Scrap', pageWidth - margin - 105, cursorY + 18);
+        pdf.text('Inspections', pageWidth - margin - 58, cursorY + 18);
+        pdfChartMachines.forEach((machine, index) => {
+          const rowY = cursorY + 30 + (index * rowHeight);
+          const total = machine.goodQuantity + machine.scrapQuantity + machine.inspectionCount;
+          let barX = margin + labelWidth;
+          pdf.setFont('helvetica', 'bold');
+          pdf.setFontSize(7.5);
+          pdf.setTextColor(38, 56, 74);
+          pdf.text(machine.stationName, margin + 12, rowY + 10, { maxWidth: labelWidth - 20 });
+          pdf.setFillColor(226, 232, 240);
+          pdf.roundedRect(barX, rowY + 2, barWidth, 10, 3, 3, 'F');
+          ([
+            { value: machine.goodQuantity, color: [16, 185, 129] as [number, number, number] },
+            { value: machine.scrapQuantity, color: [239, 68, 68] as [number, number, number] },
+            { value: machine.inspectionCount, color: [59, 130, 246] as [number, number, number] },
+          ]).forEach((segment) => {
+            const segmentWidth = (segment.value / chartMaximum) * barWidth;
+            if (segmentWidth <= 0) return;
+            pdf.setFillColor(...segment.color);
+            pdf.rect(barX, rowY + 2, segmentWidth, 10, 'F');
+            barX += segmentWidth;
+          });
+          pdf.setFont('helvetica', 'normal');
+          pdf.setFontSize(7);
+          pdf.setTextColor(71, 85, 105);
+          pdf.text(`${machine.goodQuantity} good · ${machine.scrapQuantity} scrap · ${machine.inspectionCount} insp. · ${machine.orderCount} orders`, pageWidth - margin - 10, rowY + 10, { align: 'right' });
+          if (!total) pdf.text('No activity', margin + labelWidth + 5, rowY + 10);
+        });
+        cursorY += chartHeight + 18;
+      }
 
       report.machines.forEach((machine, machineIndex) => {
         if (machineIndex > 0) {
@@ -3406,6 +3472,27 @@ function DailyProductionReportModal({ report, onClose }: { report: DailyProducti
           <article className="orders"><span>Orders worked</span><strong>{report.orderCount.toLocaleString()}</strong><em>production orders</em></article>
           <article className="machines"><span>Machines active</span><strong>{report.machineCount.toLocaleString()}</strong><em>stations</em></article>
         </div>
+        <section className="daily-production-report-chart" aria-labelledby="daily-production-report-chart-title">
+          <header>
+            <div><span><Activity size={17} /></span><div><strong id="daily-production-report-chart-title">Activity by machine</strong><small>Operational volume for the selected period</small></div></div>
+            <div className="daily-production-report-chart-legend"><span className="good">Good produced</span><span className="scrap">Scrap</span><span className="quality">Inspections</span></div>
+          </header>
+          {chartMachines.length ? <div className="daily-production-report-chart-rows">
+            {chartMachines.map((machine) => {
+              const total = machine.goodQuantity + machine.scrapQuantity + machine.inspectionCount;
+              return <div className="daily-production-report-chart-row" key={machine.key}>
+                <div className="daily-production-report-chart-label"><strong>{machine.stationName}</strong><small>{machine.workCenterCode} · {machine.orderCount} order{machine.orderCount === 1 ? '' : 's'}</small></div>
+                <div className="daily-production-report-chart-bar" aria-label={`${machine.stationName}: ${machine.goodQuantity} good, ${machine.scrapQuantity} scrap, ${machine.inspectionCount} inspections`}>
+                  <i className="good" style={{ width: `${(machine.goodQuantity / chartMaximum) * 100}%` }} />
+                  <i className="scrap" style={{ width: `${(machine.scrapQuantity / chartMaximum) * 100}%` }} />
+                  <i className="quality" style={{ width: `${(machine.inspectionCount / chartMaximum) * 100}%` }} />
+                  {!total ? <em>No activity</em> : null}
+                </div>
+                <div className="daily-production-report-chart-values"><span className="good">{machine.goodQuantity}</span><span className="scrap">{machine.scrapQuantity}</span><span className="quality">{machine.inspectionCount}</span></div>
+              </div>;
+            })}
+          </div> : <div className="daily-production-report-chart-empty">No machine activity to visualize for this period.</div>}
+        </section>
         <div className="daily-production-report-machines">
           {report.machines.length ? report.machines.map((machine) => (
             <article className="daily-production-machine" key={machine.key}>
@@ -3452,8 +3539,61 @@ function PendingWorkReportModal({
 }) {
   const [copied, setCopied] = React.useState(false);
   const [downloadingPdf, setDownloadingPdf] = React.useState(false);
+  const [selectedSunburstKey, setSelectedSunburstKey] = React.useState('');
   const [visibleCategories, setVisibleCategories] = React.useState<Set<PendingWorkCategory>>(() => new Set(pendingWorkCategories));
   const visibleReport = React.useMemo(() => getVisiblePendingWorkReport(report, visibleCategories), [report, visibleCategories]);
+  const pendingLoadChart = React.useMemo(() => visibleReport.stations.map((station) => {
+    const categories = station.lines.flatMap((line) => line.orderBreakdown).reduce<Record<PendingWorkCategory, number>>((totals, order) => ({
+      ...totals,
+      [order.category]: totals[order.category] + order.quantity,
+    }), { manufacturing: 0, inspection: 0, quotation: 0 });
+    return { key: station.key, label: station.label, total: station.totalQuantity, categories };
+  }).sort((left, right) => right.total - left.total || left.label.localeCompare(right.label)), [visibleReport.stations]);
+  const pendingLoadMaximum = Math.max(1, ...pendingLoadChart.map((station) => station.total));
+  const pendingSunburst = React.useMemo(() => {
+    type SunburstSegment = { key: string; level: 'machine' | 'client' | 'order'; label: string; value: number; startAngle: number; endAngle: number; innerRadius: number; outerRadius: number; color: string; machineLabel: string; clientLabel?: string; orderNumber?: string };
+    const colors = ['#2563eb', '#f97316', '#14b8a6', '#8b5cf6', '#ec4899', '#eab308', '#06b6d4', '#ef4444'];
+    const segments: SunburstSegment[] = [];
+    const total = Math.max(1, visibleReport.totalQuantity);
+    let machineStart = -Math.PI / 2;
+    visibleReport.stations.forEach((station, stationIndex) => {
+      const machineSpan = (station.totalQuantity / total) * Math.PI * 2;
+      const machineEnd = machineStart + machineSpan;
+      const color = colors[stationIndex % colors.length];
+      segments.push({ key: `machine:${station.key}`, level: 'machine', label: station.label, value: station.totalQuantity, startAngle: machineStart, endAngle: machineEnd, innerRadius: 68, outerRadius: 132, color, machineLabel: station.label });
+      let clientStart = machineStart;
+      station.lines.forEach((line) => {
+        const clientSpan = machineSpan * (line.quantity / station.totalQuantity);
+        const clientEnd = clientStart + clientSpan;
+        segments.push({ key: `client:${station.key}:${line.key}`, level: 'client', label: line.clientName, value: line.quantity, startAngle: clientStart, endAngle: clientEnd, innerRadius: 136, outerRadius: 204, color, machineLabel: station.label, clientLabel: line.clientName });
+        const ordersByNumber = Array.from(line.orderBreakdown.reduce<Map<string, number>>((totals, order) => {
+          totals.set(order.orderNumber, (totals.get(order.orderNumber) ?? 0) + order.quantity);
+          return totals;
+        }, new Map()));
+        let orderStart = clientStart;
+        ordersByNumber.forEach(([orderNumber, quantity]) => {
+          const orderSpan = clientSpan * (quantity / line.quantity);
+          const orderEnd = orderStart + orderSpan;
+          segments.push({ key: `order:${station.key}:${line.key}:${orderNumber}`, level: 'order', label: orderNumber, value: quantity, startAngle: orderStart, endAngle: orderEnd, innerRadius: 208, outerRadius: 276, color, machineLabel: station.label, clientLabel: line.clientName, orderNumber });
+          orderStart = orderEnd;
+        });
+        clientStart = clientEnd;
+      });
+      machineStart = machineEnd;
+    });
+    return { segments, colors };
+  }, [visibleReport]);
+  const selectedSunburstSegment = pendingSunburst.segments.find((segment) => segment.key === selectedSunburstKey) ?? null;
+  const describeSunburstArc = (segment: (typeof pendingSunburst.segments)[number]) => {
+    const endAngle = Math.min(segment.endAngle, segment.startAngle + (Math.PI * 2) - 0.0001);
+    const point = (radius: number, angle: number) => ({ x: 310 + (radius * Math.cos(angle)), y: 295 + (radius * Math.sin(angle)) });
+    const outerStart = point(segment.outerRadius, segment.startAngle);
+    const outerEnd = point(segment.outerRadius, endAngle);
+    const innerEnd = point(segment.innerRadius, endAngle);
+    const innerStart = point(segment.innerRadius, segment.startAngle);
+    const largeArc = endAngle - segment.startAngle > Math.PI ? 1 : 0;
+    return `M ${outerStart.x} ${outerStart.y} A ${segment.outerRadius} ${segment.outerRadius} 0 ${largeArc} 1 ${outerEnd.x} ${outerEnd.y} L ${innerEnd.x} ${innerEnd.y} A ${segment.innerRadius} ${segment.innerRadius} 0 ${largeArc} 0 ${innerStart.x} ${innerStart.y} Z`;
+  };
   const toggleVisibleCategory = (category: PendingWorkCategory) => {
     setVisibleCategories((currentCategories) => {
       const nextCategories = new Set(currentCategories);
@@ -3551,7 +3691,47 @@ function PendingWorkReportModal({
         pdf.setFontSize(7);
         pdf.text('PIECES', x + kpiWidth - 10, cursorY + 37, { align: 'right' });
       });
-      cursorY += 64;
+      cursorY += 60;
+
+      if (pendingLoadChart.length) {
+        const pdfChartStations = pendingLoadChart.slice(0, 8);
+        const chartHeight = 31 + (pdfChartStations.length * 21) + 11;
+        const labelWidth = 130;
+        const totalsWidth = 74;
+        const barWidth = contentWidth - labelWidth - totalsWidth - 24;
+        ensureSpace(chartHeight);
+        pdf.setFillColor(248, 250, 252);
+        pdf.setDrawColor(203, 213, 225);
+        pdf.roundedRect(margin, cursorY, contentWidth, chartHeight, 5, 5, 'FD');
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(8.5);
+        pdf.setTextColor(38, 56, 74);
+        pdf.text('BOTTLENECK MAP · PENDING LOAD BY MACHINE', margin + 10, cursorY + 18);
+        pdfChartStations.forEach((station, index) => {
+          const rowY = cursorY + 29 + (index * 21);
+          let barX = margin + labelWidth;
+          pdf.setFontSize(7.5);
+          pdf.setTextColor(38, 56, 74);
+          pdf.text(station.label, margin + 10, rowY + 10, { maxWidth: labelWidth - 16 });
+          pdf.setFillColor(226, 232, 240);
+          pdf.roundedRect(barX, rowY + 2, barWidth, 10, 3, 3, 'F');
+          ([
+            { value: station.categories.manufacturing, color: [37, 99, 235] as [number, number, number] },
+            { value: station.categories.inspection, color: [20, 184, 166] as [number, number, number] },
+            { value: station.categories.quotation, color: [124, 58, 237] as [number, number, number] },
+          ]).forEach((segment) => {
+            const segmentWidth = (segment.value / pendingLoadMaximum) * barWidth;
+            if (segmentWidth <= 0) return;
+            pdf.setFillColor(...segment.color);
+            pdf.rect(barX, rowY + 2, segmentWidth, 10, 'F');
+            barX += segmentWidth;
+          });
+          pdf.setFontSize(7);
+          pdf.setTextColor(194, 65, 12);
+          pdf.text(`${station.total} pending`, pageWidth - margin - 10, rowY + 10, { align: 'right' });
+        });
+        cursorY += chartHeight + 14;
+      }
 
       sectionTitle('PENDING WORK', `${visibleReport.totalOrders} open orders`);
       visibleReport.stations.forEach((station) => {
@@ -3683,6 +3863,66 @@ function PendingWorkReportModal({
           <article className="inspection"><span>Inspection</span><strong>{visibleReport.subtotals.inspection.toLocaleString()}</strong><em>pending pieces</em></article>
           <article className="quotation"><span>Quotation</span><strong>{visibleReport.subtotals.quotation.toLocaleString()}</strong><em>pending pieces</em></article>
         </div>
+        <section className="pending-work-report-chart pending-work-bottleneck-map" aria-labelledby="pending-work-report-chart-title">
+          <header>
+            <div><span><Activity size={17} /></span><div><strong id="pending-work-report-chart-title">Pending work sunburst</strong><small>Machine → Client → Production Order</small></div></div>
+            <div className="pending-work-sunburst-levels"><span>Inner · Machine</span><span>Middle · Client</span><span>Outer · Order</span></div>
+          </header>
+          {pendingSunburst.segments.length ? <div className="pending-work-sunburst-stage">
+            <svg className="pending-work-sunburst" viewBox="0 0 620 590" role="img" aria-label="Pending work hierarchy by machine, client, and production order">
+              {pendingSunburst.segments.map((segment) => {
+                const angle = (segment.startAngle + segment.endAngle) / 2;
+                const radius = (segment.innerRadius + segment.outerRadius) / 2;
+                const labelX = 310 + (radius * Math.cos(angle));
+                const labelY = 295 + (radius * Math.sin(angle));
+                const span = segment.endAngle - segment.startAngle;
+                const showLabel = span > (segment.level === 'machine' ? 0.18 : segment.level === 'client' ? 0.14 : 0.1);
+                let rotation = (angle * 180 / Math.PI) + 90;
+                while (rotation > 180) rotation -= 360;
+                while (rotation < -180) rotation += 360;
+                if (rotation > 90) rotation -= 180;
+                if (rotation < -90) rotation += 180;
+                const segmentLabel = segment.level === 'machine'
+                  ? `${segment.label} · ${segment.value}`
+                  : segment.level === 'client'
+                    ? segment.label
+                    : segment.label;
+                return <g
+                  className={`pending-work-sunburst-segment level-${segment.level}${selectedSunburstSegment?.key === segment.key ? ' selected' : ''}${selectedSunburstSegment && selectedSunburstSegment.key !== segment.key ? ' selection-muted' : ''}`}
+                  key={segment.key}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Select ${segment.level} ${segment.label}, ${segment.value} pending pieces`}
+                  onClick={() => setSelectedSunburstKey((currentKey) => currentKey === segment.key ? '' : segment.key)}
+                  onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedSunburstKey((currentKey) => currentKey === segment.key ? '' : segment.key); } }}
+                >
+                  <path d={describeSunburstArc(segment)} fill={segment.color} />
+                  {showLabel ? <text x={labelX} y={labelY} transform={`rotate(${rotation} ${labelX} ${labelY})`} textAnchor="middle">{segmentLabel}</text> : null}
+                </g>;
+              })}
+              <circle cx="310" cy="295" r="61" className="pending-work-sunburst-center" />
+              <text x="310" y="287" className="pending-work-sunburst-total" textAnchor="middle">{visibleReport.totalQuantity}</text>
+              <text x="310" y="309" className="pending-work-sunburst-caption" textAnchor="middle">PIECES PENDING</text>
+            </svg>
+            <aside className="pending-work-sunburst-aside">
+              <div className="pending-work-sunburst-machine-legend">
+                {visibleReport.stations.map((station, index) => <span key={station.key} style={{ '--sunburst-color': pendingSunburst.colors[index % pendingSunburst.colors.length] } as React.CSSProperties}><i />{station.label}<b>{station.totalQuantity}</b></span>)}
+              </div>
+              <div className={`pending-work-sunburst-selection${selectedSunburstSegment ? ' active' : ''}`} style={selectedSunburstSegment ? { '--sunburst-selection-color': selectedSunburstSegment.color } as React.CSSProperties : undefined}>
+                {selectedSunburstSegment ? <>
+                  <span>{selectedSunburstSegment.level} selected</span>
+                  <h4>{selectedSunburstSegment.level === 'order' ? `Order ${selectedSunburstSegment.orderNumber}` : selectedSunburstSegment.label}</h4>
+                  <strong>{selectedSunburstSegment.value.toLocaleString()}<small>pieces pending</small></strong>
+                  <dl>
+                    <div><dt>Machine</dt><dd>{selectedSunburstSegment.machineLabel}</dd></div>
+                    {selectedSunburstSegment.clientLabel ? <div><dt>Client</dt><dd>{selectedSunburstSegment.clientLabel}</dd></div> : null}
+                    {selectedSunburstSegment.orderNumber ? <div><dt>Production order</dt><dd>{selectedSunburstSegment.orderNumber}</dd></div> : null}
+                  </dl>
+                </> : <><span>Diagram details</span><h4>Select a segment</h4><p>Choose a machine, client, or production order to inspect its pending load.</p></>}
+              </div>
+            </aside>
+          </div> : <div className="pending-work-report-chart-empty">No pending load to visualize for the selected categories.</div>}
+        </section>
         <div className="pending-work-report-body">
           <section className="pending-work-report-panel pending-work-report-pending" aria-label="Pending work by machine">
             <div className="pending-work-report-panel-heading">
@@ -3804,12 +4044,14 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
 }) {
   const restoredViewState = React.useMemo(() => loadProductionOrdersViewState(organizationId), [organizationId]);
   const [orders, setOrders] = React.useState<ProductionOrder[]>([]);
+  const [lastProductionEvent, setLastProductionEvent] = React.useState<WorkCenterProductionEventRow | null>(null);
   const [selectedOrderNumber, setSelectedOrderNumber] = React.useState(restoredViewState.selectedOrderNumber);
   const [searchTerm, setSearchTerm] = React.useState(restoredViewState.searchTerm);
   const [orderView, setOrderView] = React.useState<'all' | 'in-progress' | 'completed'>(restoredViewState.orderView);
   const [sortByPriority, setSortByPriority] = React.useState(restoredViewState.sortByPriority);
   const [orderDateColumn, setOrderDateColumn] = React.useState<'due' | 'created'>('due');
   const [clientFilter, setClientFilter] = React.useState(restoredViewState.clientFilter);
+  const [workCenterFilter, setWorkCenterFilter] = React.useState(() => loadProductionOrdersWorkCenterFilter(organizationId));
   const [kpiDateRange, setKpiDateRange] = React.useState<MesOrderDateRange>(() => getMesOrderQuickRange('today'));
   const [workCenterOptions, setWorkCenterOptions] = React.useState<MesOrderDropdownOption[]>([]);
   const [stationOptionsByWorkCenter, setStationOptionsByWorkCenter] = React.useState<Record<string, MesOrderDropdownOption[]>>({});
@@ -3906,6 +4148,10 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
       label: customer.status === 'inactive' ? `${customer.customer_name} (Inactive)` : customer.customer_name,
     })),
   ], [customerOptions]);
+  const workCenterFilterOptions = React.useMemo<MesOrderDropdownOption[]>(() => [
+    { value: 'all', label: 'All work centers' },
+    ...workCenterOptions,
+  ], [workCenterOptions]);
   const filteredOrders = orders.filter((order) => {
     const haystack = [
       order.orderNumber,
@@ -3924,7 +4170,8 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
     const matchesClient = clientFilter === 'all'
       || order.customerId === clientFilter
       || (!order.customerId && order.clientName?.trim() === selectedFilterCustomer?.customer_name);
-    return matchesSearch && matchesView && matchesClient;
+    const matchesWorkCenter = workCenterFilter === 'all' || order.assignedWorkCenter === workCenterFilter;
+    return matchesSearch && matchesView && matchesClient && matchesWorkCenter;
   });
   const priorityRank = {
     expedite: 0,
@@ -3946,13 +4193,12 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
   const pageCount = Math.max(1, Math.ceil(visibleOrders.length / pageSize));
   const currentPage = Math.min(page, pageCount);
   const paginatedOrders = visibleOrders.slice((currentPage - 1) * pageSize, currentPage * pageSize);
-  const currentOrders = orders.filter((order) => ['released', 'running', 'paused', 'waiting-inspection'].includes(order.status)).length;
-  const kpiOrders = orders.filter((order) => {
-    const activityDate = toLocalIsoDate(order.updatedAt ?? order.createdAt ?? order.dueDate);
-    return (!kpiDateRange.from || activityDate >= kpiDateRange.from) && (!kpiDateRange.to || activityDate <= kpiDateRange.to);
-  });
-  const completedOrders = kpiOrders.filter((order) => order.status === 'completed').length;
-  const todayTotalProduction = kpiOrders.reduce((total, order) => total + order.completedQuantity, 0);
+  const lastProducedOrder = lastProductionEvent?.production_order_id
+    ? orders.find((order) => order.id === lastProductionEvent.production_order_id) ?? null
+    : null;
+  const lastProducedSerial = typeof lastProductionEvent?.payload?.serial_number === 'string'
+    ? lastProductionEvent.payload.serial_number
+    : 'Not recorded';
   const selectedOrderProgress = selectedOrder && selectedOrder.plannedQuantity > 0
     ? Math.min(100, Math.round((selectedOrder.completedQuantity / selectedOrder.plannedQuantity) * 100))
     : 0;
@@ -3968,6 +4214,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
   const productionOrdersRealtimeTables = React.useMemo(() => ([
     { table: 'mes_production_orders', filter: `organization_id=eq.${organizationId}` },
     { table: 'mes_production_serials', filter: `organization_id=eq.${organizationId}` },
+    { table: 'mes_operator_terminal_events', filter: `organization_id=eq.${organizationId}` },
     { table: 'mes_operator_terminal_traceability', filter: `organization_id=eq.${organizationId}` },
     { table: 'mes_work_centers', filter: `organization_id=eq.${organizationId}` },
     { table: 'mes_work_center_stations', filter: `organization_id=eq.${organizationId}` },
@@ -3982,7 +4229,15 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
     const requestId = productionOrdersLoadRequestRef.current + 1;
     productionOrdersLoadRequestRef.current = requestId;
     if (!silent) setOrdersLoaded(false);
-    const [{ data, error }, { data: workCenterData, error: workCenterError }, { data: stationData, error: stationError }, { data: customerData, error: customerError }, { data: quotationData, error: quotationError }, { data: legacyPriceData, error: legacyPriceError }, { data: assetData, error: assetError }] = await Promise.all([
+    let lastProductionEventQuery = supabase
+      .from('mes_operator_terminal_events')
+      .select('production_order_id, work_center_code, station_code, created_at, payload')
+      .eq('organization_id', organizationId)
+      .eq('event_type', 'production-good')
+      .order('created_at', { ascending: false })
+      .limit(1);
+    if (workCenterFilter !== 'all') lastProductionEventQuery = lastProductionEventQuery.eq('work_center_code', workCenterFilter);
+    const [{ data, error }, { data: workCenterData, error: workCenterError }, { data: stationData, error: stationError }, { data: customerData, error: customerError }, { data: quotationData, error: quotationError }, { data: legacyPriceData, error: legacyPriceError }, { data: assetData, error: assetError }, { data: productionEventData, error: productionEventError }] = await Promise.all([
       supabase
         .from('mes_production_orders')
         .select('*')
@@ -4019,9 +4274,16 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
         .select('id, customer_id, serial_number, asset_type, status, tool_definition:mes_customer_tool_ids(tool_id, internal_tool_id), customer:mes_customers(customer_name)')
         .eq('organization_id', organizationId)
         .order('updated_at', { ascending: false }),
+      lastProductionEventQuery,
     ]);
 
     if (requestId !== productionOrdersLoadRequestRef.current) return;
+    if (productionEventError) {
+      console.warn('Unable to load the last produced part', productionEventError);
+      setLastProductionEvent(null);
+    } else {
+      setLastProductionEvent((productionEventData?.[0] as WorkCenterProductionEventRow | undefined) ?? null);
+    }
     if (customerError) {
       setCustomerOptions([]);
       setCustomerOptionsMessage(customerError.message);
@@ -4092,6 +4354,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
         return groups;
       }, {});
       setWorkCenterOptions(nextWorkCenterOptions);
+      setWorkCenterFilter((currentFilter) => currentFilter === 'all' || nextWorkCenterOptions.some((option) => option.value === currentFilter) ? currentFilter : 'all');
       setStationOptionsByWorkCenter(nextStationOptionsByWorkCenter);
       setWorkCenterOptionsMessage(nextWorkCenterOptions.length ? '' : 'No Work Centers configured yet.');
     }
@@ -4144,7 +4407,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
     });
     setTableMessage(nextOrders.length === 0 ? emptyProductionOrdersMessage : null);
     setOrdersLoaded(true);
-  }, [organizationId]);
+  }, [organizationId, workCenterFilter]);
 
   React.useEffect(() => {
     if (!ordersLoaded) return;
@@ -4166,6 +4429,10 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
   React.useEffect(() => {
     if (ordersLoaded && page > pageCount) setPage(pageCount);
   }, [ordersLoaded, page, pageCount]);
+
+  React.useEffect(() => {
+    window.localStorage.setItem(`${productionOrdersWorkCenterFilterKeyPrefix}:${organizationId}`, workCenterFilter);
+  }, [organizationId, workCenterFilter]);
 
   React.useEffect(() => {
     const pendingOrderNumber = window.sessionStorage.getItem(productionOrderDeepLinkKey);
@@ -4208,7 +4475,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
       return;
     }
     setPage(1);
-  }, [clientFilter, searchTerm, orderView]);
+  }, [clientFilter, workCenterFilter, searchTerm, orderView]);
 
   React.useEffect(() => {
     void loadProductionOrders();
@@ -4246,6 +4513,15 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
     let inspectionRows: PendingWorkReportInspectionRow[] = [];
     let machineSnapshots: PendingWorkMachineSnapshot[] = [];
     const generatedAt = new Date();
+    const reportOrders = workCenterFilter === 'all'
+      ? orders
+      : orders.filter((order) => order.assignedWorkCenter === workCenterFilter);
+    const reportWorkCenterOptions = workCenterFilter === 'all'
+      ? workCenterOptions
+      : workCenterOptions.filter((option) => option.value === workCenterFilter);
+    const reportStationCodes = workCenterFilter === 'all'
+      ? null
+      : new Set((stationOptionsByWorkCenter[workCenterFilter] ?? []).map((station) => station.value));
     const [
       { data: serialData, error: serialError },
       { data: inspectionData, error: inspectionError },
@@ -4283,8 +4559,8 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
     if (stationError || cycleError) {
       console.error('Unable to load machine snapshots for pending work report', stationError ?? cycleError);
     } else {
-      const orderById = new Map(orders.map((order) => [order.id, order]));
-      machineSnapshots = (stationData ?? []).map((station) => {
+      const orderById = new Map(reportOrders.map((order) => [order.id, order]));
+      machineSnapshots = (stationData ?? []).filter((station) => !reportStationCodes || reportStationCodes.has(station.code)).map((station) => {
         const activeCycle = (cycleData ?? []).find((cycle) => cycle.station_code === station.code);
         const lastSerial = [...serialRows]
           .filter((serial) => {
@@ -4312,7 +4588,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
         };
       });
     }
-    setPendingWorkReport(getPendingWorkReport(orders, stationOptionsByWorkCenter, workCenterOptions, serialRows, inspectionRows, machineSnapshots));
+    setPendingWorkReport(getPendingWorkReport(reportOrders, stationOptionsByWorkCenter, reportWorkCenterOptions, serialRows, inspectionRows, machineSnapshots));
   };
 
   const focusPendingWorkOrder = (orderNumber: string) => {
@@ -4339,7 +4615,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
     const rangeEnd = new Date(`${reportDateRange.to}T00:00:00`);
     rangeEnd.setDate(rangeEnd.getDate() + 1);
     try {
-      const { data, error } = await supabase
+      let dailyProductionQuery = supabase
         .from('mes_operator_terminal_events')
         .select('id, production_order_id, work_center_code, station_code, event_type, quantity, reason, comment, payload, created_at')
         .eq('organization_id', organizationId)
@@ -4355,16 +4631,24 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
         .gte('created_at', rangeStart.toISOString())
         .lt('created_at', rangeEnd.toISOString())
         .order('created_at', { ascending: true });
+      if (workCenterFilter !== 'all') dailyProductionQuery = dailyProductionQuery.eq('work_center_code', workCenterFilter);
+      const { data, error } = await dailyProductionQuery;
       if (error) throw error;
+      const reportOrders = workCenterFilter === 'all'
+        ? orders
+        : orders.filter((order) => order.assignedWorkCenter === workCenterFilter);
       setDailyProductionReport(buildDailyProductionReport(
         reportDateRange,
         (data ?? []) as DailyProductionReportEventRow[],
-        orders,
+        reportOrders,
         stationOptionsByWorkCenter,
       ));
     } catch (error) {
       console.error('Unable to load daily production report', error);
-      setDailyProductionReport(buildDailyProductionReport(reportDateRange, [], orders, stationOptionsByWorkCenter));
+      const reportOrders = workCenterFilter === 'all'
+        ? orders
+        : orders.filter((order) => order.assignedWorkCenter === workCenterFilter);
+      setDailyProductionReport(buildDailyProductionReport(reportDateRange, [], reportOrders, stationOptionsByWorkCenter));
     } finally {
       setDailyProductionReportLoading(false);
     }
@@ -5281,17 +5565,17 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
       </div>
 
       <section className="production-orders-overview" aria-label="Production order overview">
-        <article className="production-orders-overview-card current">
-          <span><Activity size={18} /></span>
-          <div><em>Active orders</em><strong>{currentOrders}</strong><small>released, running, or paused</small></div>
-        </article>
-        <article className="production-orders-overview-card completed">
-          <span><CheckCircle2 size={18} /></span>
-          <div><em>Completed</em><strong>{completedOrders}</strong><small>closed in selected range</small></div>
-        </article>
-        <article className="production-orders-overview-card output">
-          <span><Factory size={18} /></span>
-          <div><em>Reported production</em><strong>{todayTotalProduction.toLocaleString()}</strong><small>units in selected range</small></div>
+        <article className="production-orders-last-produced">
+          <h3><span><Factory size={15} /></span>Last produced part <em>{workCenterFilterOptions.find((option) => option.value === workCenterFilter)?.label ?? 'All work centers'} · Live shop-floor update</em></h3>
+          {lastProducedOrder && lastProductionEvent ? (
+            <div className="production-orders-last-produced-content">
+              <span><small>Part type</small><strong>{lastProducedOrder.partName || 'Not recorded'}</strong></span>
+              <span><small>Order</small><strong>{lastProducedOrder.orderNumber}</strong></span>
+              <span><small>Client</small><strong>{lastProducedOrder.clientName || 'Not specified'}</strong></span>
+              <span><small>Serial</small><strong>{lastProducedSerial}</strong></span>
+              <time dateTime={lastProductionEvent.created_at}><small>Produced</small><strong>{formatTimestamp(lastProductionEvent.created_at)}</strong></time>
+            </div>
+          ) : <p>No production recorded</p>}
         </article>
         <label className="production-orders-search production-orders-overview-search">
           <span>Search orders</span>
@@ -5305,9 +5589,15 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnl
               <span>Order register</span>
               <strong>Production order queue</strong>
             </div>
-            <div className="production-orders-client-filter">
-              <span>Client</span>
-              <MesOrderDropdown id="production-orders-client-filter" value={clientFilter} options={clientFilterOptions} onChange={setClientFilter} />
+            <div className="production-orders-scope-filters">
+              <div className="production-orders-client-filter">
+                <span>Client</span>
+                <MesOrderDropdown id="production-orders-client-filter" value={clientFilter} options={clientFilterOptions} onChange={setClientFilter} />
+              </div>
+              <div className="production-orders-client-filter production-orders-work-center-filter">
+                <span>Work center</span>
+                <MesOrderDropdown id="production-orders-work-center-filter" value={workCenterFilter} options={workCenterFilterOptions} menuClassName="production-orders-work-center-menu" onChange={setWorkCenterFilter} />
+              </div>
             </div>
             <div className="production-orders-view-toggle" aria-label="Production order view">
               <button className={orderView === 'all' ? 'active' : ''} type="button" onClick={() => setOrderView('all')}>
