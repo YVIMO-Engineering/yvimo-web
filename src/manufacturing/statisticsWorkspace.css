@@ -21,7 +21,7 @@
 .statistics-live-state span { display: inline-flex; align-items: center; gap: 8px; color: #08775c; font-size: .74rem; font-weight: 950; letter-spacing: .04em; text-transform: uppercase; }
 .statistics-live-state i { width: 10px; height: 10px; border-radius: 50%; background: #10b981; animation: statistics-live-pulse 1.8s ease-out infinite; }
 .statistics-live-state small { color: #748397; font-size: .65rem; font-weight: 750; }
-.statistics-content { display: grid; min-height: calc(100vh - 54px); grid-template-rows: auto auto auto auto; gap: 10px; padding: 10px 14px 12px; }
+.statistics-content { display: grid; min-height: calc(100vh - 54px); grid-template-rows: auto auto auto auto; align-content: start; gap: 10px; padding: 10px 14px 12px; }
 .statistics-filter-bar { display: flex; align-items: center; gap: 10px; border: 1px solid #fdcfaa; border-radius: 12px; padding: 8px 10px; background: #fff; box-shadow: 0 8px 24px #0f172a0a; }
 .statistics-back { flex: 0 0 auto; min-height: 40px; margin: 0; }
 .statistics-compact-heading { min-width: 205px; padding-right: 10px; border-right: 1px solid #e2e8f0; }
@@ -32,6 +32,13 @@
 .statistics-week-picker span { color: #56697e; font-size: .62rem; font-weight: 950; letter-spacing: .06em; text-transform: uppercase; }
 .statistics-week-picker input { min-height: 40px; border: 1px solid #ccd8e4; border-radius: 8px; padding: 0 10px; background: #f8fafc; color: #15263a; font: inherit; font-size: .76rem; font-weight: 800; }
 .statistics-week-picker input:focus { border-color: #ff8a1f; outline: 3px solid #ff8a1f1b; }
+.statistics-financial-period-tabs { display: flex; flex: 0 0 auto; border: 1px solid #dbe4ed; border-radius: 9px; padding: 3px; background: #f8fafc; }
+.statistics-financial-period-tabs button { min-height: 34px; border: 0; border-radius: 7px; padding: 0 10px; background: transparent; color: #64748b; font: inherit; font-size: .63rem; font-weight: 900; cursor: pointer; }
+.statistics-financial-period-tabs button.active { background: #d1fae5; color: #047857; box-shadow: 0 3px 9px #05966918; }
+.statistics-financial-date { display: grid; min-width: 150px; gap: 4px; }
+.statistics-financial-date > span { color: #56697e; font-size: .56rem; font-weight: 950; letter-spacing: .06em; text-transform: uppercase; }
+.statistics-financial-date .mes-order-date-picker { min-width: 150px; }
+.statistics-financial-date .mes-order-date-picker > button { min-height: 40px; }
 .statistics-week-navigation { display: flex; align-items: center; gap: 6px; min-width: 230px; }
 .statistics-week-navigation strong { min-width: 190px; color: #24364b; text-align: center; font-size: .76rem; }
 .statistics-week-navigation button, .statistics-this-week, .statistics-refresh { display: inline-flex; min-height: 40px; align-items: center; justify-content: center; border: 1px solid #d1dce7; border-radius: 8px; padding: 0 12px; background: #f8fafc; color: #41566d; font: inherit; font-size: .7rem; font-weight: 900; }
@@ -41,6 +48,7 @@
 .statistics-filter-bar .statistics-live-state { min-width: 112px; margin-left: 4px; }
 .statistics-refresh:disabled { opacity: .58; }
 .statistics-refresh .spinning { animation: statistics-spin .8s linear infinite; }
+.financial-income-workspace .statistics-filter-bar { flex-wrap: wrap; }
 .statistics-view-tabs { display: flex; flex: 0 0 auto; align-items: center; gap: 4px; margin-left: auto; border: 1px solid #dbe4ed; border-radius: 9px; padding: 3px; background: #f8fafc; }
 .statistics-view-tabs button { display: inline-flex; min-height: 34px; align-items: center; justify-content: center; gap: 6px; border: 1px solid transparent; border-radius: 7px; padding: 0 12px; background: transparent; color: #5b6d82; font: inherit; font-size: .68rem; font-weight: 950; cursor: pointer; }
 .statistics-view-tabs button:hover { border-color: #ddd6fe; background: #faf8ff; color: #6d28d9; }
@@ -89,12 +97,12 @@
 .statistics-heading-icon.income { border-color: #6ee7b7; background: #d1fae5; color: #047857; }
 .statistics-chart-key .income-flow i { width: 22px; height: 7px; border-radius: 999px; background: linear-gradient(90deg, #047857, #34d399); }
 .statistics-sankey-wrap { min-width: 0; overflow: auto; padding: 8px 12px 4px; background: linear-gradient(180deg, #fff, #f6fdf9); }
-.statistics-income-sankey { display: block; width: 100%; min-width: 900px; min-height: 420px; max-height: 610px; }
+.statistics-income-sankey { display: block; width: 100%; height: auto; min-width: 1000px; min-height: 420px; }
 .statistics-sankey-links path { fill: none; opacity: .28; transition: opacity .18s ease; }
 .statistics-sankey-links path:hover { opacity: .62; }
-.statistics-sankey-column-title { fill: #047857; font-size: 11px; font-weight: 950; letter-spacing: 1.1px; }
-.statistics-sankey-nodes .label { fill: #122438; font-size: 12px; font-weight: 950; }
-.statistics-sankey-nodes .value { fill: #65768a; font-size: 9px; font-weight: 750; }
+.statistics-sankey-column-title { fill: #047857; font-size: 14px; font-weight: 950; letter-spacing: 1.2px; paint-order: stroke fill; stroke: #fff; stroke-width: 4px; stroke-linejoin: round; }
+.statistics-sankey-nodes .label { fill: #122438; font-size: 15px; font-weight: 950; paint-order: stroke fill; stroke: #fff; stroke-width: 4px; stroke-linejoin: round; }
+.statistics-sankey-nodes .value { fill: #52657b; font-size: 11px; font-weight: 800; paint-order: stroke fill; stroke: #fff; stroke-width: 3px; stroke-linejoin: round; }
 .statistics-sankey-nodes rect { filter: drop-shadow(0 3px 4px #064e3b30); }
 .statistics-income-empty { display: grid; min-height: 420px; place-content: center; justify-items: center; gap: 8px; padding: 32px; background: linear-gradient(180deg, #fff, #f0fdf8); color: #64748b; text-align: center; }
 .statistics-income-empty::before { content: '$'; display: grid; width: 58px; height: 58px; place-items: center; border: 1px solid #a7f3d0; border-radius: 50%; background: #d1fae5; color: #047857; font-size: 1.65rem; font-weight: 950; }
@@ -368,6 +376,9 @@
   .statistics-production-heading, .statistics-chart-wrap { background: #17212d; }
   .statistics-income-panel .statistics-production-heading, .statistics-sankey-wrap, .statistics-income-empty { background: #17212d; }
   .statistics-sankey-nodes .label, .statistics-income-empty strong { fill: #eff6ff; color: #eff6ff; }
+  .statistics-sankey-column-title,
+  .statistics-sankey-nodes .label,
+  .statistics-sankey-nodes .value { stroke: #17212d; }
   .statistics-grid-line { stroke: #344355; }
   .statistics-axis-line { stroke: #64748b; }
   .statistics-axis-value, .statistics-axis-label, .statistics-axis-date, .statistics-chart-key, .statistics-chart-footer { color: #9fb0c4; fill: #9fb0c4; }

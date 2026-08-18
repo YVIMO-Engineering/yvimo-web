@@ -18,11 +18,11 @@
 }
 
 .price-sankey .price-node-card.gain .card-accent {
-  fill: #2563eb;
+  fill: #10b981;
 }
 
 .price-sankey .price-node-card.aligned .card-accent {
-  fill: #10b981;
+  fill: #2563eb;
 }
 
 .price-sankey .price-node-card .node-detail {
@@ -41,9 +41,9 @@
 }
 
 .price-sankey .price-node-card.gain .node-amount {
-  fill: #2563eb;
+  fill: #059669;
 }
 
 .price-sankey .price-node-card.aligned .node-amount {
-  fill: #059669;
+  fill: #2563eb;
 }

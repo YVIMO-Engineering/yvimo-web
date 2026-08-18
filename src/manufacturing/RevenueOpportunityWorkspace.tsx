@@ -2,10 +2,11 @@ import React from 'react';
 import { AlertTriangle, ArrowLeft, CalendarDays, CircleDollarSign, Clock3, Factory, Gauge, RefreshCw, TrendingUp } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { useSupabaseRealtimeRefresh } from '../lib/useSupabaseRealtimeRefresh';
+import { StatisticsWorkspace } from './StatisticsWorkspace';
 import './revenueOpportunity.css';
 import './revenueOpportunitySankey.css';
 
-type Props = { onNavigate: (path: string) => void; organizationId: string; activeSection: 'price-misalignment' | 'optimization' };
+type Props = { onNavigate: (path: string) => void; organizationId: string; activeSection: 'price-misalignment' | 'optimization' | 'income-flow' };
 type SerialRow = { id: string; serial_number: string; production_order_id: string; reported_at: string; mes_production_orders: { order_number: string; assigned_work_center: string; client_name: string } | null; mes_legacy_prices: { price: number; currency: string } | null; mes_quotations: { total_price: number; currency: string | null } | null };
 type CycleRow = { id: string; work_center_code: string; station_code: string; status: string; started_at: string; ended_at: string | null };
 type CenterRow = { code: string; name: string };
@@ -13,11 +14,16 @@ type RangePreset = 'current' | 'previous' | 'custom';
 
 const money = (value: number, currency = 'USD') => new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 0 }).format(value || 0);
 const pct = (value: number) => `${Number.isFinite(value) ? value.toFixed(1) : '0.0'}%`;
+const priceOutcome = (recommendedMinusActual: number) => {
+  if (Math.abs(recommendedMinusActual) <= .005) return money(0);
+  return `${recommendedMinusActual < 0 ? '+' : '−'}${money(Math.abs(recommendedMinusActual))}`;
+};
 const dateInput = (date: Date) => new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 const monthRange = (offset = 0) => { const now = new Date(); const from = new Date(now.getFullYear(), now.getMonth() + offset, 1); const to = new Date(now.getFullYear(), now.getMonth() + offset + 1, 0); return { from: dateInput(from), to: dateInput(to) }; };
 const relation = <T,>(value: T | T[] | null) => Array.isArray(value) ? value[0] ?? null : value;
 
-type PriceFlow = { client: string; order: string; serials: number; legacy: number; quoted: number; delta: number };
+type PriceFlow = { client: string; order: string; orderId: string; serials: number; legacy: number; quoted: number; delta: number };
+type PriceHealth = { score: number; status: string; tone: 'risk' | 'aligned' | 'healthy'; totalOrders: number; analyzedOrders: number; nonLossOrders: number; coverage: number; nonLossRate: number; netMargin: number; netDifference: number };
 
 function PriceMisalignmentSankey({ flows }: { flows: PriceFlow[] }) {
   const model = React.useMemo(() => {
@@ -53,9 +59,37 @@ function PriceMisalignmentSankey({ flows }: { flows: PriceFlow[] }) {
   if (!flows.length) return <p className="price-empty">No produced pieces have both a Legacy Price and Source Quotation for this workcenter and period.</p>;
   return <div className="price-sankey-scroll"><svg className="price-sankey" viewBox={`0 0 1200 ${model.height}`} role="img" aria-label="Price misalignment flow by client and production order">
     <text x="35" y="22" className="column-title">CLIENTS</text><text x="500" y="22" className="column-title">PRODUCTION ORDERS</text><text x="965" y="22" className="column-title">PRICE RESULT</text>
-    <g className="links">{model.links.map((link) => { const thickness = Math.max(3, link.value / model.maxValue * 28); const color = link.flow.delta > .005 ? '#ef4444' : link.flow.delta < -.005 ? '#2563eb' : '#10b981'; const sourceX = link.source.x + (link.source.type === 'client' ? 180 : 190); return <path id={link.pathId} key={link.id} d={`M ${sourceX} ${link.source.y} C ${sourceX + 145} ${link.source.y}, ${link.target.x - 145} ${link.target.y}, ${link.target.x} ${link.target.y}`} stroke={color} strokeWidth={thickness}><title>{`${link.flow.client} · ${link.flow.order}: ${link.flow.serials} serials · ${money(Math.abs(link.flow.delta))}`}</title></path>; })}</g>
-    <g className="nodes">{model.nodes.map((node) => { const flow = 'flow' in node ? node.flow as PriceFlow : null; const balance = 'balance' in node ? Number(node.balance) : null; const amount = flow?.delta ?? balance; const status = amount !== null && amount > .005 ? 'loss' : amount !== null && amount < -.005 ? 'gain' : 'aligned'; const resultColor = node.label === 'Revenue Lost' ? '#ef4444' : node.label === 'Above Recommendation' ? '#2563eb' : '#10b981'; if (node.type === 'result') return <g key={node.id} transform={`translate(${node.x} ${node.y - 17})`}><rect width="20" height="34" rx="5" fill={resultColor} /><text x="30" y="21" className="node-label">{node.label}</text></g>; return <g key={node.id} className={`price-node-card ${node.type} ${status}`} transform={`translate(${node.x} ${node.y - 28})`}><rect className="card-bg" width={node.type === 'client' ? 180 : 190} height="56" rx="8" /><rect className="card-accent" width="5" height="56" rx="3" /><text x="15" y="20" className="node-label">{node.label}</text>{flow ? <><text x="15" y="42" className="node-detail">{flow.serials} serial{flow.serials === 1 ? '' : 's'}</text><text x="180" y="42" textAnchor="end" className="node-amount">{status === 'loss' ? 'Lost' : status === 'gain' ? 'Gained' : 'Aligned'} {money(Math.abs(flow.delta))}</text></> : <text x="15" y="42" className="node-amount">{status === 'loss' ? 'Lost' : status === 'gain' ? 'Gained' : 'Aligned'} {money(Math.abs(balance ?? 0))}</text>}</g>; })}</g>
+    <g className="links">{model.links.map((link) => { const thickness = Math.max(3, link.value / model.maxValue * 28); const color = link.flow.delta > .005 ? '#ef4444' : link.flow.delta < -.005 ? '#10b981' : '#2563eb'; const sourceX = link.source.x + (link.source.type === 'client' ? 180 : 190); return <path id={link.pathId} key={link.id} d={`M ${sourceX} ${link.source.y} C ${sourceX + 145} ${link.source.y}, ${link.target.x - 145} ${link.target.y}, ${link.target.x} ${link.target.y}`} stroke={color} strokeWidth={thickness}><title>{`${link.flow.client} · ${link.flow.order}: ${link.flow.serials} serials · ${money(Math.abs(link.flow.delta))}`}</title></path>; })}</g>
+    <g className="nodes">{model.nodes.map((node) => { const flow = 'flow' in node ? node.flow as PriceFlow : null; const balance = 'balance' in node ? Number(node.balance) : null; const amount = flow?.delta ?? balance; const status = amount !== null && amount > .005 ? 'loss' : amount !== null && amount < -.005 ? 'gain' : 'aligned'; const resultColor = node.label === 'Revenue Lost' ? '#ef4444' : node.label === 'Above Recommendation' ? '#10b981' : '#2563eb'; if (node.type === 'result') return <g key={node.id} transform={`translate(${node.x} ${node.y - 17})`}><rect width="20" height="34" rx="5" fill={resultColor} /><text x="30" y="21" className="node-label">{node.label}</text></g>; return <g key={node.id} className={`price-node-card ${node.type} ${status}`} transform={`translate(${node.x} ${node.y - 28})`}><rect className="card-bg" width={node.type === 'client' ? 180 : 190} height="56" rx="8" /><rect className="card-accent" width="5" height="56" rx="3" /><text x="15" y="20" className="node-label">{node.label}</text>{flow ? <><text x="15" y="42" className="node-detail">{flow.serials} serial{flow.serials === 1 ? '' : 's'}</text><text x="180" y="42" textAnchor="end" className="node-amount">{status === 'loss' ? 'Lost' : status === 'gain' ? 'Gained' : 'Aligned'} {money(Math.abs(flow.delta))}</text></> : <text x="15" y="42" className="node-amount">{status === 'loss' ? 'Lost' : status === 'gain' ? 'Gained' : 'Aligned'} {money(Math.abs(balance ?? 0))}</text>}</g>; })}</g>
   </svg></div>;
+}
+
+function PriceHealthGauge({ health }: { health: PriceHealth }) {
+  const angle = Math.PI - (Math.PI * health.score / 100);
+  const needleX = 120 + Math.cos(angle) * 61;
+  const needleY = 108 - Math.sin(angle) * 61;
+  const netTone = health.netDifference > .005 ? 'loss' : health.netDifference < -.005 ? 'gain' : 'aligned';
+  return <aside className={`price-misalignment-summary price-health-panel ${health.tone}`}>
+    <header><small>Price health</small><h2>Overall pricing score</h2></header>
+    <div className="price-health-gauge">
+      <svg viewBox="0 0 240 132" role="img" aria-label={`Price health score ${health.score} out of 100`}>
+        <path className="gauge-track risk" d="M 30 108 A 90 90 0 0 1 75 30.1" />
+        <path className="gauge-track aligned" d="M 75 30.1 A 90 90 0 0 1 165 30.1" />
+        <path className="gauge-track healthy" d="M 165 30.1 A 90 90 0 0 1 210 108" />
+        <line className="gauge-needle" x1="120" y1="108" x2={needleX} y2={needleY} />
+        <circle className="gauge-hub" cx="120" cy="108" r="8" />
+      </svg>
+      <div className="price-health-score"><strong>{health.score}</strong><span>/ 100</span></div>
+      <div className="price-health-gauge-labels"><span>Risk</span><span>Aligned</span><span>Healthy</span></div>
+      <b className="price-health-status">{health.status}</b>
+    </div>
+    <div className={`price-health-net ${netTone}`}><span>Net pricing result</span><strong>{priceOutcome(health.netDifference)}</strong><small>{health.netMargin >= 0 ? '+' : ''}{health.netMargin.toFixed(1)}% vs. recommended</small></div>
+    <dl className="price-health-metrics">
+      <div><dt>Orders analyzed</dt><dd>{health.analyzedOrders} / {health.totalOrders}</dd><small>{pct(health.coverage)} coverage</small></div>
+      <div><dt>Orders without loss</dt><dd>{health.nonLossOrders} / {health.analyzedOrders}</dd><small>{pct(health.nonLossRate)} of analyzed</small></div>
+    </dl>
+    <p className="price-health-method">Score composition: <strong>40%</strong> order coverage · <strong>40%</strong> orders without loss · <strong>20%</strong> net result.</p>
+  </aside>;
 }
 
 export function RevenueOpportunityWorkspace({ onNavigate, organizationId, activeSection }: Props) {
@@ -90,9 +124,9 @@ export function RevenueOpportunityWorkspace({ onNavigate, organizationId, active
     }
     setLoading(false);
   }, [organizationId, range.from, range.to]);
-  React.useEffect(() => { void load(); }, [load]);
+  React.useEffect(() => { if (activeSection !== 'income-flow') void load(); }, [activeSection, load]);
   React.useEffect(() => { if (!workCenterFilter && centers.length) setWorkCenterFilter(centers[0].code); }, [centers, workCenterFilter]);
-  useSupabaseRealtimeRefresh({ channelName: `revenue-opportunity:${organizationId}`, tables: [{ table: 'mes_production_serials', filter: `organization_id=eq.${organizationId}` }, { table: 'mes_legacy_prices', filter: `organization_id=eq.${organizationId}` }, { table: 'mes_quotations', filter: `organization_id=eq.${organizationId}` }, { table: 'mes_station_status_cycles', filter: `organization_id=eq.${organizationId}` }], onRefresh: () => void load(true) });
+  useSupabaseRealtimeRefresh({ channelName: `revenue-opportunity:${organizationId}`, tables: [{ table: 'mes_production_serials', filter: `organization_id=eq.${organizationId}` }, { table: 'mes_legacy_prices', filter: `organization_id=eq.${organizationId}` }, { table: 'mes_quotations', filter: `organization_id=eq.${organizationId}` }, { table: 'mes_station_status_cycles', filter: `organization_id=eq.${organizationId}` }], onRefresh: () => void load(true), enabled: activeSection !== 'income-flow' });
 
   const analysis = React.useMemo(() => {
     const startMs = new Date(`${range.from}T00:00:00`).getTime(); const endDate = new Date(`${range.to}T00:00:00`); endDate.setDate(endDate.getDate() + 1); const endMs = Math.min(endDate.getTime(), Date.now());
@@ -111,7 +145,7 @@ export function RevenueOpportunityWorkspace({ onNavigate, organizationId, active
       const order = relation(serial.mes_production_orders); const legacy = relation(serial.mes_legacy_prices); const quote = relation(serial.mes_quotations);
       if (!order || !legacy || !quote || (workCenterFilter && order.assigned_work_center !== workCenterFilter)) return;
       const client = order.client_name || 'Unknown client'; const key = `${client}|${order.order_number}`;
-      const current = grouped.get(key) ?? { client, order: order.order_number, serials: 0, legacy: 0, quoted: 0, delta: 0 };
+      const current = grouped.get(key) ?? { client, order: order.order_number, orderId: serial.production_order_id, serials: 0, legacy: 0, quoted: 0, delta: 0 };
       current.serials += 1; current.legacy += Number(legacy.price) || 0; current.quoted += Number(quote.total_price) || 0; current.delta = current.quoted - current.legacy; grouped.set(key, current);
     });
     return [...grouped.values()].sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
@@ -120,6 +154,26 @@ export function RevenueOpportunityWorkspace({ onNavigate, organizationId, active
     legacy: priceFlows.reduce((sum, flow) => sum + flow.legacy, 0),
     quoted: priceFlows.reduce((sum, flow) => sum + flow.quoted, 0),
   }), [priceFlows]);
+  const priceHealth = React.useMemo<PriceHealth>(() => {
+    const totalOrderIds = new Set<string>();
+    serials.forEach((serial) => {
+      const order = relation(serial.mes_production_orders);
+      if (order && (!workCenterFilter || order.assigned_work_center === workCenterFilter)) totalOrderIds.add(serial.production_order_id);
+    });
+    const analyzedOrderIds = new Set(priceFlows.map((flow) => flow.orderId));
+    const nonLossOrderIds = new Set(priceFlows.filter((flow) => flow.delta <= .005).map((flow) => flow.orderId));
+    const totalOrders = totalOrderIds.size;
+    const analyzedOrders = analyzedOrderIds.size;
+    const nonLossOrders = nonLossOrderIds.size;
+    const coverage = totalOrders ? analyzedOrders / totalOrders * 100 : 0;
+    const nonLossRate = analyzedOrders ? nonLossOrders / analyzedOrders * 100 : 0;
+    const netMargin = analysis.comparableQuoted ? (analysis.comparableLegacy - analysis.comparableQuoted) / analysis.comparableQuoted * 100 : 0;
+    const netScore = Math.max(0, Math.min(100, (netMargin + 10) / 20 * 100));
+    const score = analyzedOrders ? Math.round(coverage * .4 + nonLossRate * .4 + netScore * .2) : 0;
+    const tone = score >= 67 ? 'healthy' : score >= 34 ? 'aligned' : 'risk';
+    const status = !analyzedOrders ? 'Insufficient data' : tone === 'healthy' ? 'Healthy pricing' : tone === 'aligned' ? 'Needs attention' : 'At risk';
+    return { score, status, tone, totalOrders, analyzedOrders, nonLossOrders, coverage, nonLossRate, netMargin, netDifference: analysis.netPriceDifference };
+  }, [analysis.comparableLegacy, analysis.comparableQuoted, analysis.netPriceDifference, priceFlows, serials, workCenterFilter]);
   const opportunities = [
     { name: 'Pricing alignment', value: analysis.pricing, color: '#10b981', detail: `${analysis.matched} pieces with comparable legacy and YVIMO prices`, available: analysis.matched > 0 },
     { name: 'Idle capacity', value: analysis.idle, color: '#34d399', detail: `${analysis.idleHours.toFixed(1)} idle hours × ${idleRecovery}% recovery`, available: analysis.productive > 0 },
@@ -130,13 +184,17 @@ export function RevenueOpportunityWorkspace({ onNavigate, organizationId, active
   const maxOpportunity = Math.max(1, ...opportunities.map((item) => item.value));
   const setPresetRange = (next: RangePreset) => { setPreset(next); if (next === 'current') setRange(monthRange()); if (next === 'previous') setRange(monthRange(-1)); };
 
+  if (activeSection === 'income-flow') {
+    return <StatisticsWorkspace onNavigate={onNavigate} organizationId={organizationId} financialIncome />;
+  }
+
   return <section className="revenue-opportunity-workspace">
     <header className="revenue-header"><button className="academy-back-button engineering-back-button mes-workspace-back revenue-back" type="button" onClick={() => onNavigate('/workspace/manufacturing-ops/intelligence')}><ArrowLeft size={16} /> Ops Intelligence</button><div className="revenue-compact-heading"><span>OPS INTELLIGENCE / FINANCE</span><h1>{activeSection === 'price-misalignment' ? 'Price Misalignment' : 'Revenue Optimization'}</h1><p>{activeSection === 'price-misalignment' ? 'Legacy vs. YVIMO pricing' : 'Operational earning potential'}</p></div><section className="revenue-controls"><label className="revenue-workcenter-filter"><span>Workcenter</span><select value={workCenterFilter} onChange={(event) => setWorkCenterFilter(event.target.value)}>{centers.map((center) => <option value={center.code} key={center.code}>{center.name}</option>)}</select></label><div className="revenue-period-tabs">{(['current', 'previous', 'custom'] as const).map((item) => <button className={preset === item ? 'active' : ''} type="button" key={item} onClick={() => setPresetRange(item)}>{item === 'current' ? 'Current month' : item === 'previous' ? 'Previous month' : 'Custom'}</button>)}</div><label><span>From</span><input type="date" value={range.from} onChange={(event) => { setPreset('custom'); setRange((current) => ({ ...current, from: event.target.value })); }} /></label><label><span>To</span><input type="date" value={range.to} onChange={(event) => { setPreset('custom'); setRange((current) => ({ ...current, to: event.target.value })); }} /></label><button className="revenue-refresh" type="button" disabled={loading} onClick={() => void load()}><RefreshCw size={15} className={loading ? 'spinning' : ''} /> Refresh</button></section><span className="revenue-live"><span><i /> Live analysis</span><small>{updatedAt ? new Date(updatedAt).toLocaleTimeString() : 'Connecting'}</small></span></header>
     {error ? <div className="revenue-error"><AlertTriangle size={18} />{error}</div> : null}
     {activeSection === 'price-misalignment' ? <>
-      <section className="revenue-kpis price-misalignment-kpis"><article><CircleDollarSign /><span><small>Actually Charged</small><strong>{money(analysis.comparableLegacy)}</strong><em>legacy price · comparable produced pieces</em></span></article><article className="potential"><CircleDollarSign /><span><small>Should Have Charged</small><strong>{money(analysis.comparableQuoted)}</strong><em>linked YVIMO source quotations</em></span></article><article className="loss"><TrendingUp /><span><small>Revenue Being Lost</small><strong>{money(analysis.pricing)}</strong><em>pieces priced below YVIMO recommendation</em></span></article><article className="over"><TrendingUp /><span><small>Revenue Above Recommendation</small><strong>{money(analysis.overpricing)}</strong><em>pieces priced above YVIMO recommendation</em></span></article><article className={analysis.netPriceDifference >= 0 ? 'loss' : 'over'}><Gauge /><span><small>Net Price Difference</small><strong>{analysis.netPriceDifference >= 0 ? '+' : '−'}{money(Math.abs(analysis.netPriceDifference))}</strong><em>{analysis.netPriceDifference >= 0 ? 'additional revenue recommended' : 'legacy revenue above recommendation'}</em></span></article></section>
-      <section className="price-comparison-grid"><article className="revenue-chart-panel price-comparison-chart"><header><span><small>Price flow by client and order</small><h2>Clients → Production Orders → Price Result</h2></span><strong>{analysis.matched} matched pieces · {pct(analysis.coverage)} coverage</strong></header><div className="price-sankey-layout"><div className="price-mini-bridge"><span><small>Legacy charged</small><strong>{money(waterfall.legacy)}</strong></span><i className={waterfall.quoted >= waterfall.legacy ? 'loss' : 'gain'}>{waterfall.quoted >= waterfall.legacy ? '+' : '−'}{money(Math.abs(waterfall.quoted - waterfall.legacy))}</i><span><small>YVIMO recommended</small><strong>{money(waterfall.quoted)}</strong></span></div><PriceMisalignmentSankey flows={priceFlows} /></div></article><aside className="price-misalignment-summary"><header><small>Price health</small><h2>What the comparison means</h2></header><div className={analysis.netPriceDifference >= 0 ? 'negative' : 'positive'}><strong>{analysis.netPriceDifference >= 0 ? 'Underpriced' : 'Above recommendation'}</strong><b>{money(Math.abs(analysis.netPriceDifference))}</b><span>net across matched pieces</span></div><dl><div><dt>Comparable pieces</dt><dd>{analysis.matched}</dd></div><div><dt>Unmatched pieces</dt><dd>{Math.max(0, analysis.pieces - analysis.matched)}</dd></div><div><dt>Price coverage</dt><dd>{pct(analysis.coverage)}</dd></div><div><dt>Comparison confidence</dt><dd>{analysis.matched && analysis.coverage === 100 ? 'High' : analysis.matched ? 'Medium' : 'Low'}</dd></div></dl><p>Flow width represents the absolute price impact. Clients connect to their production orders and then to lost revenue, aligned pricing, or revenue above recommendation.</p></aside></section>
-      <section className="revenue-workcenters price-detail-table"><header><span><small>Price comparison detail</small><h2>Misalignment by workcenter</h2></span><span>Produced pieces only</span></header><div className="revenue-table-wrap"><table><thead><tr><th>Workcenter</th><th>Compared Pieces</th><th>Legacy Revenue</th><th>YVIMO Revenue</th><th>Revenue Lost</th><th>Above Recommendation</th><th>Net Difference</th><th>Coverage</th></tr></thead><tbody>{analysis.rows.map((row) => <tr key={row.code}><td><strong>{row.name}</strong><small>{row.code}</small></td><td>{row.matched} / {row.pieces}</td><td>{money(row.comparableLegacy)}</td><td>{money(row.comparableQuoted)}</td><td><strong className="price-loss">{money(row.pricing)}</strong></td><td><strong className="price-gain">{money(row.overpricing)}</strong></td><td><strong className={row.comparableQuoted > row.comparableLegacy ? 'price-loss' : 'price-gain'}>{row.comparableQuoted >= row.comparableLegacy ? '+' : '−'}{money(Math.abs(row.comparableQuoted - row.comparableLegacy))}</strong></td><td>{pct(row.pieces ? row.matched / row.pieces * 100 : 0)}</td></tr>)}</tbody></table></div></section>
+      <section className="revenue-kpis price-misalignment-kpis"><article><CircleDollarSign /><span><small>Actually Charged</small><strong>{money(analysis.comparableLegacy)}</strong><em>legacy price · comparable produced pieces</em></span></article><article className="potential"><CircleDollarSign /><span><small>Should Have Charged</small><strong>{money(analysis.comparableQuoted)}</strong><em>linked YVIMO source quotations</em></span></article><article className="loss"><TrendingUp /><span><small>Revenue Being Lost</small><strong>{money(analysis.pricing)}</strong><em>pieces priced below YVIMO recommendation</em></span></article><article className="over"><TrendingUp /><span><small>Revenue Above Recommendation</small><strong>{money(analysis.overpricing)}</strong><em>pieces priced above YVIMO recommendation</em></span></article><article className={analysis.netPriceDifference > .005 ? 'loss' : analysis.netPriceDifference < -.005 ? 'over' : 'potential'}><Gauge /><span><small>Net Price Difference</small><strong>{priceOutcome(analysis.netPriceDifference)}</strong><em>{analysis.netPriceDifference > .005 ? 'revenue below recommendation' : analysis.netPriceDifference < -.005 ? 'revenue above recommendation' : 'aligned with recommendation'}</em></span></article></section>
+      <section className="price-comparison-grid"><article className="revenue-chart-panel price-comparison-chart"><header><span><small>Price flow by client and order</small><h2>Clients → Production Orders → Price Result</h2></span><strong>{analysis.matched} matched pieces · {pct(analysis.coverage)} coverage</strong></header><div className="price-sankey-layout"><div className="price-mini-bridge"><span><small>Legacy charged</small><strong>{money(waterfall.legacy)}</strong></span><i className={waterfall.quoted >= waterfall.legacy ? 'loss' : 'gain'}>{waterfall.quoted >= waterfall.legacy ? '+' : '−'}{money(Math.abs(waterfall.quoted - waterfall.legacy))}</i><span><small>YVIMO recommended</small><strong>{money(waterfall.quoted)}</strong></span></div><PriceMisalignmentSankey flows={priceFlows} /></div></article><PriceHealthGauge health={priceHealth} /></section>
+      <section className="revenue-workcenters price-detail-table"><header><span><small>Price comparison detail</small><h2>Misalignment by workcenter</h2></span><span>Produced pieces only</span></header><div className="revenue-table-wrap"><table><thead><tr><th>Workcenter</th><th>Compared Pieces</th><th>Legacy Revenue</th><th>YVIMO Revenue</th><th>Revenue Lost</th><th>Above Recommendation</th><th>Net Difference</th><th>Coverage</th></tr></thead><tbody>{analysis.rows.map((row) => { const difference = row.comparableQuoted - row.comparableLegacy; return <tr key={row.code}><td><strong>{row.name}</strong><small>{row.code}</small></td><td>{row.matched} / {row.pieces}</td><td>{money(row.comparableLegacy)}</td><td>{money(row.comparableQuoted)}</td><td><strong className="price-loss">{money(row.pricing)}</strong></td><td><strong className="price-gain">{money(row.overpricing)}</strong></td><td><strong className={difference > .005 ? 'price-loss' : difference < -.005 ? 'price-gain' : ''}>{priceOutcome(difference)}</strong></td><td>{pct(row.pieces ? row.matched / row.pieces * 100 : 0)}</td></tr>; })}</tbody></table></div></section>
       <section className="revenue-methodology"><CircleDollarSign size={20} /><span><strong>Strict price-comparison scope</strong><p>Actual revenue is the Legacy Price currently charged. Recommended revenue is the linked YVIMO Source Quotation. Revenue Being Lost sums only positive quote-minus-legacy differences; Revenue Above Recommendation is kept separate so favorable and unfavorable pricing do not conceal each other.</p></span><span className={`confidence ${analysis.matched && analysis.coverage === 100 ? 'high' : analysis.matched ? 'medium' : 'low'}`}>{pct(analysis.coverage)} coverage</span></section>
     </> : <>
     <section className="revenue-kpis"><article><CircleDollarSign /><span><small>Current Revenue</small><strong>{money(analysis.current)}</strong><em>legacy prices · {analysis.pieces} produced pieces</em></span></article><article className="potential"><TrendingUp /><span><small>Realistic Potential Revenue</small><strong>{money(analysis.potential)}</strong><em>recommended scenario</em></span></article><article className="opportunity"><Gauge /><span><small>Net Revenue Opportunity</small><strong>{money(analysis.net)}</strong><em>{money(analysis.theoreticalOpportunity)} theoretical gross</em></span></article><article><TrendingUp /><span><small>Potential Uplift</small><strong>{pct(analysis.uplift)}</strong><em>{analysis.confidence} confidence · {pct(analysis.coverage)} price coverage</em></span></article></section>

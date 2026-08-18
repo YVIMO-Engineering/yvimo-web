@@ -1220,6 +1220,9 @@ Object.assign(translations.es, {
   'Order Risks': 'Riesgos de órdenes',
   'Import Orders': 'Importar órdenes',
   'Revenue Opportunity': 'Oportunidad de ingresos',
+  'Financial Status': 'Estado financiero',
+  'Review realized income, compare legacy and YVIMO pricing, quantify revenue gaps, and identify realistic financial upside.':
+    'Consulta los ingresos realizados, compara precios históricos con YVIMO, cuantifica brechas e identifica oportunidades financieras realistas.',
   'Analysis Tool': 'Herramienta de análisis',
   'Plan, execute, track, and improve manufacturing operations from one connected YVIMO workspace.':
     'Planea, ejecuta, rastrea y mejora las operaciones de manufactura desde un espacio de trabajo conectado de YVIMO.',
@@ -3371,8 +3374,8 @@ function LoggedDashboardPage({
       path: '/workspace/manufacturing-ops/intelligence/throughput',
     },
     {
-      label: 'Revenue Opportunity',
-      description: 'Compare legacy and YVIMO pricing, quantify revenue gaps, and identify realistic operational upside.',
+      label: 'Financial Status',
+      description: 'Review realized income, compare legacy and YVIMO pricing, quantify revenue gaps, and identify realistic financial upside.',
       icon: CircleDollarSign,
       path: '/workspace/manufacturing-ops/intelligence/revenue-opportunity',
       implemented: true,
@@ -3488,7 +3491,11 @@ function LoggedDashboardPage({
   const isRevenueOpportunitySection = activePath.startsWith('/workspace/manufacturing-ops/intelligence/revenue-opportunity');
   const isAnalysisToolSection = activePath === '/workspace/manufacturing-ops/intelligence/analysis-tool'
     || activePath.startsWith('/workspace/manufacturing-ops/intelligence/analysis-tool/');
-  const activeRevenueSection = activePath.endsWith('/optimization') ? 'optimization' : 'price-misalignment';
+  const activeRevenueSection = activePath.endsWith('/income-flow')
+    ? 'income-flow'
+    : activePath.endsWith('/optimization')
+      ? 'optimization'
+      : 'price-misalignment';
   const supplierContextTabs: Array<{
     value: SupplierContextTab;
     label: string;
@@ -3573,10 +3580,7 @@ function LoggedDashboardPage({
     if (activePath === '/workspace/manufacturing-ops/intelligence/import-costing') {
       return <ImportCostingWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} />;
     }
-    if (activePath === '/workspace/manufacturing-ops/intelligence/revenue-opportunity') {
-      return <RevenueOpportunityWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} activeSection={activeRevenueSection} />;
-    }
-    if (activePath === '/workspace/manufacturing-ops/intelligence/revenue-opportunity/price-misalignment' || activePath === '/workspace/manufacturing-ops/intelligence/revenue-opportunity/optimization') {
+    if (isRevenueOpportunitySection) {
       return <RevenueOpportunityWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} activeSection={activeRevenueSection} />;
     }
     if (isAnalysisToolSection) {
@@ -4400,11 +4404,12 @@ function LoggedDashboardPage({
       ) : null}
 
       {isRevenueOpportunitySection ? (
-        <aside className="supplier-shell-context-menu clients-shell-context-menu revenue-shell-context-menu" aria-label="Revenue Opportunity sections">
-          <div><span>OPS INTELLIGENCE</span><strong>Revenue Opportunity</strong></div>
+        <aside className="supplier-shell-context-menu clients-shell-context-menu revenue-shell-context-menu" aria-label="Financial Status sections">
+          <div><span>OPS INTELLIGENCE</span><strong>Financial Status</strong></div>
           <nav>
             <button type="button" className={activeRevenueSection === 'price-misalignment' ? 'active' : ''} onClick={() => onNavigate('/workspace/manufacturing-ops/intelligence/revenue-opportunity/price-misalignment')}><CircleDollarSign size={18} /><span>Price Misalignment</span></button>
             <button type="button" className={activeRevenueSection === 'optimization' ? 'active' : ''} onClick={() => onNavigate('/workspace/manufacturing-ops/intelligence/revenue-opportunity/optimization')}><TrendingUp size={18} /><span>Revenue Optimization</span></button>
+            <button type="button" className={activeRevenueSection === 'income-flow' ? 'active' : ''} onClick={() => onNavigate('/workspace/manufacturing-ops/intelligence/revenue-opportunity/income-flow')}><BarChart3 size={18} /><span>Income Flow</span></button>
           </nav>
         </aside>
       ) : null}

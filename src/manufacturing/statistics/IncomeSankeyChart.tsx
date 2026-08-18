@@ -23,7 +23,7 @@ export type IncomeProductionRow = {
 type SankeyNode = { id: string; label: string; detail: string; value: number; x: number; y: number; height: number; color: string };
 type SankeyLink = { id: string; source: SankeyNode; target: SankeyNode; value: number; sourceOffset: number; targetOffset: number; color: string };
 
-const palette = ['#059669', '#10b981', '#34d399', '#0d9488', '#22c55e', '#65a30d', '#14b8a6', '#16a34a'];
+const clientPalette = ['#2563eb', '#f97316', '#10b981', '#8b5cf6', '#ec4899', '#06b6d4', '#eab308', '#ef4444', '#14b8a6', '#6366f1', '#84cc16', '#f43f5e'];
 const first = <T,>(value: T | T[] | null) => Array.isArray(value) ? value[0] : value;
 
 export const formatIncome = (value: number, currency = 'USD') => {
@@ -62,6 +62,12 @@ function linkPath(link: SankeyLink, scale: number) {
 
 export function IncomeSankeyChart({ rows, currency }: { rows: IncomeProductionRow[]; currency: string }) {
   const chart = React.useMemo(() => {
+    const clientNames = [...new Set(rows.map((row) => first(row.mes_quotations)?.client_name || 'Unknown client'))]
+      .sort((left, right) => left.localeCompare(right));
+    const colorByClient = new Map(clientNames.map((clientName, index) => [
+      clientName,
+      clientPalette[index] ?? `hsl(${Math.round(index * 137.508) % 360} 72% 48%)`,
+    ]));
     const clients = new Map<string, { id: string; label: string; detail: string; value: number; color: string }>();
     const quotes = new Map<string, { id: string; label: string; detail: string; value: number; color: string; clientId: string }>();
     const orders = new Map<string, { id: string; label: string; detail: string; value: number; color: string }>();
@@ -71,8 +77,9 @@ export function IncomeSankeyChart({ rows, currency }: { rows: IncomeProductionRo
       const order = first(row.mes_production_orders);
       if (!quotation) return;
       const value = Math.max(0, Number(quotation.total_price) || 0);
-      const clientId = `client:${quotation.client_name || 'Unknown client'}`;
-      const color = palette[Math.abs([...quotation.client_name].reduce((sum, char) => sum + char.charCodeAt(0), 0)) % palette.length];
+      const clientName = quotation.client_name || 'Unknown client';
+      const clientId = `client:${clientName}`;
+      const color = colorByClient.get(clientName) ?? '#64748b';
       const currentClient = clients.get(clientId);
       clients.set(clientId, { id: clientId, label: quotation.client_name || 'Unknown client', detail: 'Client', value: (currentClient?.value ?? 0) + value, color });
       const currentQuote = quotes.get(row.quotation_id);
@@ -85,9 +92,9 @@ export function IncomeSankeyChart({ rows, currency }: { rows: IncomeProductionRo
     const sorted = <T extends { value: number }>(items: T[]) => items.sort((a, b) => b.value - a.value);
     const nodeCount = Math.max(clients.size, quotes.size, orders.size);
     const height = Math.max(440, nodeCount * 66 + 70);
-    const clientNodes = makeNodes(sorted([...clients.values()]), 42, height);
-    const quoteNodes = makeNodes(sorted([...quotes.values()]), 475, height);
-    const orderNodes = makeNodes(sorted([...orders.values()]), 908, height);
+    const clientNodes = makeNodes(sorted([...clients.values()]), 48, height);
+    const quoteNodes = makeNodes(sorted([...quotes.values()]), 800, height);
+    const orderNodes = makeNodes(sorted([...orders.values()]), 1500, height);
     const nodeById = new Map([...clientNodes, ...quoteNodes, ...orderNodes].map((node) => [node.id, node]));
     const maxColumnTotal = Math.max(
       clientNodes.reduce((sum, node) => sum + node.value, 0),
@@ -122,10 +129,10 @@ export function IncomeSankeyChart({ rows, currency }: { rows: IncomeProductionRo
 
   return (
     <div className="statistics-sankey-wrap">
-      <svg className="statistics-income-sankey" viewBox={`0 0 1200 ${chart.height}`} role="img" aria-label="Weekly income flow from clients through quotations to production orders">
-        <text x="42" y="25" className="statistics-sankey-column-title">CLIENTS</text>
-        <text x="475" y="25" className="statistics-sankey-column-title">QUOTATIONS</text>
-        <text x="908" y="25" className="statistics-sankey-column-title">PRODUCTION ORDERS</text>
+      <svg className="statistics-income-sankey" viewBox={`0 0 1800 ${chart.height}`} role="img" aria-label="Weekly income flow from clients through quotations to production orders">
+        <text x="48" y="25" className="statistics-sankey-column-title">CLIENTS</text>
+        <text x="800" y="25" className="statistics-sankey-column-title">QUOTATIONS</text>
+        <text x="1500" y="25" className="statistics-sankey-column-title">PRODUCTION ORDERS</text>
         <g className="statistics-sankey-links">
           {chart.links.map((link) => { const path = linkPath(link, chart.linkScale); return <path key={link.id} d={path.d} stroke={link.color} strokeWidth={path.thickness}><title>{`${link.source.label} → ${link.target.label}: ${formatIncome(link.value, currency)}`}</title></path>; })}
         </g>

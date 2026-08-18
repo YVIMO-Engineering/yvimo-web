@@ -7,6 +7,7 @@ import { WeeklyProductionChart } from './statistics/WeeklyProductionChart';
 import { WeeklyReceptionsChart, type DailyReceptionStat } from './statistics/WeeklyReceptionsChart';
 import { formatIncome, IncomeSankeyChart, type IncomeProductionRow } from './statistics/IncomeSankeyChart';
 import { ManualAlertDialog, StatisticsAlertHistory, StatisticsAlertSlider } from './statistics/StatisticsAlerts';
+import { MesOrderDatePicker } from './MesWorkspaces';
 import { buildAutomaticStatisticsAlerts, type StatisticsAlert, type StatisticsAlertType } from './statistics/statisticsAlerts';
 import {
   addDays,
@@ -21,9 +22,11 @@ import './statisticsWorkspace.css';
 type StatisticsWorkspaceProps = {
   onNavigate: (path: string) => void;
   organizationId: string;
+  financialIncome?: boolean;
 };
 
 type StatisticsView = 'production' | 'receptions' | 'income';
+type FinancialRangePreset = 'this-month' | 'last-month' | 'this-year' | 'custom';
 type ReceptionVoucherStatRow = { id: string; expected_date: string | null; created_at: string };
 type ReceptionItemStatRow = {
   reception_voucher_id: string;
@@ -41,13 +44,21 @@ const getAlertAcknowledgementKey = (alert: StatisticsAlert) => {
   return alert.id;
 };
 
-export function StatisticsWorkspace({ onNavigate, organizationId }: StatisticsWorkspaceProps) {
+export function StatisticsWorkspace({ onNavigate, organizationId, financialIncome = false }: StatisticsWorkspaceProps) {
   const targetStorageKey = `yvimo:mes-statistics:daily-target:${organizationId}`;
   const manualAlertsStorageKey = `yvimo:mes-statistics:manual-alerts:${organizationId}`;
   const acknowledgedAlertsStorageKey = `yvimo:mes-statistics:acknowledged-alerts:${organizationId}`;
   const today = React.useMemo(() => toLocalDateInput(new Date()), []);
   const [weekAnchor, setWeekAnchor] = React.useState(today);
-  const [activeView, setActiveView] = React.useState<StatisticsView>('production');
+  const [financialPreset, setFinancialPreset] = React.useState<FinancialRangePreset>('this-month');
+  const [financialRange, setFinancialRange] = React.useState(() => {
+    const now = new Date(`${today}T12:00:00`);
+    return {
+      from: toLocalDateInput(new Date(now.getFullYear(), now.getMonth(), 1)),
+      to: toLocalDateInput(new Date(now.getFullYear(), now.getMonth() + 1, 0)),
+    };
+  });
+  const [activeView, setActiveView] = React.useState<StatisticsView>(financialIncome ? 'income' : 'production');
   const [events, setEvents] = React.useState<ProductionStatisticsEvent[]>([]);
   const [targetOrders, setTargetOrders] = React.useState<ProductionTargetOrder[]>([]);
   const [receptionVouchers, setReceptionVouchers] = React.useState<ReceptionVoucherStatRow[]>([]);
@@ -72,6 +83,7 @@ export function StatisticsWorkspace({ onNavigate, organizationId }: StatisticsWo
     try { return JSON.parse(window.localStorage.getItem(acknowledgedAlertsStorageKey) || '[]') as string[]; } catch { return []; }
   });
   const weekRange = React.useMemo(() => getWeekRange(weekAnchor), [weekAnchor]);
+  const analysisRange = financialIncome ? financialRange : weekRange;
 
   React.useEffect(() => {
     const stored = Number(window.localStorage.getItem(targetStorageKey));
@@ -101,8 +113,8 @@ export function StatisticsWorkspace({ onNavigate, organizationId }: StatisticsWo
 
   const loadStatistics = React.useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
-    const rangeStart = new Date(`${weekRange.from}T00:00:00`);
-    const rangeEnd = new Date(`${weekRange.to}T00:00:00`);
+    const rangeStart = new Date(`${analysisRange.from}T00:00:00`);
+    const rangeEnd = new Date(`${analysisRange.to}T00:00:00`);
     rangeEnd.setDate(rangeEnd.getDate() + 1);
     const [eventsResponse, targetResponse, receptionResponse, incomeResponse] = await Promise.all([
       supabase
@@ -118,14 +130,14 @@ export function StatisticsWorkspace({ onNavigate, organizationId }: StatisticsWo
         .select('planned_quantity, due_date')
         .eq('organization_id', organizationId)
         .neq('status', 'cancelled')
-        .gte('due_date', weekRange.from)
-        .lte('due_date', weekRange.to),
+        .gte('due_date', analysisRange.from)
+        .lte('due_date', analysisRange.to),
       supabase
         .from('mes_customer_reception_vouchers')
         .select('id, expected_date, created_at')
         .eq('organization_id', organizationId)
-        .gte('expected_date', weekRange.from)
-        .lte('expected_date', weekRange.to)
+        .gte('expected_date', analysisRange.from)
+        .lte('expected_date', analysisRange.to)
         .order('expected_date', { ascending: true }),
       supabase
         .from('mes_production_serials')
@@ -164,7 +176,7 @@ export function StatisticsWorkspace({ onNavigate, organizationId }: StatisticsWo
       setLastUpdatedAt(new Date().toISOString());
     }
     setLoading(false);
-  }, [organizationId, weekRange.from, weekRange.to]);
+  }, [analysisRange.from, analysisRange.to, organizationId]);
 
   const loadAlerts = React.useCallback(async () => {
     const since = new Date();
@@ -323,38 +335,57 @@ export function StatisticsWorkspace({ onNavigate, organizationId }: StatisticsWo
   }, [selectedDate, today, weekRange.from, weekRange.to]);
 
   const moveWeek = (weeks: number) => setWeekAnchor((current) => addDays(current, weeks * 7));
-  const weekLabel = `${new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(new Date(`${weekRange.from}T12:00:00`))} — ${new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(`${weekRange.to}T12:00:00`))}`;
+  const formatRangeDate = (value: string, includeYear = false) => new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', ...(includeYear ? { year: 'numeric' as const } : {}) }).format(new Date(`${value}T12:00:00`));
+  const weekLabel = `${formatRangeDate(analysisRange.from)} — ${formatRangeDate(analysisRange.to, true)}`;
+  const setFinancialQuickRange = (preset: Exclude<FinancialRangePreset, 'custom'>) => {
+    const now = new Date(`${today}T12:00:00`);
+    const range = preset === 'this-month'
+      ? { from: new Date(now.getFullYear(), now.getMonth(), 1), to: new Date(now.getFullYear(), now.getMonth() + 1, 0) }
+      : preset === 'last-month'
+        ? { from: new Date(now.getFullYear(), now.getMonth() - 1, 1), to: new Date(now.getFullYear(), now.getMonth(), 0) }
+        : { from: new Date(now.getFullYear(), 0, 1), to: new Date(now.getFullYear(), 11, 31) };
+    setFinancialPreset(preset);
+    setFinancialRange({ from: toLocalDateInput(range.from), to: toLocalDateInput(range.to) });
+  };
 
   return (
-    <section className="mes-workspace-panel statistics-workspace">
-      {activeAlerts.length ? (
+    <section className={`mes-workspace-panel statistics-workspace${financialIncome ? ' financial-income-workspace' : ''}`}>
+      {!financialIncome && activeAlerts.length ? (
         <div className="statistics-alert-overlay" key={activeAlerts[0].id}>
           <StatisticsAlertSlider alerts={activeAlerts} onAcknowledge={acknowledgeAlert} />
         </div>
       ) : null}
       <div className="statistics-content">
         <section className="statistics-filter-bar">
-          <button className="academy-back-button engineering-back-button mes-workspace-back statistics-back" type="button" onClick={() => onNavigate('/workspace/manufacturing-ops/mes')}>
-            <ArrowLeft size={16} /> MES Applications
+          <button className="academy-back-button engineering-back-button mes-workspace-back statistics-back" type="button" onClick={() => onNavigate(financialIncome ? '/workspace/manufacturing-ops/intelligence' : '/workspace/manufacturing-ops/mes')}>
+            <ArrowLeft size={16} /> {financialIncome ? 'Ops Intelligence' : 'MES Applications'}
           </button>
           <div className="statistics-compact-heading">
-            <p className="eyebrow">MES / Statistics</p>
-            <h2>Statistics</h2>
-            <span>{activeView === 'production' ? 'Live weekly production overview' : activeView === 'receptions' ? 'Live weekly reception overview' : 'Live weekly income overview'}</span>
+            <p className="eyebrow">{financialIncome ? 'OPS INTELLIGENCE / FINANCE' : 'MES / Statistics'}</p>
+            <h2>{financialIncome ? 'Income Flow' : 'Statistics'}</h2>
+            <span>{activeView === 'production' ? 'Live weekly production overview' : activeView === 'receptions' ? 'Live weekly reception overview' : financialIncome ? 'Live income overview by selected period' : 'Live weekly income overview'}</span>
           </div>
-          <label className="statistics-week-picker"><span>Week containing</span><input type="date" value={weekAnchor} onChange={(event) => setWeekAnchor(event.target.value || today)} /></label>
-          <div className="statistics-week-navigation">
+          {financialIncome ? <div className="statistics-financial-period-tabs">
+            <button type="button" className={financialPreset === 'this-month' ? 'active' : ''} onClick={() => setFinancialQuickRange('this-month')}>This Month</button>
+            <button type="button" className={financialPreset === 'last-month' ? 'active' : ''} onClick={() => setFinancialQuickRange('last-month')}>Last Month</button>
+            <button type="button" className={financialPreset === 'this-year' ? 'active' : ''} onClick={() => setFinancialQuickRange('this-year')}>This Year</button>
+            <button type="button" className={financialPreset === 'custom' ? 'active' : ''} onClick={() => setFinancialPreset('custom')}>Custom</button>
+          </div> : <label className="statistics-week-picker"><span>Week containing</span><input type="date" value={weekAnchor} onChange={(event) => setWeekAnchor(event.target.value || today)} /></label>}
+          {financialIncome ? <>
+            <label className="statistics-financial-date"><span>From</span><MesOrderDatePicker id="financial-income-date-from" value={financialRange.from} onChange={(from) => { setFinancialPreset('custom'); setFinancialRange((current) => ({ ...current, from })); }} onQuickRange={(range) => { setFinancialPreset('custom'); setFinancialRange(range); }} /></label>
+            <label className="statistics-financial-date"><span>To</span><MesOrderDatePicker id="financial-income-date-to" value={financialRange.to} onChange={(to) => { setFinancialPreset('custom'); setFinancialRange((current) => ({ ...current, to })); }} onQuickRange={(range) => { setFinancialPreset('custom'); setFinancialRange(range); }} /></label>
+          </> : <div className="statistics-week-navigation">
             <button type="button" aria-label="Previous week" onClick={() => moveWeek(-1)}><ChevronLeft size={16} /></button>
             <strong>{weekLabel}</strong>
             <button type="button" aria-label="Next week" onClick={() => moveWeek(1)}><ChevronRight size={16} /></button>
-          </div>
-          <button type="button" className="statistics-this-week" onClick={() => setWeekAnchor(today)}>This Week</button>
+          </div>}
+          {!financialIncome ? <button type="button" className="statistics-this-week" onClick={() => setWeekAnchor(today)}>This Week</button> : null}
           <button className="statistics-refresh" type="button" disabled={loading} onClick={() => { void loadStatistics(); void loadAlerts(); }}><RefreshCw size={16} className={loading ? 'spinning' : ''} /> Refresh</button>
-          <nav className="statistics-view-tabs" aria-label="Statistics view">
+          {!financialIncome ? <nav className="statistics-view-tabs" aria-label="Statistics view">
             <button type="button" className={activeView === 'production' ? 'active' : ''} aria-pressed={activeView === 'production'} onClick={() => setActiveView('production')}><BarChart3 size={16} /> Production</button>
             <button type="button" className={activeView === 'receptions' ? 'active' : ''} aria-pressed={activeView === 'receptions'} onClick={() => setActiveView('receptions')}><PackageCheck size={16} /> Receptions</button>
             <button type="button" className={activeView === 'income' ? 'active income' : 'income'} aria-pressed={activeView === 'income'} onClick={() => setActiveView('income')}><CircleDollarSign size={16} /> Income</button>
-          </nav>
+          </nav> : null}
           <div className="statistics-live-state"><span><i /> Live {activeView}</span><small>{lastUpdatedAt ? `Updated ${new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' }).format(new Date(lastUpdatedAt))}` : 'Connecting'}</small></div>
         </section>
 
@@ -401,14 +432,14 @@ export function StatisticsWorkspace({ onNavigate, organizationId }: StatisticsWo
         ) : (
           <>
             <div className="statistics-metric-cards statistics-income-metrics">
-              <article className="green"><CircleDollarSign size={25} /><span><small>Weekly income</small><strong>{formatIncome(incomeSummary.total, incomeCurrency)}</strong><em>from {incomeSummary.pieces} produced pieces</em></span></article>
+              <article className="green"><CircleDollarSign size={25} /><span><small>{financialIncome ? 'Period income' : 'Weekly income'}</small><strong>{formatIncome(incomeSummary.total, incomeCurrency)}</strong><em>from {incomeSummary.pieces} produced pieces</em></span></article>
               <article className="green"><TrendingUp size={25} /><span><small>Income today</small><strong>{formatIncome(incomeSummary.todayTotal, incomeCurrency)}</strong><em>recognized as pieces are produced</em></span></article>
-              <article className="green"><FileText size={25} /><span><small>Source quotations</small><strong>{incomeSummary.quotations}</strong><em>linked quotations this week</em></span></article>
+              <article className="green"><FileText size={25} /><span><small>Source quotations</small><strong>{incomeSummary.quotations}</strong><em>linked quotations {financialIncome ? 'in this period' : 'this week'}</em></span></article>
               <article className="green"><WalletCards size={25} /><span><small>Income clients</small><strong>{incomeSummary.clients}</strong><em>revenue-generating clients</em></span></article>
             </div>
             <section className="statistics-production-panel statistics-income-panel">
               <div className="statistics-production-heading">
-                <div><span className="statistics-heading-icon income"><CircleDollarSign size={22} /></span><span><small>Weekly realized income flow</small><h3>{weekLabel}</h3></span></div>
+                <div><span className="statistics-heading-icon income"><CircleDollarSign size={22} /></span><span><small>{financialIncome ? 'Realized income flow' : 'Weekly realized income flow'}</small><h3>{weekLabel}</h3></span></div>
                 <div className="statistics-chart-key"><span className="income-flow"><i /> Income value</span><span>Client → Quotation → Production order</span></div>
               </div>
               {error ? <div className="statistics-message error" role="alert">{error}</div> : null}
@@ -420,9 +451,9 @@ export function StatisticsWorkspace({ onNavigate, organizationId }: StatisticsWo
             </section>
           </>
         )}
-        <StatisticsAlertHistory alerts={alertHistory} onOpenManual={() => setManualAlertDialogOpen(true)} />
+        {!financialIncome ? <StatisticsAlertHistory alerts={alertHistory} onOpenManual={() => setManualAlertDialogOpen(true)} /> : null}
       </div>
-      {targetDialogOpen ? (
+      {!financialIncome && targetDialogOpen ? (
         <div className="statistics-target-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setTargetDialogOpen(false); }}>
           <form className="statistics-target-modal" onSubmit={saveTarget}>
             <button className="statistics-target-modal-close" type="button" aria-label="Close" onClick={() => setTargetDialogOpen(false)}><X size={20} /></button>
@@ -435,7 +466,7 @@ export function StatisticsWorkspace({ onNavigate, organizationId }: StatisticsWo
           </form>
         </div>
       ) : null}
-      {manualAlertDialogOpen ? <ManualAlertDialog onClose={() => setManualAlertDialogOpen(false)} onCreate={createManualAlert} /> : null}
+      {!financialIncome && manualAlertDialogOpen ? <ManualAlertDialog onClose={() => setManualAlertDialogOpen(false)} onCreate={createManualAlert} /> : null}
     </section>
   );
 }
