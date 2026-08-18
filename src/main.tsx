@@ -1212,14 +1212,35 @@ Object.assign(translations.zh, {
 });
 
 Object.assign(translations.es, {
-  'Manufacturing Ops': 'Manufacturing Ops',
+  'Manufacturing Ops': 'Operaciones de manufactura',
+  'MANUFACTURING OPS': 'OPERACIONES DE MANUFACTURA',
+  'Manufacturing Execution System': 'Sistema de ejecución de manufactura',
+  'Advanced Production Scheduling': 'Planeación y programación avanzada de producción',
+  'Ops Intelligence': 'Inteligencia operativa',
+  'Order Risks': 'Riesgos de órdenes',
+  'Import Orders': 'Importar órdenes',
+  'Revenue Opportunity': 'Oportunidad de ingresos',
+  'Analysis Tool': 'Herramienta de análisis',
+  'Plan, execute, track, and improve manufacturing operations from one connected YVIMO workspace.':
+    'Planea, ejecuta, rastrea y mejora las operaciones de manufactura desde un espacio de trabajo conectado de YVIMO.',
+  'Execute, track, and monitor production orders across work centers in real time.':
+    'Ejecuta, rastrea y monitorea órdenes de producción en los centros de trabajo en tiempo real.',
+  'Plan and schedule production using capacity, priorities, due dates, and operational constraints.':
+    'Planea y programa la producción utilizando capacidad, prioridades, fechas de entrega y restricciones operativas.',
+  Applications: 'Aplicaciones',
+  'Select a module to open its workspace.': 'Selecciona un módulo para abrir su espacio de trabajo.',
+  Organization: 'Organización',
+  'No organization': 'Sin organización',
+  'Create or join a team workspace': 'Crea o únete a un espacio de trabajo de equipo',
+  Statistics: 'Estadísticas',
+  Suppliers: 'Proveedores',
+  'Go Back': 'Regresar',
   'MES, APS, production tracking, scheduling, and manufacturing intelligence in one connected workspace.':
     'MES, APS, seguimiento de producci\u00f3n, programaci\u00f3n e inteligencia de manufactura en un workspace conectado.',
   'Flagship products': 'Productos principales',
   'Start with your main YVIMO workspaces': 'Comienza con tus workspaces principales de YVIMO',
   'Secondary modules': 'M\u00f3dulos secundarios',
   'Tools, licenses, and commercial workflows': 'Herramientas, licencias y flujos comerciales',
-  'MANUFACTURING OPS': 'MANUFACTURING OPS',
   MES: 'MES',
   APS: 'APS',
   Active: 'Activo',
@@ -1240,6 +1261,8 @@ Object.assign(translations.es, {
     'Planea y programa producci\u00f3n usando capacidad, prioridades y restricciones.',
   'Transform production data into actionable manufacturing KPIs.':
     'Convierte datos de producci\u00f3n en KPIs de manufactura accionables.',
+  'Transform production data into actionable manufacturing KPIs, trends, and improvement insights.':
+    'Transforma los datos de producción en indicadores, tendencias y oportunidades de mejora accionables para manufactura.',
   'Production order tracking': 'Seguimiento de \u00f3rdenes de producci\u00f3n',
   'Work center status': 'Estado de centros de trabajo',
   'Operator actions': 'Acciones de operador',
@@ -1254,7 +1277,7 @@ Object.assign(translations.es, {
   'OEE dashboard': 'Dashboard OEE',
   'Downtime analysis': 'An\u00e1lisis de paros',
   'Cycle time trends': 'Tendencias de tiempo ciclo',
-  'Throughput visibility': 'Visibilidad de throughput',
+  'Throughput visibility': 'Visibilidad del flujo de producción',
   'Production reports': 'Reportes de producci\u00f3n',
   'Open MES': 'Abrir MES',
   'Open APS': 'Abrir APS',
@@ -1318,7 +1341,7 @@ Object.assign(translations.es, {
   'OEE Dashboard': 'Dashboard OEE',
   'Downtime Analysis': 'An\u00e1lisis de paros',
   'Cycle Time Trends': 'Tendencias de tiempo ciclo',
-  'Throughput Visibility': 'Visibilidad de throughput',
+  'Throughput Visibility': 'Visibilidad del flujo de producción',
   'Production Reports': 'Reportes de producci\u00f3n',
   'Monitor availability, performance, quality, and total OEE by area or work center.':
     'Monitorea disponibilidad, rendimiento, calidad y OEE total por \u00e1rea o centro de trabajo.',
@@ -3560,7 +3583,7 @@ function LoggedDashboardPage({
       return <AnalysisToolWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} />;
     }
     if (activePath === '/workspace/manufacturing-ops/mes/orders') {
-      return <ProductionOrdersWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} />;
+      return <ProductionOrdersWorkspace key={languageCode} onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} languageCode={languageCode} />;
     }
     if (activePath === '/workspace/manufacturing-ops/mes/work-centers') {
       return <WorkCentersWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} />;
@@ -3908,12 +3931,14 @@ function LoggedDashboardPage({
         {manufacturingOrganization?.logoUrl ? <img src={manufacturingOrganization.logoUrl} alt="" aria-hidden="true" /> : <Building2 size={19} />}
       </span>
       <span>
-        <em>Organization</em>
-        <strong>{manufacturingOrganization?.name || 'No organization'}</strong>
+        <em>{t('Organization')}</em>
+        <strong>{manufacturingOrganization?.name || t('No organization')}</strong>
         <small>
           {manufacturingOrganization
-            ? `${manufacturingOrganization.role} access · ${manufacturingOrganization.memberCount} member${manufacturingOrganization.memberCount === 1 ? '' : 's'}`
-            : 'Create or join a team workspace'}
+            ? languageCode === 'es'
+              ? `${manufacturingOrganization.role === 'Owner' ? 'Propietario' : t(manufacturingOrganization.role)} · ${manufacturingOrganization.memberCount} ${manufacturingOrganization.memberCount === 1 ? 'miembro' : 'miembros'}`
+              : `${manufacturingOrganization.role} access · ${manufacturingOrganization.memberCount} member${manufacturingOrganization.memberCount === 1 ? '' : 's'}`
+            : t('Create or join a team workspace')}
         </small>
       </span>
     </button>
@@ -4141,13 +4166,14 @@ function LoggedDashboardPage({
   return (
     <main className={[
       'logged-shell',
+      !isSupplierAccessOverview ? 'primary-navigation-compact-shell' : '',
       isOperatorTerminalPage ? 'operator-terminal-shell' : '',
       isCompactMesApplicationPage || isOrderRisksPage || isImportCostingPage || isRevenueOpportunitySection || isAnalysisToolSection ? 'compact-mes-application-shell' : '',
       isSupplierOperationsPage || isQualityOperationsPage || isClientsOperationsPage || isRevenueOpportunitySection || isAnalysisToolSection ? 'supplier-context-shell' : '',
       isSupplierAccessOverview ? 'supplier-access-shell' : '',
       isSupplierAccessOverview && supplierCustomerPickerOpen ? 'supplier-customer-picker-open' : '',
     ].filter(Boolean).join(' ')}>
-      <aside className={['logged-sidebar', isSupplierAccessOverview ? 'supplier-portal-sidebar' : '', tabletSidebarExpanded ? 'tablet-expanded' : ''].filter(Boolean).join(' ')}>
+      <aside className={['logged-sidebar', !isSupplierAccessOverview ? 'primary-navigation-compact' : '', isSupplierAccessOverview ? 'supplier-portal-sidebar' : '', tabletSidebarExpanded ? 'tablet-expanded' : ''].filter(Boolean).join(' ')}>
         {isSupplierAccessOverview ? (
           <>
             <div className="logged-sidebar-title supplier-portal-sidebar-title">
@@ -4662,7 +4688,7 @@ function LoggedDashboardPage({
                 <div className="manufacturing-page-header">
                   <button className="academy-back-button engineering-back-button" type="button" onClick={() => onNavigate('/dashboard')}>
                     <ArrowLeft size={16} />
-                    Go Back
+                    {t('Go Back')}
                   </button>
                   <section className="engineering-tools-hero manufacturing-ops-hero">
                     <p className="eyebrow">{t('YVIMO PORTAL')}</p>

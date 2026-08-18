@@ -1,4 +1,5 @@
 import React from 'react';
+import { useProductionOrdersI18n } from './productionOrdersI18n';
 import { createPortal } from 'react-dom';
 import { Activity, AlertTriangle, ArrowLeft, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleHelp, CircleX, ClipboardPlus, Clock3, Copy, Database, Download, Eye, Factory, Frown, FileText, ImagePlus, LoaderCircle, Maximize2, Meh, Minimize2, Minus, Move, PaintBucket, Pencil, Plus, Power, RadioTower, RotateCcw, Ruler, Search, Send, Smile, Timer, Truck, Wrench, X, ZoomIn, ZoomOut } from 'lucide-react';
 import { GoogleWorkCentersMap } from '../components/maps/GoogleWorkCentersMap';
@@ -4076,10 +4077,12 @@ function PendingWorkReportModal({
   return typeof document === 'undefined' ? modalContent : createPortal(modalContent, document.body);
 }
 
-export function ProductionOrdersWorkspace({ onNavigate, organizationId, modalOnly = false, onModalClose }: WorkspaceProps & {
+export function ProductionOrdersWorkspace({ onNavigate, organizationId, languageCode = 'en', modalOnly = false, onModalClose }: WorkspaceProps & {
+  languageCode?: string;
   modalOnly?: boolean;
   onModalClose?: () => void;
 }) {
+  useProductionOrdersI18n(languageCode);
   const restoredViewState = React.useMemo(() => loadProductionOrdersViewState(organizationId), [organizationId]);
   const [orders, setOrders] = React.useState<ProductionOrder[]>([]);
   const [lastProductionEvent, setLastProductionEvent] = React.useState<WorkCenterProductionEventRow | null>(null);

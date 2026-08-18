@@ -1450,6 +1450,49 @@ body.work-center-map-expanded .logged-workspace {
   padding: 42px clamp(22px, 4vw, 58px);
 }
 
+@media (min-width: 761px) {
+  .logged-shell.primary-navigation-compact-shell {
+    grid-template-columns: 76px minmax(0, 1fr);
+  }
+
+  .logged-sidebar.primary-navigation-compact,
+  .logged-sidebar.primary-navigation-compact:hover,
+  .logged-sidebar.primary-navigation-compact:focus-within,
+  .logged-sidebar.primary-navigation-compact.tablet-expanded {
+    width: 76px;
+    gap: 16px;
+    padding: 22px 12px;
+  }
+
+  .logged-sidebar.primary-navigation-compact .logged-sidebar-title,
+  .logged-sidebar.primary-navigation-compact:hover .logged-sidebar-title,
+  .logged-sidebar.primary-navigation-compact:focus-within .logged-sidebar-title,
+  .logged-sidebar.primary-navigation-compact.tablet-expanded .logged-sidebar-title,
+  .logged-sidebar.primary-navigation-compact nav button span,
+  .logged-sidebar.primary-navigation-compact:hover nav button span,
+  .logged-sidebar.primary-navigation-compact:focus-within nav button span,
+  .logged-sidebar.primary-navigation-compact.tablet-expanded nav button span,
+  .logged-sidebar.primary-navigation-compact .logged-signout span,
+  .logged-sidebar.primary-navigation-compact:hover .logged-signout span,
+  .logged-sidebar.primary-navigation-compact:focus-within .logged-signout span,
+  .logged-sidebar.primary-navigation-compact.tablet-expanded .logged-signout span {
+    display: none;
+  }
+
+  .logged-sidebar.primary-navigation-compact nav button,
+  .logged-sidebar.primary-navigation-compact:hover nav button,
+  .logged-sidebar.primary-navigation-compact:focus-within nav button,
+  .logged-sidebar.primary-navigation-compact.tablet-expanded nav button,
+  .logged-sidebar.primary-navigation-compact .logged-signout,
+  .logged-sidebar.primary-navigation-compact:hover .logged-signout,
+  .logged-sidebar.primary-navigation-compact:focus-within .logged-signout,
+  .logged-sidebar.primary-navigation-compact.tablet-expanded .logged-signout {
+    justify-content: center;
+    gap: 0;
+    padding: 10px;
+  }
+}
+
 .logged-workspace.manufacturing-workspace-active {
   position: relative;
   min-height: calc(100vh - var(--header-height));
@@ -3684,13 +3727,14 @@ body.work-center-map-expanded .logged-workspace {
   position: relative;
   z-index: 1;
   display: grid;
-  gap: 18px;
+  gap: 13px;
   align-content: start;
-  height: 448px;
+  height: auto;
+  min-height: 448px;
   min-width: 0;
   border: 1px solid rgba(255, 255, 255, 0.32);
   border-radius: 8px;
-  padding: 22px 22px 48px;
+  padding: 22px;
   background: #f7f7f7;
   box-shadow: 0 22px 48px rgba(0, 0, 0, 0.18);
   overflow: hidden;
@@ -3765,7 +3809,7 @@ body.work-center-map-expanded .logged-workspace {
 .manufacturing-suite-metrics {
   flex-wrap: wrap;
   gap: 8px;
-  margin-bottom: 14px;
+  margin-bottom: 0;
 }
 
 .manufacturing-suite-metrics span {
@@ -31590,7 +31634,8 @@ body.work-center-map-expanded .logged-workspace {
   }
 
   .manufacturing-suite-panel {
-    height: 420px;
+    height: auto;
+    min-height: 420px;
     padding: 20px;
     transform: none;
   }
