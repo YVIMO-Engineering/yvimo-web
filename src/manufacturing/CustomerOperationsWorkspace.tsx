@@ -14,16 +14,20 @@ import {
   History,
   Mail,
   MapPin,
+  Move,
   Package,
   Pencil,
   Phone,
   Plus,
+  RotateCcw,
   Search,
   Trash2,
   UserRound,
   WalletCards,
   Wrench,
   X,
+  ZoomIn,
+  ZoomOut,
 } from 'lucide-react';
 import {
   resolveGooglePlacesAddressMatch,
@@ -174,6 +178,7 @@ type CustomerAssetService = {
   remainingLifePercent: number | null;
   notes: string;
   orderNumber: string;
+  performancePieces: number | null;
 };
 
 type CustomerAssetAttachment = {
@@ -646,12 +651,19 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
   const [toolDefinitions, setToolDefinitions] = React.useState<CustomerToolDefinition[]>([]);
   const [assetLifeTraceability, setAssetLifeTraceability] = React.useState<AssetLifeTraceabilityRow[]>([]);
   const [assetServices, setAssetServices] = React.useState<CustomerAssetService[]>([]);
+  const [performanceService, setPerformanceService] = React.useState<CustomerAssetService | null>(null);
+  const [performancePiecesDraft, setPerformancePiecesDraft] = React.useState('');
+  const [performanceSaving, setPerformanceSaving] = React.useState(false);
+  const [performanceError, setPerformanceError] = React.useState('');
   const [assetOrderDetails, setAssetOrderDetails] = React.useState<{ order: ProductionOrder; details: ProductionOrderDetailsState } | null>(null);
   const [assetAttachments, setAssetAttachments] = React.useState<CustomerAssetAttachment[]>([]);
   const [selectedAssetId, setSelectedAssetId] = React.useState<string | null>(restoredAssetView.selectedAssetId);
   const [assetLoading, setAssetLoading] = React.useState(false);
   const [assetError, setAssetError] = React.useState('');
   const [assetAttachmentPreview, setAssetAttachmentPreview] = React.useState<{ fileName: string; url: string; isPdf: boolean; category?: string } | null>(null);
+  const [assetPreviewZoom, setAssetPreviewZoom] = React.useState(1);
+  const [assetPreviewPosition, setAssetPreviewPosition] = React.useState({ x: 0, y: 0 });
+  const assetPreviewDragRef = React.useRef<{ pointerId: number; x: number; y: number; originX: number; originY: number } | null>(null);
   const [assetFormOpen, setAssetFormOpen] = React.useState(false);
   const [assetEditingId, setAssetEditingId] = React.useState<string | null>(null);
   const [assetForm, setAssetForm] = React.useState<CustomerAssetFormState>(emptyCustomerAssetForm);
@@ -716,7 +728,7 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
     setAssetLoading(true);
     setAssetError('');
 
-    const [assetResponse, serviceResponse, attachmentResponse, productionSerialResponse, toolResponse, toolDocumentResponse, traceabilityResponse] = await Promise.all([
+    const [assetResponse, serviceResponse, attachmentResponse, productionSerialResponse, toolResponse, toolDocumentResponse, traceabilityResponse, performanceResponse] = await Promise.all([
       supabase
         .from('mes_customer_assets')
         .select('*')
@@ -739,6 +751,7 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
       supabase.from('mes_customer_tool_ids').select('id, tool_id, internal_tool_id, part_type, minimum_life, measurement_unit').eq('organization_id', organizationId).order('tool_id'),
       supabase.from('mes_customer_tool_id_documents').select('id, tool_definition_id, storage_bucket, file_name, file_path, file_type, created_at').eq('organization_id', organizationId).order('created_at'),
       supabase.from('mes_operator_terminal_traceability').select('production_order_id, tool_id, serial_number, dimensions_unit, before_notch, before_tooth_length, stock_to_remove, after_tooth_length, payload, created_at').eq('organization_id', organizationId).order('created_at', { ascending: false }),
+      supabase.from('mes_tool_performance_runs').select('service_event_id, tool_life').eq('organization_id', organizationId),
     ]);
 
     const firstError = assetResponse.error || serviceResponse.error || attachmentResponse.error || productionSerialResponse.error || toolResponse.error || toolDocumentResponse.error || traceabilityResponse.error;
@@ -781,6 +794,7 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
         createdAt: row.created_at,
       })));
       setAssetLifeTraceability((traceabilityResponse.data ?? []) as AssetLifeTraceabilityRow[]);
+      const performanceByService = new Map((performanceResponse.data ?? []).map((row) => [String(row.service_event_id), Number(row.tool_life)]));
       setAssetServices(((serviceResponse.data ?? []) as CustomerAssetServiceRow[]).map((row) => {
         const order = Array.isArray(row.production_order) ? row.production_order[0] : row.production_order;
         return {
@@ -794,6 +808,7 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
           remainingLifePercent: row.remaining_life_percent,
           notes: row.notes,
           orderNumber: order?.order_number ?? '',
+          performancePieces: performanceByService.get(row.id) ?? null,
         };
       }));
       setAssetAttachments(((attachmentResponse.data ?? []) as CustomerAssetAttachmentRow[]).map((row) => ({
@@ -851,6 +866,18 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
     onRefresh: loadAssets,
     enabled: activeTab === 'assets-equipment' && Boolean(organizationId),
   });
+
+  React.useEffect(() => {
+    setAssetPreviewZoom(1);
+    setAssetPreviewPosition({ x: 0, y: 0 });
+    assetPreviewDragRef.current = null;
+  }, [assetAttachmentPreview?.url]);
+
+  const changeAssetPreviewZoom = (nextZoom: number) => {
+    const zoom = Math.min(5, Math.max(1, nextZoom));
+    setAssetPreviewZoom(zoom);
+    if (zoom === 1) setAssetPreviewPosition({ x: 0, y: 0 });
+  };
 
   React.useEffect(() => {
     if (activeTab !== 'assets-equipment') return;
@@ -1515,6 +1542,34 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
     : [];
   const selectedAssetSharpeningCount = selectedAssetServices.filter((service) => service.result !== 'skipped').length;
   const selectedAssetTool = selectedAsset?.toolDefinitionId ? toolDefinitions.find((tool) => tool.id === selectedAsset.toolDefinitionId) ?? null : null;
+  const saveServicePerformance = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!selectedAsset || !performanceService) return;
+    const pieces = Math.round(Number(performancePiecesDraft));
+    const effectiveToolId = selectedAsset.toolId.trim() || selectedAssetTool?.toolId.trim() || '';
+    if (!Number.isFinite(pieces) || pieces < 0) { setPerformanceError('Enter a valid number of produced pieces.'); return; }
+    if (!effectiveToolId) { setPerformanceError('Link a Tool ID to this serial before adding performance.'); return; }
+    const chronologicalServices = [...selectedAssetServices].filter((service) => service.result !== 'skipped').sort((a, b) => new Date(a.serviceDate).getTime() - new Date(b.serviceDate).getTime());
+    const regrindNumber = Math.max(0, chronologicalServices.findIndex((service) => service.id === performanceService.id) + 1);
+    setPerformanceSaving(true); setPerformanceError('');
+    const performancePayload = {
+      organization_id: organizationId,
+      service_event_id: performanceService.id,
+      tool_id: effectiveToolId,
+      cutter_serial_number: selectedAsset.serialNumber,
+      part_number: selectedAsset.partNumber,
+      regrind_number: regrindNumber,
+      tool_life: pieces,
+      run_date: performanceService.serviceDate.slice(0, 10),
+      customer_name: selectedAssetCustomer?.customerName ?? '',
+    };
+    const { error } = performanceService.performancePieces === null
+      ? await supabase.from('mes_tool_performance_runs').insert(performancePayload)
+      : await supabase.from('mes_tool_performance_runs').update(performancePayload).eq('service_event_id', performanceService.id);
+    if (error) setPerformanceError(error.message);
+    else { setAssetServices((current) => current.map((service) => service.id === performanceService.id ? { ...service, performancePieces: pieces } : service)); setPerformanceService(null); }
+    setPerformanceSaving(false);
+  };
   const isSelectedAssetShaver = /shaver/i.test(selectedAsset?.assetType ?? '') || /shaver/i.test(selectedAssetTool?.partType ?? '');
   const normalizeLifeUnit = (value: string | null | undefined) => {
     const unit = value?.trim().toLowerCase() ?? '';
@@ -1975,7 +2030,7 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
                         </div>
                         <div className="clients-asset-service-table-wrap">
                           <table>
-                            <thead><tr><th>Service</th><th>Date</th><th>Order</th><th>Result / Life</th><th>Evidence</th></tr></thead>
+                            <thead><tr><th>Service</th><th>Date</th><th>Order</th><th>Result / Life</th><th>Performance</th><th>Evidence</th></tr></thead>
                             <tbody>
                               {selectedAssetServices.map((service) => {
                                 const serviceAttachments = selectedAssetAttachments.filter((attachment) => attachment.serviceEventId === service.id);
@@ -1994,6 +2049,7 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
                                       <td><b>{formatAssetDate(service.serviceDate, languageCode)}</b></td>
                                       <td>{service.orderNumber ? <button className="clients-asset-order-link" type="button" onClick={() => void openProductionOrder(service.productionOrderId)}>{service.orderNumber}</button> : <span className="clients-asset-no-evidence">Not linked</span>}</td>
                                       <td><em className={`clients-service-result ${service.result}`}>{service.result}</em>{service.remainingLifePercent !== null ? <small>{service.remainingLifePercent}% life</small> : null}</td>
+                                      <td>{service.performancePieces !== null ? <button className="clients-performance-value" type="button" onClick={() => { setPerformanceService(service); setPerformancePiecesDraft(String(service.performancePieces)); setPerformanceError(''); }}><strong>{service.performancePieces.toLocaleString()}</strong><small>pieces</small></button> : <button className="clients-performance-add" type="button" onClick={() => { setPerformanceService(service); setPerformancePiecesDraft(''); setPerformanceError(''); }}><Plus size={14} /> Add</button>}</td>
                                       <td>
                                         {serviceAttachments.length ? <div className="clients-asset-service-files">{serviceAttachments.map((attachment) => (
                                           <button type="button" key={attachment.id} onClick={() => void openAssetAttachment(attachment)}>
@@ -2004,7 +2060,7 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
                                       </td>
                                     </tr>
                                     <tr className="clients-asset-service-measurements">
-                                      <td colSpan={5}>
+                                      <td colSpan={6}>
                                         <div>
                                           <span><small>Before sharpening</small><b>{formatServiceMeasurement(serviceMeasurement?.before_tooth_length ?? serviceMeasurement?.before_notch)}</b></span>
                                           <span><small>Stock to remove</small><b>{formatServiceMeasurement(serviceMeasurement?.stock_to_remove)}</b></span>
@@ -2019,6 +2075,7 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
                                 <tr className="unlinked-evidence" key={`attachment-${attachment.id}`}>
                                   <td><b>Unlinked evidence</b></td>
                                   <td><b>{formatAssetDate(attachment.createdAt, languageCode)}</b></td>
+                                  <td>—</td>
                                   <td>—</td>
                                   <td>—</td>
                                   <td><div className="clients-asset-service-files"><button type="button" onClick={() => void openAssetAttachment(attachment)}>{attachment.attachmentType === 'photo' ? <Camera size={15} /> : <FileText size={15} />}<span>{attachment.fileName}</span><ExternalLink size={13} /></button></div></td>
@@ -2342,6 +2399,18 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
         </div>
       ) : null}
 
+      {performanceService && selectedAsset ? (
+        <div className="mes-modal-backdrop clients-performance-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !performanceSaving) setPerformanceService(null); }}>
+          <section className="clients-performance-modal" role="dialog" aria-modal="true" aria-labelledby="service-performance-title">
+            <button className="supplier-modal-close" type="button" onClick={() => setPerformanceService(null)} aria-label="Close"><X size={17} /></button>
+            <p className="eyebrow">SERVICE PERFORMANCE</p><h3 id="service-performance-title">Produced pieces</h3>
+            <p>Record the tool life achieved after this sharpening cycle.</p>
+            <dl><div><dt>Serial Number</dt><dd>{selectedAsset.serialNumber}</dd></div><div><dt>Tool ID</dt><dd>{selectedAsset.toolId || selectedAssetTool?.toolId || 'Not linked'}</dd></div><div><dt>Service date</dt><dd>{formatAssetDate(performanceService.serviceDate, languageCode)}</dd></div></dl>
+            <form onSubmit={(event) => void saveServicePerformance(event)}><label><span>Performance</span><div><input autoFocus type="number" min="0" step="1" value={performancePiecesDraft} onChange={(event) => setPerformancePiecesDraft(event.target.value)} placeholder="0" /><small>pieces</small></div></label>{performanceError ? <span className="clients-modal-error">{performanceError}</span> : null}<footer><button type="button" onClick={() => setPerformanceService(null)} disabled={performanceSaving}>Cancel</button><button type="submit" disabled={performanceSaving}>{performanceSaving ? 'Saving…' : performanceService.performancePieces === null ? 'Add performance' : 'Update performance'}</button></footer></form>
+          </section>
+        </div>
+      ) : null}
+
       {toolDocumentDeleteCandidate ? (
         <div className="mes-modal-backdrop clients-tool-drawing-confirm-backdrop" role="presentation">
           <section className="mes-confirm-modal danger" role="dialog" aria-modal="true" aria-labelledby="delete-tool-drawing-title">
@@ -2363,17 +2432,25 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
         <div className="supplier-modal-backdrop clients-asset-evidence-preview-backdrop" role="presentation" onMouseDown={(event) => {
           if (event.target === event.currentTarget) setAssetAttachmentPreview(null);
         }}>
-          <div className="supplier-modal clients-asset-evidence-preview" role="dialog" aria-modal="true" aria-labelledby="asset-evidence-preview-title">
+          <div className="supplier-modal production-order-preview-modal clients-asset-evidence-preview" role="dialog" aria-modal="true" aria-labelledby="asset-evidence-preview-title">
             <button className="supplier-modal-close" type="button" onClick={() => setAssetAttachmentPreview(null)} aria-label="Close evidence preview"><X size={18} /></button>
             <div>
               <div className="supplier-modal-header">
                 <span>{assetAttachmentPreview.category ?? 'Asset Evidence'}</span>
                 <strong id="asset-evidence-preview-title">{assetAttachmentPreview.fileName}</strong>
               </div>
-              <div className={`supplier-document-preview ${assetAttachmentPreview.isPdf ? 'pdf' : 'image'}`}>
+              <div
+                className={`supplier-document-preview production-order-preview-frame ${assetAttachmentPreview.isPdf ? 'pdf' : `image${assetPreviewZoom > 1 ? ' zoomed' : ''}`}`}
+                onWheel={!assetAttachmentPreview.isPdf ? (event) => { event.preventDefault(); changeAssetPreviewZoom(assetPreviewZoom + (event.deltaY < 0 ? .25 : -.25)); } : undefined}
+                onPointerDown={!assetAttachmentPreview.isPdf && assetPreviewZoom > 1 ? (event) => { if ((event.target as HTMLElement).closest('.production-order-preview-controls')) return; event.currentTarget.setPointerCapture(event.pointerId); assetPreviewDragRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, originX: assetPreviewPosition.x, originY: assetPreviewPosition.y }; } : undefined}
+                onPointerMove={!assetAttachmentPreview.isPdf ? (event) => { const drag = assetPreviewDragRef.current; if (!drag || drag.pointerId !== event.pointerId) return; setAssetPreviewPosition({ x: drag.originX + event.clientX - drag.x, y: drag.originY + event.clientY - drag.y }); } : undefined}
+                onPointerUp={!assetAttachmentPreview.isPdf ? (event) => { if (assetPreviewDragRef.current?.pointerId === event.pointerId) assetPreviewDragRef.current = null; } : undefined}
+                onPointerCancel={!assetAttachmentPreview.isPdf ? () => { assetPreviewDragRef.current = null; } : undefined}
+                onDoubleClick={!assetAttachmentPreview.isPdf ? (event) => { if ((event.target as HTMLElement).closest('.production-order-preview-controls')) return; changeAssetPreviewZoom(assetPreviewZoom > 1 ? 1 : 2); } : undefined}
+              >
                 {assetAttachmentPreview.isPdf
                   ? <iframe src={`${assetAttachmentPreview.url}#toolbar=1&navpanes=0&scrollbar=1&view=FitH`} title={`Preview ${assetAttachmentPreview.fileName}`} />
-                  : <img src={assetAttachmentPreview.url} alt={assetAttachmentPreview.fileName} />}
+                  : <><img src={assetAttachmentPreview.url} alt={assetAttachmentPreview.fileName} draggable={false} style={{ transform: `translate3d(${assetPreviewPosition.x}px, ${assetPreviewPosition.y}px, 0) scale(${assetPreviewZoom})` }} /><div className="production-order-preview-controls" aria-label="Image controls" onPointerDown={(event) => event.stopPropagation()} onDoubleClick={(event) => event.stopPropagation()} onWheel={(event) => event.stopPropagation()}><button type="button" onClick={() => changeAssetPreviewZoom(assetPreviewZoom - .25)} disabled={assetPreviewZoom <= 1} aria-label="Zoom out"><ZoomOut size={18} /></button><output aria-label="Current zoom">{Math.round(assetPreviewZoom * 100)}%</output><button type="button" onClick={() => changeAssetPreviewZoom(assetPreviewZoom + .25)} disabled={assetPreviewZoom >= 5} aria-label="Zoom in"><ZoomIn size={18} /></button><button type="button" onClick={() => changeAssetPreviewZoom(1)} disabled={assetPreviewZoom === 1 && assetPreviewPosition.x === 0 && assetPreviewPosition.y === 0} aria-label="Reset image"><RotateCcw size={17} /></button></div>{assetPreviewZoom > 1 ? <span className="production-order-preview-pan-hint"><Move size={14} /> Drag to pan</span> : null}</>}
               </div>
               <div className="supplier-modal-actions"><button type="button" onClick={() => setAssetAttachmentPreview(null)}>Close</button></div>
             </div>

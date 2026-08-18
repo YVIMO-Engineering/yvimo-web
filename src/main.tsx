@@ -69,6 +69,7 @@ import { translateClientsText } from './manufacturing/clientsI18n';
 import { OrderRisksWorkspace } from './manufacturing/OrderRisksWorkspace';
 import { ImportCostingWorkspace } from './manufacturing/ImportCostingWorkspace';
 import { RevenueOpportunityWorkspace } from './manufacturing/RevenueOpportunityWorkspace';
+import { AnalysisToolWorkspace } from './manufacturing/AnalysisToolWorkspace';
 import './manufacturing/customerOperations.css';
 import './manufacturing/clientBalances.css';
 import './styles.css';
@@ -3355,6 +3356,14 @@ function LoggedDashboardPage({
       tone: 'green',
     },
     {
+      label: 'Analysis Tool',
+      description: 'Run focused performance checks and turn operational data into actionable analysis.',
+      icon: BarChart3,
+      path: '/workspace/manufacturing-ops/intelligence/analysis-tool',
+      implemented: true,
+      tone: 'purple',
+    },
+    {
       label: 'Production Reports',
       description: 'Prepare production summaries, KPI reports, and execution history snapshots.',
       icon: FileUp,
@@ -3419,7 +3428,7 @@ function LoggedDashboardPage({
     const positionsByModule: Record<string, number[]> = {
       MES: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
       APS: [1, 4, 5, 6, 8],
-      'Operations Intelligence': [1, 2, 3, 4, 5, 6, 8],
+      'Operations Intelligence': [1, 2, 3, 4, 5, 6, 7, 8],
     };
     return positionsByModule[moduleLabel]?.[index] ?? index + 1;
   };
@@ -3454,6 +3463,8 @@ function LoggedDashboardPage({
   const isOrderRisksPage = activePath === '/workspace/manufacturing-ops/intelligence/order-risks';
   const isImportCostingPage = activePath === '/workspace/manufacturing-ops/intelligence/import-costing';
   const isRevenueOpportunitySection = activePath.startsWith('/workspace/manufacturing-ops/intelligence/revenue-opportunity');
+  const isAnalysisToolSection = activePath === '/workspace/manufacturing-ops/intelligence/analysis-tool'
+    || activePath.startsWith('/workspace/manufacturing-ops/intelligence/analysis-tool/');
   const activeRevenueSection = activePath.endsWith('/optimization') ? 'optimization' : 'price-misalignment';
   const supplierContextTabs: Array<{
     value: SupplierContextTab;
@@ -3544,6 +3555,9 @@ function LoggedDashboardPage({
     }
     if (activePath === '/workspace/manufacturing-ops/intelligence/revenue-opportunity/price-misalignment' || activePath === '/workspace/manufacturing-ops/intelligence/revenue-opportunity/optimization') {
       return <RevenueOpportunityWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} activeSection={activeRevenueSection} />;
+    }
+    if (isAnalysisToolSection) {
+      return <AnalysisToolWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} />;
     }
     if (activePath === '/workspace/manufacturing-ops/mes/orders') {
       return <ProductionOrdersWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} />;
@@ -4128,8 +4142,8 @@ function LoggedDashboardPage({
     <main className={[
       'logged-shell',
       isOperatorTerminalPage ? 'operator-terminal-shell' : '',
-      isCompactMesApplicationPage || isOrderRisksPage || isImportCostingPage || isRevenueOpportunitySection ? 'compact-mes-application-shell' : '',
-      isSupplierOperationsPage || isQualityOperationsPage || isClientsOperationsPage || isRevenueOpportunitySection ? 'supplier-context-shell' : '',
+      isCompactMesApplicationPage || isOrderRisksPage || isImportCostingPage || isRevenueOpportunitySection || isAnalysisToolSection ? 'compact-mes-application-shell' : '',
+      isSupplierOperationsPage || isQualityOperationsPage || isClientsOperationsPage || isRevenueOpportunitySection || isAnalysisToolSection ? 'supplier-context-shell' : '',
       isSupplierAccessOverview ? 'supplier-access-shell' : '',
       isSupplierAccessOverview && supplierCustomerPickerOpen ? 'supplier-customer-picker-open' : '',
     ].filter(Boolean).join(' ')}>
@@ -4365,6 +4379,17 @@ function LoggedDashboardPage({
           <nav>
             <button type="button" className={activeRevenueSection === 'price-misalignment' ? 'active' : ''} onClick={() => onNavigate('/workspace/manufacturing-ops/intelligence/revenue-opportunity/price-misalignment')}><CircleDollarSign size={18} /><span>Price Misalignment</span></button>
             <button type="button" className={activeRevenueSection === 'optimization' ? 'active' : ''} onClick={() => onNavigate('/workspace/manufacturing-ops/intelligence/revenue-opportunity/optimization')}><TrendingUp size={18} /><span>Revenue Optimization</span></button>
+          </nav>
+        </aside>
+      ) : null}
+
+      {isAnalysisToolSection ? (
+        <aside className="supplier-shell-context-menu analysis-tool-shell-context-menu" aria-label="Analysis Tool sections">
+          <div><span>OPS INTELLIGENCE</span><strong>Analysis Tool</strong></div>
+          <nav>
+            <button type="button" className="active" aria-current="page">
+              <Activity size={18} /><span>Performance Check</span>
+            </button>
           </nav>
         </aside>
       ) : null}

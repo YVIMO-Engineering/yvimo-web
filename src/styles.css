@@ -4073,6 +4073,7 @@ body.work-center-map-expanded .logged-workspace {
 }
 
 .manufacturing-app-icon.tone-red .manufacturing-app-glyph {
+  --app-glow: rgba(220, 55, 55, 0.76);
   border-color: rgba(220, 55, 55, 0.82);
   background: #dc3737;
   color: #ffffff;
@@ -37921,14 +37922,18 @@ body[data-screenshot-export="academy-track"] .academy-mobile-track-step button {
 .clients-asset-evidence-preview .supplier-document-preview.image {
   display: grid;
   place-items: center;
-  padding: 12px;
+  padding: 0;
+  overflow: hidden;
 }
 
 .clients-asset-evidence-preview .supplier-document-preview img {
   display: block;
+  width: 100%;
+  height: 100%;
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
+  transform-origin: center;
 }
 
 .clients-asset-file-heading {
