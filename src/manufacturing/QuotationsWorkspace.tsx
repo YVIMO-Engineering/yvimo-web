@@ -36,6 +36,7 @@ type Props = {
 };
 type QuotationStatus = "draft" | "sent" | "approved" | "declined";
 type PartType = "Hob" | "Shaper" | "Shaper with shank" | "Shaver" | "Other";
+type CoatingProvider = "Balzers" | "Voestalpine";
 type Customer = { id: string; customer_name: string };
 type LegacyPrice = { id: string; client_name: string; tool_id: string; serial_number: string; price: number; currency: string; usage_count: number; last_used_at: string | null; is_active: boolean; updated_at: string };
 type Quotation = {
@@ -51,6 +52,7 @@ type Quotation = {
   damage_inches: number;
   measurement_unit: "in" | "mm";
   coating_type: string;
+  coating_provider?: CoatingProvider | null;
   design: string;
   work_center: string;
   machine_time_minutes: number;
@@ -415,6 +417,8 @@ const blankForm = {
   diameter: "",
   damage: "",
   coating: "Strip & Alcrona",
+  coatingProvider: "Balzers" as CoatingProvider,
+  manualCoatingPrice: "",
   design: "Straight",
   workCenter: "Gleason Norte",
   machineMinutes: "30",
@@ -642,6 +646,11 @@ export function QuotationsWorkspace({
         (expedite.percent.trim() !== "" &&
           Number.isFinite(Number(expedite.percent)) &&
           Number(expedite.percent) >= 0)));
+  const manualCoatingPriceValid =
+    form.coatingProvider !== "Voestalpine" ||
+    (form.manualCoatingPrice.trim() !== "" &&
+      Number.isFinite(Number(form.manualCoatingPrice)) &&
+      Number(form.manualCoatingPrice) >= 0);
   const formComplete = Boolean(
     form.customerId &&
     form.toolId.trim() &&
@@ -660,12 +669,15 @@ export function QuotationsWorkspace({
     Number.isFinite(enteredDamage) &&
     enteredDamage >= 0 &&
     damagePricingValid &&
+    manualCoatingPriceValid &&
     expeditePricingValid,
   );
-  const coatingSource = formComplete
+  const coatingSource = formComplete && form.coatingProvider === "Balzers"
     ? coatingPriceSource(form.partType, form.coating, length, diameter)
     : null;
-  const coatPrice = coatingSource?.price ?? null;
+  const coatPrice = form.coatingProvider === "Voestalpine"
+    ? (manualCoatingPriceValid ? Number(form.manualCoatingPrice) : null)
+    : coatingSource?.price ?? null;
   const damageSteps = damage > 0.02 ? Math.ceil((damage - 0.02) / 0.01) : 0;
   const suggestedSurcharge = machinePrice * damageSteps * 0.25;
   const surcharge =
@@ -730,7 +742,8 @@ export function QuotationsWorkspace({
       ? Number(selectedQuotation.damage_inches) * 25.4
       : Number(selectedQuotation.damage_inches)
     : 0;
-  const selectedCoatingSource = selectedQuotation
+  const selectedCoatingProvider = selectedQuotation?.coating_provider ?? "Balzers";
+  const selectedCoatingSource = selectedQuotation && selectedCoatingProvider === "Balzers"
     ? coatingPriceSource(
         selectedQuotation.part_type,
         selectedQuotation.coating_type,
@@ -749,7 +762,10 @@ export function QuotationsWorkspace({
     setForm((current) => ({
       ...current,
       partType,
-      coating: coatingsByPart[partType][0],
+      coating:
+        current.coatingProvider === "Voestalpine"
+          ? "Sublime"
+          : coatingsByPart[partType][0],
       design: designOptions(partType)[0],
     }));
   const saveQuotation = async (event: React.FormEvent) => {
@@ -809,6 +825,7 @@ export function QuotationsWorkspace({
       damage_inches: damage,
       measurement_unit: form.measurementUnit,
       coating_type: form.coating,
+      coating_provider: form.coatingProvider,
       design: form.design,
       work_center: form.workCenter,
       machine_time_minutes: legacyMachineMinutes,
@@ -1033,7 +1050,15 @@ export function QuotationsWorkspace({
           ? selectedQuotation.damage_inches * 25.4
           : selectedQuotation.damage_inches,
       ),
-      coating: selectedQuotation.coating_type,
+      coating:
+        (selectedQuotation.coating_provider ?? "Balzers") === "Voestalpine"
+          ? "Sublime"
+          : selectedQuotation.coating_type,
+      coatingProvider: selectedQuotation.coating_provider ?? "Balzers",
+      manualCoatingPrice:
+        (selectedQuotation.coating_provider ?? "Balzers") === "Voestalpine"
+          ? String(selectedQuotation.coating_price)
+          : "",
       design: selectedQuotation.design,
       workCenter: selectedQuotation.work_center,
       machineMinutes: String(selectedQuotation.machine_time_minutes),
@@ -1357,7 +1382,7 @@ export function QuotationsWorkspace({
                           {q.part_type} · {q.tool_id}
                         </strong>
                         <span>
-                          {q.coating_type} · {q.design}
+                          {q.coating_provider ?? "Balzers"} · {q.coating_type} · {q.design}
                         </span>
                       </td>
                       <td>
@@ -1503,6 +1528,10 @@ export function QuotationsWorkspace({
                     </small>
                   </div>
                   <div>
+                    <span>Coating provider</span>
+                    <strong>{selectedCoatingProvider}</strong>
+                  </div>
+                  <div>
                     <span>Coating type</span>
                     <strong>{selectedQuotation.coating_type}</strong>
                   </div>
@@ -1564,7 +1593,11 @@ export function QuotationsWorkspace({
                       </dl>
                     </section>
                   ) : (
-                    <p>Coating dimensions require manual price review.</p>
+                    <p>
+                      {selectedCoatingProvider === "Voestalpine"
+                        ? `Voestalpine price entered manually: $${Number(selectedQuotation.coating_price).toFixed(2)} USD.`
+                        : "Coating dimensions require manual price review."}
+                    </p>
                   )}
                   <p>
                     {selectedDamageSteps
@@ -1576,8 +1609,7 @@ export function QuotationsWorkspace({
               <footer>
                 <span>Quotation {selectedQuotation.quotation_number}</span>
                 <span>
-                  Prices in USD. Coating pricing based on supplied Oerlikon 2026
-                  price lists.
+                  Prices in USD. Coating supplied by {selectedCoatingProvider}.
                 </span>
               </footer>
             </article>
@@ -1677,6 +1709,10 @@ export function QuotationsWorkspace({
                     </small>
                   </div>
                   <div>
+                    <span>Coating provider</span>
+                    <strong>{selectedCoatingProvider}</strong>
+                  </div>
+                  <div>
                     <span>Coating type</span>
                     <strong>{selectedQuotation.coating_type}</strong>
                   </div>
@@ -1750,7 +1786,11 @@ export function QuotationsWorkspace({
                       </dl>
                     </section>
                   ) : (
-                    <p>Coating dimensions require manual price review.</p>
+                    <p>
+                      {selectedCoatingProvider === "Voestalpine"
+                        ? `Voestalpine price entered manually: $${Number(selectedQuotation.coating_price).toFixed(2)} USD.`
+                        : "Coating dimensions require manual price review."}
+                    </p>
                   )}
                   {selectedDamageSteps ? (
                     <p>
@@ -1989,17 +2029,61 @@ export function QuotationsWorkspace({
                     />
                   </label>
                   <label>
+                    Coating provider
+                    <QuotationDropdown
+                      value={form.coatingProvider}
+                      placeholder="Select coating provider"
+                      options={[
+                        { value: "Balzers", label: "Balzers" },
+                        { value: "Voestalpine", label: "Voestalpine" },
+                      ]}
+                      onChange={(value) =>
+                        setForm({
+                          ...form,
+                          coatingProvider: value as CoatingProvider,
+                          coating:
+                            value === "Voestalpine"
+                              ? "Sublime"
+                              : coatingsByPart[form.partType][0],
+                          manualCoatingPrice:
+                            value === "Voestalpine" ? form.manualCoatingPrice : "",
+                        })
+                      }
+                    />
+                  </label>
+                  <label>
                     Coating type
                     <QuotationDropdown
                       value={form.coating}
                       placeholder="Select coating"
-                      options={coatingsByPart[form.partType].map((item) => ({
+                      options={(form.coatingProvider === "Voestalpine"
+                        ? ["Sublime"]
+                        : coatingsByPart[form.partType]
+                      ).map((item) => ({
                         value: item,
                         label: item,
                       }))}
                       onChange={(value) => setForm({ ...form, coating: value })}
                     />
                   </label>
+                  {form.coatingProvider === "Voestalpine" ? (
+                    <label>
+                      Voestalpine coating price (USD)
+                      <input
+                        required
+                        min="0"
+                        step="0.01"
+                        type="number"
+                        inputMode="decimal"
+                        value={form.manualCoatingPrice}
+                        onChange={(event) =>
+                          setForm({ ...form, manualCoatingPrice: event.target.value })
+                        }
+                        placeholder="Enter supplier quote"
+                      />
+                      <small>Enter the coating price supplied by Voestalpine.</small>
+                    </label>
+                  ) : null}
                   <label>
                     Design
                     <QuotationDropdown
@@ -2116,6 +2200,8 @@ export function QuotationsWorkspace({
                             ? "Manual review"
                             : `$${coatPrice?.toFixed(2)}`}
                         </dd>
+                        <dt>Coating provider</dt>
+                        <dd>{form.coatingProvider}</dd>
                         <dt>Damage surcharge</dt>
                         <dd>${surcharge.toFixed(2)}</dd>
                         {totals.addonsSubtotal > 0 ? (
@@ -2197,7 +2283,7 @@ export function QuotationsWorkspace({
                       {manualReview ? (
                         <p>
                           The selected dimensions or part type are outside the
-                          supplied price tables.
+                          Balzers supplied price tables.
                         </p>
                       ) : null}
                     </>

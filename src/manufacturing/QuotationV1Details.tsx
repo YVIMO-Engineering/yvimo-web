@@ -18,6 +18,7 @@ type Quote = {
   diameter_mm: number;
   damage_inches: number;
   coating_type: string;
+  coating_provider?: "Balzers" | "Voestalpine" | null;
   design: string;
   work_center: string;
   valid_until: string;
@@ -312,6 +313,10 @@ function DetailContent({
             </small>
           </div>
           <div>
+            <span>Coating provider</span>
+            <strong>{quote.coating_provider ?? "Balzers"}</strong>
+          </div>
+          <div>
             <span>Coating</span>
             <strong>{quote.coating_type}</strong>
           </div>
@@ -489,6 +494,12 @@ function DetailContent({
               <dd>{money(coatingSource.price)} USD</dd>
             </dl>
           </div>
+        ) : quote.coating_provider === "Voestalpine" ? (
+          <section className="quotation-detail-coating">
+            <strong>Coating price source</strong>
+            <span>Voestalpine · manually entered supplier price</span>
+            <dl><dt>Price</dt><dd>{money(quote.coating_price)} USD</dd></dl>
+          </section>
         ) : null}
       </section>
       {hasEngineeringNote || hasDamageNote ? (
