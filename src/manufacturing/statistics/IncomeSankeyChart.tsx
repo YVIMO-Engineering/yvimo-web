@@ -6,6 +6,7 @@ export type IncomeProductionRow = {
   production_order_id: string;
   quotation_id: string;
   reported_at: string;
+  verified_quotation_price: number | null;
   mes_production_orders: { order_number: string; assigned_work_center?: string } | Array<{ order_number: string; assigned_work_center?: string }> | null;
   mes_quotations: {
     quotation_number: string;
@@ -76,7 +77,7 @@ export function IncomeSankeyChart({ rows, currency }: { rows: IncomeProductionRo
       const quotation = first(row.mes_quotations);
       const order = first(row.mes_production_orders);
       if (!quotation) return;
-      const value = Math.max(0, Number(quotation.total_price) || 0);
+      const value = Math.max(0, Number(row.verified_quotation_price ?? quotation.total_price) || 0);
       const clientName = quotation.client_name || 'Unknown client';
       const clientId = `client:${clientName}`;
       const color = colorByClient.get(clientName) ?? '#64748b';

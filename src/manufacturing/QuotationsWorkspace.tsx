@@ -426,6 +426,8 @@ const blankForm = {
 };
 const EXPEDITE_ORDER_ITEM = "Expedite Order surcharge";
 const EXPEDITE_COATING_ITEM = "Expedite coating surcharge";
+const QUOTATIONS_PAGE_SIZE = 10;
+const LEGACY_PRICES_PAGE_SIZE = 10;
 const quotationPdfFilename = (quotation: Quotation) => {
   const safe = (value: string) =>
     value.trim().replace(/[<>:"/\\|?*\u0000-\u001f]+/g, "-").replace(/\s+/g, " ");
@@ -506,6 +508,8 @@ export function QuotationsWorkspace({
   const [customers, setCustomers] = React.useState<Customer[]>([]);
   const [search, setSearch] = React.useState("");
   const [view, setView] = React.useState<"all" | QuotationStatus>("all");
+  const [quotationPage, setQuotationPage] = React.useState(1);
+  const [legacyPricePage, setLegacyPricePage] = React.useState(1);
   const [modalOpen, setModalOpen] = React.useState(false);
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [selectedId, setSelectedId] = React.useState("");
@@ -720,6 +724,43 @@ export function QuotationsWorkspace({
       `${q.quotation_number} ${q.client_name} ${q.part_type} ${q.tool_id} ${q.serial_number} ${q.status}`
         .toLowerCase()
         .includes(search.toLowerCase()),
+  );
+  const quotationPageCount = Math.max(
+    1,
+    Math.ceil(filtered.length / QUOTATIONS_PAGE_SIZE),
+  );
+  const currentQuotationPage = Math.min(quotationPage, quotationPageCount);
+  const paginatedQuotations = filtered.slice(
+    (currentQuotationPage - 1) * QUOTATIONS_PAGE_SIZE,
+    currentQuotationPage * QUOTATIONS_PAGE_SIZE,
+  );
+  const firstVisibleQuotation = filtered.length
+    ? (currentQuotationPage - 1) * QUOTATIONS_PAGE_SIZE + 1
+    : 0;
+  const lastVisibleQuotation = Math.min(
+    currentQuotationPage * QUOTATIONS_PAGE_SIZE,
+    filtered.length,
+  );
+  const filteredLegacyPrices = legacyPrices.filter((item) =>
+    `${item.client_name} ${item.tool_id} ${item.serial_number} ${item.price}`
+      .toLowerCase()
+      .includes(search.toLowerCase()),
+  );
+  const legacyPricePageCount = Math.max(
+    1,
+    Math.ceil(filteredLegacyPrices.length / LEGACY_PRICES_PAGE_SIZE),
+  );
+  const currentLegacyPricePage = Math.min(legacyPricePage, legacyPricePageCount);
+  const paginatedLegacyPrices = filteredLegacyPrices.slice(
+    (currentLegacyPricePage - 1) * LEGACY_PRICES_PAGE_SIZE,
+    currentLegacyPricePage * LEGACY_PRICES_PAGE_SIZE,
+  );
+  const firstVisibleLegacyPrice = filteredLegacyPrices.length
+    ? (currentLegacyPricePage - 1) * LEGACY_PRICES_PAGE_SIZE + 1
+    : 0;
+  const lastVisibleLegacyPrice = Math.min(
+    currentLegacyPricePage * LEGACY_PRICES_PAGE_SIZE,
+    filteredLegacyPrices.length,
   );
   const selectedQuotation =
     quotations.find((quotation) => quotation.id === selectedId) ?? null;
@@ -1236,7 +1277,7 @@ export function QuotationsWorkspace({
         </div>
         <nav className="quotations-register-tabs" aria-label="Quotation registers">
           <button type="button" className={registerSection === "quotations" ? "active" : ""} onClick={() => setRegisterSection("quotations")}>YVIMO Quotations</button>
-          <button type="button" className={registerSection === "legacy" ? "active legacy" : "legacy"} onClick={() => setRegisterSection("legacy")}>Legacy Prices <span>{legacyPrices.length}</span></button>
+          <button type="button" className={registerSection === "legacy" ? "active legacy" : "legacy"} onClick={() => { setRegisterSection("legacy"); setLegacyPricePage(1); }}>Legacy Prices <span>{legacyPrices.length}</span></button>
         </nav>
         <section className={`quotations-toolbar${registerSection === "legacy" ? " quotations-section-hidden" : ""}`}>
           <div className="quotations-toolbar-actions">
@@ -1296,7 +1337,11 @@ export function QuotationsWorkspace({
               <input
                 type="search"
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setQuotationPage(1);
+                  setLegacyPricePage(1);
+                }}
                 placeholder={registerSection === "legacy" ? "Client, Tool ID, serial or price" : "Quotation, client, tool, serial, status"}
               />
             </div>
@@ -1308,11 +1353,19 @@ export function QuotationsWorkspace({
           </div>
         ) : null}
         {registerSection === "legacy" ? <section className="production-orders-main-panel quotations-table-panel legacy-prices-panel">
-          <div className="production-orders-panel-title"><div className="production-orders-panel-copy"><span>Historical price register</span><strong>Legacy Prices by Tool ID + Serial Number</strong></div><span>{legacyPrices.length} records</span></div>
+          <div className="production-orders-panel-title"><div className="production-orders-panel-copy"><span>Historical price register</span><strong>Legacy Prices by Tool ID + Serial Number</strong></div><span>{firstVisibleLegacyPrice}–{lastVisibleLegacyPrice} showing / {filteredLegacyPrices.length} filtered / {legacyPrices.length} total</span></div>
           <div className="mes-table-wrap production-orders-table-wrap"><table className="mes-table production-orders-table quotations-table"><thead><tr><th>Client</th><th>Tool ID</th><th>Serial Number</th><th>Legacy Price</th><th>Uses</th><th>Last used</th><th>Status</th></tr></thead><tbody>
-            {legacyPrices.filter((item) => `${item.client_name} ${item.tool_id} ${item.serial_number} ${item.price}`.toLowerCase().includes(search.toLowerCase())).map((item) => <tr key={item.id}><td><strong>{item.client_name || "—"}</strong></td><td><strong>{item.tool_id}</strong></td><td><strong>{item.serial_number}</strong></td><td><strong>{item.currency} {Number(item.price).toFixed(2)}</strong></td><td>{item.usage_count}</td><td>{item.last_used_at ? new Date(item.last_used_at).toLocaleDateString() : "Not used yet"}</td><td><span className={`quotation-status ${item.is_active ? "approved" : "declined"}`}>{item.is_active ? "active" : "inactive"}</span></td></tr>)}
-            {!legacyPrices.length ? <tr><td className="production-orders-table-empty" colSpan={7}><div><span>Legacy Prices</span><strong>No historical prices have been registered yet.</strong></div></td></tr> : null}
+            {paginatedLegacyPrices.map((item) => <tr key={item.id}><td><strong>{item.client_name || "—"}</strong></td><td><strong>{item.tool_id}</strong></td><td><strong>{item.serial_number}</strong></td><td><strong>{item.currency} {Number(item.price).toFixed(2)}</strong></td><td>{item.usage_count}</td><td>{item.last_used_at ? new Date(item.last_used_at).toLocaleDateString() : "Not used yet"}</td><td><span className={`quotation-status ${item.is_active ? "approved" : "declined"}`}>{item.is_active ? "active" : "inactive"}</span></td></tr>)}
+            {!paginatedLegacyPrices.length ? <tr><td className="production-orders-table-empty" colSpan={7}><div><span>Legacy Prices</span><strong>{search ? "No legacy prices match your search." : "No historical prices have been registered yet."}</strong></div></td></tr> : null}
           </tbody></table></div>
+          <div className="production-orders-pagination quotations-pagination">
+            <span>Page {currentLegacyPricePage} of {legacyPricePageCount}</span>
+            <div>
+              <button type="button" disabled={currentLegacyPricePage === 1} onClick={() => setLegacyPricePage((page) => Math.max(1, page - 1))}>Previous</button>
+              {Array.from({ length: legacyPricePageCount }, (_, index) => index + 1).map((page) => <button className={page === currentLegacyPricePage ? "active" : ""} type="button" key={page} onClick={() => setLegacyPricePage(page)}>{page}</button>)}
+              <button type="button" disabled={currentLegacyPricePage === legacyPricePageCount} onClick={() => setLegacyPricePage((page) => Math.min(legacyPricePageCount, page + 1))}>Next</button>
+            </div>
+          </div>
         </section> : <section className="production-orders-main-panel quotations-table-panel">
           <div className="production-orders-panel-title">
             <div className="production-orders-panel-copy">
@@ -1326,7 +1379,10 @@ export function QuotationsWorkspace({
                     className={view === item ? "active" : ""}
                     type="button"
                     key={item}
-                    onClick={() => setView(item)}
+                    onClick={() => {
+                      setView(item);
+                      setQuotationPage(1);
+                    }}
                   >
                     {item[0].toUpperCase() + item.slice(1)}
                   </button>
@@ -1334,7 +1390,7 @@ export function QuotationsWorkspace({
               )}
             </div>
             <span>
-              {filtered.length} showing / {quotations.length} total
+              {firstVisibleQuotation}–{lastVisibleQuotation} showing / {filtered.length} filtered / {quotations.length} total
             </span>
           </div>
           <div className="mes-table-wrap production-orders-table-wrap">
@@ -1352,8 +1408,8 @@ export function QuotationsWorkspace({
                 </tr>
               </thead>
               <tbody>
-                {filtered.length ? (
-                  filtered.map((q) => (
+                {paginatedQuotations.length ? (
+                  paginatedQuotations.map((q) => (
                     <tr
                       className={q.id === selectedId ? "selected" : ""}
                       tabIndex={0}
@@ -1424,15 +1480,30 @@ export function QuotationsWorkspace({
             </table>
           </div>
           <div className="production-orders-pagination quotations-pagination">
-            <span>Page 1 of 1</span>
+            <span>Page {currentQuotationPage} of {quotationPageCount}</span>
             <div>
-              <button type="button" disabled>
+              <button
+                type="button"
+                disabled={currentQuotationPage === 1}
+                onClick={() => setQuotationPage((page) => Math.max(1, page - 1))}
+              >
                 Previous
               </button>
-              <button className="active" type="button">
-                1
-              </button>
-              <button type="button" disabled>
+              {Array.from({ length: quotationPageCount }, (_, index) => index + 1).map((page) => (
+                <button
+                  className={page === currentQuotationPage ? "active" : ""}
+                  type="button"
+                  key={page}
+                  onClick={() => setQuotationPage(page)}
+                >
+                  {page}
+                </button>
+              ))}
+              <button
+                type="button"
+                disabled={currentQuotationPage === quotationPageCount}
+                onClick={() => setQuotationPage((page) => Math.min(quotationPageCount, page + 1))}
+              >
                 Next
               </button>
             </div>

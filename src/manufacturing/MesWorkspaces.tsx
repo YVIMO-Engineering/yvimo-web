@@ -140,7 +140,34 @@ type ProductionQuotationOption = {
   serialNumber: string;
   totalPrice: number;
   currency: string;
+  damageInches: number;
+  damageSurcharge: number;
+  machinePrice: number;
+  damageMethod: 'standard' | 'percentage' | 'fixed' | 'waived';
+  damagePercent: number;
 };
+
+function verifiedQuotationPricing(option: ProductionQuotationOption | undefined, stockToRemove: string) {
+  if (!option) return null;
+  const actualDamage = Number(stockToRemove);
+  if (!stockToRemove.trim() || !Number.isFinite(actualDamage)) return null;
+  const matches = Math.abs(actualDamage - option.damageInches) < 0.0005;
+  if (matches) return { price: option.totalPrice, matches: true, damage: actualDamage, surcharge: option.damageSurcharge };
+  const steps = actualDamage > 0.02 ? Math.ceil((actualDamage - 0.02) / 0.01) : 0;
+  const surcharge = option.damageMethod === 'standard'
+    ? option.machinePrice * steps * .25
+    : option.damageMethod === 'percentage'
+      ? option.machinePrice * steps * Math.max(0, option.damagePercent) / 100
+      : option.damageMethod === 'fixed'
+        ? option.damageSurcharge
+        : 0;
+  return {
+    price: Math.max(0, option.totalPrice - option.damageSurcharge + surcharge),
+    matches: false,
+    damage: actualDamage,
+    surcharge,
+  };
+}
 
 type ProductionLegacyPriceOption = {
   id: string;
@@ -299,6 +326,9 @@ type ProductionSerialInsertRow = {
   stock_to_remove: number | null;
   quotation_id: string | null;
   legacy_price_id: string | null;
+  verified_quotation_price: number | null;
+  quotation_damage_inches: number | null;
+  quotation_damage_match: boolean | null;
 };
 
 type ProductionSerialAssignmentRow = {
@@ -4170,6 +4200,17 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, language
   const usesHobMeasurements = ['hobs', 'skiving'].includes(formState.pieceType) || formState.pieceType === 'other';
   const usesShaperMeasurements = formState.pieceType === 'shaper';
   const usesStockToRemove = usesHobMeasurements || usesShaperMeasurements;
+  const quotationSnapshotForDraft = (draft: ProductionSerialAssignmentDraft) => {
+    const verified = verifiedQuotationPricing(
+      quotationOptions.find((option) => option.id === draft.quotationId),
+      draft.stockToRemove,
+    );
+    return {
+      verified_quotation_price: verified?.price ?? null,
+      quotation_damage_inches: verified?.damage ?? null,
+      quotation_damage_match: verified?.matches ?? null,
+    };
+  };
   const activeCustomerFormOptions = React.useMemo<MesOrderDropdownOption[]>(() => {
     const options = customerOptions
       .filter((customer) => customer.status === 'active' || customer.id === formState.customerId)
@@ -4301,7 +4342,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, language
         .order('customer_name', { ascending: true }),
       supabase
         .from('mes_quotations')
-        .select('id, quotation_number, client_name, tool_id, serial_number, part_type, total_price, currency')
+        .select('id, quotation_number, client_name, tool_id, serial_number, part_type, total_price, currency, damage_inches, damage_surcharge, machine_price, mes_quotation_items(category, notes)')
         .eq('organization_id', organizationId)
         .order('created_at', { ascending: false }),
       supabase
@@ -4339,7 +4380,12 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, language
       console.error('Unable to load quotations for Production Orders', quotationError);
       setQuotationOptions([]);
     } else {
-      setQuotationOptions((quotationData ?? []).map((quotation) => ({
+      setQuotationOptions((quotationData ?? []).map((quotation) => {
+        const damageItem = (Array.isArray(quotation.mes_quotation_items) ? quotation.mes_quotation_items : [])
+          .find((item) => item.category === 'damage_surcharge');
+        let damageSettings: { method?: ProductionQuotationOption['damageMethod']; percent?: string | number } = {};
+        try { damageSettings = JSON.parse(damageItem?.notes || '{}'); } catch { damageSettings = {}; }
+        return {
         id: quotation.id as string,
         quotationNumber: quotation.quotation_number as string,
         clientName: quotation.client_name as string,
@@ -4348,7 +4394,12 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, language
         partType: quotation.part_type as string,
         totalPrice: Number(quotation.total_price) || 0,
         currency: (quotation.currency as string | null) || 'USD',
-      })));
+        damageInches: Number(quotation.damage_inches) || 0,
+        damageSurcharge: Number(quotation.damage_surcharge) || 0,
+        machinePrice: Number(quotation.machine_price) || 0,
+        damageMethod: damageSettings.method ?? 'standard',
+        damagePercent: Number(damageSettings.percent) || 25,
+      }; }));
     }
     if (legacyPriceError) {
       console.error('Unable to load legacy prices for Production Orders', legacyPriceError);
@@ -5044,6 +5095,14 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, language
         setSerialAssignmentModalOpen(true);
         return;
       }
+      const missingQuotationDamage = usesStockToRemove && normalizedSerialDrafts.find(
+        (draft) => draft.quotationId && !draft.stockToRemove.trim(),
+      );
+      if (missingQuotationDamage) {
+        setOrderFormError(`Enter Stock to Remove for piece ${missingQuotationDamage.pieceSequence} to verify its linked quotation.`);
+        setSerialAssignmentModalOpen(true);
+        return;
+      }
       const invalidEvidence = normalizedSerialDrafts.find((draft) => draft.receptionEvidenceFile && (
         !productionPieceEvidenceExtensions.test(draft.receptionEvidenceFile.name)
         && !productionPieceEvidenceMimeTypes.has(draft.receptionEvidenceFile.type.toLowerCase())
@@ -5106,6 +5165,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, language
                       stock_to_remove: parseProductionSerialMeasurement(draft.stockToRemove),
                       quotation_id: draft.quotationId || null,
                       legacy_price_id: draft.legacyPriceId || null,
+                      ...quotationSnapshotForDraft(draft),
                       ...(serialStationColumnAvailable ? { assigned_station: formState.manufacturingType === 'multi-step' ? draft.assignedStation.trim() : null } : {}),
                       compatible_stations: formState.manufacturingType === 'multi-step' ? draft.compatibleStations : [],
                     })
@@ -5130,6 +5190,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, language
                     stock_to_remove: parseProductionSerialMeasurement(draft.stockToRemove),
                     quotation_id: draft.quotationId || null,
                     legacy_price_id: draft.legacyPriceId || null,
+                    ...quotationSnapshotForDraft(draft),
                     ...(serialStationColumnAvailable ? { assigned_station: formState.manufacturingType === 'multi-step' ? draft.assignedStation.trim() : null } : {}),
                     compatible_stations: formState.manufacturingType === 'multi-step' ? draft.compatibleStations : [],
                     result: null,
@@ -5241,6 +5302,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, language
               stock_to_remove: parseProductionSerialMeasurement(draft.stockToRemove),
               quotation_id: draft.quotationId || null,
               legacy_price_id: draft.legacyPriceId || null,
+              ...quotationSnapshotForDraft(draft),
             }));
             const { data: insertedSerials, error: serialsError } = await supabase
               .from('mes_production_serials')
@@ -6199,9 +6261,10 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, language
                     {usesShaperMeasurements ? <th>Before Sharpening<br />Height</th> : null}
                     {usesHobMeasurements ? <th>Before Sharpening<br />Notch Length</th> : null}
                     {usesHobMeasurements ? <th>Before Sharpening<br />Tooth Length</th> : null}
-                    {usesStockToRemove ? <th>Stock to Remove</th> : null}
-                    <th>Reception Inspection</th>
+                    {usesStockToRemove ? <th>Stock to Remove<br />(in)</th> : null}
+                    <th className="production-reception-inspection-column">Reception Inspection</th>
                     <th className="production-quotation-column">Source Quotation</th>
+                    <th className="production-verified-price-column">Verified Price</th>
                     <th className="production-legacy-price-column">Legacy Price</th>
                   </tr>
                 </thead>
@@ -6239,7 +6302,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, language
                       {usesHobMeasurements ? <td><input type="number" step="any" inputMode="decimal" value={draft.beforeNotch} onChange={(event) => setSerialAssignmentField(draft.pieceSequence, 'beforeNotch', event.target.value)} placeholder="0.000" /></td> : null}
                       {usesHobMeasurements ? <td><input type="number" step="any" inputMode="decimal" value={draft.beforeToothLength} onChange={(event) => setSerialAssignmentField(draft.pieceSequence, 'beforeToothLength', event.target.value)} placeholder="0.000" /></td> : null}
                       {usesStockToRemove ? <td><input type="number" step="any" inputMode="decimal" value={draft.stockToRemove} onChange={(event) => setSerialAssignmentField(draft.pieceSequence, 'stockToRemove', event.target.value)} placeholder="0.000" /></td> : null}
-                      <td>
+                      <td className="production-reception-inspection-column">
                         <label className="production-order-evidence-picker">
                           <ImagePlus size={15} />
                           <span>{draft.receptionEvidenceName || 'Photo / PDF'}</span>
@@ -6261,6 +6324,19 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, language
                           options={quotationOptions}
                           onChange={(quotationId) => setSerialAssignmentDrafts((current) => current.map((item) => item.pieceSequence === draft.pieceSequence ? { ...item, quotationId } : item))}
                         />
+                      </td>
+                      <td className="production-verified-price-column">
+                        {(() => {
+                          const verified = verifiedQuotationPricing(
+                            quotationOptions.find((option) => option.id === draft.quotationId),
+                            draft.stockToRemove,
+                          );
+                          if (!draft.quotationId) return <span className="production-price-verification empty">No quotation</span>;
+                          if (!verified) return <span className="production-price-verification pending">Enter damage</span>;
+                          return verified.matches
+                            ? <span className="production-price-verification match"><Check size={14} /> Match</span>
+                            : <span className="production-price-verification recalculated"><small>Reprocessed</small><strong>${verified.price.toFixed(2)} USD</strong></span>;
+                        })()}
                       </td>
                       <td className="production-legacy-price-column">
                         <ProductionLegacyPriceDropdown

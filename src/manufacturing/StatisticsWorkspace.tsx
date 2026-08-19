@@ -185,7 +185,7 @@ export function StatisticsWorkspace({ onNavigate, organizationId, financialIncom
         .order('expected_date', { ascending: true }),
       supabase
         .from('mes_production_serials')
-        .select('id, serial_number, production_order_id, quotation_id, reported_at, mes_production_orders(order_number, assigned_work_center), mes_quotations(quotation_number, client_name, total_price, currency)')
+        .select('id, serial_number, production_order_id, quotation_id, reported_at, verified_quotation_price, mes_production_orders(order_number, assigned_work_center), mes_quotations(quotation_number, client_name, total_price, currency)')
         .eq('organization_id', organizationId)
         .eq('result', 'good')
         .not('quotation_id', 'is', null)
@@ -371,7 +371,7 @@ export function StatisticsWorkspace({ onNavigate, organizationId, financialIncom
     filteredIncomeRows.forEach((row) => {
       const quotation = Array.isArray(row.mes_quotations) ? row.mes_quotations[0] : row.mes_quotations;
       if (!quotation) return;
-      const value = Math.max(0, Number(quotation.total_price) || 0);
+      const value = Math.max(0, Number(row.verified_quotation_price ?? quotation.total_price) || 0);
       total += value;
       if (toLocalDateInput(new Date(row.reported_at)) === today) todayTotal += value;
       quotations.add(row.quotation_id);
