@@ -29,6 +29,7 @@ import {
   GitBranch,
   Gauge,
   GraduationCap,
+  Hospital,
   Languages,
   LockKeyhole,
   LogIn,
@@ -70,6 +71,7 @@ import { OrderRisksWorkspace } from './manufacturing/OrderRisksWorkspace';
 import { ImportCostingWorkspace } from './manufacturing/ImportCostingWorkspace';
 import { RevenueOpportunityWorkspace } from './manufacturing/RevenueOpportunityWorkspace';
 import { AnalysisToolWorkspace } from './manufacturing/AnalysisToolWorkspace';
+import { HealthPatientsWorkspace } from './health/HealthPatientsWorkspace';
 import './manufacturing/customerOperations.css';
 import './manufacturing/clientBalances.css';
 import './styles.css';
@@ -312,6 +314,47 @@ async function loadSupabaseManufacturingOrganization(userId: string): Promise<Ma
     inviteRole: invite?.default_role ?? 'Operator',
     memberCount: Math.max(1, count ?? 1),
   };
+}
+
+async function loadSupabaseOrganizations(userId: string): Promise<ManufacturingOrganization[]> {
+  const { data: memberRows, error: memberError } = await supabase
+    .from('manufacturing_organization_members')
+    .select('organization_id, role')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: true });
+
+  if (memberError) throw memberError;
+  const memberships = (memberRows ?? []) as ManufacturingOrganizationMemberRow[];
+  if (memberships.length === 0) return [];
+
+  const organizationIds = memberships.map((membership) => membership.organization_id);
+  const [{ data: organizationRows, error: organizationError }, { data: inviteRows }] = await Promise.all([
+    supabase.from('manufacturing_organizations').select('id, name, logo_url').in('id', organizationIds),
+    supabase.from('manufacturing_organization_invites').select('organization_id, code, default_role').in('organization_id', organizationIds).eq('active', true),
+  ]);
+  if (organizationError) throw organizationError;
+
+  const organizationsById = new Map(((organizationRows ?? []) as ManufacturingOrganizationRow[]).map((organization) => [organization.id, organization]));
+  const invitesByOrganization = new Map(((inviteRows ?? []) as ManufacturingOrganizationInviteRow[]).map((invite) => [invite.organization_id, invite]));
+
+  return Promise.all(memberships.map(async (membership) => {
+    const organization = organizationsById.get(membership.organization_id);
+    if (!organization) return null;
+    const invite = invitesByOrganization.get(membership.organization_id);
+    const { count } = await supabase
+      .from('manufacturing_organization_members')
+      .select('id', { count: 'exact', head: true })
+      .eq('organization_id', membership.organization_id);
+    return {
+      id: organization.id,
+      name: organization.name,
+      logoUrl: organization.logo_url ?? '',
+      inviteCode: invite?.code ?? '',
+      role: membership.role,
+      inviteRole: invite?.default_role ?? 'Operator',
+      memberCount: Math.max(1, count ?? 1),
+    } satisfies ManufacturingOrganization;
+  })).then((organizations) => organizations.filter((organization): organization is ManufacturingOrganization => organization !== null));
 }
 
 function normalizeNonNegativeNumber(value: number | null | undefined, fallback = 0) {
@@ -802,6 +845,69 @@ const translations: Record<Exclude<LanguageCode, 'en'>, Record<string, string>> 
     'TIA tag import': 'Importación de tags TIA',
     'Flow Builder logic': 'Lógica Flow Builder',
     'Runtime outputs': 'Salidas runtime',
+    'Health Apps': 'Apps de Salud',
+    'Practical digital tools designed around everyday healthcare workflows.': 'Herramientas digitales prácticas diseñadas para los flujos cotidianos del sector salud.',
+    Organization: 'Organización',
+    'Choose an organization': 'Elige una organización',
+    'Required to open health modules': 'Requerida para abrir los módulos de salud',
+    'Switch organization': 'Cambiar organización',
+    'Applications': 'Aplicaciones',
+    'Select a health module': 'Selecciona un módulo de salud',
+    'Each app opens its own focused workspace.': 'Cada app abre su propio espacio de trabajo especializado.',
+    'Care tools in one place': 'Herramientas de atención en un solo lugar',
+    'Choose an application to open a focused workspace built for clear, efficient, and safer daily work.': 'Elige una aplicación para abrir un espacio enfocado en un trabajo diario más claro, eficiente y seguro.',
+    Simple: 'Simple', Focused: 'Enfocado', Clinical: 'Clínico',
+    Patients: 'Pacientes',
+    'A secure, organization-based directory of patients with CURP, medical record number, and full name.': 'Un directorio seguro de pacientes por organización con CURP, número de expediente y nombre completo.',
+    'Coming soon': 'Próximamente',
+    'Reserved for a future application': 'Reservado para una aplicación futura',
+    'Changing context does not remove you from any organization.': 'Cambiar el contexto no te elimina de ninguna organización.',
+    'Join another organization': 'Unirse a otra organización',
+    'Join organization': 'Unirse a la organización',
+    'Create organization': 'Crear organización',
+    'Organization name': 'Nombre de la organización',
+    Create: 'Crear',
+    'Manage active organization': 'Administrar organización activa',
+    'Organization image': 'Imagen de la organización',
+    Save: 'Guardar',
+    'Invitation code': 'Código de invitación',
+    'New members join as': 'Los nuevos miembros ingresan como',
+    'Copy code': 'Copiar código',
+    'Generate new code': 'Generar código nuevo',
+    'Leave organization': 'Abandonar organización',
+    'Organization patient directory and medical record index.': 'Directorio organizacional de pacientes e índice de expedientes clínicos.',
+    'Add patient': 'Agregar paciente',
+    'Search patients': 'Buscar pacientes',
+    'Name, CURP, or medical record number': 'Nombre, CURP o número de expediente',
+    'Patient register': 'Registro de pacientes',
+    'Registered patients': 'Pacientes registrados',
+    showing: 'mostrando', total: 'total',
+    'Loading patients...': 'Cargando pacientes...',
+    'Try again': 'Intentar de nuevo',
+    'No patients match your search.': 'Ningún paciente coincide con la búsqueda.',
+    'No patients registered yet.': 'Aún no hay pacientes registrados.',
+    'Try a different name, CURP, or record number.': 'Prueba con otro nombre, CURP o número de expediente.',
+    'Add the first patient to this organization.': 'Agrega el primer paciente de esta organización.',
+    'Medical record no.': 'Núm. de expediente',
+    Sex: 'Sexo', Age: 'Edad', Registered: 'Registrado',
+    'Birth date': 'Fecha de nacimiento',
+    'Calculated from CURP': 'Calculada desde la CURP',
+    Calculated: 'Calculada',
+    Male: 'Masculino', Female: 'Femenino', 'Select sex': 'Seleccionar sexo',
+    'Register new patient': 'Registrar paciente nuevo',
+    'The patient will belong to': 'El paciente pertenecerá a',
+    'First name and surnames': 'Nombre y apellidos',
+    '18-character CURP': 'CURP de 18 caracteres',
+    characters: 'caracteres',
+    'Medical record number': 'Número de expediente',
+    'Register patient': 'Registrar paciente',
+    'Registering...': 'Registrando...',
+    'Full name, CURP, medical record number, and sex are required.': 'Nombre completo, CURP, número de expediente y sexo son obligatorios.',
+    'CURP must contain exactly 18 characters.': 'La CURP debe contener exactamente 18 caracteres.',
+    'CURP does not contain a valid birth date.': 'La CURP no contiene una fecha de nacimiento válida.',
+    'This CURP or medical record number is already registered in this organization.': 'Esta CURP o número de expediente ya está registrado en esta organización.',
+    'The patient could not be registered.': 'No se pudo registrar al paciente.',
+    'Patients could not be loaded. Confirm that migration 121 has been applied.': 'No se pudieron cargar los pacientes. Confirma que la migración 121 esté aplicada.',
   },
   zh: {
     'Engineering Automation': '自动化工程',
@@ -2321,6 +2427,19 @@ function LoggedDashboardPage({
   const [avatarOffset, setAvatarOffset] = React.useState<AvatarOffset>({ x: 0, y: 0 });
   const [avatarZoom, setAvatarZoom] = React.useState(1);
   const [tabletSidebarExpanded, setTabletSidebarExpanded] = React.useState(false);
+  const [hoveredHealthModule, setHoveredHealthModule] = React.useState<string | null>(null);
+  const [healthOrganizations, setHealthOrganizations] = React.useState<ManufacturingOrganization[]>([]);
+  const [healthOrganizationId, setHealthOrganizationId] = React.useState<string | null>(() => {
+    try { return window.localStorage.getItem(`yvimo-health-organization:${user.id}`); } catch { return null; }
+  });
+  const [healthOrganizationDialogOpen, setHealthOrganizationDialogOpen] = React.useState(false);
+  const [healthOrganizationJoinCode, setHealthOrganizationJoinCode] = React.useState('');
+  const [healthOrganizationCreateName, setHealthOrganizationCreateName] = React.useState('');
+  const [healthOrganizationMessage, setHealthOrganizationMessage] = React.useState('');
+  const [healthOrganizationBusy, setHealthOrganizationBusy] = React.useState(false);
+  const [healthOrganizationToLeave, setHealthOrganizationToLeave] = React.useState<ManufacturingOrganization | null>(null);
+  const [healthOrganizationEditName, setHealthOrganizationEditName] = React.useState('');
+  const [healthOrganizationInviteRole, setHealthOrganizationInviteRole] = React.useState<ManufacturingOrganizationInviteRole>('Operator');
   const avatarDragRef = React.useRef<{ pointerId: number; startX: number; startY: number; origin: AvatarOffset } | null>(null);
   const [avatarMessage, setAvatarMessage] = React.useState<string | null>(null);
   const [avatarSaving, setAvatarSaving] = React.useState(false);
@@ -2380,6 +2499,202 @@ function LoggedDashboardPage({
     setManufacturingOrganizationMessage('');
     setManufacturingOrganizationMode(nextOrganization ? 'manage' : 'switch');
   }, [user.id]);
+
+  const refreshHealthOrganizations = React.useCallback(async () => {
+    const organizations = await loadSupabaseOrganizations(user.id);
+    setHealthOrganizations(organizations);
+    setHealthOrganizationId((currentId) => {
+      if (currentId && organizations.some((organization) => organization.id === currentId)) return currentId;
+      const manufacturingMatch = organizations.find((organization) => organization.id === manufacturingOrganization?.id);
+      return manufacturingMatch?.id ?? organizations[0]?.id ?? null;
+    });
+  }, [user.id, manufacturingOrganization?.id]);
+
+  React.useEffect(() => {
+    void refreshHealthOrganizations().catch((error) => {
+      console.warn('Unable to load Health Apps organizations', error);
+      setHealthOrganizationMessage('Organizations could not be loaded.');
+    });
+  }, [refreshHealthOrganizations]);
+
+  React.useEffect(() => {
+    try {
+      const storageKey = `yvimo-health-organization:${user.id}`;
+      if (healthOrganizationId) window.localStorage.setItem(storageKey, healthOrganizationId);
+      else window.localStorage.removeItem(storageKey);
+    } catch (error) {
+      console.warn('Unable to save active Health Apps organization', error);
+    }
+  }, [healthOrganizationId, user.id]);
+
+  const joinHealthOrganization = async () => {
+    const code = healthOrganizationJoinCode.trim().toUpperCase();
+    if (!code) {
+      setHealthOrganizationMessage('Enter an invitation code.');
+      return;
+    }
+    setHealthOrganizationBusy(true);
+    try {
+      const { data: invite, error: inviteError } = await supabase
+        .from('manufacturing_organization_invites')
+        .select('organization_id, code, default_role')
+        .eq('code', code)
+        .eq('active', true)
+        .single();
+      if (inviteError) throw inviteError;
+      const inviteRow = invite as ManufacturingOrganizationInviteRow;
+      const { error: memberError } = await supabase
+        .from('manufacturing_organization_members')
+        .upsert({ organization_id: inviteRow.organization_id, user_id: user.id, role: inviteRow.default_role }, { onConflict: 'organization_id,user_id', ignoreDuplicates: true });
+      if (memberError) throw memberError;
+      await refreshHealthOrganizations();
+      setHealthOrganizationId(inviteRow.organization_id);
+      setHealthOrganizationJoinCode('');
+      setHealthOrganizationMessage('Organization added and selected. Your other memberships were preserved.');
+    } catch (error) {
+      console.warn('Unable to join Health Apps organization', error);
+      setHealthOrganizationMessage('The invitation code is invalid or could not be joined.');
+    } finally {
+      setHealthOrganizationBusy(false);
+    }
+  };
+
+  const createHealthOrganization = async () => {
+    const name = healthOrganizationCreateName.trim();
+    if (!name) {
+      setHealthOrganizationMessage('Enter an organization name.');
+      return;
+    }
+    setHealthOrganizationBusy(true);
+    try {
+      const { data: organization, error: organizationError } = await supabase
+        .from('manufacturing_organizations')
+        .insert({ name, created_by: user.id })
+        .select('id, name, logo_url')
+        .single();
+      if (organizationError) throw organizationError;
+      const organizationRow = organization as ManufacturingOrganizationRow;
+      const inviteCode = createManufacturingInviteCode(name);
+      const [{ error: memberError }, { error: inviteError }] = await Promise.all([
+        supabase.from('manufacturing_organization_members').insert({ organization_id: organizationRow.id, user_id: user.id, role: 'Owner' }),
+        supabase.from('manufacturing_organization_invites').insert({ organization_id: organizationRow.id, code: inviteCode, default_role: 'Operator', created_by: user.id }),
+      ]);
+      if (memberError) throw memberError;
+      if (inviteError) throw inviteError;
+      await refreshHealthOrganizations();
+      setHealthOrganizationId(organizationRow.id);
+      setHealthOrganizationCreateName('');
+      setHealthOrganizationMessage(`${name} was created and selected.`);
+    } catch (error) {
+      console.warn('Unable to create Health Apps organization', error);
+      setHealthOrganizationMessage('The organization could not be created.');
+    } finally {
+      setHealthOrganizationBusy(false);
+    }
+  };
+
+  const leaveHealthOrganization = async () => {
+    const organization = healthOrganizationToLeave;
+    if (!organization) return;
+    if (organization.role === 'Owner' && organization.memberCount > 1) {
+      setHealthOrganizationMessage('Transfer ownership before leaving an organization that has other members.');
+      setHealthOrganizationToLeave(null);
+      return;
+    }
+    setHealthOrganizationBusy(true);
+    try {
+      const { error } = organization.role === 'Owner' && organization.memberCount === 1
+        ? await supabase.from('manufacturing_organizations').delete().eq('id', organization.id)
+        : await supabase
+          .from('manufacturing_organization_members')
+          .delete()
+          .eq('organization_id', organization.id)
+          .eq('user_id', user.id);
+      if (error) throw error;
+      const remainingOrganizations = healthOrganizations.filter((item) => item.id !== organization.id);
+      setHealthOrganizations(remainingOrganizations);
+      if (healthOrganizationId === organization.id) setHealthOrganizationId(remainingOrganizations[0]?.id ?? null);
+      setHealthOrganizationMessage(`You left ${organization.name}. Your other memberships were preserved.`);
+      setHealthOrganizationToLeave(null);
+    } catch (error) {
+      console.warn('Unable to leave Health Apps organization', error);
+      setHealthOrganizationMessage('The organization could not be left.');
+    } finally {
+      setHealthOrganizationBusy(false);
+    }
+  };
+
+  const updateHealthOrganization = async () => {
+    const organization = healthOrganizations.find((item) => item.id === healthOrganizationId);
+    const name = healthOrganizationEditName.trim();
+    if (!organization || !name) return;
+    setHealthOrganizationBusy(true);
+    try {
+      const { error } = await supabase.from('manufacturing_organizations').update({ name }).eq('id', organization.id);
+      if (error) throw error;
+      setHealthOrganizations((organizations) => organizations.map((item) => item.id === organization.id ? { ...item, name } : item));
+      setHealthOrganizationMessage('Organization details updated.');
+    } catch (error) {
+      console.warn('Unable to update Health Apps organization', error);
+      setHealthOrganizationMessage('Organization details could not be updated.');
+    } finally {
+      setHealthOrganizationBusy(false);
+    }
+  };
+
+  const uploadHealthOrganizationLogo = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const organization = healthOrganizations.find((item) => item.id === healthOrganizationId);
+    const file = event.target.files?.[0];
+    if (!organization || !file) return;
+    setHealthOrganizationBusy(true);
+    try {
+      const extension = file.name.split('.').pop()?.toLowerCase() || 'png';
+      const filePath = `${user.id}/${organization.id}-${Date.now()}.${extension}`;
+      const { error: uploadError } = await supabase.storage.from('manufacturing-organization-logos').upload(filePath, file, { upsert: true });
+      if (uploadError) throw uploadError;
+      const { data } = supabase.storage.from('manufacturing-organization-logos').getPublicUrl(filePath);
+      const { error: updateError } = await supabase.from('manufacturing_organizations').update({ logo_url: data.publicUrl }).eq('id', organization.id);
+      if (updateError) throw updateError;
+      setHealthOrganizations((organizations) => organizations.map((item) => item.id === organization.id ? { ...item, logoUrl: data.publicUrl } : item));
+      setHealthOrganizationMessage('Organization image updated.');
+    } catch (error) {
+      console.warn('Unable to upload Health Apps organization logo', error);
+      setHealthOrganizationMessage('Organization image could not be updated.');
+    } finally {
+      setHealthOrganizationBusy(false);
+      event.target.value = '';
+    }
+  };
+
+  const regenerateHealthInviteCode = async () => {
+    const organization = healthOrganizations.find((item) => item.id === healthOrganizationId);
+    if (!organization) return;
+    setHealthOrganizationBusy(true);
+    const code = createManufacturingInviteCode(organization.name);
+    try {
+      await supabase.from('manufacturing_organization_invites').update({ active: false }).eq('organization_id', organization.id).eq('active', true);
+      const { error } = await supabase.from('manufacturing_organization_invites').insert({ organization_id: organization.id, code, default_role: healthOrganizationInviteRole, created_by: user.id });
+      if (error) throw error;
+      setHealthOrganizations((organizations) => organizations.map((item) => item.id === organization.id ? { ...item, inviteCode: code, inviteRole: healthOrganizationInviteRole } : item));
+      setHealthOrganizationMessage('A new invitation code was generated. The previous code is no longer valid.');
+    } catch (error) {
+      console.warn('Unable to generate Health Apps invitation code', error);
+      setHealthOrganizationMessage('A new invitation code could not be generated.');
+    } finally {
+      setHealthOrganizationBusy(false);
+    }
+  };
+
+  const copyHealthInviteCode = async () => {
+    const organization = healthOrganizations.find((item) => item.id === healthOrganizationId);
+    if (!organization?.inviteCode) return;
+    try {
+      await navigator.clipboard.writeText(organization.inviteCode);
+      setHealthOrganizationMessage('Invitation code copied.');
+    } catch {
+      setHealthOrganizationMessage(`Invitation code: ${organization.inviteCode}`);
+    }
+  };
 
   React.useEffect(() => {
     if (!manufacturingUnavailableApp) return;
@@ -3090,13 +3405,15 @@ function LoggedDashboardPage({
     icon: React.ComponentType<{ size?: number }>;
     path: string;
     flagship?: boolean;
+    theme?: 'health' | 'academy';
   }> = [
     {
-      label: 'Gateway Online',
-      description: 'Design, simulate, and prepare industrial connectivity flows using virtual devices, labs, and Gateway tools.',
-      icon: ServerCog,
-      path: '/portal/gateway-online',
+      label: 'Health Apps',
+      description: 'Clinical tools and practical apps designed to support safer, simpler, and more efficient healthcare workflows.',
+      icon: Hospital,
+      path: '/workspace/health-apps',
       flagship: true,
+      theme: 'health',
     },
     {
       label: 'YVIMO Academy',
@@ -3104,6 +3421,7 @@ function LoggedDashboardPage({
       icon: GraduationCap,
       path: '/academy',
       flagship: true,
+      theme: 'academy',
     },
     {
       label: 'Manufacturing Ops',
@@ -3135,7 +3453,7 @@ function LoggedDashboardPage({
   const secondaryAccessItems = quickAccessItems.filter((item) => !item.flagship);
   const navItems = [
     { label: 'Workspace', icon: Blocks, featured: false, path: '/dashboard' },
-    { label: 'Gateway Online', icon: ServerCog, featured: true, path: '/portal/gateway-online' },
+    { label: 'Health Apps', icon: Hospital, featured: true, path: '/workspace/health-apps' },
     { label: 'Academy', icon: GraduationCap, featured: true, path: '/academy' },
     { label: 'Manufacturing Ops', icon: Factory, featured: true, path: '/workspace/manufacturing-ops' },
     { label: 'Engineering Tools', icon: Wrench, featured: true, path: '/portal/engineering-tools' },
@@ -3150,6 +3468,33 @@ function LoggedDashboardPage({
     || activePath.startsWith('/portal/gateway-online/')
     || activePath === '/dashboard/gateway'
     || activePath.startsWith('/dashboard/gateway/');
+  const isHealthAppsPage =
+    activePath === '/workspace/health-apps'
+    || activePath.startsWith('/workspace/health-apps/');
+  const healthAppModules = [
+    {
+      label: 'Patients',
+      description: 'A secure, organization-based directory of patients with CURP, medical record number, and full name.',
+      icon: Users,
+      path: '/workspace/health-apps/patients',
+    },
+    ...Array.from({ length: 5 }, (_, index) => ({
+      label: 'Future health module',
+      description: 'Reserved for a future Health Apps workspace.',
+      icon: Plus,
+      path: `/workspace/health-apps/future-${index + 1}`,
+      disabled: true,
+    })),
+  ];
+  const activeHealthModule = healthAppModules.find((module) => !module.disabled && module.path === activePath);
+  const previewHealthModule = healthAppModules.find((module) => module.path === hoveredHealthModule);
+  const healthOrganization = healthOrganizations.find((organization) => organization.id === healthOrganizationId) ?? null;
+  const canManageHealthOrganization = healthOrganization?.role === 'Owner' || healthOrganization?.role === 'Admin';
+
+  React.useEffect(() => {
+    setHealthOrganizationEditName(healthOrganization?.name ?? '');
+    setHealthOrganizationInviteRole(healthOrganization?.inviteRole ?? 'Operator');
+  }, [healthOrganization?.id, healthOrganization?.name, healthOrganization?.inviteRole]);
   const manufacturingOpsModules: Array<{
     label: string;
     description: string;
@@ -4615,6 +4960,111 @@ function LoggedDashboardPage({
               </div>
             </section>
           </div>
+        ) : isHealthAppsPage ? (
+          activeHealthModule?.path === '/workspace/health-apps/patients' && healthOrganization ? (
+            <HealthPatientsWorkspace
+              organizationId={healthOrganization.id}
+              organizationName={healthOrganization.name}
+              onNavigate={onNavigate}
+              t={t}
+            />
+          ) : activeHealthModule ? (
+            <div className="health-module-page">
+              <button className="health-apps-back" type="button" onClick={() => onNavigate('/workspace/health-apps')}>
+                <ArrowLeft size={17} /> {t('All Health Apps')}
+              </button>
+              <section className="health-module-placeholder">
+                <span className="health-apps-hero-icon"><activeHealthModule.icon size={30} /></span>
+                <p className="eyebrow">YVIMO HEALTH</p>
+                <h1>{t(activeHealthModule.label)}</h1>
+                <p>{t(activeHealthModule.description)}</p>
+                {healthOrganization ? (
+                  <button className="health-module-organization" type="button" onClick={() => setHealthOrganizationDialogOpen(true)}>
+                    <Building2 size={17} />
+                    <span><small>{t('Organization context')}</small><strong>{healthOrganization.name}</strong></span>
+                    <ChevronRight size={17} />
+                  </button>
+                ) : (
+                  <button className="health-module-organization missing" type="button" onClick={() => setHealthOrganizationDialogOpen(true)}>
+                    <Building2 size={17} /> {t('Choose an organization to continue')}
+                  </button>
+                )}
+              </section>
+            </div>
+          ) : (
+          <div className="health-apps-page">
+            <button className="health-apps-back" type="button" onClick={() => onNavigate('/dashboard')}>
+              <ArrowLeft size={17} /> {t('Go Back')}
+            </button>
+            <header className="health-apps-header">
+              <p className="eyebrow">YVIMO HEALTH</p>
+              <h1>{t('Health Apps')}</h1>
+              <p>{t('Practical digital tools designed around everyday healthcare workflows.')}</p>
+            </header>
+
+            <button className="health-organization-trigger" type="button" onClick={() => setHealthOrganizationDialogOpen(true)}>
+              <span className="health-organization-logo">
+                {healthOrganization?.logoUrl ? <img src={healthOrganization.logoUrl} alt="" aria-hidden="true" /> : <Building2 size={22} />}
+              </span>
+              <span>
+                <small>{t('Organization')}</small>
+                <strong>{healthOrganization?.name ?? t('Choose an organization')}</strong>
+                <em>{healthOrganization ? `${healthOrganization.role} access · ${healthOrganization.memberCount} member${healthOrganization.memberCount === 1 ? '' : 's'}` : t('Required to open health modules')}</em>
+              </span>
+              <span className="health-organization-switch-label">{t('Switch organization')} <ChevronRight size={16} /></span>
+            </button>
+
+            <div className="health-apps-hub">
+              <section className="health-apps-intro">
+                <span className="health-apps-hero-icon" aria-hidden="true"><Hospital size={30} /></span>
+                <span className="health-apps-status">{t('Clinical workspace')}</span>
+                <h2>{previewHealthModule ? t(previewHealthModule.label) : t('Care tools in one place')}</h2>
+                <p>{previewHealthModule
+                  ? t(previewHealthModule.description)
+                  : t('Choose an application to open a focused workspace built for clear, efficient, and safer daily work.')}</p>
+                <div className="health-apps-values">
+                  <span><Check size={15} /> {t('Simple')}</span>
+                  <span><Check size={15} /> {t('Focused')}</span>
+                  <span><Check size={15} /> {t('Clinical')}</span>
+                </div>
+              </section>
+
+              <section className="health-apps-directory" aria-label="Health applications">
+                <div className="health-apps-directory-heading">
+                  <span>{t('Applications')}</span>
+                  <h2>{t('Select a health module')}</h2>
+                  <p>{t('Each app opens its own focused workspace.')}</p>
+                </div>
+                <div className="health-apps-module-grid">
+                  {healthAppModules.map((module) => {
+                    const Icon = module.icon;
+                    return (
+                      <button
+                        className={module.disabled ? 'health-app-module-placeholder' : ''}
+                        type="button"
+                        key={module.path}
+                        onClick={() => !module.disabled && (healthOrganization ? onNavigate(module.path) : setHealthOrganizationDialogOpen(true))}
+                        onMouseEnter={() => !module.disabled && setHoveredHealthModule(module.path)}
+                        onMouseLeave={() => setHoveredHealthModule(null)}
+                        onFocus={() => !module.disabled && setHoveredHealthModule(module.path)}
+                        onBlur={() => setHoveredHealthModule(null)}
+                        disabled={module.disabled}
+                        aria-label={module.disabled ? 'Reserved future health module' : healthOrganization ? `Open ${module.label}` : `${module.label}: choose an organization first`}
+                      >
+                        <span className="health-app-module-icon"><Icon size={23} /></span>
+                        <span>
+                          <strong>{module.disabled ? t('Coming soon') : t(module.label)}</strong>
+                          <small>{module.disabled ? t('Reserved for a future application') : t(module.description)}</small>
+                        </span>
+                        {module.disabled ? <LockKeyhole size={16} /> : <ArrowRight size={17} />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+            </div>
+          </div>
+          )
         ) : isGatewayOnlinePage ? (
           <div className="engineering-tools-page gateway-online-page">
             <button className="academy-back-button engineering-back-button" type="button" onClick={() => onNavigate('/dashboard')}>
@@ -4704,7 +5154,7 @@ function LoggedDashboardPage({
                 {isMesPage || isApsPage || isOperationsIntelligencePage ? (
               <>
                 {manufacturingOrganizationTrigger}
-                {manufacturingOrganizationDialog}
+        {manufacturingOrganizationDialog}
                 <section
                   className={[
                     'manufacturing-suite-stage',
@@ -5072,7 +5522,7 @@ function LoggedDashboardPage({
                   const Icon = item.icon;
                   return (
                     <button
-                      className="workspace-access-card workspace-flagship-card"
+                      className={`workspace-access-card workspace-flagship-card${item.theme ? ` workspace-${item.theme}-card` : ''}`}
                       type="button"
                       key={item.label}
                       onClick={() => onNavigate(item.path)}
@@ -5238,6 +5688,92 @@ function LoggedDashboardPage({
           ) : null}
         </div>
         )}
+        {healthOrganizationDialogOpen ? (
+          <div className="health-organization-dialog-backdrop" role="presentation" onMouseDown={() => setHealthOrganizationDialogOpen(false)}>
+            <section className="health-organization-dialog" role="dialog" aria-modal="true" aria-labelledby="health-organization-dialog-title" onMouseDown={(event) => event.stopPropagation()}>
+              <button className="health-organization-dialog-close" type="button" aria-label="Close organization selector" onClick={() => setHealthOrganizationDialogOpen(false)}><X size={18} /></button>
+              <div className="health-organization-dialog-heading">
+                <span><Building2 size={24} /></span>
+                <div><small>YVIMO HEALTH</small><h2 id="health-organization-dialog-title">{t('Switch organization')}</h2><p>{t('Changing context does not remove you from any organization.')}</p></div>
+              </div>
+              <div className="health-organization-list">
+                {healthOrganizations.length > 0 ? healthOrganizations.map((organization) => (
+                  <div className={organization.id === healthOrganizationId ? 'active' : ''} key={organization.id}>
+                    <button className="health-organization-select" type="button" onClick={() => {
+                      setHealthOrganizationId(organization.id);
+                      setHealthOrganizationMessage(`${organization.name} is now active in Health Apps.`);
+                    }}>
+                    <span className="health-organization-logo">{organization.logoUrl ? <img src={organization.logoUrl} alt="" aria-hidden="true" /> : <Building2 size={20} />}</span>
+                    <span><strong>{organization.name}</strong><small>{organization.role} · {organization.memberCount} member{organization.memberCount === 1 ? '' : 's'}</small></span>
+                    {organization.id === healthOrganizationId ? <Check size={18} /> : <ChevronRight size={18} />}
+                    </button>
+                    <button className="health-organization-leave" type="button" onClick={() => setHealthOrganizationToLeave(organization)} aria-label={`Leave ${organization.name}`} title={t('Leave organization')}>
+                      <LogIn size={16} />
+                    </button>
+                  </div>
+                )) : <p className="health-organization-empty">{t('You have not joined an organization yet.')}</p>}
+              </div>
+              {healthOrganization && canManageHealthOrganization ? (
+                <div className="health-organization-admin">
+                  <div className="health-organization-admin-heading">
+                    <span>{t('Manage active organization')}</span>
+                    <strong>{healthOrganization.name}</strong>
+                  </div>
+                  <div className="health-organization-edit-row">
+                    <label><span>{t('Organization name')}</span><input value={healthOrganizationEditName} onChange={(event) => setHealthOrganizationEditName(event.target.value)} /></label>
+                    <label className="health-organization-logo-upload">
+                      <span>{t('Organization image')}</span>
+                      <span className="health-organization-logo-upload-control"><span className="health-organization-logo">{healthOrganization.logoUrl ? <img src={healthOrganization.logoUrl} alt="" /> : <Building2 size={19} />}</span>{t('Choose image')}</span>
+                      <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={uploadHealthOrganizationLogo} disabled={healthOrganizationBusy} />
+                    </label>
+                    <button type="button" onClick={() => void updateHealthOrganization()} disabled={healthOrganizationBusy || !healthOrganizationEditName.trim()}>{t('Save')}</button>
+                  </div>
+                  <div className="health-organization-invite-panel">
+                    <div className="health-organization-code"><small>{t('Invitation code')}</small><strong>{healthOrganization.inviteCode || t('No active code')}</strong></div>
+                    <div className="health-organization-role-picker">
+                      <span>{t('New members join as')}</span>
+                      {(['Admin', 'Operator', 'Viewer', 'Supplier'] as ManufacturingOrganizationInviteRole[]).map((role) => (
+                        <button className={healthOrganizationInviteRole === role ? 'active' : ''} type="button" key={role} onClick={() => setHealthOrganizationInviteRole(role)}>{t(role)}</button>
+                      ))}
+                    </div>
+                    <div className="health-organization-invite-actions">
+                      <button type="button" onClick={() => void copyHealthInviteCode()} disabled={!healthOrganization.inviteCode}><ClipboardCheck size={15} /> {t('Copy code')}</button>
+                      <button type="button" onClick={() => void regenerateHealthInviteCode()} disabled={healthOrganizationBusy}><Plus size={15} /> {t('Generate new code')}</button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+              <div className="health-organization-create">
+                <label><span>{t('Create organization')}</span><input value={healthOrganizationCreateName} onChange={(event) => setHealthOrganizationCreateName(event.target.value)} placeholder={t('Organization name')} /></label>
+                <button type="button" onClick={() => void createHealthOrganization()} disabled={healthOrganizationBusy}><Plus size={16} /> {t('Create')}</button>
+              </div>
+              <div className="health-organization-join">
+                <label><span>{t('Join another organization')}</span><input value={healthOrganizationJoinCode} onChange={(event) => setHealthOrganizationJoinCode(event.target.value.toUpperCase())} placeholder="CODE-123ABC" /></label>
+                <button type="button" onClick={() => void joinHealthOrganization()} disabled={healthOrganizationBusy}><UserPlus size={16} /> {healthOrganizationBusy ? t('Joining...') : t('Join organization')}</button>
+              </div>
+              {healthOrganizationMessage ? <p className="health-organization-message" role="status">{t(healthOrganizationMessage)}</p> : null}
+              {healthOrganizationToLeave ? (
+                <div className="health-organization-confirm" role="alertdialog" aria-modal="true" aria-labelledby="health-leave-title">
+                  <div>
+                    <span>{t('Leave organization')}</span>
+                    <h3 id="health-leave-title">{healthOrganizationToLeave.name}</h3>
+                    <p>{healthOrganizationToLeave.role === 'Owner' && healthOrganizationToLeave.memberCount === 1
+                      ? t('You are the only member. Leaving will permanently delete this empty organization. This cannot be undone.')
+                      : healthOrganizationToLeave.role === 'Owner'
+                        ? t('You must transfer ownership before leaving because this organization has other members.')
+                        : t('Your access to this organization and its Health Apps data will be removed. Your other memberships will not change.')}</p>
+                  </div>
+                  <div className="health-organization-confirm-actions">
+                    <button type="button" onClick={() => setHealthOrganizationToLeave(null)}>{t('Cancel')}</button>
+                    <button className="danger" type="button" onClick={() => void leaveHealthOrganization()} disabled={healthOrganizationBusy || (healthOrganizationToLeave.role === 'Owner' && healthOrganizationToLeave.memberCount > 1)}>
+                      {healthOrganizationBusy ? t('Working...') : healthOrganizationToLeave.role === 'Owner' && healthOrganizationToLeave.memberCount === 1 ? t('Delete and leave') : t('Leave organization')}
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+            </section>
+          </div>
+        ) : null}
         {supplierJoinDialogOpen ? (
           <div className="supplier-join-dialog-backdrop" role="presentation" onMouseDown={() => setSupplierJoinDialogOpen(false)}>
             <section
@@ -5335,6 +5871,8 @@ function App() {
     || currentPath.startsWith('/portal/gateway-online/')
     || currentPath === '/portal/engineering-tools'
     || currentPath.startsWith('/portal/engineering-tools/')
+    || currentPath === '/workspace/health-apps'
+    || currentPath.startsWith('/workspace/health-apps/')
     || currentPath === '/workspace/manufacturing-ops'
     || currentPath.startsWith('/workspace/manufacturing-ops/');
   const isMesApplicationScreen =
