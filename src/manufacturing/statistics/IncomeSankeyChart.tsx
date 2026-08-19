@@ -6,7 +6,7 @@ export type IncomeProductionRow = {
   production_order_id: string;
   quotation_id: string;
   reported_at: string;
-  mes_production_orders: { order_number: string } | Array<{ order_number: string }> | null;
+  mes_production_orders: { order_number: string; assigned_work_center?: string } | Array<{ order_number: string; assigned_work_center?: string }> | null;
   mes_quotations: {
     quotation_number: string;
     client_name: string;

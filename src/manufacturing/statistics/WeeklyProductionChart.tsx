@@ -11,10 +11,11 @@ const buildSmoothPath = (points: Array<{ x: number; y: number }>) => {
   }, `M ${points[0].x} ${points[0].y}`);
 };
 
-export function WeeklyProductionChart({ stats, selectedDate, dailyTarget, onSelectDate, onEditTarget }: {
+export function WeeklyProductionChart({ stats, selectedDate, dailyTarget, canEditTarget, onSelectDate, onEditTarget }: {
   stats: DailyProductionStat[];
   selectedDate: string;
   dailyTarget: number;
+  canEditTarget: boolean;
   onSelectDate: (date: string) => void;
   onEditTarget: () => void;
 }) {
@@ -77,8 +78,8 @@ export function WeeklyProductionChart({ stats, selectedDate, dailyTarget, onSele
         <small>Selected day</small><h4>{selected.dayLabel}, {selected.dateLabel}</h4>
         <dl className="statistics-day-information">
           <div className="production"><dt>Production</dt><dd>{selected.actualProduction}</dd><span>good pieces</span></div>
-          <button className="target statistics-edit-target-card" type="button" onClick={onEditTarget}>
-            <dt>Daily target</dt><dd>{dailyTarget}</dd><span>Click to change target</span>
+          <button className="target statistics-edit-target-card" type="button" disabled={!canEditTarget} onClick={onEditTarget}>
+            <dt>Daily target</dt><dd>{dailyTarget}</dd><span>{canEditTarget ? 'Click to change target' : 'Select a work center to edit'}</span>
           </button>
           <div className={difference !== null && difference >= 0 ? 'positive' : 'negative'}><dt>Difference</dt><dd>{difference === null ? '—' : `${difference > 0 ? '+' : ''}${difference}`}</dd><span>against target</span></div>
           <div><dt>Compliance</dt><dd>{selectedCompliance === null ? '—' : `${Math.round(selectedCompliance)}%`}</dd><span>weekly progress</span></div>

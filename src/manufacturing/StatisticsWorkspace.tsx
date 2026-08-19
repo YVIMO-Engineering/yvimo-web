@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowLeft, BarChart3, Boxes, ChevronLeft, ChevronRight, CircleDollarSign, FileText, PackageCheck, RefreshCw, Target, TrendingUp, Users, WalletCards, X } from 'lucide-react';
+import { ArrowLeft, BarChart3, Boxes, Check, ChevronDown, ChevronLeft, ChevronRight, CircleDollarSign, Factory, FileText, PackageCheck, RefreshCw, Target, TrendingUp, Users, WalletCards, X } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { useSupabaseRealtimeRefresh } from '../lib/useSupabaseRealtimeRefresh';
 import { ProductionMetricCards } from './statistics/ProductionMetricCards';
@@ -28,6 +28,8 @@ type StatisticsWorkspaceProps = {
 type StatisticsView = 'production' | 'receptions' | 'income';
 type FinancialRangePreset = 'this-month' | 'last-month' | 'this-year' | 'custom';
 type ReceptionVoucherStatRow = { id: string; expected_date: string | null; created_at: string };
+type StatisticsWorkCenter = { code: string; name: string };
+type StatisticsTargetSetting = { work_center_code: string; daily_production_target: number; production_work_days: number[] };
 type ReceptionItemStatRow = {
   reception_voucher_id: string;
   customer_id: string;
@@ -36,6 +38,13 @@ type ReceptionItemStatRow = {
 };
 
 const receptionClientColors = ['#2563eb', '#f97316', '#10b981', '#8b5cf6', '#ec4899', '#06b6d4', '#eab308', '#ef4444', '#14b8a6', '#6366f1', '#84cc16', '#f43f5e'];
+const productionWeekDays = [
+  { value: 1, short: 'Mon', label: 'Monday' }, { value: 2, short: 'Tue', label: 'Tuesday' },
+  { value: 3, short: 'Wed', label: 'Wednesday' }, { value: 4, short: 'Thu', label: 'Thursday' },
+  { value: 5, short: 'Fri', label: 'Friday' }, { value: 6, short: 'Sat', label: 'Saturday' },
+  { value: 7, short: 'Sun', label: 'Sunday' },
+];
+const defaultProductionWorkDays = [1, 2, 3, 4, 5, 6];
 
 const getAlertAcknowledgementKey = (alert: StatisticsAlert) => {
   if (['inventory', 'overdue', 'overtime'].includes(alert.type)) {
@@ -45,7 +54,7 @@ const getAlertAcknowledgementKey = (alert: StatisticsAlert) => {
 };
 
 export function StatisticsWorkspace({ onNavigate, organizationId, financialIncome = false }: StatisticsWorkspaceProps) {
-  const targetStorageKey = `yvimo:mes-statistics:daily-target:${organizationId}`;
+  const workCenterStorageKey = `yvimo:mes-statistics:work-center:${organizationId}`;
   const manualAlertsStorageKey = `yvimo:mes-statistics:manual-alerts:${organizationId}`;
   const acknowledgedAlertsStorageKey = `yvimo:mes-statistics:acknowledged-alerts:${organizationId}`;
   const today = React.useMemo(() => toLocalDateInput(new Date()), []);
@@ -60,6 +69,10 @@ export function StatisticsWorkspace({ onNavigate, organizationId, financialIncom
   });
   const [activeView, setActiveView] = React.useState<StatisticsView>(financialIncome ? 'income' : 'production');
   const [events, setEvents] = React.useState<ProductionStatisticsEvent[]>([]);
+  const [workCenters, setWorkCenters] = React.useState<StatisticsWorkCenter[]>([]);
+  const [selectedWorkCenter, setSelectedWorkCenter] = React.useState(() => window.localStorage.getItem(workCenterStorageKey) || 'all');
+  const [workCenterMenuOpen, setWorkCenterMenuOpen] = React.useState(false);
+  const workCenterMenuRef = React.useRef<HTMLDivElement>(null);
   const [targetOrders, setTargetOrders] = React.useState<ProductionTargetOrder[]>([]);
   const [receptionVouchers, setReceptionVouchers] = React.useState<ReceptionVoucherStatRow[]>([]);
   const [receptionItems, setReceptionItems] = React.useState<ReceptionItemStatRow[]>([]);
@@ -68,12 +81,14 @@ export function StatisticsWorkspace({ onNavigate, organizationId, financialIncom
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState('');
   const [lastUpdatedAt, setLastUpdatedAt] = React.useState('');
-  const [dailyTarget, setDailyTarget] = React.useState(() => {
-    const stored = Number(window.localStorage.getItem(targetStorageKey));
-    return Number.isFinite(stored) && stored > 0 ? stored : 30;
-  });
+  const [dailyTarget, setDailyTarget] = React.useState(30);
+  const [productionWorkDays, setProductionWorkDays] = React.useState<number[]>(defaultProductionWorkDays);
+  const [targetSettings, setTargetSettings] = React.useState<StatisticsTargetSetting[]>([]);
   const [targetDialogOpen, setTargetDialogOpen] = React.useState(false);
   const [targetDraft, setTargetDraft] = React.useState('30');
+  const [workDaysDraft, setWorkDaysDraft] = React.useState<number[]>(defaultProductionWorkDays);
+  const [targetSaving, setTargetSaving] = React.useState(false);
+  const [targetSaveError, setTargetSaveError] = React.useState('');
   const [automaticAlerts, setAutomaticAlerts] = React.useState<StatisticsAlert[]>([]);
   const [manualAlerts, setManualAlerts] = React.useState<StatisticsAlert[]>(() => {
     try { return JSON.parse(window.localStorage.getItem(manualAlertsStorageKey) || '[]') as StatisticsAlert[]; } catch { return []; }
@@ -86,11 +101,18 @@ export function StatisticsWorkspace({ onNavigate, organizationId, financialIncom
   const analysisRange = financialIncome ? financialRange : weekRange;
 
   React.useEffect(() => {
-    const stored = Number(window.localStorage.getItem(targetStorageKey));
-    const nextTarget = Number.isFinite(stored) && stored > 0 ? stored : 30;
-    setDailyTarget(nextTarget);
-    setTargetDraft(String(nextTarget));
-  }, [targetStorageKey]);
+    setSelectedWorkCenter(window.localStorage.getItem(workCenterStorageKey) || 'all');
+  }, [workCenterStorageKey]);
+  React.useEffect(() => {
+    if (!workCenterMenuOpen) return;
+    const closeMenu = (event: MouseEvent) => {
+      if (!workCenterMenuRef.current?.contains(event.target as Node)) setWorkCenterMenuOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') setWorkCenterMenuOpen(false); };
+    document.addEventListener('mousedown', closeMenu);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => { document.removeEventListener('mousedown', closeMenu); document.removeEventListener('keydown', closeOnEscape); };
+  }, [workCenterMenuOpen]);
   React.useEffect(() => {
     try { setManualAlerts(JSON.parse(window.localStorage.getItem(manualAlertsStorageKey) || '[]') as StatisticsAlert[]); } catch { setManualAlerts([]); }
   }, [manualAlertsStorageKey]);
@@ -99,15 +121,31 @@ export function StatisticsWorkspace({ onNavigate, organizationId, financialIncom
   }, [acknowledgedAlertsStorageKey]);
 
   const openTargetDialog = () => {
+    if (selectedWorkCenter === 'all') return;
     setTargetDraft(String(dailyTarget));
+    setWorkDaysDraft(productionWorkDays);
+    setTargetSaveError('');
     setTargetDialogOpen(true);
   };
-  const saveTarget = (event: React.FormEvent) => {
+  const saveTarget = async (event: React.FormEvent) => {
     event.preventDefault();
     const nextTarget = Math.max(1, Math.round(Number(targetDraft)));
-    if (!Number.isFinite(nextTarget)) return;
+    if (!Number.isFinite(nextTarget) || !workDaysDraft.length) return;
+    setTargetSaving(true);
+    setTargetSaveError('');
+    const nextWorkDays = [...workDaysDraft].sort((left, right) => left - right);
+    const { error: saveError } = await supabase.from('mes_statistics_settings').upsert({
+      organization_id: organizationId,
+      work_center_code: selectedWorkCenter,
+      daily_production_target: nextTarget,
+      production_work_days: nextWorkDays,
+      updated_by: (await supabase.auth.getUser()).data.user?.id ?? null,
+    }, { onConflict: 'organization_id,work_center_code' });
+    setTargetSaving(false);
+    if (saveError) { setTargetSaveError(saveError.message); return; }
     setDailyTarget(nextTarget);
-    window.localStorage.setItem(targetStorageKey, String(nextTarget));
+    setProductionWorkDays(nextWorkDays);
+    setTargetSettings((current) => [...current.filter((setting) => setting.work_center_code !== selectedWorkCenter), { work_center_code: selectedWorkCenter, daily_production_target: nextTarget, production_work_days: nextWorkDays }]);
     setTargetDialogOpen(false);
   };
 
@@ -116,22 +154,28 @@ export function StatisticsWorkspace({ onNavigate, organizationId, financialIncom
     const rangeStart = new Date(`${analysisRange.from}T00:00:00`);
     const rangeEnd = new Date(`${analysisRange.to}T00:00:00`);
     rangeEnd.setDate(rangeEnd.getDate() + 1);
-    const [eventsResponse, targetResponse, receptionResponse, incomeResponse] = await Promise.all([
-      supabase
+    let eventsQuery = supabase
         .from('mes_operator_terminal_events')
-        .select('id, event_type, quantity, created_at')
+        .select('id, event_type, quantity, work_center_code, created_at')
         .eq('organization_id', organizationId)
         .in('event_type', ['production-good', 'production-scrap'])
         .gte('created_at', rangeStart.toISOString())
         .lt('created_at', rangeEnd.toISOString())
-        .order('created_at', { ascending: true }),
-      supabase
+        .order('created_at', { ascending: true });
+    let targetQuery = supabase
         .from('mes_production_orders')
-        .select('planned_quantity, due_date')
+        .select('planned_quantity, due_date, assigned_work_center')
         .eq('organization_id', organizationId)
         .neq('status', 'cancelled')
         .gte('due_date', analysisRange.from)
-        .lte('due_date', analysisRange.to),
+        .lte('due_date', analysisRange.to);
+    if (selectedWorkCenter !== 'all') {
+      eventsQuery = eventsQuery.eq('work_center_code', selectedWorkCenter);
+      targetQuery = targetQuery.eq('assigned_work_center', selectedWorkCenter);
+    }
+    const [eventsResponse, targetResponse, receptionResponse, incomeResponse, workCentersResponse, settingsResponse] = await Promise.all([
+      eventsQuery,
+      targetQuery,
       supabase
         .from('mes_customer_reception_vouchers')
         .select('id, expected_date, created_at')
@@ -141,13 +185,15 @@ export function StatisticsWorkspace({ onNavigate, organizationId, financialIncom
         .order('expected_date', { ascending: true }),
       supabase
         .from('mes_production_serials')
-        .select('id, serial_number, production_order_id, quotation_id, reported_at, mes_production_orders(order_number), mes_quotations(quotation_number, client_name, total_price, currency)')
+        .select('id, serial_number, production_order_id, quotation_id, reported_at, mes_production_orders(order_number, assigned_work_center), mes_quotations(quotation_number, client_name, total_price, currency)')
         .eq('organization_id', organizationId)
         .eq('result', 'good')
         .not('quotation_id', 'is', null)
         .gte('reported_at', rangeStart.toISOString())
         .lt('reported_at', rangeEnd.toISOString())
         .order('reported_at', { ascending: true }),
+      supabase.from('mes_work_centers').select('code, name').eq('organization_id', organizationId).order('name', { ascending: true }),
+      supabase.from('mes_statistics_settings').select('work_center_code, daily_production_target, production_work_days').eq('organization_id', organizationId),
     ]);
     const receptionIds = (receptionResponse.data ?? []).map((voucher) => voucher.id);
     const receptionItemsResponse = receptionIds.length
@@ -156,7 +202,9 @@ export function StatisticsWorkspace({ onNavigate, organizationId, financialIncom
         .select('reception_voucher_id, customer_id, quantity, mes_customers(customer_name)')
         .in('reception_voucher_id', receptionIds)
       : { data: [], error: null };
-    const queryError = eventsResponse.error || targetResponse.error || receptionResponse.error || receptionItemsResponse.error || incomeResponse.error;
+    // Statistics remain usable while a new deployment is between frontend and
+    // database migration; saving clearly reports a missing settings table.
+    const queryError = eventsResponse.error || targetResponse.error || receptionResponse.error || receptionItemsResponse.error || incomeResponse.error || workCentersResponse.error;
     if (queryError) {
       setError(queryError.message);
       if (!silent) {
@@ -172,11 +220,26 @@ export function StatisticsWorkspace({ onNavigate, organizationId, financialIncom
       setReceptionVouchers((receptionResponse.data ?? []) as ReceptionVoucherStatRow[]);
       setReceptionItems((receptionItemsResponse.data ?? []) as ReceptionItemStatRow[]);
       setIncomeRows((incomeResponse.data ?? []) as unknown as IncomeProductionRow[]);
+      setWorkCenters((workCentersResponse.data ?? []) as StatisticsWorkCenter[]);
+      setTargetSettings((settingsResponse.data ?? []) as StatisticsTargetSetting[]);
       setError('');
       setLastUpdatedAt(new Date().toISOString());
     }
     setLoading(false);
-  }, [analysisRange.from, analysisRange.to, organizationId]);
+  }, [analysisRange.from, analysisRange.to, organizationId, selectedWorkCenter]);
+
+  React.useEffect(() => {
+    const configured = targetSettings.find((setting) => setting.work_center_code === selectedWorkCenter);
+    if (selectedWorkCenter !== 'all') {
+      setDailyTarget(Number(configured?.daily_production_target) || 30);
+      setProductionWorkDays(configured?.production_work_days?.length ? configured.production_work_days : defaultProductionWorkDays);
+      return;
+    }
+    const settingsByCenter = new Map(targetSettings.map((setting) => [setting.work_center_code, setting]));
+    const aggregate = workCenters.map((center) => settingsByCenter.get(center.code) ?? { work_center_code: center.code, daily_production_target: 30, production_work_days: defaultProductionWorkDays });
+    setDailyTarget(aggregate.reduce((sum, setting) => sum + Number(setting.daily_production_target), 0) || 30);
+    setProductionWorkDays([...new Set(aggregate.flatMap((setting) => setting.production_work_days))].sort((left, right) => left - right));
+  }, [selectedWorkCenter, targetSettings, workCenters]);
 
   const loadAlerts = React.useCallback(async () => {
     const since = new Date();
@@ -229,6 +292,7 @@ export function StatisticsWorkspace({ onNavigate, organizationId, financialIncom
       { table: 'mes_customer_reception_items' },
       { table: 'mes_production_serials', filter: `organization_id=eq.${organizationId}` },
       { table: 'mes_quotations', filter: `organization_id=eq.${organizationId}` },
+      { table: 'mes_statistics_settings', filter: `organization_id=eq.${organizationId}` },
     ],
     onRefresh: () => { void loadStatistics(true); void loadAlerts(); },
     enabled: Boolean(organizationId),
@@ -238,6 +302,14 @@ export function StatisticsWorkspace({ onNavigate, organizationId, financialIncom
     () => buildWeeklyProductionStats(weekAnchor, events, targetOrders),
     [events, targetOrders, weekAnchor],
   );
+  const weeklyProductionTarget = React.useMemo(() => {
+    if (selectedWorkCenter !== 'all') return dailyTarget * productionWorkDays.length;
+    const settingsByCenter = new Map(targetSettings.map((setting) => [setting.work_center_code, setting]));
+    return workCenters.reduce((sum, center) => {
+      const setting = settingsByCenter.get(center.code);
+      return sum + (Number(setting?.daily_production_target) || 30) * (setting?.production_work_days?.length || defaultProductionWorkDays.length);
+    }, 0);
+  }, [dailyTarget, productionWorkDays.length, selectedWorkCenter, targetSettings, workCenters]);
   const receptionStats = React.useMemo<DailyReceptionStat[]>(() => {
     const customerIds = [...new Set(receptionItems.map((item) => item.customer_id))].sort();
     const colorByCustomer = new Map(customerIds.map((customerId, index) => [
@@ -279,19 +351,24 @@ export function StatisticsWorkspace({ onNavigate, organizationId, financialIncom
   const weeklyReceptionVouchers = receptionStats.reduce((sum, day) => sum + day.voucherCount, 0);
   const weeklyReceptionClients = new Set(receptionStats.flatMap((day) => day.segments.map((segment) => segment.customerId))).size;
   const todayReceptionPieces = receptionStats.find((day) => day.isToday)?.totalPieces ?? 0;
+  const filteredIncomeRows = React.useMemo(() => incomeRows.filter((row) => {
+    if (financialIncome || selectedWorkCenter === 'all') return true;
+    const order = Array.isArray(row.mes_production_orders) ? row.mes_production_orders[0] : row.mes_production_orders;
+    return order?.assigned_work_center === selectedWorkCenter;
+  }), [financialIncome, incomeRows, selectedWorkCenter]);
   const incomeCurrency = React.useMemo(() => {
-    const currencies = incomeRows.map((row) => {
+    const currencies = filteredIncomeRows.map((row) => {
       const quotation = Array.isArray(row.mes_quotations) ? row.mes_quotations[0] : row.mes_quotations;
       return quotation?.currency || 'USD';
     });
     return currencies[0] ?? 'USD';
-  }, [incomeRows]);
+  }, [filteredIncomeRows]);
   const incomeSummary = React.useMemo(() => {
     let total = 0;
     let todayTotal = 0;
     const quotations = new Set<string>();
     const clients = new Set<string>();
-    incomeRows.forEach((row) => {
+    filteredIncomeRows.forEach((row) => {
       const quotation = Array.isArray(row.mes_quotations) ? row.mes_quotations[0] : row.mes_quotations;
       if (!quotation) return;
       const value = Math.max(0, Number(quotation.total_price) || 0);
@@ -300,8 +377,8 @@ export function StatisticsWorkspace({ onNavigate, organizationId, financialIncom
       quotations.add(row.quotation_id);
       clients.add(quotation.client_name);
     });
-    return { total, todayTotal, quotations: quotations.size, clients: clients.size, pieces: incomeRows.length };
-  }, [incomeRows, today]);
+    return { total, todayTotal, quotations: quotations.size, clients: clients.size, pieces: filteredIncomeRows.length };
+  }, [filteredIncomeRows, today]);
   const alertHistory = React.useMemo(() => {
     const byId = new Map<string, StatisticsAlert>();
     [...automaticAlerts, ...manualAlerts].forEach((alert) => byId.set(alert.id, alert));
@@ -391,16 +468,21 @@ export function StatisticsWorkspace({ onNavigate, organizationId, financialIncom
 
         {activeView === 'production' ? (
           <>
-            <ProductionMetricCards stats={stats} dailyTarget={dailyTarget} />
+            <ProductionMetricCards stats={stats} dailyTarget={dailyTarget} weeklyTarget={weeklyProductionTarget} weeklyTargetDetail={selectedWorkCenter === 'all' ? `combined target for ${workCenters.length} work centers` : `${dailyTarget} pieces × ${productionWorkDays.length} days`} workCenterSelector={(
+              <div className="statistics-workcenter-card">
+                <Factory size={24} strokeWidth={2.2} />
+                <span><small>Work center</small><div className={`statistics-workcenter-dropdown${workCenterMenuOpen ? ' open' : ''}`} ref={workCenterMenuRef}><button type="button" aria-haspopup="listbox" aria-expanded={workCenterMenuOpen} onClick={() => setWorkCenterMenuOpen((open) => !open)}><span>{selectedWorkCenter === 'all' ? 'All work centers' : workCenters.find((center) => center.code === selectedWorkCenter)?.name ?? selectedWorkCenter}</span><ChevronDown size={15} /></button>{workCenterMenuOpen ? <div className="statistics-workcenter-menu" role="listbox">{[{ code: 'all', name: 'All work centers' }, ...workCenters].map((center) => <button type="button" role="option" aria-selected={selectedWorkCenter === center.code} key={center.code} onClick={() => { setSelectedWorkCenter(center.code); window.localStorage.setItem(workCenterStorageKey, center.code); setWorkCenterMenuOpen(false); }}><span>{center.name}{center.code !== 'all' ? <small>{center.code}</small> : null}</span>{selectedWorkCenter === center.code ? <Check size={15} /> : null}</button>)}</div> : null}</div></span>
+              </div>
+            )} />
             <section className="statistics-production-panel">
               <div className="statistics-production-heading">
                 <div><span className="statistics-heading-icon"><BarChart3 size={22} /></span><span><small>Weekly production trend</small><h3>{weekLabel}</h3></span></div>
                 <div className="statistics-chart-key"><span className="actual"><i /> Production</span><span className="target"><i /> Daily target · {dailyTarget}</span><span className="trend"><i /> Production trend</span></div>
               </div>
               {error ? <div className="statistics-message error" role="alert">{error}</div> : null}
-              {loading && !events.length ? <div className="statistics-chart-loading">Loading weekly production...</div> : <WeeklyProductionChart stats={stats} selectedDate={selectedDate} dailyTarget={dailyTarget} onSelectDate={setSelectedDate} onEditTarget={openTargetDialog} />}
+              {loading && !events.length ? <div className="statistics-chart-loading">Loading weekly production...</div> : <WeeklyProductionChart stats={stats} selectedDate={selectedDate} dailyTarget={dailyTarget} canEditTarget={selectedWorkCenter !== 'all'} onSelectDate={setSelectedDate} onEditTarget={openTargetDialog} />}
               <footer className="statistics-chart-footer">
-                <span>Daily target is configured at {dailyTarget} pieces ({dailyTarget * 7} per week).</span>
+                <span>{selectedWorkCenter === 'all' ? `Combined weekly target: ${weeklyProductionTarget} pieces across ${workCenters.length} work centers.` : `Daily target is ${dailyTarget} pieces for ${selectedWorkCenter} (${weeklyProductionTarget} per week).`}</span>
                 <em>Live updates every 30 seconds and when shop-floor events arrive.</em>
               </footer>
             </section>
@@ -443,7 +525,7 @@ export function StatisticsWorkspace({ onNavigate, organizationId, financialIncom
                 <div className="statistics-chart-key"><span className="income-flow"><i /> Income value</span><span>Client → Quotation → Production order</span></div>
               </div>
               {error ? <div className="statistics-message error" role="alert">{error}</div> : null}
-              {loading && !incomeRows.length ? <div className="statistics-chart-loading">Loading weekly income...</div> : <IncomeSankeyChart rows={incomeRows} currency={incomeCurrency} />}
+              {loading && !filteredIncomeRows.length ? <div className="statistics-chart-loading">Loading weekly income...</div> : <IncomeSankeyChart rows={filteredIncomeRows} currency={incomeCurrency} />}
               <footer className="statistics-chart-footer">
                 <span>Income is recognized when a good serialized piece linked to a quotation is reported.</span>
                 <em>Live updates every 30 seconds and when production or quotations change.</em>
@@ -459,10 +541,12 @@ export function StatisticsWorkspace({ onNavigate, organizationId, financialIncom
             <button className="statistics-target-modal-close" type="button" aria-label="Close" onClick={() => setTargetDialogOpen(false)}><X size={20} /></button>
             <span className="statistics-target-modal-icon"><Target size={24} /></span>
             <p className="eyebrow">Production target</p>
-            <h3>Change daily target</h3>
-            <p>Set the number of good pieces expected per production day.</p>
-            <label><span>Pieces per day</span><input type="number" min="1" step="1" autoFocus value={targetDraft} onChange={(event) => setTargetDraft(event.target.value)} /></label>
-            <div><button type="button" onClick={() => setTargetDialogOpen(false)}>Cancel</button><button type="submit">Save target</button></div>
+            <h3>Change target · {workCenters.find((center) => center.code === selectedWorkCenter)?.name ?? selectedWorkCenter}</h3>
+            <p>Set the organization-wide production target and the days that count toward the weekly goal.</p>
+            <label className="statistics-target-quantity"><span>Pieces per day</span><input type="number" min="1" step="1" autoFocus value={targetDraft} onChange={(event) => setTargetDraft(event.target.value)} /></label>
+            <fieldset className="statistics-target-days"><legend>Days included in weekly target</legend><div>{productionWeekDays.map((day) => { const checked = workDaysDraft.includes(day.value); return <label className={checked ? 'checked' : ''} key={day.value}><input type="checkbox" checked={checked} onChange={() => setWorkDaysDraft((current) => checked ? current.filter((value) => value !== day.value) : [...current, day.value])} /><span><Check size={15} /><b>{day.short}</b><small>{day.label}</small></span></label>; })}</div><p>{workDaysDraft.length ? `${Number(targetDraft) || 0} × ${workDaysDraft.length} days = ${(Number(targetDraft) || 0) * workDaysDraft.length} pieces per week` : 'Select at least one work day.'}</p></fieldset>
+            {targetSaveError ? <p className="statistics-target-save-error" role="alert">{targetSaveError}</p> : null}
+            <div className="statistics-target-actions"><button type="button" disabled={targetSaving} onClick={() => setTargetDialogOpen(false)}>Cancel</button><button type="submit" disabled={targetSaving || !workDaysDraft.length}>{targetSaving ? 'Saving...' : 'Save target'}</button></div>
           </form>
         </div>
       ) : null}
