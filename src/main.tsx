@@ -5067,6 +5067,7 @@ function LoggedDashboardPage({
               organizationName={healthOrganization.name}
               onNavigate={onNavigate}
               t={t}
+              languageCode={languageCode}
             />
           ) : activeHealthModule ? (
             <div className="health-module-page">

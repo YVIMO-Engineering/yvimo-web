@@ -20,6 +20,7 @@ type Props = {
   organizationName: string;
   onNavigate: (path: string) => void;
   t: (text: string) => string;
+  languageCode: 'en' | 'es' | 'zh';
 };
 
 const emptyForm = { fullName: '', curp: '', medicalRecordNumber: '', sex: '' as '' | PatientRow['sex'] };
@@ -41,6 +42,16 @@ function getAgeFromBirthDate(birthDate: string, today = new Date()) {
   let age = today.getFullYear() - year;
   if (today.getMonth() + 1 < month || (today.getMonth() + 1 === month && today.getDate() < day)) age -= 1;
   return age;
+}
+
+function formatPatientDate(value: string, languageCode: Props['languageCode'], utc = false) {
+  const date = new Date(utc ? `${value.slice(0, 10)}T00:00:00Z` : value);
+  if (languageCode === 'es') {
+    const parts = new Intl.DateTimeFormat('es-MX', { day: 'numeric', month: 'long', year: 'numeric', ...(utc ? { timeZone: 'UTC' } : {}) }).formatToParts(date);
+    const getPart = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? '';
+    return `${getPart('day')} de ${getPart('month')}, ${getPart('year')}`;
+  }
+  return new Intl.DateTimeFormat(languageCode === 'zh' ? 'zh-CN' : 'en-US', { dateStyle: 'medium', ...(utc ? { timeZone: 'UTC' } : {}) }).format(date);
 }
 
 function HealthSexDropdown({ value, onChange, t }: { value: '' | PatientRow['sex']; onChange: (value: PatientRow['sex']) => void; t: (text: string) => string }) {
@@ -76,7 +87,7 @@ function HealthSexDropdown({ value, onChange, t }: { value: '' | PatientRow['sex
   </>;
 }
 
-export function HealthPatientsWorkspace({ organizationId, organizationName, onNavigate, t }: Props) {
+export function HealthPatientsWorkspace({ organizationId, organizationName, onNavigate, t, languageCode }: Props) {
   const [patients, setPatients] = React.useState<PatientRow[]>([]);
   const [searchTerm, setSearchTerm] = React.useState('');
   const [loading, setLoading] = React.useState(true);
@@ -218,7 +229,7 @@ export function HealthPatientsWorkspace({ organizationId, organizationName, onNa
             : visiblePatients.length === 0 ? (
               <div className="health-patients-state"><Users size={34} /><strong>{t(patients.length ? 'No patients match your search.' : 'No patients registered yet.')}</strong><p>{t(patients.length ? 'Try a different name, CURP, or record number.' : 'Add the first patient to this organization.')}</p>{!patients.length ? <button type="button" onClick={openCreateDialog}><UserPlus size={17} /> {t('Add patient')}</button> : null}</div>
             ) : (
-              <div className="health-patients-table-wrap"><table><thead><tr><th>{t('Full name')}</th><th>CURP</th><th>{t('Medical record no.')}</th><th>{t('Sex')}</th><th>{t('Birth date')}</th><th>{t('Age')}</th><th>{t('Registered')}</th><th className="health-patient-actions-heading">{t('Actions')}</th></tr></thead><tbody>{visiblePatients.map((patient) => <tr key={patient.id}><td><span className="health-patient-avatar">{patient.full_name.slice(0, 1).toUpperCase()}</span><strong>{patient.full_name}</strong></td><td><code>{patient.curp}</code></td><td><strong>{patient.medical_record_number}</strong></td><td>{t(patient.sex)}</td><td>{new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeZone: 'UTC' }).format(new Date(`${patient.birth_date}T00:00:00Z`))}</td><td>{getAgeFromBirthDate(patient.birth_date)}</td><td>{new Intl.DateTimeFormat('en-US', { dateStyle: 'medium' }).format(new Date(patient.created_at))}</td><td className="health-patient-row-actions"><div><button type="button" onClick={() => openEditDialog(patient)}><Pencil size={15} /> {t('Edit')}</button><button className="danger" type="button" onClick={() => { setDeletingPatient(patient); setDeletePassword(''); setDeleteError(''); }}><Trash2 size={15} /> {t('Delete')}</button></div></td></tr>)}</tbody></table></div>
+              <div className="health-patients-table-wrap"><table><thead><tr><th>{t('Full name')}</th><th>CURP</th><th>{t('Medical record no.')}</th><th>{t('Sex')}</th><th>{t('Birth date')}</th><th>{t('Age')}</th><th>{t('Registered')}</th><th className="health-patient-actions-heading">{t('Actions')}</th></tr></thead><tbody>{visiblePatients.map((patient) => <tr key={patient.id}><td><span className="health-patient-avatar">{patient.full_name.slice(0, 1).toUpperCase()}</span><strong>{patient.full_name}</strong></td><td><code>{patient.curp}</code></td><td><strong>{patient.medical_record_number}</strong></td><td>{t(patient.sex)}</td><td>{formatPatientDate(patient.birth_date, languageCode, true)}</td><td>{getAgeFromBirthDate(patient.birth_date)}</td><td>{formatPatientDate(patient.created_at, languageCode)}</td><td className="health-patient-row-actions"><div><button type="button" onClick={() => openEditDialog(patient)}><Pencil size={15} /> {t('Edit')}</button><button className="danger" type="button" onClick={() => { setDeletingPatient(patient); setDeletePassword(''); setDeleteError(''); }}><Trash2 size={15} /> {t('Delete')}</button></div></td></tr>)}</tbody></table></div>
             )}
       </section>
 
