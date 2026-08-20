@@ -1,6 +1,6 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowLeft, Check, ChevronDown, LoaderCircle, Pencil, Plus, Search, Trash2, UserPlus, Users, X } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowUp, Check, ChevronDown, LoaderCircle, Pencil, Plus, Search, Trash2, UserPlus, Users, X } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import './healthPatients.css';
 
@@ -24,6 +24,7 @@ type Props = {
 };
 
 const emptyForm = { fullName: '', curp: '', medicalRecordNumber: '', sex: '' as '' | PatientRow['sex'] };
+const medicalRecordCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
 
 function getBirthDateFromCurp(curp: string): string | null {
   if (!/^[A-Z]{4}\d{6}[HM][A-Z]{5}[A-Z0-9]\d$/.test(curp)) return null;
@@ -90,6 +91,7 @@ function HealthSexDropdown({ value, onChange, t }: { value: '' | PatientRow['sex
 export function HealthPatientsWorkspace({ organizationId, organizationName, onNavigate, t, languageCode }: Props) {
   const [patients, setPatients] = React.useState<PatientRow[]>([]);
   const [searchTerm, setSearchTerm] = React.useState('');
+  const [recordSortDirection, setRecordSortDirection] = React.useState<'ascending' | 'descending' | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [loadError, setLoadError] = React.useState('');
   const [dialogOpen, setDialogOpen] = React.useState(false);
@@ -122,10 +124,15 @@ export function HealthPatientsWorkspace({ organizationId, organizationName, onNa
   React.useEffect(() => { void loadPatients(); }, [loadPatients]);
 
   const normalizedSearch = searchTerm.trim().toLocaleLowerCase();
-  const visiblePatients = normalizedSearch
+  const filteredPatients = normalizedSearch
     ? patients.filter((patient) => [patient.full_name, patient.curp, patient.medical_record_number]
       .some((value) => value.toLocaleLowerCase().includes(normalizedSearch)))
     : patients;
+  const visiblePatients = recordSortDirection ? [...filteredPatients].sort((a, b) => {
+    const comparison = medicalRecordCollator.compare(a.medical_record_number.trim(), b.medical_record_number.trim());
+    if (comparison !== 0) return recordSortDirection === 'ascending' ? comparison : -comparison;
+    return a.full_name.localeCompare(b.full_name);
+  }) : filteredPatients;
 
   const openCreateDialog = () => {
     setEditingPatient(null);
@@ -222,7 +229,14 @@ export function HealthPatientsWorkspace({ organizationId, organizationName, onNa
       <section className="health-patients-register">
         <div className="health-patients-register-heading">
           <div><span>{t('Patient register')}</span><h2>{t('Registered patients')}</h2></div>
-          <strong>{visiblePatients.length} {t('showing')} / {patients.length} {t('total')}</strong>
+          <div className="health-patients-register-controls">
+            <div className="health-patients-sort" role="group" aria-label={t('Sort by medical record number')}>
+              <span>{t('Filters')}</span>
+              <button className={recordSortDirection === 'ascending' ? 'active' : ''} type="button" aria-label={t('Lowest to highest')} aria-pressed={recordSortDirection === 'ascending'} onClick={() => setRecordSortDirection((current) => current === 'ascending' ? null : 'ascending')} title={t('Lowest to highest')}><ArrowUp size={16} /></button>
+              <button className={recordSortDirection === 'descending' ? 'active' : ''} type="button" aria-label={t('Highest to lowest')} aria-pressed={recordSortDirection === 'descending'} onClick={() => setRecordSortDirection((current) => current === 'descending' ? null : 'descending')} title={t('Highest to lowest')}><ArrowDown size={16} /></button>
+            </div>
+            <strong>{visiblePatients.length} {t('showing')} / {patients.length} {t('total')}</strong>
+          </div>
         </div>
         {loading ? <div className="health-patients-state"><LoaderCircle className="spin" size={25} /> {t('Loading patients...')}</div>
           : loadError ? <div className="health-patients-state error">{t(loadError)}<button type="button" onClick={() => void loadPatients()}>{t('Try again')}</button></div>
