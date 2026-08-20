@@ -911,7 +911,21 @@ const translations: Record<Exclude<LanguageCode, 'en'>, Record<string, string>> 
     'Signing in...': 'Iniciando sesión...',
     or: 'o',
     'Back to home': 'Volver al inicio',
+    'Change language': 'Cambiar idioma',
     'Signed in. Opening Health Apps.': 'Sesión iniciada. Abriendo Apps de Salud.',
+    Actions: 'Acciones',
+    Edit: 'Editar',
+    Delete: 'Eliminar',
+    'Edit patient': 'Editar paciente',
+    'Save changes': 'Guardar cambios',
+    'The patient could not be updated.': 'No se pudo actualizar al paciente.',
+    'Delete patient': 'Eliminar paciente',
+    'This permanently removes the patient record. Enter the deletion password to confirm.': 'Esto elimina permanentemente el registro del paciente. Ingresa la contraseña de eliminación para confirmar.',
+    'Deletion password': 'Contraseña de eliminación',
+    'Incorrect deletion password.': 'La contraseña de eliminación es incorrecta.',
+    'The patient could not be deleted. Confirm that you have administrator access.': 'No se pudo eliminar al paciente. Confirma que tienes acceso a la organización.',
+    'Delete permanently': 'Eliminar permanentemente',
+    'Deleting...': 'Eliminando...',
     'This CURP or medical record number is already registered in this organization.': 'Esta CURP o número de expediente ya está registrado en esta organización.',
     'The patient could not be registered.': 'No se pudo registrar al paciente.',
     'Patients could not be loaded. Confirm that migration 121 has been applied.': 'No se pudieron cargar los pacientes. Confirma que la migración 121 esté aplicada.',
@@ -2276,6 +2290,8 @@ function HealthAccessLoginPage({
   onGoogleSignIn,
   onNavigateSignUp,
   onNavigateHome,
+  onToggleLanguage,
+  languageCode,
   t,
 }: {
   onSignIn: (email: string, password: string) => Promise<string | null>;
@@ -2283,6 +2299,8 @@ function HealthAccessLoginPage({
   onGoogleSignIn: () => Promise<string | null>;
   onNavigateSignUp: () => void;
   onNavigateHome: () => void;
+  onToggleLanguage: () => void;
+  languageCode: LanguageCode;
   t: Translator;
 }) {
   const [message, setMessage] = React.useState<string | null>(null);
@@ -2315,6 +2333,7 @@ function HealthAccessLoginPage({
     </div>
     <div className="health-access-backdrop">
       <form className="health-access-login" onSubmit={submit}>
+        <button className="health-access-language" type="button" onClick={onToggleLanguage} aria-label={t('Change language')}><Languages size={16} /><span>{languageCode === 'es' ? 'English' : 'Español'}</span></button>
         <button className="health-access-home" type="button" onClick={onNavigateHome} aria-label={t('Back to home')}><X size={18} /></button>
         <div className="health-access-login-heading"><span><Hospital size={25} /></span><div><small>YVIMO HEALTH</small><h2>{t('Sign in to continue')}</h2><p>{t('Use your YVIMO account to access your organization and health applications.')}</p></div></div>
         <label><span>{t('Email address')}</span><div><Mail size={18} /><input type="email" name="email" autoComplete="email" placeholder="name@company.com" required /></div></label>
@@ -6880,6 +6899,8 @@ function App() {
               onSignIn={handleSignIn}
               onMicrosoftSignIn={handleMicrosoftSignIn}
               onGoogleSignIn={handleGoogleSignIn}
+              onToggleLanguage={() => setLanguage((current) => current === 'es' ? 'en' : 'es')}
+              languageCode={language}
               t={t}
             />
           ) : (
