@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabaseClient';
 import { useSupabaseRealtimeRefresh } from '../lib/useSupabaseRealtimeRefresh';
 import type { ProductionOrderStatus } from './mesTypes';
 import { ProductionOrdersWorkspace } from './MesWorkspaces';
+import { DeliveryRiskTimeline, getDaysUntilDelivery } from './DeliveryRiskTimeline';
 import './orderRisks.css';
 
 type OrderRisksWorkspaceProps = {
@@ -69,10 +70,7 @@ function loadSavedFilters(organizationId: string): SavedOrderRiskFilters {
 const activeStatuses: ProductionOrderStatus[] = ['planned', 'released', 'running', 'paused', 'waiting-inspection'];
 
 function daysUntilDue(dueDate: string) {
-  const due = new Date(`${dueDate}T00:00:00`);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return Math.ceil((due.getTime() - today.getTime()) / 86_400_000);
+  return getDaysUntilDelivery(dueDate);
 }
 
 function riskForOrder(order: OrderRiskRow): RiskLevel {
@@ -141,6 +139,7 @@ export function OrderRisksWorkspace({ onNavigate, organizationId }: OrderRisksWo
   const [workCenters, setWorkCenters] = React.useState<WorkCenterRow[]>([]);
   const [selectedStations, setSelectedStations] = React.useState<string[]>(savedFilters.stations);
   const [detailOrderNumber, setDetailOrderNumber] = React.useState('');
+  const [highlightedOrderId, setHighlightedOrderId] = React.useState('');
   const [coatingTrackings, setCoatingTrackings] = React.useState<CoatingTrackingRow[]>([]);
   const [expandedSections, setExpandedSections] = React.useState<Record<string, boolean>>({ overdue: true, high: true, moderate: true, low: true, coating: true });
 
@@ -282,6 +281,22 @@ export function OrderRisksWorkspace({ onNavigate, organizationId }: OrderRisksWo
     window.sessionStorage.setItem(productionOrderDetailsDeepLinkKey, orderNumber);
     setDetailOrderNumber(orderNumber);
   };
+  const focusOrderCard = (orderId: string) => {
+    const order = filteredOrders.find((candidate) => candidate.id === orderId);
+    if (!order) return;
+    const level = riskForOrder(order);
+    setExpandedSections((current) => ({ ...current, [level]: true }));
+    setHighlightedOrderId(orderId);
+    window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+      document.getElementById(`order-risk-card-${orderId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }));
+  };
+  React.useEffect(() => {
+    if (!highlightedOrderId) return undefined;
+    const timeout = window.setTimeout(() => setHighlightedOrderId(''), 3200);
+    return () => window.clearTimeout(timeout);
+  }, [highlightedOrderId]);
+  const timelineOrders = filteredOrders.map((order) => ({ id: order.id, orderNumber: order.order_number, clientName: order.client_name || 'Customer not assigned', deliveryDate: order.due_date, plannedQuantity: order.planned_quantity, completedQuantity: order.completed_quantity, scrapQuantity: order.scrap_quantity, stationLabels: order.stationCodes.map((code) => stationNameByCode.get(code) ? `${stationNameByCode.get(code)} · ${code}` : code), status: order.status, leadTime: leadTimeLabel(order.createdAt), risk: riskForOrder(order) }));
 
   return (
     <div className="order-risks-workspace">
@@ -360,6 +375,8 @@ export function OrderRisksWorkspace({ onNavigate, organizationId }: OrderRisksWo
         </fieldset>
       </section>
 
+      <DeliveryRiskTimeline orders={timelineOrders} loading={loading} onOpenOrder={openOrderDetails} onFocusOrder={focusOrderCard} />
+
       <div className="order-risk-visibility-controls">
         <span>Section visibility</span>
         <button type="button" onClick={() => setAllSectionsExpanded(false)}><EyeOff size={15} /> Hide All</button>
@@ -387,7 +404,8 @@ export function OrderRisksWorkspace({ onNavigate, organizationId }: OrderRisksWo
                   const progress = order.planned_quantity > 0 ? Math.min(100, Math.round((order.completed_quantity / order.planned_quantity) * 100)) : 0;
                   return (
                     <article
-                      className="order-risk-card clickable"
+                      className={`order-risk-card clickable${highlightedOrderId === order.id ? ' timeline-highlighted' : ''}`}
+                      id={`order-risk-card-${order.id}`}
                       key={order.id}
                       role="button"
                       tabIndex={0}
