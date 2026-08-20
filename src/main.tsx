@@ -4613,7 +4613,7 @@ function LoggedDashboardPage({
       {standaloneHealth ? (
         <header className="health-clinical-topbar">
           <button className="health-clinical-brand" type="button" onClick={() => onNavigate('/health')}>
-            <span><Hospital size={21} /></span><strong>YVIMO <em>Health</em></strong>
+            <span><img src="/assets/health/yvimo-health-logo.png" alt="" aria-hidden="true" /></span><strong>YVIMO <em>Health</em></strong>
           </button>
           <div className="health-clinical-actions">
             <button type="button" onClick={onToggleLanguage}><Languages size={17} /> {languageCode === 'es' ? 'ES' : 'EN'}</button>
