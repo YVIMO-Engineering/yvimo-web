@@ -4,12 +4,13 @@ import { supabase } from '../lib/supabaseClient';
 import { useSupabaseRealtimeRefresh } from '../lib/useSupabaseRealtimeRefresh';
 import type { ProductionOrderStatus } from './mesTypes';
 import { ProductionOrdersWorkspace } from './MesWorkspaces';
-import { DeliveryRiskTimeline, getDaysUntilDelivery } from './DeliveryRiskTimeline';
+import { DeliveryRiskTimeline, getDaysUntilDelivery, getDeliveryDistance, type DayCountMode } from './DeliveryRiskTimeline';
 import './orderRisks.css';
 
 type OrderRisksWorkspaceProps = {
   onNavigate: (path: string) => void;
   organizationId: string;
+  languageCode: 'en' | 'es' | 'zh';
 };
 
 type OrderRiskRow = {
@@ -73,20 +74,22 @@ function daysUntilDue(dueDate: string) {
   return getDaysUntilDelivery(dueDate);
 }
 
-function riskForOrder(order: OrderRiskRow): RiskLevel {
-  const days = daysUntilDue(order.due_date);
-  if (days < 0) return 'overdue';
+function riskForOrder(order: OrderRiskRow, mode: DayCountMode = 'calendar', languageCode = 'en'): RiskLevel {
+  const calendarDays = daysUntilDue(order.due_date);
+  if (calendarDays < 0) return 'overdue';
+  const days = getDeliveryDistance(calendarDays, mode, languageCode);
   if (days <= 1) return 'high';
   if (days <= 3) return 'moderate';
   return 'low';
 }
 
-function dueLabel(dueDate: string) {
-  const days = daysUntilDue(dueDate);
-  if (days < 0) return `${Math.abs(days)}d overdue`;
-  if (days === 0) return 'Due today';
-  if (days === 1) return 'Due tomorrow';
-  return `${days} days left`;
+function dueLabel(dueDate: string, mode: DayCountMode = 'calendar', languageCode = 'en') {
+  const calendarDays = daysUntilDue(dueDate);
+  const days = getDeliveryDistance(calendarDays, mode, languageCode);
+  if (calendarDays < 0) return `${Math.abs(days)}d overdue`;
+  if (calendarDays === 0) return 'Due today';
+  if (days === 1) return mode === 'business' ? '1 business day left' : 'Due tomorrow';
+  return `${Math.abs(days)} ${mode === 'business' ? 'business days' : 'days'} left`;
 }
 
 function dueMetricTitle(dueDate: string) {
@@ -125,7 +128,7 @@ const sections: Array<{ level: RiskLevel; title: string; range: string; icon: ty
   { level: 'low', title: 'Low Risk', range: '4 or more days to delivery', icon: ShieldCheck },
 ];
 
-export function OrderRisksWorkspace({ onNavigate, organizationId }: OrderRisksWorkspaceProps) {
+export function OrderRisksWorkspace({ onNavigate, organizationId, languageCode }: OrderRisksWorkspaceProps) {
   const savedFilters = React.useMemo(() => loadSavedFilters(organizationId), [organizationId]);
   const [orders, setOrders] = React.useState<OrderRiskRow[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -140,6 +143,7 @@ export function OrderRisksWorkspace({ onNavigate, organizationId }: OrderRisksWo
   const [selectedStations, setSelectedStations] = React.useState<string[]>(savedFilters.stations);
   const [detailOrderNumber, setDetailOrderNumber] = React.useState('');
   const [highlightedOrderId, setHighlightedOrderId] = React.useState('');
+  const [dayCountMode, setDayCountMode] = React.useState<DayCountMode>('calendar');
   const [coatingTrackings, setCoatingTrackings] = React.useState<CoatingTrackingRow[]>([]);
   const [expandedSections, setExpandedSections] = React.useState<Record<string, boolean>>({ overdue: true, high: true, moderate: true, low: true, coating: true });
 
@@ -228,7 +232,29 @@ export function OrderRisksWorkspace({ onNavigate, organizationId }: OrderRisksWo
     setLoading(false);
   }, [organizationId]);
 
-  React.useEffect(() => { void loadOrders(); }, [loadOrders]);
+  const loadDayCountMode = React.useCallback(async () => {
+    const { data, error: settingsError } = await supabase
+      .from('mes_order_risk_settings')
+      .select('day_count_mode')
+      .eq('organization_id', organizationId)
+      .maybeSingle();
+    if (!settingsError) setDayCountMode(data?.day_count_mode === 'business' ? 'business' : 'calendar');
+  }, [organizationId]);
+
+  const updateDayCountMode = React.useCallback(async (mode: DayCountMode) => {
+    setDayCountMode(mode);
+    const { error: settingsError } = await supabase.from('mes_order_risk_settings').upsert({
+      organization_id: organizationId,
+      day_count_mode: mode,
+      updated_by: (await supabase.auth.getUser()).data.user?.id ?? null,
+    }, { onConflict: 'organization_id' });
+    if (settingsError) {
+      setError(settingsError.message);
+      await loadDayCountMode();
+    }
+  }, [loadDayCountMode, organizationId]);
+
+  React.useEffect(() => { void loadOrders(); void loadDayCountMode(); }, [loadDayCountMode, loadOrders]);
   useSupabaseRealtimeRefresh({
     channelName: `order-risks-${organizationId}`,
     tables: React.useMemo(() => [
@@ -238,8 +264,9 @@ export function OrderRisksWorkspace({ onNavigate, organizationId }: OrderRisksWo
       { table: 'mes_work_centers', filter: `organization_id=eq.${organizationId}` },
       { table: 'mes_customer_reception_items', filter: `organization_id=eq.${organizationId}` },
       { table: 'mes_customer_reception_serial_progress', filter: `organization_id=eq.${organizationId}` },
+      { table: 'mes_order_risk_settings', filter: `organization_id=eq.${organizationId}` },
     ], [organizationId]),
-    onRefresh: loadOrders,
+    onRefresh: () => { void loadOrders(); void loadDayCountMode(); },
   });
 
   React.useEffect(() => {
@@ -254,6 +281,11 @@ export function OrderRisksWorkspace({ onNavigate, organizationId }: OrderRisksWo
   const clientOptions = React.useMemo(() => Array.from(new Set([...orders.map((order) => order.client_name?.trim()), ...coatingTrackings.map((tracking) => tracking.customerName.trim())].filter(Boolean) as string[])).sort((a, b) => a.localeCompare(b)), [coatingTrackings, orders]);
   const normalizedSearch = searchTerm.trim().toLocaleLowerCase();
   const stationNameByCode = React.useMemo(() => new Map(stations.map((station) => [station.code, station.name])), [stations]);
+  const visibleStations = React.useMemo(() => {
+    if (workCenterFilter === 'all') return stations;
+    const selectedWorkCenterId = workCenters.find((center) => center.code === workCenterFilter)?.id;
+    return selectedWorkCenterId ? stations.filter((station) => station.work_center_id === selectedWorkCenterId) : [];
+  }, [stations, workCenterFilter, workCenters]);
   const filteredOrders = orders.filter((order) => {
     const matchesClient = clientFilter === 'all' || order.client_name === clientFilter;
     const matchesWorkCenter = workCenterFilter === 'all' || order.assignedWorkCenter === workCenterFilter;
@@ -284,7 +316,7 @@ export function OrderRisksWorkspace({ onNavigate, organizationId }: OrderRisksWo
   const focusOrderCard = (orderId: string) => {
     const order = filteredOrders.find((candidate) => candidate.id === orderId);
     if (!order) return;
-    const level = riskForOrder(order);
+    const level = riskForOrder(order, dayCountMode, languageCode);
     setExpandedSections((current) => ({ ...current, [level]: true }));
     setHighlightedOrderId(orderId);
     window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
@@ -296,7 +328,7 @@ export function OrderRisksWorkspace({ onNavigate, organizationId }: OrderRisksWo
     const timeout = window.setTimeout(() => setHighlightedOrderId(''), 3200);
     return () => window.clearTimeout(timeout);
   }, [highlightedOrderId]);
-  const timelineOrders = filteredOrders.map((order) => ({ id: order.id, orderNumber: order.order_number, clientName: order.client_name || 'Customer not assigned', deliveryDate: order.due_date, plannedQuantity: order.planned_quantity, completedQuantity: order.completed_quantity, scrapQuantity: order.scrap_quantity, stationLabels: order.stationCodes.map((code) => stationNameByCode.get(code) ? `${stationNameByCode.get(code)} · ${code}` : code), status: order.status, leadTime: leadTimeLabel(order.createdAt), risk: riskForOrder(order) }));
+  const timelineOrders = filteredOrders.map((order) => ({ id: order.id, orderNumber: order.order_number, clientName: order.client_name || 'Customer not assigned', deliveryDate: order.due_date, plannedQuantity: order.planned_quantity, completedQuantity: order.completed_quantity, scrapQuantity: order.scrap_quantity, stationLabels: order.stationCodes.map((code) => stationNameByCode.get(code) ? `${stationNameByCode.get(code)} · ${code}` : code), status: order.status, leadTime: leadTimeLabel(order.createdAt), risk: riskForOrder(order, dayCountMode, languageCode) }));
 
   return (
     <div className="order-risks-workspace">
@@ -346,7 +378,7 @@ export function OrderRisksWorkspace({ onNavigate, organizationId }: OrderRisksWo
             {workCenterMenuOpen ? (
               <div className="order-risks-dropdown-menu" role="listbox">
                 {[{ id: 'all', code: 'all', name: 'All work centers' }, ...workCenters].map((center) => (
-                  <button type="button" role="option" aria-selected={workCenterFilter === center.code} key={center.code} onClick={() => { setWorkCenterFilter(center.code); setWorkCenterMenuOpen(false); }}>
+                  <button type="button" role="option" aria-selected={workCenterFilter === center.code} key={center.code} onClick={() => { setWorkCenterFilter(center.code); setSelectedStations([]); setWorkCenterMenuOpen(false); }}>
                     <span>{center.name}{center.code !== 'all' ? ` · ${center.code}` : ''}</span>{workCenterFilter === center.code ? <Check size={16} /> : null}
                   </button>
                 ))}
@@ -362,20 +394,20 @@ export function OrderRisksWorkspace({ onNavigate, organizationId }: OrderRisksWo
         <fieldset className="order-risks-station-filters">
           <legend>Stations</legend>
           <div>
-            {stations.map((station) => (
+            {visibleStations.map((station) => (
               <label key={station.code}>
                 <input type="checkbox" checked={selectedStations.includes(station.code)} onChange={() => toggleStation(station.code)} />
                 <span className="order-risks-checkbox"><Check size={13} /></span>
                 <span><strong>{station.name}</strong><small>{station.code}</small></span>
               </label>
             ))}
-            {!loading && stations.length === 0 ? <em>No stations configured.</em> : null}
+            {!loading && visibleStations.length === 0 ? <em>{workCenterFilter === 'all' ? 'No stations configured.' : 'No stations configured for this work center.'}</em> : null}
           </div>
           {selectedStations.length ? <button type="button" onClick={() => setSelectedStations([])}>Clear stations</button> : null}
         </fieldset>
       </section>
 
-      <DeliveryRiskTimeline orders={timelineOrders} loading={loading} onOpenOrder={openOrderDetails} onFocusOrder={focusOrderCard} />
+      <DeliveryRiskTimeline orders={timelineOrders} loading={loading} languageCode={languageCode} dayCountMode={dayCountMode} onDayCountModeChange={(mode) => void updateDayCountMode(mode)} onOpenOrder={openOrderDetails} onFocusOrder={focusOrderCard} />
 
       <div className="order-risk-visibility-controls">
         <span>Section visibility</span>
@@ -385,7 +417,7 @@ export function OrderRisksWorkspace({ onNavigate, organizationId }: OrderRisksWo
 
       <main className="order-risk-sections" aria-busy={loading}>
         {sections.map((section) => {
-          const sectionOrders = filteredOrders.filter((order) => riskForOrder(order) === section.level);
+          const sectionOrders = filteredOrders.filter((order) => riskForOrder(order, dayCountMode, languageCode) === section.level);
           const Icon = section.icon;
           return (
             <section className={`order-risk-section ${section.level}`} key={section.level}>
@@ -422,7 +454,7 @@ export function OrderRisksWorkspace({ onNavigate, organizationId }: OrderRisksWo
                         <span><small>Production order</small><strong>#{order.order_number}</strong></span>
                         <div className="order-risk-card-badges">
                           <span className={`mes-status-badge status-${order.status}`}>{statusLabel(order.status)}</span>
-                          <span className="order-risk-due-metric"><small>{dueMetricTitle(order.due_date)}</small><strong>{dueLabel(order.due_date)}</strong></span>
+                          <span className="order-risk-due-metric"><small>{dueMetricTitle(order.due_date)}</small><strong>{dueLabel(order.due_date, dayCountMode, languageCode)}</strong></span>
                           <span className="order-risk-lead-time"><small>Lead Time</small><strong>{leadTimeLabel(order.createdAt)}</strong></span>
                         </div>
                       </div>

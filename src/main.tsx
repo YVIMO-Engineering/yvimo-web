@@ -4013,7 +4013,7 @@ function LoggedDashboardPage({
       return manufacturingOrganizationRequiredPanel;
     }
     if (activePath === '/workspace/manufacturing-ops/intelligence/order-risks') {
-      return <OrderRisksWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} />;
+      return <OrderRisksWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} languageCode={languageCode} />;
     }
     if (activePath === '/workspace/manufacturing-ops/intelligence/import-costing') {
       return <ImportCostingWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} />;
