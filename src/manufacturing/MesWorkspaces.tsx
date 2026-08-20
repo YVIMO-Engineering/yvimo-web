@@ -8,6 +8,7 @@ import { supabase } from '../lib/supabaseClient';
 import { useSupabaseRealtimeRefresh } from '../lib/useSupabaseRealtimeRefresh';
 import type { ProductionOrder, ProductionOrderManufacturingType, ProductionOrderPriority, ProductionOrderStatus, QualityCheckLimit, QualityMeasurementUnit, QualityPieceType, WorkCenterStatus } from './mesTypes';
 import { qualityInspectionsByPieceType, qualityPieceTypeLabels, qualityPieceTypes, qualityReportOnlyInspection } from './qualityInspectionConfig';
+import { getDayCountBetween, getElapsedHoursBetween, type DayCountMode } from './DeliveryRiskTimeline';
 import './productionOrders.css';
 import './productionOrdersDateFilter.css';
 import './productionOrdersDateFilterResponsive.css';
@@ -1900,12 +1901,15 @@ export function ProductionOrderDetailsModal({
   const [releaseCode, setReleaseCode] = React.useState('');
   const [releaseError, setReleaseError] = React.useState('');
   const [releaseSaving, setReleaseSaving] = React.useState(false);
-  const [stationName, setStationName] = React.useState(order.assignedStation || 'Not assigned');
+  const [stationNames, setStationNames] = React.useState<string[]>(order.assignedStation ? [order.assignedStation] : []);
+  const stationName = stationNames.join(' · ') || 'Not assigned';
   const [associatedReception, setAssociatedReception] = React.useState<{
     id: string;
     voucherNumber: string;
     sentAt: string | null;
+    createdAt: string;
   } | null>(null);
+  const [leadTimeDayCountMode, setLeadTimeDayCountMode] = React.useState<DayCountMode>('calendar');
   const [coatingTracking, setCoatingTracking] = React.useState<ProductionOrderCoatingTracking | null>(null);
   const [coatingLoading, setCoatingLoading] = React.useState(true);
   const qualityPieces = details.pieces.filter((piece) => getProductionOrderDetailQualityInspection(piece) || getProductionOrderDetailQualityMeasurements(piece).length > 0 || getProductionOrderDetailQualityDocuments(piece).length > 0);
@@ -1914,9 +1918,6 @@ export function ProductionOrderDetailsModal({
   React.useEffect(() => {
     let active = true;
     const loadOrderSummaryContext = async () => {
-      const stationRequest = order.assignedStation
-        ? supabase.from('mes_work_center_stations').select('name').eq('organization_id', organizationId).eq('code', order.assignedStation).limit(1).maybeSingle()
-        : Promise.resolve({ data: null, error: null });
       const receptionRequest = supabase
         .from('mes_customer_reception_items')
         .select('reception_voucher_id, sent_at')
@@ -1924,10 +1925,34 @@ export function ProductionOrderDetailsModal({
         .eq('production_order_id', order.id)
         .limit(1)
         .maybeSingle();
-      const [stationResult, receptionResult] = await Promise.all([stationRequest, receptionRequest]);
+      const dayCountModeRequest = supabase
+        .from('mes_order_risk_settings')
+        .select('day_count_mode')
+        .eq('organization_id', organizationId)
+        .maybeSingle();
+      const stationCodes = new Set<string>();
+      if (order.manufacturingType === 'multi-step') {
+        const { data: serialStationData } = await supabase
+          .from('mes_production_serials')
+          .select('assigned_station, compatible_stations')
+          .eq('organization_id', organizationId)
+          .eq('production_order_id', order.id);
+        (serialStationData ?? []).forEach((serial) => {
+          if (serial.assigned_station) stationCodes.add(serial.assigned_station);
+          (serial.compatible_stations ?? []).forEach((code: string) => stationCodes.add(code));
+        });
+      } else if (order.assignedStation) {
+        stationCodes.add(order.assignedStation);
+      }
+      if (stationCodes.size === 0 && order.assignedStation) stationCodes.add(order.assignedStation);
+      const stationRequest = stationCodes.size
+        ? supabase.from('mes_work_center_stations').select('code, name').eq('organization_id', organizationId).in('code', [...stationCodes])
+        : Promise.resolve({ data: [], error: null });
+      const [stationResult, receptionResult, dayCountModeResult] = await Promise.all([stationRequest, receptionRequest, dayCountModeRequest]);
       if (!active) return;
-      const resolvedStationName = (stationResult.data as { name?: string } | null)?.name?.trim();
-      setStationName(resolvedStationName || order.assignedStation || 'Not assigned');
+      setLeadTimeDayCountMode(dayCountModeResult.data?.day_count_mode === 'business' ? 'business' : 'calendar');
+      const stationNameByCode = new Map(((stationResult.data ?? []) as Array<{ code: string; name: string }>).map((station) => [station.code, station.name.trim()]));
+      setStationNames([...stationCodes].map((code) => stationNameByCode.get(code) ? `${stationNameByCode.get(code)} · ${code}` : code));
       const receptionItem = receptionResult.data as { reception_voucher_id?: string; sent_at?: string | null } | null;
       if (receptionResult.error || !receptionItem?.reception_voucher_id) {
         setAssociatedReception(null);
@@ -1935,23 +1960,24 @@ export function ProductionOrderDetailsModal({
       }
       const { data: receptionData, error: receptionError } = await supabase
         .from('mes_customer_reception_vouchers')
-        .select('id, voucher_number')
+        .select('id, voucher_number, created_at')
         .eq('organization_id', organizationId)
         .eq('id', receptionItem.reception_voucher_id)
         .maybeSingle();
       if (!active) return;
-      const reception = receptionData as { id?: string; voucher_number?: string } | null;
+      const reception = receptionData as { id?: string; voucher_number?: string; created_at?: string } | null;
       setAssociatedReception(!receptionError && reception?.id ? {
         id: reception.id,
         voucherNumber: reception.voucher_number?.trim() || 'Reception voucher',
         sentAt: receptionItem.sent_at ?? null,
+        createdAt: reception.created_at ?? '',
       } : null);
     };
     void loadOrderSummaryContext();
     return () => {
       active = false;
     };
-  }, [organizationId, order.id, order.assignedStation]);
+  }, [organizationId, order.id, order.assignedStation, order.manufacturingType]);
   React.useEffect(() => {
     let active = true;
     const loadCoatingTracking = async () => {
@@ -2013,17 +2039,16 @@ export function ProductionOrderDetailsModal({
     return `${Math.floor(hours / 24)}d ${Math.floor(hours % 24)}h`;
   };
   const createdDate = order.createdAt || '';
-  const leadTimeEnd = associatedReception?.sentAt || new Date().toISOString();
-  const leadTimeDays = (() => {
-    if (!createdDate) return null;
-    const start = new Date(createdDate);
-    const end = new Date(leadTimeEnd);
-    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
-    const startDay = Date.UTC(start.getFullYear(), start.getMonth(), start.getDate());
-    const endDay = Date.UTC(end.getFullYear(), end.getMonth(), end.getDate());
-    return Math.max(0, Math.round((endDay - startDay) / 86_400_000));
-  })();
-  const leadTimeLabel = leadTimeDays === null ? 'Not available' : `${leadTimeDays} day${leadTimeDays === 1 ? '' : 's'}`;
+  const leadTimeStart = associatedReception?.createdAt || createdDate;
+  const leadTimeEnd = associatedReception?.sentAt || new Date();
+  const leadTimeDays = leadTimeStart ? getDayCountBetween(leadTimeStart, leadTimeEnd, leadTimeDayCountMode) : null;
+  const leadTimeHours = leadTimeStart ? getElapsedHoursBetween(leadTimeStart, leadTimeEnd, leadTimeDayCountMode) : null;
+  const leadTimeLabel = leadTimeDays === null ? 'Not available' : `${leadTimeDays} ${leadTimeDayCountMode === 'business' ? 'business day' : 'day'}${leadTimeDays === 1 ? '' : 's'}`;
+  const leadTimeHoursLabel = leadTimeHours === null ? 'Hours not available' : `${leadTimeHours.toLocaleString(undefined, { maximumFractionDigits: 1 })} ${leadTimeDayCountMode === 'business' ? 'business ' : ''}hours`;
+  const receptionStartDate = leadTimeStart ? new Date(leadTimeStart) : null;
+  const dueTimeLabel = receptionStartDate && !Number.isNaN(receptionStartDate.getTime())
+    ? receptionStartDate.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+    : 'Time not available';
   const subReceptionStatus = associatedReception?.sentAt
     ? 'Sent'
     : order.status === 'completed'
@@ -2252,11 +2277,16 @@ export function ProductionOrderDetailsModal({
         ['Scrap', order.scrapQuantity.toLocaleString()],
         ['Time Spent', formatCycleDuration(details.timeSpentMs)],
         ['Work Center', order.assignedWorkCenter || 'Not assigned'],
-        ['Station', stationName],
+        ['Operation Type', order.manufacturingType === 'multi-step' ? 'Multi step' : 'Single step'],
+        ['Stations Used', stationName],
         ['Created', createdDate ? formatDate(createdDate.slice(0, 10)) : 'Not available'],
-        ['Due', formatDate(order.dueDate)],
-        ['Lead Time', leadTimeLabel],
+        ['Due', `${formatDate(order.dueDate)} · ${dueTimeLabel}`],
+        ['Lead Time', `${leadTimeLabel} · ${leadTimeHoursLabel}`],
+        ['Lead Time Basis', leadTimeDayCountMode === 'business' ? 'Business days' : 'Calendar days'],
+        ['Lead Time Started', leadTimeStart ? formatTimestamp(leadTimeStart) : 'Not available'],
+        ['Lead Time Source', associatedReception?.createdAt ? 'Reception voucher creation' : 'Production order creation fallback'],
         ['Reception', associatedReception?.voucherNumber || 'Not associated'],
+        ['Reception Created', associatedReception?.createdAt ? formatTimestamp(associatedReception.createdAt) : 'Order creation fallback'],
         ['Sub-reception Status', associatedReception ? subReceptionStatus : 'Not associated'],
       ];
       const summaryColumnWidth = contentWidth / 3;
@@ -2364,12 +2394,16 @@ export function ProductionOrderDetailsModal({
           </article>
           <article className="time-spent"><span>Time Spent</span><strong>{details.loading ? 'Calculating...' : formatCycleDuration(details.timeSpentMs)}</strong></article>
           <article className="work-center"><span>Work Center</span><strong>{order.assignedWorkCenter || 'Not assigned'}</strong></article>
-          <article className="station"><span>Station</span><strong>{stationName}</strong></article>
+          <article className="station">
+            <span>Station</span>
+            <div className="production-order-station-heading"><em>{order.manufacturingType === 'multi-step' ? 'Multi step' : 'Single step'}</em><small>{stationNames.length} station{stationNames.length === 1 ? '' : 's'}</small></div>
+            <div className="production-order-station-list">{stationNames.length ? stationNames.map((name) => <strong key={name}>{name}</strong>) : <strong>Not assigned</strong>}</div>
+          </article>
           <article className="schedule">
             <span>Order Timeline</span>
             <div>
               <span><small>Created</small><strong>{createdDate ? formatDate(createdDate.slice(0, 10)) : 'N/A'}</strong></span>
-              <span><small>Due</small><strong>{formatDate(order.dueDate)}</strong></span>
+              <span><small>Due</small><strong>{formatDate(order.dueDate)}</strong><em className="order-detail-secondary-time">{dueTimeLabel}</em></span>
               <span className="lead-time-value">
                 <small>Lead Time</small>
                 <strong>
@@ -2378,6 +2412,7 @@ export function ProductionOrderDetailsModal({
                     ? <CheckCircle2 className="complete" size={17} aria-label="Lead time completed" />
                     : <LoaderCircle className="running" size={17} aria-label="Lead time running" />}
                 </strong>
+                <em className="order-detail-secondary-time">{leadTimeHoursLabel}</em>
               </span>
             </div>
           </article>
@@ -2402,6 +2437,11 @@ export function ProductionOrderDetailsModal({
                 <strong className={`sub-reception-status ${associatedReception ? subReceptionStatusClass : 'not-associated'}`}>
                   {associatedReception ? subReceptionStatus : 'N/A'}
                 </strong>
+              </span>
+              <span>
+                <small>Reception created</small>
+                <strong>{associatedReception?.createdAt ? formatDate(associatedReception.createdAt.slice(0, 10)) : createdDate ? formatDate(createdDate.slice(0, 10)) : 'N/A'}</strong>
+                <em>{associatedReception?.createdAt ? new Date(associatedReception.createdAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : 'Order creation fallback'}</em>
               </span>
             </div>
           </article>
@@ -5421,17 +5461,20 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, language
           .select('code, current_job')
           .eq('organization_id', organizationId)
           .eq('current_job', selectedOrder.orderNumber)
-          .maybeSingle(),
+          .order('code', { ascending: true }),
       ]);
 
       if (serialError) throw serialError;
-      if (traceabilityError) throw traceabilityError;
-      if (qualityInspectionError) throw qualityInspectionError;
-      if (qualityMeasurementError) throw qualityMeasurementError;
-      if (qualityDocumentError) throw qualityDocumentError;
-      if (pieceEvidenceError) throw pieceEvidenceError;
-      if (statusCycleError) throw statusCycleError;
-      if (stationAssignmentError) throw stationAssignmentError;
+      const optionalDetailErrors = [
+        ['traceability', traceabilityError],
+        ['quality inspections', qualityInspectionError],
+        ['quality measurements', qualityMeasurementError],
+        ['quality documents', qualityDocumentError],
+        ['piece evidence', pieceEvidenceError],
+        ['status cycles', statusCycleError],
+        ['station assignments', stationAssignmentError],
+      ].filter((entry): entry is [string, NonNullable<typeof traceabilityError>] => Boolean(entry[1]));
+      optionalDetailErrors.forEach(([source, detailError]) => console.warn(`Unable to load production order ${source}`, detailError));
 
       const serialRows = (serialData ?? []) as ProductionOrderDetailSerialRow[];
       const traceabilityRows = (traceabilityData ?? []) as ProductionOrderDetailTraceabilityRow[];
@@ -5452,11 +5495,13 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, language
       const setupTimeBySerial = new Map<string, number>();
       const activeStatusBySerial = new Map<string, string>();
       const serialsWithCycles = new Set<string>();
-      const isActiveStationOrder = stationAssignmentData?.current_job === selectedOrder.orderNumber;
+      const activeStationAssignments = stationAssignmentError ? [] : (stationAssignmentData ?? []);
+      const activeStationCodes = new Set(activeStationAssignments.map((station) => station.code));
+      const isActiveStationOrder = activeStationAssignments.length > 0;
       const relevantStatusCycles = (statusCycleData ?? []).filter((cycle) => (
         cycle.production_order_id === selectedOrder.id
         || cycle.order_number === selectedOrder.orderNumber
-        || (!cycle.ended_at && isActiveStationOrder && cycle.station_code === stationAssignmentData?.code)
+        || (!cycle.ended_at && isActiveStationOrder && activeStationCodes.has(cycle.station_code))
       ));
       const activeFallbackSerial = serialRows.find((serial) => !serial.result)?.serial_number ?? '';
       const activeFallbackSequence = serialRows.find((serial) => !serial.result)?.piece_sequence ?? 1;

@@ -54,6 +54,32 @@ export function getDeliveryDistance(calendarDays: number, mode: DayCountMode, la
   return workingDays;
 }
 
+export function getDayCountBetween(startValue: string, endValue: string | Date, mode: DayCountMode, languageCode = 'en') {
+  const hours = getElapsedHoursBetween(startValue, endValue, mode, languageCode);
+  return hours === null ? null : Math.floor(hours / 24);
+}
+
+export function getElapsedHoursBetween(startValue: string, endValue: string | Date, mode: DayCountMode, languageCode = 'en') {
+  const start = new Date(startValue);
+  const end = endValue instanceof Date ? endValue : new Date(endValue);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+  if (end <= start) return 0;
+  if (mode === 'calendar') return (end.getTime() - start.getTime()) / 3_600_000;
+  let workingMilliseconds = 0;
+  const cursor = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+  const endDay = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+  while (cursor <= endDay) {
+    const nextDay = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + 1);
+    if (!nonWorkingDay(cursor, languageCode)) {
+      const intervalStart = Math.max(start.getTime(), cursor.getTime());
+      const intervalEnd = Math.min(end.getTime(), nextDay.getTime());
+      workingMilliseconds += Math.max(0, intervalEnd - intervalStart);
+    }
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return workingMilliseconds / 3_600_000;
+}
+
 function DeliveryTimelineMarker({ order, range, mode, languageCode, onOpen }: { order: DeliveryTimelineOrder; range: TimelineRange; mode: DayCountMode; languageCode: string; onOpen: () => void }) {
   const calendarDays = getDaysUntilDelivery(order.deliveryDate);
   const days = getDeliveryDistance(calendarDays, mode, languageCode);

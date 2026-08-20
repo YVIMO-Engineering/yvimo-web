@@ -11488,26 +11488,24 @@ body.work-center-map-expanded .logged-workspace {
 }
 
 .production-order-details-summary article.status,
-.production-order-details-summary article.priority,
-.production-order-details-summary article.work-center,
-.production-order-details-summary article.station {
-  grid-column: span 4;
-}
+.production-order-details-summary article.priority { grid-column: span 3; }
+.production-order-details-summary article.work-center { grid-column: span 3; }
+.production-order-details-summary article.station { grid-column: span 5; }
 
 .production-order-details-summary article.quantity {
-  grid-column: span 10;
+  grid-column: span 11;
 }
 
 .production-order-details-summary article.time-spent {
-  grid-column: span 6;
+  grid-column: span 7;
 }
 
 .production-order-details-summary article.schedule {
-  grid-column: span 9;
+  grid-column: span 8;
 }
 
 .production-order-details-summary article.reception {
-  grid-column: span 7;
+  grid-column: span 8;
 }
 
 .production-order-details-summary article {
@@ -11563,6 +11561,12 @@ body.work-center-map-expanded .logged-workspace {
   --order-detail-soft: #f5f3ff;
 }
 
+.production-order-station-heading { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.production-order-station-heading em { border: 1px solid #c4b5fd; border-radius: 6px; padding: 4px 7px; background: #fff; color: #6d28d9; font-size: .62rem; font-style: normal; font-weight: 900; letter-spacing: .045em; text-transform: uppercase; }
+.production-order-station-heading small { color: #7c6aa0; font-size: .62rem; font-weight: 800; }
+.production-order-station-list { display: flex; flex-wrap: wrap; align-content: flex-start; gap: 5px; }
+.production-order-station-list strong { border: 1px solid rgba(124,58,237,.18); border-radius: 6px; padding: 4px 6px; background: rgba(255,255,255,.72); color: #302449; font-size: .68rem; line-height: 1.15; }
+
 .production-order-details-summary article.schedule {
   --order-detail-accent: #c2410c;
   --order-detail-soft: #fff7ed;
@@ -11612,7 +11616,7 @@ body.work-center-map-expanded .logged-workspace {
 }
 
 .production-order-details-summary article.reception > div {
-  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .production-order-details-summary article.quantity > div > span,
@@ -11705,6 +11709,8 @@ body.work-center-map-expanded .logged-workspace {
   align-items: center;
   gap: 7px;
 }
+
+.production-order-details-summary .order-detail-secondary-time { color: #6b7280; font-size: .6rem; font-style: normal; font-weight: 800; letter-spacing: 0; text-transform: none; }
 
 .production-order-details-summary article.schedule .lead-time-value svg.running {
   flex: 0 0 auto;
