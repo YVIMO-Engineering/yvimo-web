@@ -103,9 +103,11 @@ export function HealthPatientsWorkspace({ organizationId, organizationName, onNa
   const [deletePassword, setDeletePassword] = React.useState('');
   const [deleteError, setDeleteError] = React.useState('');
 
-  const loadPatients = React.useCallback(async () => {
-    setLoading(true);
-    setLoadError('');
+  const loadPatients = React.useCallback(async (silent = false) => {
+    if (!silent) {
+      setLoading(true);
+      setLoadError('');
+    }
     const { data, error } = await supabase
       .from('health_patients')
       .select('id, organization_id, curp, medical_record_number, full_name, sex, birth_date, created_at')
@@ -113,15 +115,48 @@ export function HealthPatientsWorkspace({ organizationId, organizationName, onNa
       .order('full_name', { ascending: true });
     if (error) {
       console.warn('Unable to load patients', error);
-      setLoadError('Patients could not be loaded. Confirm that migration 121 has been applied.');
-      setPatients([]);
+      if (!silent) {
+        setLoadError('Patients could not be loaded. Confirm that migration 121 has been applied.');
+        setPatients([]);
+      }
     } else {
       setPatients((data ?? []) as PatientRow[]);
+      setLoadError('');
     }
-    setLoading(false);
+    if (!silent) setLoading(false);
   }, [organizationId]);
 
   React.useEffect(() => { void loadPatients(); }, [loadPatients]);
+
+  React.useEffect(() => {
+    let refreshTimer: number | undefined;
+    const refreshSilently = () => { void loadPatients(true); };
+    const scheduleRefresh = () => {
+      if (refreshTimer) window.clearTimeout(refreshTimer);
+      refreshTimer = window.setTimeout(refreshSilently, 250);
+    };
+    const pollingTimer = window.setInterval(refreshSilently, 15_000);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') refreshSilently();
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    const patientsChannel = supabase
+      .channel(`health-patients:${organizationId}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'health_patients',
+        filter: `organization_id=eq.${organizationId}`,
+      }, scheduleRefresh)
+      .subscribe();
+
+    return () => {
+      if (refreshTimer) window.clearTimeout(refreshTimer);
+      window.clearInterval(pollingTimer);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      void supabase.removeChannel(patientsChannel);
+    };
+  }, [loadPatients, organizationId]);
 
   const normalizedSearch = searchTerm.trim().toLocaleLowerCase();
   const filteredPatients = normalizedSearch
