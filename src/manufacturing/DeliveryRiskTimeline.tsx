@@ -44,6 +44,21 @@ function nonWorkingDay(date: Date, languageCode: string) {
   return '';
 }
 
+export function addLeadTimeDays(start: Date, days: number, mode: DayCountMode, languageCode = 'en') {
+  const result = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+  const normalizedDays = Math.max(0, Math.floor(days));
+  if (mode === 'calendar') {
+    result.setDate(result.getDate() + normalizedDays);
+    return result;
+  }
+  let remaining = normalizedDays;
+  while (remaining > 0) {
+    result.setDate(result.getDate() + 1);
+    if (!nonWorkingDay(result, languageCode)) remaining -= 1;
+  }
+  return result;
+}
+
 export function getDeliveryDistance(calendarDays: number, mode: DayCountMode, languageCode: string) {
   if (mode === 'calendar' || calendarDays === 0) return calendarDays;
   const direction = calendarDays > 0 ? 1 : -1;

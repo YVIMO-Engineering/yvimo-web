@@ -3931,8 +3931,8 @@ function LoggedDashboardPage({
     || activePath.startsWith('/workspace/manufacturing-ops/intelligence/analysis-tool/');
   const activeRevenueSection = activePath.endsWith('/income-flow')
     ? 'income-flow'
-    : activePath.endsWith('/optimization')
-      ? 'optimization'
+    : activePath.endsWith('/balances')
+      ? 'balances'
       : 'price-misalignment';
   const supplierContextTabs: Array<{
     value: SupplierContextTab;
@@ -3973,7 +3973,6 @@ function LoggedDashboardPage({
     { value: 'assets-equipment', label: 'Assets & Equipment', path: '/workspace/manufacturing-ops/mes/clients/assets-equipment', icon: Wrench },
     { value: 'receptions', label: 'Receptions', path: '/workspace/manufacturing-ops/mes/clients/receptions', icon: PackageCheck },
     { value: 'deliveries-returns', label: 'Deliveries & Returns', path: '/workspace/manufacturing-ops/mes/clients/deliveries-returns', icon: Truck, disabled: true },
-    { value: 'balances', label: 'Balances', path: '/workspace/manufacturing-ops/mes/clients/balances', icon: Calculator },
     { value: 'docs-vouchers', label: 'Docs & Vouchers', path: '/workspace/manufacturing-ops/mes/clients/docs-vouchers', icon: FileText, disabled: true },
   ];
   const activeClientsContextTab = clientsContextTabs.find((tab) => activePath === tab.path && !tab.disabled)?.value ?? 'customers';
@@ -4019,6 +4018,9 @@ function LoggedDashboardPage({
       return <ImportCostingWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} />;
     }
     if (isRevenueOpportunitySection) {
+      if (activeRevenueSection === 'balances') {
+        return <CustomerOperationsWorkspace onNavigate={onNavigate} activeTab="balances" organizationId={activeManufacturingOrganizationId} languageCode={languageCode} hostSection="financial-status" />;
+      }
       return <RevenueOpportunityWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} activeSection={activeRevenueSection} />;
     }
     if (isAnalysisToolSection) {
@@ -4860,8 +4862,9 @@ function LoggedDashboardPage({
           <div><span>OPS INTELLIGENCE</span><strong>Financial Status</strong></div>
           <nav>
             <button type="button" className={activeRevenueSection === 'price-misalignment' ? 'active' : ''} onClick={() => onNavigate('/workspace/manufacturing-ops/intelligence/revenue-opportunity/price-misalignment')}><CircleDollarSign size={18} /><span>Price Misalignment</span></button>
-            <button type="button" className={activeRevenueSection === 'optimization' ? 'active' : ''} onClick={() => onNavigate('/workspace/manufacturing-ops/intelligence/revenue-opportunity/optimization')}><TrendingUp size={18} /><span>Revenue Optimization</span></button>
+            <button type="button" className="disabled" disabled aria-disabled="true"><TrendingUp size={18} /><span>Revenue Optimization</span></button>
             <button type="button" className={activeRevenueSection === 'income-flow' ? 'active' : ''} onClick={() => onNavigate('/workspace/manufacturing-ops/intelligence/revenue-opportunity/income-flow')}><BarChart3 size={18} /><span>Income Flow</span></button>
+            <button type="button" className={activeRevenueSection === 'balances' ? 'active' : ''} onClick={() => onNavigate('/workspace/manufacturing-ops/intelligence/revenue-opportunity/balances')}><Calculator size={18} /><span>Balances</span></button>
           </nav>
         </aside>
       ) : null}

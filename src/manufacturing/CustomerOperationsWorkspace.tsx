@@ -99,6 +99,7 @@ type CustomerRecord = {
   phone: string;
   address: string;
   paymentTerms: string;
+  leadTimeDays: number;
   baseCurrency: SupportedCurrency;
   notes: string;
   status: CustomerStatus;
@@ -117,6 +118,7 @@ type CustomerRow = {
   phone: string;
   address: string;
   payment_terms: string;
+  lead_time_days: number;
   base_currency: SupportedCurrency;
   notes: string;
   status: CustomerStatus;
@@ -133,6 +135,7 @@ type CustomerFormState = {
   phone: string;
   address: string;
   paymentTerms: string;
+  leadTimeDays: string;
   baseCurrency: SupportedCurrency;
   notes: string;
   status: CustomerStatus;
@@ -215,6 +218,7 @@ type CustomerOperationsWorkspaceProps = {
   activeTab: ClientsContextTab;
   organizationId: string;
   languageCode: ClientsLanguageCode;
+  hostSection?: 'clients' | 'financial-status';
 };
 
 const emptyCustomerForm: CustomerFormState = {
@@ -226,6 +230,7 @@ const emptyCustomerForm: CustomerFormState = {
   phone: '',
   address: '',
   paymentTerms: 'Net 30',
+  leadTimeDays: '15',
   baseCurrency: 'MXN',
   notes: '',
   status: 'active',
@@ -292,6 +297,7 @@ const customerSelectColumns = [
   'phone',
   'address',
   'payment_terms',
+  'lead_time_days',
   'base_currency',
   'notes',
   'status',
@@ -442,6 +448,7 @@ function mapCustomerRow(row: CustomerRow): CustomerRecord {
     phone: row.phone,
     address: row.address,
     paymentTerms: row.payment_terms,
+    leadTimeDays: Number(row.lead_time_days) || 15,
     baseCurrency: row.base_currency,
     notes: row.notes,
     status: row.status,
@@ -460,6 +467,7 @@ function customerToForm(customer: CustomerRecord): CustomerFormState {
     phone: customer.phone,
     address: customer.address,
     paymentTerms: customer.paymentTerms,
+    leadTimeDays: String(customer.leadTimeDays),
     baseCurrency: customer.baseCurrency,
     notes: customer.notes,
     status: customer.status,
@@ -639,8 +647,10 @@ function mapAssetRow(row: CustomerAssetRow): CustomerAssetRecord {
   };
 }
 
-export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizationId, languageCode }: CustomerOperationsWorkspaceProps) {
-  const page = clientsPageContent[activeTab];
+export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizationId, languageCode, hostSection = 'clients' }: CustomerOperationsWorkspaceProps) {
+  const page = hostSection === 'financial-status' && activeTab === 'balances'
+    ? { ...clientsPageContent.balances, eyebrow: 'OPS INTELLIGENCE / FINANCE' }
+    : clientsPageContent[activeTab];
   const restoredAssetView = React.useMemo(() => readAssetRegistryViewState(organizationId), [organizationId]);
   const [customers, setCustomers] = React.useState<CustomerRecord[]>([]);
   const [assetCustomerFilter, setAssetCustomerFilter] = React.useState(restoredAssetView.customerFilter);
@@ -691,6 +701,7 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
   const [formMode, setFormMode] = React.useState<'create' | 'edit' | null>(null);
   const [customerToDelete, setCustomerToDelete] = React.useState<CustomerRecord | null>(null);
   const [selectedCustomer, setSelectedCustomer] = React.useState<CustomerRecord | null>(null);
+  const [customerSearch, setCustomerSearch] = React.useState('');
   const [customerForm, setCustomerForm] = React.useState<CustomerFormState>(emptyCustomerForm);
   const [sameLegalName, setSameLegalName] = React.useState(false);
   const [sameContactName, setSameContactName] = React.useState(false);
@@ -1086,6 +1097,7 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
       phone: customerForm.phone.trim(),
       address: customerForm.address.trim(),
       payment_terms: customerForm.paymentTerms.trim(),
+      lead_time_days: Math.max(0, Math.min(3650, Number.parseInt(customerForm.leadTimeDays, 10) || 15)),
       base_currency: customerForm.baseCurrency,
       notes: customerForm.notes.trim(),
       status: customerForm.status,
@@ -1737,6 +1749,20 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
     }
   };
   const activeCustomers = customers.filter((customer) => customer.status === 'active').length;
+  const normalizedCustomerSearch = customerSearch.trim().toLocaleLowerCase();
+  const filteredCustomers = normalizedCustomerSearch
+    ? customers.filter((customer) => [
+      customer.customerName,
+      customer.legalName,
+      customer.contactName,
+      customer.email,
+      customer.phone,
+      customer.taxId,
+      customer.address,
+      customer.paymentTerms,
+      customer.notes,
+    ].some((value) => value.toLocaleLowerCase().includes(normalizedCustomerSearch)))
+    : customers;
   const addressSuggestionMenu = (showAddressSuggestions || addressSuggestionsLoading)
     && (addressSuggestions.length > 0 || addressSuggestionsLoading)
     && addressSuggestionPosition
@@ -1764,9 +1790,9 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
     <section className="mes-workspace-panel clients-operations-workspace">
       {addressSuggestionMenu}
       <div className={`mes-screen-header${activeTab === 'balances' ? ' client-balances-screen-header' : ''}`}>
-        <button className="academy-back-button engineering-back-button mes-workspace-back" type="button" onClick={() => onNavigate('/workspace/manufacturing-ops/mes')}>
+        <button className="academy-back-button engineering-back-button mes-workspace-back" type="button" onClick={() => onNavigate(hostSection === 'financial-status' ? '/workspace/manufacturing-ops/intelligence' : '/workspace/manufacturing-ops/mes')}>
           <ArrowLeft size={17} />
-          MES Applications
+          {hostSection === 'financial-status' ? 'Ops Intelligence' : 'MES Applications'}
         </button>
         <div className="mes-workspace-heading">
           <span className="eyebrow">{page.eyebrow}</span>
@@ -1810,54 +1836,83 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
             <section className="clients-directory">
               <div className="clients-directory-heading">
                 <span><Building2 size={16} /> Customer Directory</span>
-                <strong>{customers.length} customers · {activeCustomers} active</strong>
+                <strong>{normalizedCustomerSearch ? `${filteredCustomers.length} of ` : ''}{customers.length} customers · {activeCustomers} active</strong>
               </div>
 
-              {customers.length ? (
+              <label className="clients-customer-search">
+                <Search size={17} aria-hidden="true" />
+                <input
+                  type="search"
+                  value={customerSearch}
+                  onChange={(event) => setCustomerSearch(event.target.value)}
+                  placeholder="Search by customer, contact, email, phone, tax ID, or address"
+                  aria-label="Search customers"
+                />
+                {customerSearch ? <button type="button" onClick={() => setCustomerSearch('')} aria-label="Clear customer search"><X size={16} /></button> : null}
+              </label>
+
+              {filteredCustomers.length ? (
                 <div className="clients-card-grid">
-                  {customers.map((customer) => (
+                  {filteredCustomers.map((customer) => (
                     <article className={customer.status === 'inactive' ? 'inactive' : ''} key={customer.id}>
-                      <div className="clients-card-topline">
-                        <div>
-                          <span className="clients-customer-mark"><Building2 size={19} /></span>
-                          <span>
-                            <strong>{customer.customerName}</strong>
-                            <em>{customer.legalName}</em>
-                          </span>
+                      <div className="clients-customer-card-main">
+                        <div className="clients-customer-card-copy">
+                          <div className="clients-customer-card-topline">
+                            <span>
+                              <strong>{customer.customerName}</strong>
+                              <em>{customer.legalName}</em>
+                            </span>
+                            <div className="clients-card-actions">
+                              <span className={`clients-status ${customer.status}`}>{customer.status}</span>
+                              <button type="button" onClick={() => openEditCustomer(customer)} aria-label={`Edit ${customer.customerName}`}>
+                                <Pencil size={14} />
+                              </button>
+                              <button type="button" onClick={() => setCustomerToDelete(customer)} aria-label={`Delete ${customer.customerName}`}>
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          </div>
+                          <div className="clients-customer-contact-lines">
+                            <span><b>Contact:</b> {customer.contactName}</span>
+                            <span><b>Email:</b> {customer.email}</span>
+                            <span><b>Phone:</b> {customer.phone}</span>
+                            <span><b>Tax ID:</b> {customer.taxId || 'Not provided'}</span>
+                            <span className="wide"><b>Address:</b> {customer.address}</span>
+                          </div>
+                          <p className="clients-customer-card-notes">
+                            <span>Comment:</span>
+                            {customer.notes || 'No customer notes yet.'}
+                          </p>
                         </div>
-                        <div className="clients-card-actions">
-                          <span className={`clients-status ${customer.status}`}>{customer.status}</span>
-                          <button type="button" onClick={() => openEditCustomer(customer)} aria-label={`Edit ${customer.customerName}`}>
-                            <Pencil size={14} />
+                        <aside className="clients-customer-card-media">
+                          <div className="clients-customer-avatar" aria-label={`${customer.customerName} initials`}>
+                            {customer.customerName.split(/\s+/).filter(Boolean).slice(0, 2).map((word) => word[0]?.toUpperCase()).join('') || 'CU'}
+                          </div>
+                          <div className="clients-customer-card-metrics">
+                            <span><small>Payment terms</small><b>{customer.paymentTerms}</b></span>
+                            <span><small>Base lead time</small><b>{customer.leadTimeDays} days</b></span>
+                          </div>
+                          <button
+                            type="button"
+                            className="clients-card-balance-link"
+                            onClick={() => {
+                              sessionStorage.setItem('yvimo:mes:clients:balance-customer', customer.id);
+                              onNavigate('/workspace/manufacturing-ops/intelligence/revenue-opportunity/balances');
+                            }}
+                          >
+                            <WalletCards size={15} /> View Balance
                           </button>
-                          <button type="button" onClick={() => setCustomerToDelete(customer)} aria-label={`Delete ${customer.customerName}`}>
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      </div>
-                      <div className="clients-card-details">
-                        <span><UserRound size={14} /><b>Contact</b>{customer.contactName}</span>
-                        <span><Mail size={14} /><b>Email</b>{customer.email}</span>
-                        <span><Phone size={14} /><b>Phone</b>{customer.phone}</span>
-                        <span><FileText size={14} /><b>Tax ID</b>{customer.taxId || 'Not provided'}</span>
-                        <span><MapPin size={14} /><b>Address</b>{customer.address}</span>
-                      </div>
-                      <div className="clients-card-footer">
-                        <span><b>Payment terms</b>{customer.paymentTerms}</span>
-                        <p><b>Notes</b>{customer.notes || 'No customer notes yet.'}</p>
-                        <button
-                          type="button"
-                          className="clients-card-balance-link"
-                          onClick={() => {
-                            sessionStorage.setItem('yvimo:mes:clients:balance-customer', customer.id);
-                            onNavigate('/workspace/manufacturing-ops/mes/clients/balances');
-                          }}
-                        >
-                          <WalletCards size={15} /> View Balance
-                        </button>
+                        </aside>
                       </div>
                     </article>
                   ))}
+                </div>
+              ) : customers.length ? (
+                <div className="clients-empty-state">
+                  <span><Search size={26} /></span>
+                  <strong>No matching customers</strong>
+                  <p>Try a different customer name, contact, email, phone, tax ID, or address.</p>
+                  <button type="button" onClick={() => setCustomerSearch('')}>Clear Search</button>
                 </div>
               ) : (
                 <div className="clients-empty-state">
@@ -2536,6 +2591,19 @@ export function CustomerOperationsWorkspace({ onNavigate, activeTab, organizatio
                       placeholder="Enter custom terms"
                     />
                   ) : null}
+                </label>
+                <label>
+                  Base Lead Time <em>Days</em>
+                  <input
+                    required
+                    type="number"
+                    min="0"
+                    max="3650"
+                    step="1"
+                    value={customerForm.leadTimeDays}
+                    onChange={(event) => setCustomerForm((current) => ({ ...current, leadTimeDays: event.target.value }))}
+                  />
+                  <small className="customer-base-currency-note">Defaults to 15 days and follows the organization day-count setting.</small>
                 </label>
                 <label>
                   Base Currency

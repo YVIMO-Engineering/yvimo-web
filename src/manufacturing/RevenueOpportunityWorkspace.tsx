@@ -36,7 +36,9 @@ function PriceMisalignmentSankey({ flows }: { flows: PriceFlow[] }) {
     normalized.forEach((flow) => clientBalances.set(flow.client, (clientBalances.get(flow.client) ?? 0) + flow.delta));
     const orders = normalized.map((flow) => ({ ...flow, id: `${flow.client}|${flow.order}` }));
     const results = ['Revenue Lost', 'Aligned', 'Above Recommendation'];
-    const height = Math.max(430, Math.max(clients.length, orders.length, 3) * 58 + 65);
+    // Keep every order card readable at full chart width. The SVG may grow
+    // vertically; scrolling is preferable to shrinking a dense graph.
+    const height = Math.max(520, Math.max(clients.length, orders.length, 3) * 72 + 80);
     const distribute = (count: number) => Array.from({ length: count }, (_, index) => 76 + index * ((height - 142) / Math.max(1, count - 1)));
     const clientY = distribute(clients.length); const orderY = distribute(orders.length); const resultY = distribute(3);
     const nodes = [

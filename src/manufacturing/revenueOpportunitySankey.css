@@ -2,8 +2,15 @@
   display: none !important;
 }
 
+.price-sankey-scroll {
+  overflow-x: auto;
+  overflow-y: visible;
+}
+
 .price-sankey {
-  max-height: 620px;
+  width: 100%;
+  height: auto;
+  max-height: none;
 }
 
 .price-sankey .price-node-card .card-bg {

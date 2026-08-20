@@ -8,7 +8,7 @@ import { supabase } from '../lib/supabaseClient';
 import { useSupabaseRealtimeRefresh } from '../lib/useSupabaseRealtimeRefresh';
 import type { ProductionOrder, ProductionOrderManufacturingType, ProductionOrderPriority, ProductionOrderStatus, QualityCheckLimit, QualityMeasurementUnit, QualityPieceType, WorkCenterStatus } from './mesTypes';
 import { qualityInspectionsByPieceType, qualityPieceTypeLabels, qualityPieceTypes, qualityReportOnlyInspection } from './qualityInspectionConfig';
-import { getDayCountBetween, getElapsedHoursBetween, type DayCountMode } from './DeliveryRiskTimeline';
+import { addLeadTimeDays, getDayCountBetween, getElapsedHoursBetween, type DayCountMode } from './DeliveryRiskTimeline';
 import './productionOrders.css';
 import './productionOrdersDateFilter.css';
 import './productionOrdersDateFilterResponsive.css';
@@ -308,6 +308,7 @@ type ProductionOrderCustomerOptionRow = {
   customer_name: string;
   legal_name: string;
   status: 'active' | 'inactive';
+  lead_time_days: number;
 };
 
 type ProductionSerialInsertRow = {
@@ -4167,6 +4168,8 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, language
   const [workCenterOptions, setWorkCenterOptions] = React.useState<MesOrderDropdownOption[]>([]);
   const [stationOptionsByWorkCenter, setStationOptionsByWorkCenter] = React.useState<Record<string, MesOrderDropdownOption[]>>({});
   const [customerOptions, setCustomerOptions] = React.useState<ProductionOrderCustomerOptionRow[]>([]);
+  const [dueDateDayCountMode, setDueDateDayCountMode] = React.useState<DayCountMode>('calendar');
+  const [automaticDueDate, setAutomaticDueDate] = React.useState('');
   const [quotationOptions, setQuotationOptions] = React.useState<ProductionQuotationOption[]>([]);
   const [legacyPriceOptions, setLegacyPriceOptions] = React.useState<ProductionLegacyPriceOption[]>([]);
   const [assetOptions, setAssetOptions] = React.useState<ProductionAssetOption[]>([]);
@@ -4263,6 +4266,14 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, language
     }
     return options;
   }, [customerOptions, formState.clientName, formState.customerId]);
+  React.useEffect(() => {
+    if (formMode !== 'create' || !formState.customerId || automaticDueDate) return;
+    const customer = customerOptions.find((option) => option.id === formState.customerId);
+    if (!customer) return;
+    const calculatedDueDate = toIsoDate(addLeadTimeDays(new Date(), customer.lead_time_days ?? 15, dueDateDayCountMode, languageCode));
+    setAutomaticDueDate(calculatedDueDate);
+    setFormState((current) => ({ ...current, clientName: customer.customer_name, dueDate: calculatedDueDate }));
+  }, [automaticDueDate, customerOptions, dueDateDayCountMode, formMode, formState.customerId, languageCode]);
   const clientFilterOptions = React.useMemo<MesOrderDropdownOption[]>(() => [
     { value: 'all', label: 'All clients' },
     ...customerOptions.map((customer) => ({
@@ -4359,7 +4370,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, language
       .order('created_at', { ascending: false })
       .limit(1);
     if (workCenterFilter !== 'all') lastProductionEventQuery = lastProductionEventQuery.eq('work_center_code', workCenterFilter);
-    const [{ data, error }, { data: workCenterData, error: workCenterError }, { data: stationData, error: stationError }, { data: customerData, error: customerError }, { data: quotationData, error: quotationError }, { data: legacyPriceData, error: legacyPriceError }, { data: assetData, error: assetError }, { data: productionEventData, error: productionEventError }] = await Promise.all([
+    const [{ data, error }, { data: workCenterData, error: workCenterError }, { data: stationData, error: stationError }, { data: customerData, error: customerError }, { data: quotationData, error: quotationError }, { data: legacyPriceData, error: legacyPriceError }, { data: assetData, error: assetError }, { data: productionEventData, error: productionEventError }, { data: riskSettingsData, error: riskSettingsError }] = await Promise.all([
       supabase
         .from('mes_production_orders')
         .select('*')
@@ -4377,7 +4388,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, language
         .order('name', { ascending: true }),
       supabase
         .from('mes_customers')
-        .select('id, customer_name, legal_name, status')
+        .select('id, customer_name, legal_name, status, lead_time_days')
         .eq('organization_id', organizationId)
         .order('customer_name', { ascending: true }),
       supabase
@@ -4397,6 +4408,11 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, language
         .eq('organization_id', organizationId)
         .order('updated_at', { ascending: false }),
       lastProductionEventQuery,
+      supabase
+        .from('mes_order_risk_settings')
+        .select('day_count_mode')
+        .eq('organization_id', organizationId)
+        .maybeSingle(),
     ]);
 
     if (requestId !== productionOrdersLoadRequestRef.current) return;
@@ -4416,6 +4432,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, language
         ? ''
         : 'No active customers configured yet. Add a customer from the Clients app.');
     }
+    if (!riskSettingsError) setDueDateDayCountMode(riskSettingsData?.day_count_mode === 'business' ? 'business' : 'calendar');
     if (quotationError) {
       console.error('Unable to load quotations for Production Orders', quotationError);
       setQuotationOptions([]);
@@ -4825,6 +4842,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, language
   const openCreateOrderForm = () => {
     setOrderFormError('');
     setFormState(toFormState());
+    setAutomaticDueDate('');
     setPartNameOption('');
     setAssignSerialsEnabled(false);
     setSerialAssignmentDrafts([]);
@@ -4865,6 +4883,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, language
   const openEditOrderForm = async () => {
     if (!selectedOrder) return;
     setOrderFormError('');
+    setAutomaticDueDate('');
     const linkedCustomer = customerOptions.find((customer) =>
       customer.id === selectedOrder.customerId
       || (!selectedOrder.customerId && customer.customer_name === selectedOrder.clientName)
@@ -5991,10 +6010,14 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, language
                   disabled={!activeCustomerFormOptions.length}
                   onChange={(customerId) => {
                     const customer = customerOptions.find((option) => option.id === customerId);
+                    const leadTimeDays = customer?.lead_time_days ?? 15;
+                    const calculatedDueDate = toIsoDate(addLeadTimeDays(new Date(), leadTimeDays, dueDateDayCountMode, languageCode));
+                    setAutomaticDueDate(calculatedDueDate);
                     setFormState((current) => ({
                       ...current,
                       customerId,
                       clientName: customer?.customer_name ?? current.clientName,
+                      dueDate: calculatedDueDate,
                     }));
                   }}
                 />
@@ -6103,8 +6126,25 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, language
                 <MesOrderDatePicker
                   id="production-order-due-date"
                   value={formState.dueDate}
-                  onChange={(dueDate) => setFormState((current) => ({ ...current, dueDate }))}
+                  onChange={(dueDate) => {
+                    const customer = customerOptions.find((option) => option.id === formState.customerId);
+                    if (formMode === 'create' && customer && automaticDueDate && dueDate !== automaticDueDate) {
+                      const leadTimeDays = customer.lead_time_days ?? 15;
+                      setConfirmation({
+                        title: 'Use a different lead time?',
+                        message: `${customer.customer_name} has a base lead time of ${leadTimeDays} ${dueDateDayCountMode === 'business' ? 'business' : 'calendar'} days. This order will use a different due date. Do you want to continue?`,
+                        confirmLabel: 'Use different date',
+                        tone: 'primary',
+                        onConfirm: () => setFormState((current) => ({ ...current, dueDate })),
+                      });
+                      return;
+                    }
+                    setFormState((current) => ({ ...current, dueDate }));
+                  }}
                 />
+                {formMode === 'create' && formState.customerId ? (
+                  <small className="mes-form-field-note">Calculated from the customer's base lead time using {dueDateDayCountMode === 'business' ? 'business' : 'calendar'} days.</small>
+                ) : null}
               </label>
               <label className="production-order-work-center-field">
                 Assigned work center
