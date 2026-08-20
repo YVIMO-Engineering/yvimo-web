@@ -2496,6 +2496,7 @@ function LoggedDashboardPage({
   t,
   languageCode,
   standaloneHealth = false,
+  publicHealth = false,
   onToggleLanguage,
 }: {
   user: AppUser;
@@ -2506,6 +2507,7 @@ function LoggedDashboardPage({
   t: Translator;
   languageCode: LanguageCode;
   standaloneHealth?: boolean;
+  publicHealth?: boolean;
   onToggleLanguage?: () => void;
 }) {
   const [billingPeriod, setBillingPeriod] = React.useState<BillingPeriod>('monthly');
@@ -4609,10 +4611,11 @@ function LoggedDashboardPage({
       isSupplierAccessOverview ? 'supplier-access-shell' : '',
       isSupplierAccessOverview && supplierCustomerPickerOpen ? 'supplier-customer-picker-open' : '',
       standaloneHealth ? 'standalone-health-shell' : '',
+      publicHealth ? 'public-health-shell' : '',
     ].filter(Boolean).join(' ')}>
       {standaloneHealth ? (
         <header className="health-clinical-topbar">
-          <button className="health-clinical-brand" type="button" onClick={() => onNavigate('/health')}>
+          <button className="health-clinical-brand" type="button" onClick={() => onNavigate(publicHealth ? '/health' : '/workspace/health-apps')}>
             <span><img src="/assets/health/yvimo-health-logo.png" alt="" aria-hidden="true" /></span><strong>YVIMO <em>Health</em></strong>
           </button>
           <div className="health-clinical-actions">
@@ -6600,7 +6603,7 @@ function App() {
 
   return (
     <div
-      className={['site-shell', isMesApplicationScreen ? 'site-shell-mes-application' : '', isStandaloneHealthPage ? 'site-shell-health-standalone' : ''].filter(Boolean).join(' ')}
+      className={['site-shell', isMesApplicationScreen ? 'site-shell-mes-application' : '', isDirectHealthAppsPage ? 'site-shell-health-standalone' : ''].filter(Boolean).join(' ')}
       style={
         {
           '--header-height': `${headerHeight}px`,
@@ -6886,7 +6889,8 @@ function App() {
               activePath={healthWorkspacePath}
               t={t}
               languageCode={language}
-              standaloneHealth={isStandaloneHealthPage}
+              standaloneHealth={isDirectHealthAppsPage}
+              publicHealth={isStandaloneHealthPage}
               onToggleLanguage={() => setLanguage((current) => current === 'es' ? 'en' : 'es')}
             />
           ) : (
