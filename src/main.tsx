@@ -905,6 +905,13 @@ const translations: Record<Exclude<LanguageCode, 'en'>, Record<string, string>> 
     'Full name, CURP, medical record number, and sex are required.': 'Nombre completo, CURP, número de expediente y sexo son obligatorios.',
     'CURP must contain exactly 18 characters.': 'La CURP debe contener exactamente 18 caracteres.',
     'CURP does not contain a valid birth date.': 'La CURP no contiene una fecha de nacimiento válida.',
+    'Sign in to continue': 'Inicia sesión para continuar',
+    'Use your YVIMO account to access your organization and health applications.': 'Usa tu cuenta YVIMO para acceder a tu organización y aplicaciones de salud.',
+    'Continue to Health Apps': 'Continuar a Apps de Salud',
+    'Signing in...': 'Iniciando sesión...',
+    or: 'o',
+    'Back to home': 'Volver al inicio',
+    'Signed in. Opening Health Apps.': 'Sesión iniciada. Abriendo Apps de Salud.',
     'This CURP or medical record number is already registered in this organization.': 'Esta CURP o número de expediente ya está registrado en esta organización.',
     'The patient could not be registered.': 'No se pudo registrar al paciente.',
     'Patients could not be loaded. Confirm that migration 121 has been applied.': 'No se pudieron cargar los pacientes. Confirma que la migración 121 esté aplicada.',
@@ -2263,6 +2270,65 @@ function LoginPage({
   );
 }
 
+function HealthAccessLoginPage({
+  onSignIn,
+  onMicrosoftSignIn,
+  onGoogleSignIn,
+  onNavigateSignUp,
+  onNavigateHome,
+  t,
+}: {
+  onSignIn: (email: string, password: string) => Promise<string | null>;
+  onMicrosoftSignIn: () => Promise<string | null>;
+  onGoogleSignIn: () => Promise<string | null>;
+  onNavigateSignUp: () => void;
+  onNavigateHome: () => void;
+  t: Translator;
+}) {
+  const [message, setMessage] = React.useState<string | null>(null);
+  const [busy, setBusy] = React.useState(false);
+
+  const submit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    setBusy(true);
+    try {
+      setMessage(await onSignIn(String(formData.get('email') ?? ''), String(formData.get('password') ?? '')));
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Invalid email or password.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const oauth = async (provider: 'microsoft' | 'google') => {
+    setBusy(true);
+    try { setMessage(await (provider === 'microsoft' ? onMicrosoftSignIn() : onGoogleSignIn())); }
+    catch (error) { setMessage(error instanceof Error ? error.message : 'Invalid email or password.'); }
+    finally { setBusy(false); }
+  };
+
+  return <main className="health-direct-access">
+    <div className="health-direct-preview" aria-hidden="true">
+      <span>YVIMO HEALTH</span><h1>{t('Health Apps')}</h1><p>{t('Practical digital tools designed around everyday healthcare workflows.')}</p>
+      <section><small>{t('Applications')}</small><h2>{t('Select a health module')}</h2><div><article><Users size={24} /><strong>{t('Patients')}</strong></article>{Array.from({ length: 5 }, (_, index) => <article className="disabled" key={index}><Plus size={20} /><strong>{t('Coming soon')}</strong></article>)}</div></section>
+    </div>
+    <div className="health-access-backdrop">
+      <form className="health-access-login" onSubmit={submit}>
+        <button className="health-access-home" type="button" onClick={onNavigateHome} aria-label={t('Back to home')}><X size={18} /></button>
+        <div className="health-access-login-heading"><span><Hospital size={25} /></span><div><small>YVIMO HEALTH</small><h2>{t('Sign in to continue')}</h2><p>{t('Use your YVIMO account to access your organization and health applications.')}</p></div></div>
+        <label><span>{t('Email address')}</span><div><Mail size={18} /><input type="email" name="email" autoComplete="email" placeholder="name@company.com" required /></div></label>
+        <label><span>{t('Password')}</span><div><LockKeyhole size={18} /><input type="password" name="password" autoComplete="current-password" placeholder="••••••••" required /></div></label>
+        <button className="health-access-submit" type="submit" disabled={busy}>{busy ? t('Signing in...') : t('Continue to Health Apps')} <ArrowRight size={17} /></button>
+        <div className="health-access-separator"><span>{t('or')}</span></div>
+        <div className="health-access-oauth"><button type="button" disabled={busy} onClick={() => void oauth('microsoft')}><span className="microsoft-mark"><span /><span /><span /><span /></span>Microsoft</button><button type="button" disabled={busy} onClick={() => void oauth('google')}><span className="health-google-g">G</span>Google</button></div>
+        <div className="health-access-signup"><span>{t('New to YVIMO?')}</span><button type="button" onClick={onNavigateSignUp}>{t('Create account')}</button></div>
+        {message ? <p className={getAuthMessageTone(message)}>{t(message)}</p> : null}
+      </form>
+    </div>
+  </main>;
+}
+
 function SignUpPage({
   onNavigateLogin,
   onSignUp,
@@ -2410,6 +2476,8 @@ function LoggedDashboardPage({
   activePath,
   t,
   languageCode,
+  standaloneHealth = false,
+  onToggleLanguage,
 }: {
   user: AppUser;
   onSignOut: () => void;
@@ -2418,6 +2486,8 @@ function LoggedDashboardPage({
   activePath: string;
   t: Translator;
   languageCode: LanguageCode;
+  standaloneHealth?: boolean;
+  onToggleLanguage?: () => void;
 }) {
   const [billingPeriod, setBillingPeriod] = React.useState<BillingPeriod>('monthly');
   const [checkoutMessage, setCheckoutMessage] = React.useState<string | null>(null);
@@ -2427,7 +2497,6 @@ function LoggedDashboardPage({
   const [avatarOffset, setAvatarOffset] = React.useState<AvatarOffset>({ x: 0, y: 0 });
   const [avatarZoom, setAvatarZoom] = React.useState(1);
   const [tabletSidebarExpanded, setTabletSidebarExpanded] = React.useState(false);
-  const [hoveredHealthModule, setHoveredHealthModule] = React.useState<string | null>(null);
   const [healthOrganizations, setHealthOrganizations] = React.useState<ManufacturingOrganization[]>([]);
   const [healthOrganizationId, setHealthOrganizationId] = React.useState<string | null>(() => {
     try { return window.localStorage.getItem(`yvimo-health-organization:${user.id}`); } catch { return null; }
@@ -3487,7 +3556,6 @@ function LoggedDashboardPage({
     })),
   ];
   const activeHealthModule = healthAppModules.find((module) => !module.disabled && module.path === activePath);
-  const previewHealthModule = healthAppModules.find((module) => module.path === hoveredHealthModule);
   const healthOrganization = healthOrganizations.find((organization) => organization.id === healthOrganizationId) ?? null;
   const canManageHealthOrganization = healthOrganization?.role === 'Owner' || healthOrganization?.role === 'Admin';
 
@@ -4521,7 +4589,20 @@ function LoggedDashboardPage({
       isSupplierOperationsPage || isQualityOperationsPage || isClientsOperationsPage || isRevenueOpportunitySection || isAnalysisToolSection ? 'supplier-context-shell' : '',
       isSupplierAccessOverview ? 'supplier-access-shell' : '',
       isSupplierAccessOverview && supplierCustomerPickerOpen ? 'supplier-customer-picker-open' : '',
+      standaloneHealth ? 'standalone-health-shell' : '',
     ].filter(Boolean).join(' ')}>
+      {standaloneHealth ? (
+        <header className="health-clinical-topbar">
+          <button className="health-clinical-brand" type="button" onClick={() => onNavigate('/health')}>
+            <span><Hospital size={21} /></span><strong>YVIMO <em>Health</em></strong>
+          </button>
+          <div className="health-clinical-actions">
+            <button type="button" onClick={onToggleLanguage}><Languages size={17} /> {languageCode === 'es' ? 'ES' : 'EN'}</button>
+            <button className="health-clinical-profile" type="button" onClick={() => setAvatarDialogOpen(true)}><UserAvatar user={user} /><span><strong>{user.name}</strong><small>{t('Profile')}</small></span></button>
+            <button type="button" onClick={onSignOut} title={t('Sign out')}><LogIn size={17} /></button>
+          </div>
+        </header>
+      ) : null}
       <aside className={['logged-sidebar', !isSupplierAccessOverview ? 'primary-navigation-compact' : '', isSupplierAccessOverview ? 'supplier-portal-sidebar' : '', tabletSidebarExpanded ? 'tablet-expanded' : ''].filter(Boolean).join(' ')}>
         {isSupplierAccessOverview ? (
           <>
@@ -4997,38 +5078,25 @@ function LoggedDashboardPage({
               <ArrowLeft size={17} /> {t('Go Back')}
             </button>
             <header className="health-apps-header">
-              <p className="eyebrow">YVIMO HEALTH</p>
-              <h1>{t('Health Apps')}</h1>
-              <p>{t('Practical digital tools designed around everyday healthcare workflows.')}</p>
+              <div className="health-apps-title-group">
+                <p className="eyebrow">YVIMO HEALTH</p>
+                <h1>{t('Health Apps')}</h1>
+                <p>{t('Practical digital tools designed around everyday healthcare workflows.')}</p>
+              </div>
+              <button className="health-organization-trigger" type="button" onClick={() => setHealthOrganizationDialogOpen(true)}>
+                <span className="health-organization-logo">
+                  {healthOrganization?.logoUrl ? <img src={healthOrganization.logoUrl} alt="" aria-hidden="true" /> : <Building2 size={19} />}
+                </span>
+                <span>
+                  <small>{t('Organization')}</small>
+                  <strong>{healthOrganization?.name ?? t('Choose an organization')}</strong>
+                  <em>{healthOrganization ? `${healthOrganization.role} · ${healthOrganization.memberCount} member${healthOrganization.memberCount === 1 ? '' : 's'}` : t('Required to open health modules')}</em>
+                </span>
+                <ChevronRight size={16} />
+              </button>
             </header>
 
-            <button className="health-organization-trigger" type="button" onClick={() => setHealthOrganizationDialogOpen(true)}>
-              <span className="health-organization-logo">
-                {healthOrganization?.logoUrl ? <img src={healthOrganization.logoUrl} alt="" aria-hidden="true" /> : <Building2 size={22} />}
-              </span>
-              <span>
-                <small>{t('Organization')}</small>
-                <strong>{healthOrganization?.name ?? t('Choose an organization')}</strong>
-                <em>{healthOrganization ? `${healthOrganization.role} access · ${healthOrganization.memberCount} member${healthOrganization.memberCount === 1 ? '' : 's'}` : t('Required to open health modules')}</em>
-              </span>
-              <span className="health-organization-switch-label">{t('Switch organization')} <ChevronRight size={16} /></span>
-            </button>
-
             <div className="health-apps-hub">
-              <section className="health-apps-intro">
-                <span className="health-apps-hero-icon" aria-hidden="true"><Hospital size={30} /></span>
-                <span className="health-apps-status">{t('Clinical workspace')}</span>
-                <h2>{previewHealthModule ? t(previewHealthModule.label) : t('Care tools in one place')}</h2>
-                <p>{previewHealthModule
-                  ? t(previewHealthModule.description)
-                  : t('Choose an application to open a focused workspace built for clear, efficient, and safer daily work.')}</p>
-                <div className="health-apps-values">
-                  <span><Check size={15} /> {t('Simple')}</span>
-                  <span><Check size={15} /> {t('Focused')}</span>
-                  <span><Check size={15} /> {t('Clinical')}</span>
-                </div>
-              </section>
-
               <section className="health-apps-directory" aria-label="Health applications">
                 <div className="health-apps-directory-heading">
                   <span>{t('Applications')}</span>
@@ -5044,10 +5112,6 @@ function LoggedDashboardPage({
                         type="button"
                         key={module.path}
                         onClick={() => !module.disabled && (healthOrganization ? onNavigate(module.path) : setHealthOrganizationDialogOpen(true))}
-                        onMouseEnter={() => !module.disabled && setHoveredHealthModule(module.path)}
-                        onMouseLeave={() => setHoveredHealthModule(null)}
-                        onFocus={() => !module.disabled && setHoveredHealthModule(module.path)}
-                        onBlur={() => setHoveredHealthModule(null)}
                         disabled={module.disabled}
                         aria-label={module.disabled ? 'Reserved future health module' : healthOrganization ? `Open ${module.label}` : `${module.label}: choose an organization first`}
                       >
@@ -5864,6 +5928,11 @@ function App() {
   const currentLanguage = languages.find((item) => item.code === language) ?? languages[0];
   const isLoginPage = currentPath === '/login';
   const isSignUpPage = currentPath === '/signup';
+  const isStandaloneHealthPage = currentPath === '/health' || currentPath.startsWith('/health/');
+  const isDirectHealthAppsPage = isStandaloneHealthPage || currentPath === '/workspace/health-apps' || currentPath.startsWith('/workspace/health-apps/');
+  const healthWorkspacePath = isStandaloneHealthPage
+    ? currentPath === '/health' ? '/workspace/health-apps' : currentPath.replace(/^\/health/, '/workspace/health-apps')
+    : currentPath;
   const isDashboardPage =
     currentPath === '/dashboard'
     || currentPath.startsWith('/dashboard/')
@@ -5873,6 +5942,7 @@ function App() {
     || currentPath.startsWith('/portal/engineering-tools/')
     || currentPath === '/workspace/health-apps'
     || currentPath.startsWith('/workspace/health-apps/')
+    || isStandaloneHealthPage
     || currentPath === '/workspace/manufacturing-ops'
     || currentPath.startsWith('/workspace/manufacturing-ops/');
   const isMesApplicationScreen =
@@ -6227,10 +6297,10 @@ function App() {
   }, [syncSessionUser]);
 
   React.useEffect(() => {
-    if (!authLoading && isDashboardPage && !authSession?.user) {
+    if (!authLoading && isDashboardPage && !isDirectHealthAppsPage && !authSession?.user) {
       navigateLogin();
     }
-  }, [authLoading, authSession, isDashboardPage]);
+  }, [authLoading, authSession, isDashboardPage, isDirectHealthAppsPage]);
 
   React.useEffect(() => {
     if (
@@ -6284,6 +6354,7 @@ function App() {
   };
 
   const navigateSignUp = () => {
+    if (isDirectHealthAppsPage) window.sessionStorage.setItem('yvimo-auth-return-path', currentPath);
     window.history.pushState({}, '', '/signup');
     setCurrentPath('/signup');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -6302,6 +6373,10 @@ function App() {
 
   const completeAuth = async (session: Session | null, message: string) => {
     if (session) {
+      const savedReturnPath = window.sessionStorage.getItem('yvimo-auth-return-path');
+      const returnPath = isDirectHealthAppsPage
+        ? currentPath
+        : savedReturnPath?.startsWith('/workspace/health-apps') || savedReturnPath?.startsWith('/health') ? savedReturnPath : '';
       explicitSignOutRef.current = false;
       await supabase.auth.setSession({
         access_token: session.access_token,
@@ -6311,13 +6386,18 @@ function App() {
       setAuthUser(profileToAppUser(session.user, null));
       setProfileLoadState('loading');
       setProfileLoadError(null);
-      window.setTimeout(() => {
-        setDashboardTransition(true);
+      if (returnPath) {
+        window.sessionStorage.removeItem('yvimo-auth-return-path');
+        navigateTo(returnPath);
+      } else {
         window.setTimeout(() => {
-          navigateDashboard();
-          setDashboardTransition(false);
-        }, 4000);
-      }, 1050);
+          setDashboardTransition(true);
+          window.setTimeout(() => {
+            navigateDashboard();
+            setDashboardTransition(false);
+          }, 4000);
+        }, 1050);
+      }
       syncSessionUser(session).catch((error) => {
         console.error('[auth] post-redirect profile sync error', error);
       });
@@ -6392,7 +6472,7 @@ function App() {
       return 'Signed in, but no session was returned.';
     }
 
-    return completeAuth(data.session, 'Signed in. Redirecting to dashboard.');
+    return completeAuth(data.session, isDirectHealthAppsPage ? 'Signed in. Opening Health Apps.' : 'Signed in. Redirecting to dashboard.');
   };
 
   const handleAppleSignIn = async () => {
@@ -6405,7 +6485,7 @@ function App() {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'azure',
       options: {
-        redirectTo: `${window.location.origin}/dashboard`,
+        redirectTo: `${window.location.origin}${isDirectHealthAppsPage ? currentPath : '/dashboard'}`,
       },
     });
 
@@ -6422,7 +6502,7 @@ function App() {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: `${window.location.origin}/dashboard`,
+        redirectTo: `${window.location.origin}${isDirectHealthAppsPage ? currentPath : '/dashboard'}`,
       },
     });
 
@@ -6494,12 +6574,13 @@ function App() {
     setAuthUser(null);
     setProfileLoadState('idle');
     setProfileLoadError(null);
-    navigateLogin();
+    if (isStandaloneHealthPage) navigateTo('/health');
+    else navigateLogin();
   };
 
   return (
     <div
-      className={['site-shell', isMesApplicationScreen ? 'site-shell-mes-application' : ''].filter(Boolean).join(' ')}
+      className={['site-shell', isMesApplicationScreen ? 'site-shell-mes-application' : '', isStandaloneHealthPage ? 'site-shell-health-standalone' : ''].filter(Boolean).join(' ')}
       style={
         {
           '--header-height': `${headerHeight}px`,
@@ -6774,24 +6855,43 @@ function App() {
             <LoggedDashboardPage
               user={authUser}
               onSignOut={handleSignOut}
-              onNavigate={navigateTo}
+              onNavigate={(path) => {
+                if (isStandaloneHealthPage && path.startsWith('/workspace/health-apps')) {
+                  navigateTo(path.replace(/^\/workspace\/health-apps/, '/health'));
+                  return;
+                }
+                navigateTo(path);
+              }}
               onUpdateAvatar={handleUpdateAvatar}
-              activePath={currentPath}
+              activePath={healthWorkspacePath}
               t={t}
               languageCode={language}
+              standaloneHealth={isStandaloneHealthPage}
+              onToggleLanguage={() => setLanguage((current) => current === 'es' ? 'en' : 'es')}
             />
           ) : (
             <DashboardLoadingPage t={t} />
           )
         ) : (
-          <LoginPage
-            onNavigateSignUp={navigateSignUp}
-            onSignIn={handleSignIn}
-            onAppleSignIn={handleAppleSignIn}
-            onMicrosoftSignIn={handleMicrosoftSignIn}
-            onGoogleSignIn={handleGoogleSignIn}
-            t={t}
-          />
+          isDirectHealthAppsPage ? (
+            <HealthAccessLoginPage
+              onNavigateSignUp={navigateSignUp}
+              onNavigateHome={() => navigateHome()}
+              onSignIn={handleSignIn}
+              onMicrosoftSignIn={handleMicrosoftSignIn}
+              onGoogleSignIn={handleGoogleSignIn}
+              t={t}
+            />
+          ) : (
+            <LoginPage
+              onNavigateSignUp={navigateSignUp}
+              onSignIn={handleSignIn}
+              onAppleSignIn={handleAppleSignIn}
+              onMicrosoftSignIn={handleMicrosoftSignIn}
+              onGoogleSignIn={handleGoogleSignIn}
+              t={t}
+            />
+          )
         )
       ) : isAcademyPage ? (
         isAcademyCatalogPage ? (
