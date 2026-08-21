@@ -5,6 +5,7 @@ import { useSupabaseRealtimeRefresh } from '../lib/useSupabaseRealtimeRefresh';
 import type { ProductionOrderStatus } from './mesTypes';
 import { ProductionOrdersWorkspace } from './MesWorkspaces';
 import { DeliveryRiskTimeline, getDaysUntilDelivery, getDeliveryDistance, type DayCountMode } from './DeliveryRiskTimeline';
+import { getOrderRiskLevel, type OrderRiskLevel } from './orderRisk';
 import './orderRisks.css';
 
 type OrderRisksWorkspaceProps = {
@@ -28,7 +29,7 @@ type OrderRiskRow = {
   createdAt: string;
 };
 
-type RiskLevel = 'overdue' | 'high' | 'moderate' | 'low';
+type RiskLevel = OrderRiskLevel;
 
 type OrderSerialRow = { id: string; production_order_id: string; serial_number: string | null; tool_id: string | null; assigned_station: string | null };
 type CoatingProgressRow = { reception_item_id: string; production_serial_id: string; coating_sent_at: string | null; coating_returned_at: string | null };
@@ -75,12 +76,7 @@ function daysUntilDue(dueDate: string) {
 }
 
 function riskForOrder(order: OrderRiskRow, mode: DayCountMode = 'calendar', languageCode = 'en'): RiskLevel {
-  const calendarDays = daysUntilDue(order.due_date);
-  if (calendarDays < 0) return 'overdue';
-  const days = getDeliveryDistance(calendarDays, mode, languageCode);
-  if (days <= 1) return 'high';
-  if (days <= 3) return 'moderate';
-  return 'low';
+  return getOrderRiskLevel(order.due_date, new Date(), mode, languageCode);
 }
 
 function dueLabel(dueDate: string, mode: DayCountMode = 'calendar', languageCode = 'en') {
