@@ -1,6 +1,6 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowDown, ArrowLeft, ArrowUp, Check, ChevronDown, LoaderCircle, Pencil, Plus, Search, Trash2, UserPlus, Users, X } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowUp, Check, ChevronDown, ChevronLeft, ChevronRight, LoaderCircle, Pencil, Plus, Search, Trash2, UserPlus, Users, X } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import './healthPatients.css';
 
@@ -25,6 +25,7 @@ type Props = {
 
 const emptyForm = { fullName: '', curp: '', medicalRecordNumber: '', sex: '' as '' | PatientRow['sex'] };
 const medicalRecordCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+const patientsPerPage = 50;
 
 function getBirthDateFromCurp(curp: string): string | null {
   if (!/^[A-Z]{4}\d{6}[HM][A-Z]{5}[A-Z0-9]\d$/.test(curp)) return null;
@@ -51,6 +52,18 @@ function getPatientInitial(fullName: string) {
 
 function normalizePatientName(fullName: string) {
   return fullName.toLocaleUpperCase('es-MX');
+}
+
+function getPaginationItems(currentPage: number, totalPages: number): Array<number | 'ellipsis'> {
+  if (totalPages <= 7) return Array.from({ length: totalPages }, (_, index) => index + 1);
+  const pages = new Set([1, totalPages, currentPage - 1, currentPage, currentPage + 1]);
+  const validPages = [...pages].filter((page) => page >= 1 && page <= totalPages).sort((a, b) => a - b);
+  const items: Array<number | 'ellipsis'> = [];
+  validPages.forEach((page, index) => {
+    if (index > 0 && page - validPages[index - 1] > 1) items.push('ellipsis');
+    items.push(page);
+  });
+  return items;
 }
 
 function formatPatientDate(value: string, languageCode: Props['languageCode'], utc = false) {
@@ -100,6 +113,7 @@ export function HealthPatientsWorkspace({ organizationId, organizationName, onNa
   const [patients, setPatients] = React.useState<PatientRow[]>([]);
   const [searchTerm, setSearchTerm] = React.useState('');
   const [recordSortDirection, setRecordSortDirection] = React.useState<'ascending' | 'descending' | null>(null);
+  const [currentPage, setCurrentPage] = React.useState(1);
   const [loading, setLoading] = React.useState(true);
   const [loadError, setLoadError] = React.useState('');
   const [dialogOpen, setDialogOpen] = React.useState(false);
@@ -176,6 +190,15 @@ export function HealthPatientsWorkspace({ organizationId, organizationName, onNa
     if (comparison !== 0) return recordSortDirection === 'ascending' ? comparison : -comparison;
     return a.full_name.localeCompare(b.full_name);
   }) : filteredPatients;
+  const totalPages = Math.max(1, Math.ceil(visiblePatients.length / patientsPerPage));
+  const pageStart = (currentPage - 1) * patientsPerPage;
+  const pagePatients = visiblePatients.slice(pageStart, pageStart + patientsPerPage);
+  const paginationItems = getPaginationItems(currentPage, totalPages);
+
+  React.useEffect(() => { setCurrentPage(1); }, [searchTerm, recordSortDirection, organizationId]);
+  React.useEffect(() => {
+    setCurrentPage((page) => Math.min(page, totalPages));
+  }, [totalPages]);
 
   const openCreateDialog = () => {
     setEditingPatient(null);
@@ -278,7 +301,7 @@ export function HealthPatientsWorkspace({ organizationId, organizationName, onNa
               <button className={recordSortDirection === 'ascending' ? 'active' : ''} type="button" aria-label={t('Lowest to highest')} aria-pressed={recordSortDirection === 'ascending'} onClick={() => setRecordSortDirection((current) => current === 'ascending' ? null : 'ascending')} title={t('Lowest to highest')}><ArrowUp size={16} /></button>
               <button className={recordSortDirection === 'descending' ? 'active' : ''} type="button" aria-label={t('Highest to lowest')} aria-pressed={recordSortDirection === 'descending'} onClick={() => setRecordSortDirection((current) => current === 'descending' ? null : 'descending')} title={t('Highest to lowest')}><ArrowDown size={16} /></button>
             </div>
-            <strong>{visiblePatients.length} {t('showing')} / {patients.length} {t('total')}</strong>
+            <strong>{pagePatients.length} {t('showing')} / {patients.length} {t('total')}</strong>
           </div>
         </div>
         {loading ? <div className="health-patients-state"><LoaderCircle className="spin" size={25} /> {t('Loading patients...')}</div>
@@ -286,7 +309,7 @@ export function HealthPatientsWorkspace({ organizationId, organizationName, onNa
             : visiblePatients.length === 0 ? (
               <div className="health-patients-state"><Users size={34} /><strong>{t(patients.length ? 'No patients match your search.' : 'No patients registered yet.')}</strong><p>{t(patients.length ? 'Try a different name, CURP, or record number.' : 'Add the first patient to this organization.')}</p>{!patients.length ? <button type="button" onClick={openCreateDialog}><UserPlus size={17} /> {t('Add patient')}</button> : null}</div>
             ) : (
-              <div className="health-patients-table-wrap"><table><thead><tr><th>{t('Full name')}</th><th>CURP</th><th>{t('Medical record no.')}</th><th>{t('Sex')}</th><th>{t('Birth date')}</th><th>{t('Age')}</th><th>{t('Registered')}</th><th className="health-patient-actions-heading">{t('Actions')}</th></tr></thead><tbody>{visiblePatients.map((patient) => <tr key={patient.id}><td className="notranslate" translate="no"><span className="health-patient-avatar notranslate" translate="no">{getPatientInitial(patient.full_name)}</span><strong>{normalizePatientName(patient.full_name)}</strong></td><td><code className="notranslate" translate="no">{patient.curp}</code></td><td><strong className="notranslate" translate="no">{patient.medical_record_number}</strong></td><td>{t(patient.sex)}</td><td>{formatPatientDate(patient.birth_date, languageCode, true)}</td><td>{getAgeFromBirthDate(patient.birth_date)}</td><td>{formatPatientDate(patient.created_at, languageCode)}</td><td className="health-patient-row-actions"><div><button type="button" onClick={() => openEditDialog(patient)}><Pencil size={15} /> {t('Edit')}</button><button className="danger" type="button" onClick={() => { setDeletingPatient(patient); setDeletePassword(''); setDeleteError(''); }}><Trash2 size={15} /> {t('Delete')}</button></div></td></tr>)}</tbody></table></div>
+              <div className="health-patients-table-wrap"><table><thead><tr><th>{t('Full name')}</th><th>CURP</th><th>{t('Medical record no.')}</th><th>{t('Sex')}</th><th>{t('Birth date')}</th><th>{t('Age')}</th><th>{t('Registered')}</th><th className="health-patient-actions-heading">{t('Actions')}</th></tr></thead><tbody>{pagePatients.map((patient) => <tr key={patient.id}><td className="notranslate" translate="no"><span className="health-patient-avatar notranslate" translate="no">{getPatientInitial(patient.full_name)}</span><strong>{normalizePatientName(patient.full_name)}</strong></td><td><code className="notranslate" translate="no">{patient.curp}</code></td><td><strong className="notranslate" translate="no">{patient.medical_record_number}</strong></td><td>{t(patient.sex)}</td><td>{formatPatientDate(patient.birth_date, languageCode, true)}</td><td>{getAgeFromBirthDate(patient.birth_date)}</td><td>{formatPatientDate(patient.created_at, languageCode)}</td><td className="health-patient-row-actions"><div><button type="button" onClick={() => openEditDialog(patient)}><Pencil size={15} /> {t('Edit')}</button><button className="danger" type="button" onClick={() => { setDeletingPatient(patient); setDeletePassword(''); setDeleteError(''); }}><Trash2 size={15} /> {t('Delete')}</button></div></td></tr>)}</tbody></table>{visiblePatients.length > patientsPerPage ? <nav className="health-patients-pagination" aria-label={t('Patient table pages')}><span>{t('Page')} {currentPage} {t('of')} {totalPages}</span><div><button type="button" onClick={() => setCurrentPage((page) => Math.max(1, page - 1))} disabled={currentPage === 1}><ChevronLeft size={17} /> {t('Previous')}</button><div className="health-patients-page-numbers">{paginationItems.map((item, index) => item === 'ellipsis' ? <span key={`ellipsis-${index}`}>…</span> : <button className={item === currentPage ? 'active' : ''} type="button" key={item} aria-label={`${t('Page')} ${item}`} aria-current={item === currentPage ? 'page' : undefined} onClick={() => setCurrentPage(item)}>{item}</button>)}</div><button type="button" onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))} disabled={currentPage === totalPages}>{t('Next')} <ChevronRight size={17} /></button></div></nav> : null}</div>
             )}
       </section>
 
