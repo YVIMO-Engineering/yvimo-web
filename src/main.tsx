@@ -69,6 +69,7 @@ import { CustomerOperationsWorkspace, type ClientsContextTab } from './manufactu
 import { translateClientsText } from './manufacturing/clientsI18n';
 import { OrderRisksWorkspace } from './manufacturing/OrderRisksWorkspace';
 import { ImportCostingWorkspace } from './manufacturing/ImportCostingWorkspace';
+import { ProductionScheduleWorkspace } from './manufacturing/ProductionScheduleWorkspace';
 import { RevenueOpportunityWorkspace } from './manufacturing/RevenueOpportunityWorkspace';
 import { AnalysisToolWorkspace } from './manufacturing/AnalysisToolWorkspace';
 import { HealthPatientsWorkspace } from './health/HealthPatientsWorkspace';
@@ -3742,12 +3743,16 @@ function LoggedDashboardPage({
     description: string;
     icon: React.ComponentType<{ size?: number }>;
     path: string;
+    implemented?: boolean;
+    tone?: 'green' | 'blue' | 'orange' | 'purple' | 'red';
   }> = [
     {
       label: 'Production Schedule',
       description: 'Build and review sequenced production plans across lines, cells, and work centers.',
       icon: CalendarClock,
       path: '/workspace/manufacturing-ops/aps/schedule',
+      implemented: true,
+      tone: 'orange',
     },
     {
       label: 'Capacity Planning',
@@ -3931,6 +3936,7 @@ function LoggedDashboardPage({
     || activePath === '/workspace/manufacturing-ops/mes/traceability';
   const isOrderRisksPage = activePath === '/workspace/manufacturing-ops/intelligence/order-risks';
   const isImportCostingPage = activePath === '/workspace/manufacturing-ops/intelligence/import-costing';
+  const isProductionSchedulePage = activePath === '/workspace/manufacturing-ops/aps/schedule';
   const isRevenueOpportunitySection = activePath.startsWith('/workspace/manufacturing-ops/intelligence/revenue-opportunity');
   const isAnalysisToolSection = activePath === '/workspace/manufacturing-ops/intelligence/analysis-tool'
     || activePath.startsWith('/workspace/manufacturing-ops/intelligence/analysis-tool/');
@@ -4021,6 +4027,9 @@ function LoggedDashboardPage({
     }
     if (activePath === '/workspace/manufacturing-ops/intelligence/import-costing') {
       return <ImportCostingWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} />;
+    }
+    if (isProductionSchedulePage) {
+      return <ProductionScheduleWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} />;
     }
     if (isRevenueOpportunitySection) {
       if (activeRevenueSection === 'balances') {
@@ -4617,7 +4626,7 @@ function LoggedDashboardPage({
       'logged-shell',
       !isSupplierAccessOverview ? 'primary-navigation-compact-shell' : '',
       isOperatorTerminalPage ? 'operator-terminal-shell' : '',
-      isCompactMesApplicationPage || isOrderRisksPage || isImportCostingPage || isRevenueOpportunitySection || isAnalysisToolSection ? 'compact-mes-application-shell' : '',
+      isCompactMesApplicationPage || isOrderRisksPage || isImportCostingPage || isProductionSchedulePage || isRevenueOpportunitySection || isAnalysisToolSection ? 'compact-mes-application-shell' : '',
       isSupplierOperationsPage || isQualityOperationsPage || isClientsOperationsPage || isRevenueOpportunitySection || isAnalysisToolSection ? 'supplier-context-shell' : '',
       isSupplierAccessOverview ? 'supplier-access-shell' : '',
       isSupplierAccessOverview && supplierCustomerPickerOpen ? 'supplier-customer-picker-open' : '',

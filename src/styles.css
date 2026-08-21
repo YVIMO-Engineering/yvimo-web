@@ -4797,6 +4797,24 @@ body.work-center-map-expanded .logged-workspace {
   line-height: 1.65;
 }
 
+.production-schedule-workspace {
+  gap: 12px;
+  margin-top: 14px;
+  padding: 18px 22px;
+}
+
+.production-schedule-header {
+  align-items: start;
+}
+
+.production-schedule-header .mes-workspace-heading {
+  gap: 5px;
+}
+
+.production-schedule-header .mes-workspace-heading p:last-child {
+  line-height: 1.45;
+}
+
 .traceability-workspace-panel {
   gap: 14px;
   margin-top: 14px;
