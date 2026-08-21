@@ -427,10 +427,27 @@ export function GoogleWorkCentersMap({
   const mapRef = React.useRef<google.maps.Map | null>(null);
   const markerLibraryRef = React.useRef<google.maps.MarkerLibrary | null>(null);
   const markersRef = React.useRef<google.maps.marker.AdvancedMarkerElement[]>([]);
+  const onSelectWorkCenterRef = React.useRef(onSelectWorkCenter);
   const [mapViewVersion, setMapViewVersion] = React.useState(0);
   const [mapStatus, setMapStatus] = React.useState<'ready' | 'missing-key' | 'configuration-error' | 'load-error'>('ready');
 
-  const validWorkCenters = React.useMemo(() => workCenters.filter(hasValidCoordinates), [workCenters]);
+  onSelectWorkCenterRef.current = onSelectWorkCenter;
+  const workCentersSignature = workCenters.map((workCenter) => [
+    workCenter.id,
+    workCenter.code,
+    workCenter.name,
+    workCenter.latitude,
+    workCenter.longitude,
+    workCenter.stationCount ?? 0,
+    workCenter.status,
+    workCenter.activeDowntime ? 1 : 0,
+  ].join(':')).join('|');
+  const validWorkCenters = React.useMemo(
+    () => workCenters.filter(hasValidCoordinates),
+    // The signature deliberately prevents the one-second workspace clock from rebuilding the map.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [workCentersSignature],
+  );
   const markerLabelSize = expanded ? expandedMarkerLabelSize : compactMarkerLabelSize;
 
   React.useEffect(() => {
@@ -548,8 +565,8 @@ export function GoogleWorkCentersMap({
           markerLabelSize,
           expanded,
         );
-        connectorMarkerContent.addEventListener('click', () => onSelectWorkCenter(workCenter.id));
-        labelMarkerContent.addEventListener('click', () => onSelectWorkCenter(workCenter.id));
+        connectorMarkerContent.addEventListener('click', () => onSelectWorkCenterRef.current(workCenter.id));
+        labelMarkerContent.addEventListener('click', () => onSelectWorkCenterRef.current(workCenter.id));
 
         const connectorMarker = new markerLibrary.AdvancedMarkerElement({
           map,
@@ -587,7 +604,7 @@ export function GoogleWorkCentersMap({
       });
       markersRef.current = [];
     };
-  }, [mapStatus, mapViewVersion, markerLabelSize, onSelectWorkCenter, selectedWorkCenterId, validWorkCenters]);
+  }, [mapStatus, mapViewVersion, markerLabelSize, selectedWorkCenterId, validWorkCenters]);
 
   if (mapStatus === 'missing-key') {
     return <div className="google-work-center-map-fallback">Google Maps API key is missing.</div>;

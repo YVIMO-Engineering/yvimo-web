@@ -20474,13 +20474,28 @@ body.work-center-map-expanded .logged-workspace {
   min-width: 0;
 }
 
+.station-kpi-row {
+  display: grid;
+  grid-template-columns: minmax(190px, 220px) minmax(0, 1fr);
+  align-items: stretch;
+  gap: 10px;
+}
+
+.station-kpi-row .stations-selected-work-center {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  align-content: center;
+}
+
 .station-insights-main .station-kpi-grid {
-  grid-template-columns: repeat(5, minmax(130px, 170px));
+  grid-template-columns: repeat(5, minmax(120px, 1fr));
+  justify-content: stretch;
 }
 
 .work-center-load-gauge {
-  display: grid;
-  align-content: start;
+  display: flex;
+  flex-direction: column;
   gap: 12px;
   border: 1px solid #dbe4ee;
   border-top: 4px solid #2563eb;
@@ -20634,6 +20649,37 @@ body.work-center-map-expanded .logged-workspace {
   color: #64748b;
   font-size: 0.62rem;
   line-height: 1.45;
+}
+
+.work-center-load-cycle-report {
+  display: inline-flex;
+  min-height: 42px;
+  align-items: center;
+  align-self: stretch;
+  justify-content: center;
+  gap: 8px;
+  margin-top: auto;
+  border: 1px solid #ff9b45;
+  border-radius: 9px;
+  padding: 9px 13px;
+  background: #fff7ed;
+  color: #9a4300;
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.work-center-load-cycle-report:hover,
+.work-center-load-cycle-report:focus-visible {
+  border-color: #ff7a00;
+  background: #ffead5;
+  outline: none;
+}
+
+.work-center-load-cycle-report:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
 }
 
 .station-load-chart > header {
@@ -22004,6 +22050,17 @@ body.work-center-map-expanded .logged-workspace {
   font-weight: 850;
 }
 
+.station-card-load-value {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.station-card-load-value em {
+  font-style: normal;
+}
+
 .station-utilization-panel small {
   color: #607080;
   font-size: 0.7rem;
@@ -22020,6 +22077,30 @@ body.work-center-map-expanded .logged-workspace {
 
 .station-utilization-panel.utilization-low-activity .work-center-utilization span {
   background: #64748b;
+}
+
+.station-card-load-panel .work-center-utilization span.load-no-load {
+  background: #94a3b8;
+}
+
+.station-card-load-panel .work-center-utilization span.load-low {
+  background: #16a34a;
+}
+
+.station-card-load-panel .work-center-utilization span.load-normal {
+  background: #14b8a6;
+}
+
+.station-card-load-panel .work-center-utilization span.load-high {
+  background: #f59e0b;
+}
+
+.station-card-load-panel .work-center-utilization span.load-very-high {
+  background: #ef4444;
+}
+
+.station-card-load-panel .work-center-utilization span.load-overloaded {
+  background: #991b1b;
 }
 
 .station-operator-pill {
@@ -39557,5 +39638,26 @@ body[data-screenshot-export="academy-track"] .academy-mobile-track-step button {
   .work-center-load-gauge {
     width: min(100%, 420px);
     justify-self: center;
+  }
+}
+
+@media (max-width: 900px) {
+  .station-kpi-row {
+    grid-template-columns: 1fr;
+  }
+
+  .station-kpi-row .stations-selected-work-center {
+    width: min(100%, 260px);
+  }
+
+  .station-insights-main .station-kpi-grid {
+    grid-template-columns: repeat(2, minmax(150px, 190px));
+    justify-content: center;
+  }
+}
+
+@media (max-width: 430px) {
+  .station-insights-main .station-kpi-grid {
+    grid-template-columns: minmax(150px, 190px);
   }
 }

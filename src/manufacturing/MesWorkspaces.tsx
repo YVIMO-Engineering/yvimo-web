@@ -9342,25 +9342,20 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
             <div className="work-centers-panel-heading">
               <div>
                 <p className="eyebrow">Stations</p>
-                <div className="stations-heading-content">
+              </div>
+              <div className="stations-heading-actions">
+                <span>{filteredStations.length} showing / {selectedStations.length} total</span>
+              </div>
+            </div>
+            <div className="station-insights-layout">
+              <div className="station-insights-main">
+                <div className="station-kpi-row">
                   <div className="stations-selected-work-center">
                     <span>Selected Work Center</span>
                     <strong>{selectedWorkCenter?.name ?? 'No Work Center selected'}</strong>
                     {selectedWorkCenter ? <em>{selectedWorkCenter.code}</em> : null}
                   </div>
-                </div>
-              </div>
-              <div className="stations-heading-actions">
-                <span>{filteredStations.length} showing / {selectedStations.length} total</span>
-                <button type="button" onClick={() => { setCycleReportDateRange(getMesOrderQuickRange('today')); setCycleReportOpen(true); }} disabled={!selectedWorkCenter}>
-                  <Timer size={17} aria-hidden="true" />
-                  Cycle Time Report
-                </button>
-              </div>
-            </div>
-            <div className="station-insights-layout">
-              <div className="station-insights-main">
-                <div className="station-kpi-grid">
+                  <div className="station-kpi-grid">
               <article><span>Total</span><strong>{stationTotal}</strong></article>
               <article
                 className={`station-kpi-status-card station-status-${stationRunningStatus} ${activeStationKpiFilter === 'running' ? 'active' : ''}`}
@@ -9447,6 +9442,7 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
                 <em>{formatKpiStatusLabel(stationMaintenanceStatus)}</em>
               </article>
                 </div>
+                </div>
                 <section className="station-load-chart" aria-labelledby="station-load-chart-title">
               <header>
                 <div>
@@ -9523,6 +9519,10 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
                   <div><dt>Overloaded</dt><dd>{stationLoadRows.filter((station) => station.loadPercent > 100).length}</dd></div>
                 </dl>
                 <p>Aggregate score = total current load points ÷ total historical reference points.</p>
+                <button className="work-center-load-cycle-report" type="button" onClick={() => { setCycleReportDateRange(getMesOrderQuickRange('today')); setCycleReportOpen(true); }} disabled={!selectedWorkCenter}>
+                  <Timer size={17} aria-hidden="true" />
+                  Cycle Time Report
+                </button>
               </aside>
             </div>
             {activeStationKpiFilter ? (
@@ -9568,6 +9568,7 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
                   getActiveStationOrders(productionOrders, selectedWorkCenter, station, multiStepStationsByOrder),
                   todayIsoDate,
                 );
+                const stationLoad = stationLoadRows.find((load) => load.stationId === station.id);
                 return (
                   <article
                     className={['station-card', stationSelected ? 'selected' : ''].filter(Boolean).join(' ')}
@@ -9650,13 +9651,16 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
                         </>
                       ) : <span className="station-last-produced-empty">No production recorded</span>}</dd></div>
                     </dl>
-                    <div className={`station-utilization-panel utilization-${getStationUtilizationStatus(stationPlanningMetrics.scheduledUtilization)}`}>
+                    <div className={`station-utilization-panel station-card-load-panel load-status-${stationLoad?.loadStatus ?? 'no-load'}`}>
                       <div className="station-utilization-heading">
-                        <span>Scheduled utilization</span>
-                        <strong>{stationPlanningMetrics.hasPlannedShifts ? `${stationPlanningMetrics.scheduledUtilization}%` : '—'}</strong>
+                        <span>Station Load</span>
+                        <div className="station-card-load-value">
+                          <strong>{stationLoad?.loadPercent ?? 0}%</strong>
+                          <em className={`machine-load-pill load-${stationLoad?.loadStatus ?? 'no-load'}`}>{formatTitleLabel(stationLoad?.loadStatus ?? 'no-load')}</em>
+                        </div>
                       </div>
-                      <div className="work-center-utilization" aria-hidden="true"><span style={{ width: `${stationPlanningMetrics.scheduledUtilization}%` }} /></div>
-                      <small>{stationPlanningMetrics.hasPlannedShifts ? 'Based on planned station shifts' : 'No shifts planned'}</small>
+                      <div className="work-center-utilization" aria-hidden="true"><span className={`load-${stationLoad?.loadStatus ?? 'no-load'}`} style={{ width: `${stationLoad?.visualLoadPercent ?? 0}%` }} /></div>
+                      <small>{stationLoad?.remainingUnits ?? 0} remaining units · {stationLoad?.openOrders ?? 0} active order{stationLoad?.openOrders === 1 ? '' : 's'} · {stationLoad?.referenceMethod ?? 'No load'} reference</small>
                     </div>
                     <div className="station-shift-breakdown">
                       {stationPlanningMetrics.shiftBreakdown.map((shift) => (
