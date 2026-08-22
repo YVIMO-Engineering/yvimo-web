@@ -12,7 +12,7 @@ type Order = { id: string; order_number: string; client_name: string | null; par
 type QueueItem = { id: string; station_id: string; production_order_id: string; position: number };
 type ProductionPiece = { production_order_id: string; assigned_station: string | null; compatible_stations: string[] | null };
 
-const activeStatuses = ['planned', 'released', 'running', 'paused', 'waiting-inspection'];
+const activeStatuses = ['planned', 'released', 'running', 'paused'];
 const riskLabels: Record<OrderRiskLevel, string> = { overdue: 'Overdue', high: 'High risk', moderate: 'Moderate risk', low: 'Low risk' };
 const deliveryDistance = (dueDate: string) => { const days = getDaysUntilDelivery(dueDate); return days < 0 ? `${Math.abs(days)} days overdue` : days === 0 ? 'Due today' : days === 1 ? '1 day left' : `${days} days left`; };
 const formatDate = (value: string) => new Date(`${value}T00:00:00`).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
@@ -41,7 +41,19 @@ export function ProductionScheduleWorkspace({ onNavigate, organizationId }: Prop
     ]);
     const loadError = stationResult.error ?? centerResult.error ?? orderResult.error ?? pieceResult.error ?? queueResult.error;
     if (loadError) setError(`Unable to load the production schedule: ${loadError.message}. Apply SQL migrations 134–136.`);
-    else { setStations((stationResult.data ?? []) as Station[]); setWorkCenters((centerResult.data ?? []) as WorkCenter[]); setOrders((orderResult.data ?? []) as Order[]); setProductionPieces((pieceResult.data ?? []) as ProductionPiece[]); setQueue((queueResult.data ?? []) as QueueItem[]); setError(''); }
+    else {
+      const activeOrders = (orderResult.data ?? []) as Order[];
+      const loadedQueue = (queueResult.data ?? []) as QueueItem[];
+      const activeOrderIds = new Set(activeOrders.map((order) => order.id));
+      const staleQueueIds = loadedQueue.filter((item) => !activeOrderIds.has(item.production_order_id)).map((item) => item.id);
+      if (staleQueueIds.length) await supabase.from('mes_production_schedule_queue').delete().eq('organization_id', organizationId).in('id', staleQueueIds);
+      setStations((stationResult.data ?? []) as Station[]);
+      setWorkCenters((centerResult.data ?? []) as WorkCenter[]);
+      setOrders(activeOrders);
+      setProductionPieces((pieceResult.data ?? []) as ProductionPiece[]);
+      setQueue(loadedQueue.filter((item) => activeOrderIds.has(item.production_order_id)));
+      setError('');
+    }
     setLoading(false);
   }, [organizationId]);
   React.useEffect(() => { void load(); }, [load]);
@@ -70,7 +82,8 @@ export function ProductionScheduleWorkspace({ onNavigate, organizationId }: Prop
   const addOrder = async (order: Order) => {
     if (!selectedStation) return;
     setSavingOrderId(order.id);
-    const { data, error: saveError } = await supabase.from('mes_production_schedule_queue').insert({ organization_id: organizationId, station_id: selectedStation.id, production_order_id: order.id, position: queue.filter((item) => item.station_id === selectedStation.id).length + 1 }).select('id, station_id, production_order_id, position').single();
+    const stationPositions = queue.filter((item) => item.station_id === selectedStation.id).map((item) => item.position);
+    const { data, error: saveError } = await supabase.from('mes_production_schedule_queue').insert({ organization_id: organizationId, station_id: selectedStation.id, production_order_id: order.id, position: Math.max(0, ...stationPositions) + 1 }).select('id, station_id, production_order_id, position').single();
     setSavingOrderId('');
     if (saveError) { setError(saveError.message); return; }
     setQueue((current) => [...current, data as QueueItem]); setSelectedStationId('');
@@ -135,7 +148,7 @@ export function ProductionScheduleWorkspace({ onNavigate, organizationId }: Prop
         const stationPieceCount = order.manufacturing_type === 'multi-step' ? multiStepPieceCount(order.id, station.code) : Number(order.planned_quantity);
         const itemIndex = stationQueue.findIndex((candidate) => candidate.id === item.id);
         return <article className={`production-queue-order${draggedQueueItemId === item.id ? ' dragging' : ''}`} draggable={reorderingStationId !== station.id} onDragStart={() => setDraggedQueueItemId(item.id)} onDragEnd={() => setDraggedQueueItemId('')} onDragOver={(event) => event.preventDefault()} onDrop={() => dropQueueItem(station.id, item.id)} key={item.id}><div className="production-queue-order-controls"><span><GripVertical size={15} /> Queue {itemIndex + 1}</span><div><button type="button" disabled={itemIndex === 0 || reorderingStationId === station.id} aria-label={`Move order ${order.order_number} earlier`} onClick={() => moveQueueItem(station.id, item.id, -1)}><ChevronLeft size={15} /></button><button type="button" disabled={itemIndex === stationQueue.length - 1 || reorderingStationId === station.id} aria-label={`Move order ${order.order_number} later`} onClick={() => moveQueueItem(station.id, item.id, 1)}><ChevronRight size={15} /></button></div></div><header className={risk}><span><AlertTriangle size={14} /> {riskLabels[risk]}</span><b>{deliveryDistance(order.due_date)}</b><time><CalendarDays size={13} /> {formatDate(order.due_date)}</time></header><div><small>Production order</small><strong>#{order.order_number}</strong><span>{order.client_name || 'Customer not assigned'}</span><dl><div><dt>Part</dt><dd>{order.part_number || order.part_name || '—'}</dd></div>
-{order.manufacturing_type === 'multi-step' ? <div className="production-multistep-piece-count"><dt>Multi-step</dt><dd>{stationPieceCount.toLocaleString()} pieces for this station</dd></div> : null}<div><dt>Pieces</dt><dd>{stationPieceCount.toLocaleString()}</dd></div>
+{order.manufacturing_type === 'multi-step' ? <div className="production-multistep-piece-count"><dt>Multi-step</dt><dd>{stationPieceCount.toLocaleString()} pieces for this station</dd></div> : null}<div><dt>Pieces</dt><dd>{stationPieceCount.toLocaleString()}</dd></div><div className="production-queue-order-status"><dt>Status</dt><dd className={`status-${order.status}`}>{order.status.replaceAll('-', ' ')}</dd></div>
 <div><dt>Progress</dt><dd>{Number(order.completed_quantity).toLocaleString()} / {Number(order.planned_quantity).toLocaleString()}</dd></div><div><dt>Priority</dt><dd>{order.priority}</dd></div></dl></div></article>;
       })}<button className="production-queue-add" type="button" onClick={() => setSelectedStationId(station.id)}><Plus size={28} /><strong>Add order</strong><span>Place the next job in this station queue</span></button></div></section>;
     })}</div>}
