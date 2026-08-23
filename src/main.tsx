@@ -11,6 +11,7 @@ import {
   Cable,
   Calculator,
   CalendarClock,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Check,
@@ -4663,6 +4664,17 @@ function LoggedDashboardPage({
           <div className="manufacturing-focus-actions">
             <button type="button" onClick={onToggleLanguage}><Languages size={17} /> {languageCode === 'es' ? 'ES' : 'EN'}</button>
             <button className="manufacturing-focus-profile" type="button" onClick={() => setAvatarDialogOpen(true)}><UserAvatar user={user} /><span><strong>{user.name}</strong><small>{t('Profile')}</small></span></button>
+            {activeMesWorkspace ? (
+              <button className="manufacturing-focus-organization" type="button" onClick={() => setManufacturingOrganizationDialogOpen(true)}>
+                <span>
+                  {manufacturingOrganization?.logoUrl ? <img src={manufacturingOrganization.logoUrl} alt="" aria-hidden="true" /> : <Building2 size={16} />}
+                </span>
+                <span>
+                  <strong>{manufacturingOrganization?.name || t('No organization')}</strong>
+                </span>
+                <ChevronDown size={14} />
+              </button>
+            ) : null}
             <button type="button" onClick={onSignOut} title={t('Sign out')}><LogIn size={17} /></button>
           </div>
         </header>

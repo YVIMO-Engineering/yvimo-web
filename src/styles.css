@@ -39863,6 +39863,61 @@ body[data-screenshot-export="academy-track"] .academy-mobile-track-step button {
   font-size: 9px;
 }
 
+.manufacturing-focus-actions > .manufacturing-focus-organization {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  gap: 7px;
+  min-width: 174px;
+  max-width: 230px;
+  padding: 3px 8px 3px 4px;
+  text-align: left;
+}
+
+.manufacturing-focus-organization > span:first-child {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  overflow: hidden;
+  place-items: center;
+  border: 1px solid rgba(255, 138, 31, 0.26);
+  border-radius: 7px;
+  background: #fff7ef;
+  color: var(--orange-strong);
+}
+
+.manufacturing-focus-organization > span:first-child img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.manufacturing-focus-organization > span:nth-child(2) {
+  display: grid;
+  align-items: center;
+  min-width: 0;
+}
+
+.manufacturing-focus-organization small {
+  color: #a85a1e;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.manufacturing-focus-organization strong {
+  overflow: hidden;
+  color: #18222d;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.manufacturing-focus-organization > svg {
+  color: #a85a1e;
+}
+
 .manufacturing-focus-shell .logged-workspace.manufacturing-workspace-active {
   min-height: calc(100vh - 64px);
 }
@@ -39921,6 +39976,78 @@ body[data-screenshot-export="academy-track"] .academy-mobile-track-step button {
   text-align: left;
 }
 
+/* Manufacturing hub: category tabs above the existing application launcher. */
+.manufacturing-focus-shell .manufacturing-suite-stage,
+.manufacturing-focus-shell .manufacturing-specialty-stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: center;
+  width: min(100%, 720px);
+  min-height: 0;
+  margin: 22px auto 0;
+  padding: 0;
+  overflow: visible;
+}
+
+.manufacturing-focus-shell .manufacturing-suite-panel,
+.manufacturing-focus-shell .manufacturing-suite-orbit,
+.manufacturing-focus-shell .manufacturing-flow {
+  display: none;
+}
+
+.manufacturing-focus-shell .manufacturing-suite-right {
+  display: grid;
+  grid-template-columns: 528px;
+  justify-content: center;
+  gap: 12px;
+  width: 528px;
+}
+
+.manufacturing-focus-shell .manufacturing-suite-menu {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  width: 528px;
+  border: 1px solid rgba(255, 138, 31, 0.18);
+  border-radius: 14px;
+  padding: 6px;
+  background: rgba(15, 19, 24, 0.72);
+  box-shadow: 0 16px 38px rgba(0, 0, 0, 0.18);
+}
+
+.manufacturing-focus-shell .manufacturing-suite-row {
+  min-height: 46px;
+  border-radius: 9px;
+  padding: 0 10px;
+  background: rgba(255, 255, 255, 0.09);
+  color: rgba(255, 255, 255, 0.76);
+  box-shadow: none;
+  transition: border-color 0.18s ease, background 0.18s ease, color 0.18s ease, transform 0.18s ease;
+}
+
+.manufacturing-focus-shell .manufacturing-suite-row:hover,
+.manufacturing-focus-shell .manufacturing-suite-row:focus-visible {
+  border-color: rgba(255, 138, 31, 0.48);
+  background: rgba(255, 138, 31, 0.12);
+  color: #ffffff;
+  transform: translateY(-1px);
+}
+
+.manufacturing-focus-shell .manufacturing-suite-row.active {
+  border-color: var(--orange);
+  background: var(--orange);
+  color: #ffffff;
+  box-shadow: 0 9px 22px rgba(255, 138, 31, 0.22);
+}
+
+.manufacturing-focus-shell .manufacturing-suite-row strong {
+  font-size: 13px;
+}
+
+.manufacturing-focus-shell .manufacturing-app-launcher-stack {
+  margin-top: 0;
+}
+
 @media (max-width: 1180px) {
   .manufacturing-focus-shell .manufacturing-page-header {
     grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
@@ -39960,12 +40087,41 @@ body[data-screenshot-export="academy-track"] .academy-mobile-track-step button {
     display: none;
   }
 
+  .manufacturing-focus-actions > .manufacturing-focus-organization {
+    display: flex;
+    min-width: 36px;
+    width: 36px;
+    padding: 3px;
+  }
+
+  .manufacturing-focus-organization > span:nth-child(2),
+  .manufacturing-focus-organization > svg {
+    display: none;
+  }
+
   .manufacturing-focus-brand strong {
     font-size: 15px;
   }
 
+  .manufacturing-focus-brand em {
+    display: none;
+  }
+
   .manufacturing-focus-shell .manufacturing-page-header {
     grid-template-columns: 1fr;
+  }
+
+  .manufacturing-focus-shell .manufacturing-suite-stage,
+  .manufacturing-focus-shell .manufacturing-specialty-stage,
+  .manufacturing-focus-shell .manufacturing-suite-right,
+  .manufacturing-focus-shell .manufacturing-suite-menu,
+  .manufacturing-focus-shell .manufacturing-app-launcher-stack,
+  .manufacturing-focus-shell .manufacturing-app-launcher {
+    width: min(100%, 528px);
+  }
+
+  .manufacturing-focus-shell .manufacturing-suite-right {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .manufacturing-focus-shell .manufacturing-page-header > .engineering-back-button,
