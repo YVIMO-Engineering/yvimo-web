@@ -7870,6 +7870,7 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
   const [showAddForm, setShowAddForm] = React.useState(false);
   const [showStationForm, setShowStationForm] = React.useState(false);
   const [showDetailModal, setShowDetailModal] = React.useState(false);
+  const [detailOrderNumber, setDetailOrderNumber] = React.useState('');
   const [stationLoadHelpOpen, setStationLoadHelpOpen] = React.useState(false);
   const [jobQueueSummary, setJobQueueSummary] = React.useState<JobQueueSummary | null>(null);
   const [openKpiHelp, setOpenKpiHelp] = React.useState<WorkCenterKpiHelpKey | null>(null);
@@ -8339,6 +8340,12 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
     window.sessionStorage.setItem(productionOrderDeepLinkKey, order.orderNumber);
     onNavigate('/workspace/manufacturing-ops/mes/orders');
   }, [onNavigate]);
+
+  const openProductionOrderDetails = React.useCallback((order: ProductionOrder) => {
+    window.sessionStorage.setItem(productionOrderDeepLinkKey, order.orderNumber);
+    window.sessionStorage.setItem(productionOrderDetailsDeepLinkKey, order.orderNumber);
+    setDetailOrderNumber(order.orderNumber);
+  }, []);
 
   const toggleWorkCenterKpiFilter = (filter: WorkCenterKpiFilter) => {
     setActiveWorkCenterKpiFilter((current) => (current === filter ? null : filter));
@@ -9619,8 +9626,9 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
                           type="button"
                           onClick={(event) => {
                             event.stopPropagation();
-                            openProductionOrderFromShiftChip(stationCurrentOrder);
+                            openProductionOrderDetails(stationCurrentOrder);
                           }}
+                          onKeyDown={(event) => event.stopPropagation()}
                         >
                           {stationCurrentJob}
                         </button>
@@ -10094,6 +10102,15 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
       ) : null}
 
       {jobQueueSummary ? <JobQueueModal summary={jobQueueSummary} onClose={() => setJobQueueSummary(null)} /> : null}
+
+      {detailOrderNumber ? (
+        <ProductionOrdersWorkspace
+          organizationId={organizationId}
+          onNavigate={onNavigate}
+          modalOnly
+          onModalClose={() => setDetailOrderNumber('')}
+        />
+      ) : null}
 
       {workCenterConfirmation ? (
         <div className="mes-modal-backdrop" role="presentation">

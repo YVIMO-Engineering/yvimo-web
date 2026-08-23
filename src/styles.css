@@ -2278,6 +2278,49 @@ body.work-center-map-expanded .logged-workspace {
   height: 54px;
 }
 
+.workspace-module-logo {
+  display: block;
+  width: 72px;
+  height: 72px;
+  overflow: hidden;
+  border-radius: 17px;
+  background: #ffffff;
+  box-shadow: 0 9px 24px rgba(32, 36, 42, 0.11);
+  transition: box-shadow 0.18s ease, transform 0.18s ease;
+}
+
+.workspace-module-heading {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+}
+
+.workspace-module-heading > strong {
+  color: var(--ink);
+  font-size: 24px;
+  line-height: 1.14;
+  transition: color 0.18s ease;
+}
+
+.workspace-module-logo img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.workspace-flagship-card:hover .workspace-module-logo,
+.workspace-flagship-card:focus-visible .workspace-module-logo {
+  box-shadow: 0 13px 30px rgba(32, 36, 42, 0.16);
+  transform: scale(1.035);
+}
+
+.workspace-flagship-card:hover .workspace-module-heading > strong,
+.workspace-flagship-card:focus-visible .workspace-module-heading > strong {
+  color: var(--orange-strong);
+}
+
 .workspace-flagship-card .workspace-access-copy {
   gap: 11px;
 }
@@ -2320,6 +2363,8 @@ body.work-center-map-expanded .logged-workspace {
 
 .workspace-health-card:hover .workspace-access-copy strong,
 .workspace-health-card:focus-visible .workspace-access-copy strong,
+.workspace-health-card:hover .workspace-module-heading > strong,
+.workspace-health-card:focus-visible .workspace-module-heading > strong,
 .workspace-health-card:hover > svg,
 .workspace-health-card:focus-visible > svg {
   color: #1565c0;
@@ -2354,6 +2399,8 @@ body.work-center-map-expanded .logged-workspace {
 
 .workspace-academy-card:hover .workspace-access-copy strong,
 .workspace-academy-card:focus-visible .workspace-access-copy strong,
+.workspace-academy-card:hover .workspace-module-heading > strong,
+.workspace-academy-card:focus-visible .workspace-module-heading > strong,
 .workspace-academy-card:hover > svg,
 .workspace-academy-card:focus-visible > svg {
   color: #5d3fa8;
@@ -39677,5 +39724,255 @@ body[data-screenshot-export="academy-track"] .academy-mobile-track-step button {
 @media (max-width: 430px) {
   .station-insights-main .station-kpi-grid {
     grid-template-columns: minmax(150px, 190px);
+  }
+}
+
+/* Focused Manufacturing shell: compact product header without the global dashboard rail. */
+.site-shell-manufacturing-focus > .topbar {
+  display: none;
+}
+
+.logged-shell.manufacturing-focus-shell {
+  grid-template-columns: minmax(0, 1fr);
+  padding-top: 64px;
+}
+
+.manufacturing-focus-shell > .logged-sidebar {
+  display: none;
+}
+
+.manufacturing-focus-shell > .logged-workspace {
+  grid-column: 1;
+}
+
+.manufacturing-focus-shell.supplier-context-shell {
+  grid-template-columns: 190px minmax(0, 1fr);
+}
+
+.manufacturing-focus-shell.supplier-context-shell > .supplier-shell-context-menu {
+  top: 64px;
+  left: 0;
+}
+
+.manufacturing-focus-shell.supplier-context-shell > .logged-workspace {
+  grid-column: 2;
+}
+
+.manufacturing-focus-topbar {
+  position: fixed;
+  z-index: 100;
+  top: 0;
+  right: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 64px;
+  border-bottom: 1px solid rgba(255, 138, 31, 0.32);
+  padding: 0 clamp(16px, 3vw, 42px);
+  background: rgba(24, 29, 36, 0.97);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(12px);
+}
+
+.manufacturing-focus-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: #ffffff;
+  cursor: pointer;
+}
+
+.manufacturing-focus-brand > span {
+  display: grid;
+  width: 39px;
+  height: 39px;
+  overflow: hidden;
+  place-items: center;
+  border: 1px solid rgba(255, 138, 31, 0.34);
+  border-radius: 10px;
+  background: #ffffff;
+}
+
+.manufacturing-focus-brand img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.manufacturing-focus-brand strong {
+  font-size: 18px;
+}
+
+.manufacturing-focus-brand em {
+  color: var(--orange);
+  font-style: normal;
+}
+
+.manufacturing-focus-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.manufacturing-focus-actions > button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  border: 1px solid rgba(255, 138, 31, 0.28);
+  border-radius: 9px;
+  padding: 0 10px;
+  background: #ffffff;
+  color: #9a4a0c;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.manufacturing-focus-actions .manufacturing-focus-profile {
+  padding: 3px 10px 3px 4px;
+}
+
+.manufacturing-focus-profile > img,
+.manufacturing-focus-profile > span:first-child {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  object-fit: cover;
+}
+
+.manufacturing-focus-profile > span:last-child {
+  display: grid;
+  text-align: left;
+}
+
+.manufacturing-focus-profile strong {
+  max-width: 150px;
+  overflow: hidden;
+  color: #18222d;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.manufacturing-focus-profile small {
+  color: #7c6554;
+  font-size: 9px;
+}
+
+.manufacturing-focus-shell .logged-workspace.manufacturing-workspace-active {
+  min-height: calc(100vh - 64px);
+}
+
+.manufacturing-focus-shell .manufacturing-page-header {
+  grid-template-columns: minmax(210px, 1fr) minmax(480px, 900px) minmax(286px, 1fr);
+  width: 100%;
+  min-height: 116px;
+  margin: -18px auto 10px;
+  gap: clamp(18px, 2vw, 34px);
+}
+
+.manufacturing-focus-shell .manufacturing-page-header > .engineering-back-button {
+  position: static;
+  grid-column: 1;
+  justify-self: start;
+  align-self: center;
+  margin: 0;
+  transform: none;
+}
+
+.manufacturing-focus-shell .manufacturing-ops-page .manufacturing-ops-hero {
+  grid-column: 2;
+  gap: 7px;
+  width: min(100%, 900px);
+  min-width: 0;
+  margin: 0;
+}
+
+.manufacturing-focus-shell .manufacturing-ops-page .manufacturing-ops-hero h1 {
+  font-size: clamp(38px, 4.4vw, 58px);
+  line-height: 1;
+  text-shadow: 0 14px 34px rgba(0, 0, 0, 0.24);
+}
+
+.manufacturing-focus-shell .manufacturing-ops-page .manufacturing-ops-hero h1 + p {
+  margin-top: 4px;
+  font-size: 15px;
+}
+
+.manufacturing-focus-shell .manufacturing-page-header > .manufacturing-organization-trigger {
+  position: static;
+  grid-column: 3;
+  justify-self: end;
+  align-self: center;
+  width: 286px;
+  min-height: 62px;
+  margin: 0;
+  gap: 10px;
+  border-radius: 12px;
+  transform: none;
+}
+
+.manufacturing-focus-shell .manufacturing-page-header > .manufacturing-organization-trigger > span:last-child {
+  justify-items: start;
+  text-align: left;
+}
+
+@media (max-width: 1180px) {
+  .manufacturing-focus-shell .manufacturing-page-header {
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+    gap: 18px;
+    margin-top: 10px;
+  }
+
+  .manufacturing-focus-shell .manufacturing-page-header > .engineering-back-button {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .manufacturing-focus-shell .manufacturing-ops-page .manufacturing-ops-hero {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    justify-self: center;
+  }
+
+  .manufacturing-focus-shell .manufacturing-page-header > .manufacturing-organization-trigger {
+    position: static;
+    grid-column: 2;
+    grid-row: 1;
+    width: min(360px, 100%);
+  }
+}
+
+@media (max-width: 600px) {
+  .manufacturing-focus-topbar {
+    min-height: 58px;
+  }
+
+  .logged-shell.manufacturing-focus-shell {
+    padding-top: 58px;
+  }
+
+  .manufacturing-focus-profile > span:last-child {
+    display: none;
+  }
+
+  .manufacturing-focus-brand strong {
+    font-size: 15px;
+  }
+
+  .manufacturing-focus-shell .manufacturing-page-header {
+    grid-template-columns: 1fr;
+  }
+
+  .manufacturing-focus-shell .manufacturing-page-header > .engineering-back-button,
+  .manufacturing-focus-shell .manufacturing-page-header > .manufacturing-organization-trigger,
+  .manufacturing-focus-shell .manufacturing-ops-page .manufacturing-ops-hero {
+    grid-column: 1;
+    grid-row: auto;
+    justify-self: center;
   }
 }

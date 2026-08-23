@@ -32,6 +32,16 @@ type OrderRiskRow = {
 type RiskLevel = OrderRiskLevel;
 
 type OrderSerialRow = { id: string; production_order_id: string; serial_number: string | null; tool_id: string | null; assigned_station: string | null };
+type ReceptionItemRow = {
+  id: string;
+  production_order_id: string | null;
+  production_order_number: string | null;
+  customer_id: string | null;
+  quantity: number | null;
+  sent_at: string | null;
+  mes_customers: { customer_name: string | null } | Array<{ customer_name: string | null }> | null;
+  mes_production_orders: { assigned_station: string | null; assigned_work_center: string | null } | Array<{ assigned_station: string | null; assigned_work_center: string | null }> | null;
+};
 type CoatingProgressRow = { reception_item_id: string; production_serial_id: string; coating_sent_at: string | null; coating_returned_at: string | null };
 type CoatingSerialProgress = { id: string; serialNumber: string; toolId: string; coatingSentAt: string; coatingReturnedAt: string };
 type StationRow = { code: string; name: string; work_center_id: string };
@@ -69,7 +79,7 @@ function loadSavedFilters(organizationId: string): SavedOrderRiskFilters {
   }
 }
 
-const activeStatuses: ProductionOrderStatus[] = ['planned', 'released', 'running', 'paused', 'waiting-inspection'];
+const visibleProcessStatuses: ProductionOrderStatus[] = ['planned', 'released', 'running', 'paused', 'waiting-inspection', 'completed'];
 
 function daysUntilDue(dueDate: string) {
   return getDaysUntilDelivery(dueDate);
@@ -149,7 +159,7 @@ export function OrderRisksWorkspace({ onNavigate, organizationId, languageCode }
         .from('mes_production_orders')
         .select('id, order_number, client_name, planned_quantity, completed_quantity, scrap_quantity, due_date, status, assigned_station, assigned_work_center, created_at')
         .eq('organization_id', organizationId)
-        .in('status', activeStatuses)
+        .in('status', visibleProcessStatuses)
         .order('due_date', { ascending: true }),
       supabase
         .from('mes_production_serials')
@@ -168,7 +178,7 @@ export function OrderRisksWorkspace({ onNavigate, organizationId, languageCode }
         .order('name', { ascending: true }),
       supabase
         .from('mes_customer_reception_items')
-        .select('id, production_order_id, production_order_number, customer_id, quantity, mes_customers(customer_name), mes_production_orders!production_order_id(assigned_station, assigned_work_center)')
+        .select('id, production_order_id, production_order_number, customer_id, quantity, sent_at, mes_customers(customer_name), mes_production_orders!production_order_id(assigned_station, assigned_work_center)')
         .eq('organization_id', organizationId)
         .not('production_order_id', 'is', null),
       supabase
@@ -187,7 +197,15 @@ export function OrderRisksWorkspace({ onNavigate, organizationId, languageCode }
         groups[serial.production_order_id] = group;
         return groups;
       }, {});
-      setOrders(((data ?? []) as Array<Omit<OrderRiskRow, 'serialNumbers' | 'stationCodes' | 'assignedWorkCenter' | 'createdAt'> & { assigned_station: string | null; assigned_work_center: string | null; created_at: string | null }>).map((order) => ({
+      const receptionItems = (coatingData ?? []) as ReceptionItemRow[];
+      const receptionItemsByOrder = receptionItems.reduce<Record<string, ReceptionItemRow[]>>((groups, item) => {
+        if (item.production_order_id) (groups[item.production_order_id] ??= []).push(item);
+        return groups;
+      }, {});
+      setOrders(((data ?? []) as Array<Omit<OrderRiskRow, 'serialNumbers' | 'stationCodes' | 'assignedWorkCenter' | 'createdAt'> & { assigned_station: string | null; assigned_work_center: string | null; created_at: string | null }>).filter((order) => {
+        const orderReceptionItems = receptionItemsByOrder[order.id] ?? [];
+        return orderReceptionItems.some((item) => !item.sent_at);
+      }).map((order) => ({
         ...order,
         serialNumbers: serialsByOrder[order.id]?.serials ?? [],
         stationCodes: Array.from(new Set([order.assigned_station, ...(serialsByOrder[order.id]?.stations ?? [])].filter(Boolean) as string[])),
@@ -201,7 +219,7 @@ export function OrderRisksWorkspace({ onNavigate, organizationId, languageCode }
         (groups[progress.reception_item_id] ??= []).push(progress);
         return groups;
       }, {});
-      setCoatingTrackings((coatingData ?? []).map((item) => {
+      setCoatingTrackings(receptionItems.map((item) => {
         const customer = Array.isArray(item.mes_customers) ? item.mes_customers[0] : item.mes_customers;
         const productionOrder = Array.isArray(item.mes_production_orders) ? item.mes_production_orders[0] : item.mes_production_orders;
         const productionOrderId = item.production_order_id ?? '';

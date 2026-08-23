@@ -2,6 +2,7 @@ import React from 'react';
 import { AlertTriangle, ArrowLeft, CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, Factory, GripVertical, LoaderCircle, PackageOpen, Plus, X } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { getDaysUntilDelivery } from './DeliveryRiskTimeline';
+import { ProductionOrdersWorkspace } from './MesWorkspaces';
 import { getOrderRiskLevel, type OrderRiskLevel } from './orderRisk';
 import './productionSchedule.css';
 
@@ -12,6 +13,8 @@ type Order = { id: string; order_number: string; client_name: string | null; par
 type QueueItem = { id: string; station_id: string; production_order_id: string; position: number };
 type ProductionPiece = { production_order_id: string; assigned_station: string | null; compatible_stations: string[] | null };
 
+const productionOrderDeepLinkKey = 'yvimo:mes:selectedProductionOrderNumber';
+const productionOrderDetailsDeepLinkKey = 'yvimo:mes:openProductionOrderDetails';
 const activeStatuses = ['planned', 'released', 'running', 'paused'];
 const riskLabels: Record<OrderRiskLevel, string> = { overdue: 'Overdue', high: 'High risk', moderate: 'Moderate risk', low: 'Low risk' };
 const deliveryDistance = (dueDate: string) => { const days = getDaysUntilDelivery(dueDate); return days < 0 ? `${Math.abs(days)} days overdue` : days === 0 ? 'Due today' : days === 1 ? '1 day left' : `${days} days left`; };
@@ -26,7 +29,7 @@ const stationColor = (index: number) => {
 export function ProductionScheduleWorkspace({ onNavigate, organizationId }: Props) {
   const [stations, setStations] = React.useState<Station[]>([]), [workCenters, setWorkCenters] = React.useState<WorkCenter[]>([]), [orders, setOrders] = React.useState<Order[]>([]), [productionPieces, setProductionPieces] = React.useState<ProductionPiece[]>([]), [queue, setQueue] = React.useState<QueueItem[]>([]);
   const [selectedStationId, setSelectedStationId] = React.useState(''), [selectedWorkCenterId, setSelectedWorkCenterId] = React.useState('all'), [workspaceMenuOpen, setWorkspaceMenuOpen] = React.useState(false), [loading, setLoading] = React.useState(true), [savingOrderId, setSavingOrderId] = React.useState(''), [error, setError] = React.useState('');
-  const [draggedQueueItemId, setDraggedQueueItemId] = React.useState(''), [reorderingStationId, setReorderingStationId] = React.useState('');
+  const [reorderingStationId, setReorderingStationId] = React.useState(''), [detailOrderNumber, setDetailOrderNumber] = React.useState('');
   const [draggedStationId, setDraggedStationId] = React.useState(''), [reorderingStations, setReorderingStations] = React.useState(false);
   const workspaceDropdownRef = React.useRef<HTMLDivElement>(null);
 
@@ -105,11 +108,10 @@ export function ProductionScheduleWorkspace({ onNavigate, organizationId }: Prop
     void reorderStationQueue(stationId, ids);
   };
 
-  const dropQueueItem = (stationId: string, targetId: string) => {
-    if (!draggedQueueItemId || draggedQueueItemId === targetId) return setDraggedQueueItemId('');
-    const ids = queue.filter((item) => item.station_id === stationId).sort((a, b) => a.position - b.position).map((item) => item.id), from = ids.indexOf(draggedQueueItemId), to = ids.indexOf(targetId);
-    if (from < 0 || to < 0) return setDraggedQueueItemId('');
-    const [moved] = ids.splice(from, 1); ids.splice(to, 0, moved); setDraggedQueueItemId(''); void reorderStationQueue(stationId, ids);
+  const openOrderDetails = (orderNumber: string) => {
+    window.sessionStorage.setItem(productionOrderDeepLinkKey, orderNumber);
+    window.sessionStorage.setItem(productionOrderDetailsDeepLinkKey, orderNumber);
+    setDetailOrderNumber(orderNumber);
   };
 
   const reorderStations = async (visibleIds: string[]) => {
@@ -147,7 +149,7 @@ export function ProductionScheduleWorkspace({ onNavigate, organizationId }: Prop
         const order = orderById.get(item.production_order_id); if (!order) return null; const risk = getOrderRiskLevel(order.due_date);
         const stationPieceCount = order.manufacturing_type === 'multi-step' ? multiStepPieceCount(order.id, station.code) : Number(order.planned_quantity);
         const itemIndex = stationQueue.findIndex((candidate) => candidate.id === item.id);
-        return <article className={`production-queue-order${draggedQueueItemId === item.id ? ' dragging' : ''}`} draggable={reorderingStationId !== station.id} onDragStart={() => setDraggedQueueItemId(item.id)} onDragEnd={() => setDraggedQueueItemId('')} onDragOver={(event) => event.preventDefault()} onDrop={() => dropQueueItem(station.id, item.id)} key={item.id}><div className="production-queue-order-controls"><span><GripVertical size={15} /> Queue {itemIndex + 1}</span><div><button type="button" disabled={itemIndex === 0 || reorderingStationId === station.id} aria-label={`Move order ${order.order_number} earlier`} onClick={() => moveQueueItem(station.id, item.id, -1)}><ChevronLeft size={15} /></button><button type="button" disabled={itemIndex === stationQueue.length - 1 || reorderingStationId === station.id} aria-label={`Move order ${order.order_number} later`} onClick={() => moveQueueItem(station.id, item.id, 1)}><ChevronRight size={15} /></button></div></div><header className={risk}><span><AlertTriangle size={14} /> {riskLabels[risk]}</span><b>{deliveryDistance(order.due_date)}</b><time><CalendarDays size={13} /> {formatDate(order.due_date)}</time></header><div><small>Production order</small><strong>#{order.order_number}</strong><span>{order.client_name || 'Customer not assigned'}</span><dl><div><dt>Part</dt><dd>{order.part_number || order.part_name || '—'}</dd></div>
+        return <article className="production-queue-order clickable" role="button" tabIndex={0} aria-label={`Open production order ${order.order_number} details`} onClick={(event) => { if (!(event.target as HTMLElement).closest('button')) openOrderDetails(order.order_number); }} onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); openOrderDetails(order.order_number); } }} key={item.id}><div className="production-queue-order-controls"><span>Queue {itemIndex + 1}</span><div><button type="button" disabled={itemIndex === 0 || reorderingStationId === station.id} aria-label={`Move order ${order.order_number} earlier`} onClick={(event) => { event.stopPropagation(); moveQueueItem(station.id, item.id, -1); }}><ChevronLeft size={15} /></button><button type="button" disabled={itemIndex === stationQueue.length - 1 || reorderingStationId === station.id} aria-label={`Move order ${order.order_number} later`} onClick={(event) => { event.stopPropagation(); moveQueueItem(station.id, item.id, 1); }}><ChevronRight size={15} /></button></div></div><header className={risk}><span><AlertTriangle size={14} /> {riskLabels[risk]}</span><b>{deliveryDistance(order.due_date)}</b><time><CalendarDays size={13} /> {formatDate(order.due_date)}</time></header><div><small>Production order</small><strong>#{order.order_number}</strong><span>{order.client_name || 'Customer not assigned'}</span><dl><div><dt>Part</dt><dd>{order.part_number || order.part_name || '—'}</dd></div>
 {order.manufacturing_type === 'multi-step' ? <div className="production-multistep-piece-count"><dt>Multi-step</dt><dd>{stationPieceCount.toLocaleString()} pieces for this station</dd></div> : null}<div><dt>Pieces</dt><dd>{stationPieceCount.toLocaleString()}</dd></div><div className="production-queue-order-status"><dt>Status</dt><dd className={`status-${order.status}`}>{order.status.replaceAll('-', ' ')}</dd></div>
 <div><dt>Progress</dt><dd>{Number(order.completed_quantity).toLocaleString()} / {Number(order.planned_quantity).toLocaleString()}</dd></div><div><dt>Priority</dt><dd>{order.priority}</dd></div></dl></div></article>;
       })}<button className="production-queue-add" type="button" onClick={() => setSelectedStationId(station.id)}><Plus size={28} /><strong>Add order</strong><span>Place the next job in this station queue</span></button></div></section>;
@@ -158,5 +160,6 @@ const stationPieceCount = order.manufacturing_type === 'multi-step' ? multiStepP
 return <button type="button" disabled={Boolean(savingOrderId)} onClick={() => void addOrder(order)} key={order.id}><span className={`production-order-option-risk ${risk}`}>{riskLabels[risk]} · {deliveryDistance(order.due_date)}</span><strong>#{order.order_number}</strong><b>{order.client_name || 'Customer not assigned'}</b><dl><div><dt>Part</dt><dd>{order.part_number || order.part_name || '—'}</dd></div>
 {order.manufacturing_type === 'multi-step' ? <div className="production-multistep-piece-count"><dt>Multi-step</dt><dd>{stationPieceCount.toLocaleString()} pieces for this station</dd></div> : null}<div><dt>Pieces</dt><dd>{stationPieceCount.toLocaleString()}</dd></div>
 <div><dt>Completed</dt><dd>{Number(order.completed_quantity).toLocaleString()}</dd></div><div><dt>Delivery</dt><dd>{formatDate(order.due_date)}</dd></div><div><dt>Status</dt><dd>{order.status}</dd></div><div><dt>Priority</dt><dd>{order.priority}</dd></div></dl>{savingOrderId === order.id ? <em><LoaderCircle size={15} /> Adding…</em> : <em>Add to queue <Plus size={15} /></em>}</button>; }) : <div className="production-order-options-empty"><PackageOpen size={26} /><strong>No available orders for this station</strong><span>Active orders assigned to this station will appear here.</span></div>}</div></section></div> : null}
+    {detailOrderNumber ? <ProductionOrdersWorkspace organizationId={organizationId} onNavigate={onNavigate} modalOnly onModalClose={() => setDetailOrderNumber('')} /> : null}
   </section>;
 }

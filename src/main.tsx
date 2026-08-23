@@ -3507,6 +3507,7 @@ function LoggedDashboardPage({
     label: string;
     description: string;
     icon: React.ComponentType<{ size?: number }>;
+    logo?: string;
     path: string;
     flagship?: boolean;
     theme?: 'health' | 'academy';
@@ -3515,6 +3516,7 @@ function LoggedDashboardPage({
       label: 'Health Apps',
       description: 'Clinical tools and practical apps designed to support safer, simpler, and more efficient healthcare workflows.',
       icon: Hospital,
+      logo: '/assets/health/yvimo-health-logo.png',
       path: '/workspace/health-apps',
       flagship: true,
       theme: 'health',
@@ -3523,6 +3525,7 @@ function LoggedDashboardPage({
       label: 'YVIMO Academy',
       description: 'Continue courses, guided paths, progress, and professional learning.',
       icon: GraduationCap,
+      logo: '/assets/workspace/yvimo-academy-logo.png',
       path: '/academy',
       flagship: true,
       theme: 'academy',
@@ -3531,6 +3534,7 @@ function LoggedDashboardPage({
       label: 'Manufacturing Ops',
       description: 'MES, APS, production tracking, scheduling, and manufacturing intelligence in one connected workspace.',
       icon: Factory,
+      logo: '/assets/workspace/manufacturing-ops-logo.png',
       path: '/workspace/manufacturing-ops',
       flagship: true,
     },
@@ -4635,6 +4639,7 @@ function LoggedDashboardPage({
       isSupplierAccessOverview ? 'supplier-access-shell' : '',
       isSupplierAccessOverview && supplierCustomerPickerOpen ? 'supplier-customer-picker-open' : '',
       standaloneHealth ? 'standalone-health-shell' : '',
+      isManufacturingOpsPage ? 'manufacturing-focus-shell' : '',
       publicHealth ? 'public-health-shell' : '',
     ].filter(Boolean).join(' ')}>
       {standaloneHealth ? (
@@ -4645,6 +4650,19 @@ function LoggedDashboardPage({
           <div className="health-clinical-actions">
             <button type="button" onClick={onToggleLanguage}><Languages size={17} /> {languageCode === 'es' ? 'ES' : 'EN'}</button>
             <button className="health-clinical-profile" type="button" onClick={() => setAvatarDialogOpen(true)}><UserAvatar user={user} /><span><strong>{user.name}</strong><small>{t('Profile')}</small></span></button>
+            <button type="button" onClick={onSignOut} title={t('Sign out')}><LogIn size={17} /></button>
+          </div>
+        </header>
+      ) : null}
+      {isManufacturingOpsPage ? (
+        <header className="manufacturing-focus-topbar">
+          <button className="manufacturing-focus-brand" type="button" onClick={() => onNavigate('/workspace/manufacturing-ops')}>
+            <span><img src="/assets/workspace/manufacturing-ops-logo.png" alt="" aria-hidden="true" /></span>
+            <strong>YVIMO <em>Manufacturing Ops</em></strong>
+          </button>
+          <div className="manufacturing-focus-actions">
+            <button type="button" onClick={onToggleLanguage}><Languages size={17} /> {languageCode === 'es' ? 'ES' : 'EN'}</button>
+            <button className="manufacturing-focus-profile" type="button" onClick={() => setAvatarDialogOpen(true)}><UserAvatar user={user} /><span><strong>{user.name}</strong><small>{t('Profile')}</small></span></button>
             <button type="button" onClick={onSignOut} title={t('Sign out')}><LogIn size={17} /></button>
           </div>
         </header>
@@ -5262,10 +5280,10 @@ function LoggedDashboardPage({
                     <h1>{t('Manufacturing Ops')}</h1>
                     <p>{t('Plan, execute, track, and improve manufacturing operations from one connected YVIMO workspace.')}</p>
                   </section>
+                  {manufacturingOrganizationTrigger}
                 </div>
                 {isMesPage || isApsPage || isOperationsIntelligencePage ? (
               <>
-                {manufacturingOrganizationTrigger}
         {manufacturingOrganizationDialog}
                 <section
                   className={[
@@ -5373,7 +5391,6 @@ function LoggedDashboardPage({
               </>
             ) : (
               <>
-                {manufacturingOrganizationTrigger}
                 {manufacturingOrganizationDialog}
                 <section
                   className={[
@@ -5639,11 +5656,15 @@ function LoggedDashboardPage({
                       key={item.label}
                       onClick={() => onNavigate(item.path)}
                     >
-                      <span className="workspace-access-icon">
-                        <Icon size={24} />
+                      <span className="workspace-module-heading">
+                        {item.logo ? (
+                          <span className="workspace-module-logo"><img src={item.logo} alt="" /></span>
+                        ) : (
+                          <span className="workspace-access-icon"><Icon size={24} /></span>
+                        )}
+                        <strong>{t(item.label)}</strong>
                       </span>
                       <span className="workspace-access-copy">
-                        <strong>{t(item.label)}</strong>
                         <span>{t(item.description)}</span>
                       </span>
                       <ArrowRight size={18} />
@@ -6628,7 +6649,7 @@ function App() {
 
   return (
     <div
-      className={['site-shell', isMesApplicationScreen ? 'site-shell-mes-application' : '', isDirectHealthAppsPage ? 'site-shell-health-standalone' : ''].filter(Boolean).join(' ')}
+      className={['site-shell', isMesApplicationScreen ? 'site-shell-mes-application' : '', isDirectHealthAppsPage ? 'site-shell-health-standalone' : '', currentPath === '/workspace/manufacturing-ops' || currentPath.startsWith('/workspace/manufacturing-ops/') ? 'site-shell-manufacturing-focus' : ''].filter(Boolean).join(' ')}
       style={
         {
           '--header-height': `${headerHeight}px`,
