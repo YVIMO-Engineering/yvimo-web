@@ -1846,7 +1846,39 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
   const finishMultiStepStationWork = async (reportedOrder: ProductionOrder) => {
     if (reportedOrder.manufacturingType !== 'multi-step') return false;
     const globalReportedQuantity = reportedOrder.completedQuantity + reportedOrder.scrapQuantity;
-    if (globalReportedQuantity >= reportedOrder.plannedQuantity) return false;
+    if (globalReportedQuantity >= reportedOrder.plannedQuantity) {
+      const completedOrder = await setOperatorTerminalState({
+        orderId: reportedOrder.id,
+        organizationId,
+        stationCode,
+        shift: selectedShift,
+        state: 'completed',
+        reason: 'All Multi-step pieces reported',
+        comment: `Station ${stationCode} reported the final piece and completed the order`,
+      });
+      applyOrder(completedOrder);
+      syncSnapshotOrder(completedOrder);
+      setSnapshot((current) => current ? {
+        ...current,
+        multiStepStationsByOrder: {
+          ...current.multiStepStationsByOrder,
+          [reportedOrder.id]: [],
+        },
+      } : current);
+      setProductionSerials([]);
+      setSelectedProductionSerialId('');
+      setEvents([]);
+      clearTraceabilityMeasurements();
+      setSelectedOrderId('');
+      setState('completed');
+      setTerminalMessage(completedOrder.status === 'waiting-inspection'
+        ? 'Manufacturing completed; waiting for Quality inspection.'
+        : 'All Multi-step pieces were reported. The order is complete.');
+      showToast(completedOrder.status === 'waiting-inspection'
+        ? 'Manufacturing completed; waiting for Quality inspection'
+        : 'Multi-step order completed');
+      return true;
+    }
     const nextStationOrder = stationOrders.find((order) => order.id !== reportedOrder.id && order.status === 'paused')
       ?? stationOrders.find((order) => order.id !== reportedOrder.id && order.status === 'released')
       ?? null;

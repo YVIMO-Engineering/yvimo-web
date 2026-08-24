@@ -178,6 +178,15 @@ function formatReceptionTimestamp(value: string, languageCode: ClientsLanguageCo
   }).format(parsedDate);
 }
 
+function formatReceptionTime(value: string, languageCode: ClientsLanguageCode) {
+  if (!value) return '';
+  const parsedDate = new Date(value);
+  if (Number.isNaN(parsedDate.getTime())) return '';
+  return new Intl.DateTimeFormat(languageCode === 'es' ? 'es-MX' : 'en-US', {
+    hour: 'numeric', minute: '2-digit', second: '2-digit',
+  }).format(parsedDate);
+}
+
 function ReceptionPortalDropdown({ open, onOpenChange, label, disabled = false, className = '', menuClassName = '', children }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -1129,7 +1138,11 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
                 <span><b>Voucher ID</b>{selected.voucherNumber}</span>
                 <span><b>Clients</b>{selected.items.length.toLocaleString()}</span>
                 <span><b>Carrier</b>{selected.carrier || 'Not specified'}</span>
-                <span><b>Arrival Date</b>{formatDate(selected.expectedDate, languageCode)}</span>
+                <span className="client-reception-arrival-timestamp">
+                  <b>Arrival Date</b>
+                  <strong>{formatDate(selected.expectedDate, languageCode)}</strong>
+                  <small>{formatReceptionTime(selected.receivedAt || selected.createdAt, languageCode)}</small>
+                </span>
                 <span className={`supplier-selected-transfer-status client-reception-status-box ${selected.status}`}><b>Status</b><strong>{labelStatus(selected.status)}</strong></span>
               </div>
               <div className="client-reception-actions">

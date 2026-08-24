@@ -598,6 +598,14 @@ export async function setOperatorTerminalState(
       .eq('code', input.stationCode);
     if (stationError) throw stationError;
   }
+  if (input.state === 'completed') {
+    const { error: queueError } = await client
+      .from('mes_production_schedule_queue')
+      .delete()
+      .eq('organization_id', input.organizationId)
+      .eq('production_order_id', input.orderId);
+    if (queueError) throw queueError;
+  }
   return mapProductionOrderRow(resolvedData);
 }
 

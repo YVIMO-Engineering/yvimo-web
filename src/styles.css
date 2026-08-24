@@ -7680,6 +7680,19 @@ body.work-center-map-expanded .logged-workspace {
   min-height: 86px;
 }
 
+.client-reception-identification .client-reception-arrival-timestamp strong {
+  color: #17202a;
+  font-size: 1rem;
+  line-height: 1.15;
+}
+
+.client-reception-identification .client-reception-arrival-timestamp small {
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 850;
+  line-height: 1;
+}
+
 .client-reception-actions {
   display: flex;
   align-items: center;

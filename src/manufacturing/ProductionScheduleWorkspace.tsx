@@ -4,12 +4,13 @@ import { supabase } from '../lib/supabaseClient';
 import { getDaysUntilDelivery } from './DeliveryRiskTimeline';
 import { ProductionOrdersWorkspace } from './MesWorkspaces';
 import { getOrderRiskLevel, type OrderRiskLevel } from './orderRisk';
+import { useSupabaseRealtimeRefresh } from '../lib/useSupabaseRealtimeRefresh';
 import './productionSchedule.css';
 
 type Props = { onNavigate: (path: string) => void; organizationId: string };
 type Station = { id: string; code: string; name: string; type: string; capability_color: string | null; work_center_id: string; schedule_position: number | null };
 type WorkCenter = { id: string; code: string; name: string };
-type Order = { id: string; order_number: string; client_name: string | null; part_number: string; part_name: string; planned_quantity: number; completed_quantity: number; due_date: string; priority: string; status: string; assigned_station: string | null; assigned_work_center: string | null; manufacturing_type: 'multi-step' | 'single-operation' };
+type Order = { id: string; order_number: string; client_name: string | null; part_number: string; part_name: string; planned_quantity: number; completed_quantity: number; scrap_quantity: number; due_date: string; priority: string; status: string; assigned_station: string | null; assigned_work_center: string | null; manufacturing_type: 'multi-step' | 'single-operation' };
 type QueueItem = { id: string; station_id: string; production_order_id: string; position: number };
 type ProductionPiece = { production_order_id: string; assigned_station: string | null; compatible_stations: string[] | null };
 
@@ -38,15 +39,39 @@ export function ProductionScheduleWorkspace({ onNavigate, organizationId }: Prop
     const [stationResult, centerResult, orderResult, pieceResult, queueResult] = await Promise.all([
       supabase.from('mes_work_center_stations').select('id, code, name, type, capability_color, work_center_id, schedule_position').eq('organization_id', organizationId).order('schedule_position').order('name'),
       supabase.from('mes_work_centers').select('id, code, name').eq('organization_id', organizationId).order('name'),
-      supabase.from('mes_production_orders').select('id, order_number, client_name, part_number, part_name, planned_quantity, completed_quantity, due_date, priority, status, assigned_station, assigned_work_center, manufacturing_type').eq('organization_id', organizationId).in('status', activeStatuses).order('due_date'),
+      supabase.from('mes_production_orders').select('id, order_number, client_name, part_number, part_name, planned_quantity, completed_quantity, scrap_quantity, due_date, priority, status, assigned_station, assigned_work_center, manufacturing_type').eq('organization_id', organizationId).in('status', activeStatuses).order('due_date'),
       supabase.from('mes_production_serials').select('production_order_id, assigned_station, compatible_stations').eq('organization_id', organizationId).is('result', null),
       supabase.from('mes_production_schedule_queue').select('id, station_id, production_order_id, position').eq('organization_id', organizationId).order('position'),
     ]);
     const loadError = stationResult.error ?? centerResult.error ?? orderResult.error ?? pieceResult.error ?? queueResult.error;
     if (loadError) setError(`Unable to load the production schedule: ${loadError.message}. Apply SQL migrations 134–136.`);
     else {
-      const activeOrders = (orderResult.data ?? []) as Order[];
+      let activeOrders = (orderResult.data ?? []) as Order[];
       const loadedQueue = (queueResult.data ?? []) as QueueItem[];
+      const pendingOrderIds = new Set((pieceResult.data ?? []).map((piece) => piece.production_order_id));
+      const stationsById = new Map((stationResult.data ?? []).map((station) => [station.id, station.code]));
+      const staleCompletedOrders = activeOrders.filter((order) => (
+        order.manufacturing_type === 'multi-step'
+        && Number(order.completed_quantity) + Number(order.scrap_quantity) >= Number(order.planned_quantity)
+        && !pendingOrderIds.has(order.id)
+      ));
+      const reconciledOrderIds = new Set<string>();
+      await Promise.all(staleCompletedOrders.map(async (order) => {
+        const queuedStationId = loadedQueue.find((item) => item.production_order_id === order.id)?.station_id;
+        const stationCode = queuedStationId ? stationsById.get(queuedStationId) : undefined;
+        if (!stationCode) return;
+        const { error: completionError } = await supabase.rpc('mes_operator_set_state', {
+          p_order_id: order.id,
+          p_organization_id: organizationId,
+          p_station_code: stationCode,
+          p_state: 'completed',
+          p_reason: 'Reconciled completed Multi-step order',
+          p_comment: 'All planned pieces were already reported and no station work remained',
+          p_shift: null,
+        });
+        if (!completionError) reconciledOrderIds.add(order.id);
+      }));
+      activeOrders = activeOrders.filter((order) => !reconciledOrderIds.has(order.id));
       const activeOrderIds = new Set(activeOrders.map((order) => order.id));
       const staleQueueIds = loadedQueue.filter((item) => !activeOrderIds.has(item.production_order_id)).map((item) => item.id);
       if (staleQueueIds.length) await supabase.from('mes_production_schedule_queue').delete().eq('organization_id', organizationId).in('id', staleQueueIds);
@@ -60,6 +85,16 @@ export function ProductionScheduleWorkspace({ onNavigate, organizationId }: Prop
     setLoading(false);
   }, [organizationId]);
   React.useEffect(() => { void load(); }, [load]);
+  const realtimeTables = React.useMemo(() => ([
+    { table: 'mes_production_orders', filter: `organization_id=eq.${organizationId}` },
+    { table: 'mes_production_serials', filter: `organization_id=eq.${organizationId}` },
+    { table: 'mes_production_schedule_queue', filter: `organization_id=eq.${organizationId}` },
+  ]), [organizationId]);
+  useSupabaseRealtimeRefresh({
+    channelName: `production-schedule-live:${organizationId}`,
+    tables: realtimeTables,
+    onRefresh: load,
+  });
   React.useEffect(() => {
     if (!workspaceMenuOpen) return;
     const close = (event: MouseEvent) => { if (!workspaceDropdownRef.current?.contains(event.target as Node)) setWorkspaceMenuOpen(false); };
