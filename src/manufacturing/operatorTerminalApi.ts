@@ -273,20 +273,6 @@ export async function fetchOperatorTerminalSnapshot(organizationId: string, clie
       });
       multiStepStationsByOrder[serial.production_order_id] = stations;
     });
-    orders
-      .filter((order) => (
-        order.manufacturingType === 'multi-step'
-        && order.completedQuantity + order.scrapQuantity >= order.plannedQuantity
-        && !(multiStepStationsByOrder[order.id]?.length)
-      ))
-      .forEach((order) => {
-        const lastReportedSerial = (serialStationData ?? [])
-          .filter((serial) => serial.production_order_id === order.id && serial.assigned_station && serial.reported_at)
-          .sort((first, second) => new Date(second.reported_at).getTime() - new Date(first.reported_at).getTime())[0];
-        if (lastReportedSerial?.assigned_station) {
-          multiStepStationsByOrder[order.id] = [lastReportedSerial.assigned_station];
-        }
-      });
   }
   const currentOrder = orders.find((order) => order.status === 'running')
     ?? orders.find((order) => order.status === 'paused')
@@ -795,9 +781,10 @@ export async function switchOperatorActiveOrder(
     .select('*')
     .eq('id', input.orderId)
     .eq('organization_id', input.organizationId)
+    .in('status', ['released', 'running', 'paused'])
     .single();
 
-  if (selectedError) throw error;
+  if (selectedError) throw selectedError;
 
   const selectedOrder = selectedData as ProductionOrderRow;
   const stationCode = input.stationCode || selectedOrder.assigned_station || '';
@@ -852,7 +839,7 @@ export async function switchOperatorActiveOrder(
     .select('*')
     .single();
 
-  if (updateError) throw error;
+  if (updateError) throw updateError;
 
   await client
     .from('mes_work_center_stations')

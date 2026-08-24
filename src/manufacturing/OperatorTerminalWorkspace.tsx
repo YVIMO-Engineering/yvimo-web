@@ -2394,7 +2394,11 @@ export function OperatorTerminalWorkspace({ onNavigate, organizationId, language
       showToast('Order selected; press Resume to start');
     } catch (error) {
       console.error('Unable to switch active order', error);
-      showToast('Could not change active order');
+      const message = error && typeof error === 'object' && 'message' in error && typeof error.message === 'string'
+        ? error.message
+        : 'Could not change active order';
+      setTerminalMessage(message);
+      showToast(message);
     } finally {
       setSwitchOrderLoading(false);
     }
