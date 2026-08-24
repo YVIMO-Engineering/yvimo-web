@@ -291,8 +291,13 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
   const [existingOrderMenuOpen, setExistingOrderMenuOpen] = React.useState(false);
   const [coatingEvidenceTarget, setCoatingEvidenceTarget] = React.useState<CoatingEvidenceTarget | null>(null);
   const [coatingEvidenceFiles, setCoatingEvidenceFiles] = React.useState<Record<string, File>>({});
+  const [coatingEvidenceSkipped, setCoatingEvidenceSkipped] = React.useState<Record<string, boolean>>({});
   const [coatingEvidenceError, setCoatingEvidenceError] = React.useState('');
   const [coatingEvidenceSaving, setCoatingEvidenceSaving] = React.useState(false);
+  const [coatingSkipSerial, setCoatingSkipSerial] = React.useState<ReceptionSerial | null>(null);
+  const [coatingSkipCode, setCoatingSkipCode] = React.useState('');
+  const [coatingSkipError, setCoatingSkipError] = React.useState('');
+  const [coatingSkipSaving, setCoatingSkipSaving] = React.useState(false);
   const [orderDetails, setOrderDetails] = React.useState<{ order: ProductionOrder; details: ProductionOrderDetailsState } | null>(null);
   const [form, setForm] = React.useState(emptyForm);
   const registryFilterRef = React.useRef<HTMLDivElement>(null);
@@ -779,20 +784,58 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
     return true;
   };
 
-  const openCoatingEvidence = (item: ReceptionItem, action: CoatingEvidenceAction, serialId?: string) => {
+  const openCoatingEvidence = async (item: ReceptionItem, action: CoatingEvidenceAction, serialId?: string) => {
     const serials = serialId ? item.serials.filter((serial) => serial.id === serialId) : item.serials.filter((serial) => (
       action === 'coating-sent' ? !serial.coatingSentAt : serial.coatingSentAt && !serial.coatingReturnedAt
     ));
     if (!serials.length) return;
     setCoatingEvidenceTarget({ item, action, serials });
     setCoatingEvidenceFiles({});
+    setCoatingEvidenceSkipped({});
     setCoatingEvidenceError('');
+    const stage = action === 'coating-sent' ? 'after-sharpening' : 'after-coating';
+    const { data: skippedRows } = await supabase
+      .from('mes_production_piece_evidence_skips')
+      .select('production_serial_id')
+      .eq('organization_id', organizationId)
+      .eq('production_order_id', item.productionOrderId)
+      .eq('stage', stage)
+      .in('production_serial_id', serials.map((serial) => serial.id));
+    setCoatingEvidenceSkipped(Object.fromEntries((skippedRows ?? []).map((row) => [row.production_serial_id, true])));
+  };
+
+  const confirmCoatingEvidenceSkip = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!coatingEvidenceTarget || !coatingSkipSerial || coatingSkipSaving) return;
+    setCoatingSkipSaving(true);
+    setCoatingSkipError('');
+    const stage = coatingEvidenceTarget.action === 'coating-sent' ? 'after-sharpening' : 'after-coating';
+    const { error: skipError } = await supabase.rpc('skip_production_piece_evidence', {
+      p_organization_id: organizationId,
+      p_production_order_id: coatingEvidenceTarget.item.productionOrderId,
+      p_production_serial_id: coatingSkipSerial.id,
+      p_stage: stage,
+      p_confirmation_code: coatingSkipCode,
+    });
+    setCoatingSkipSaving(false);
+    if (skipError) {
+      setCoatingSkipError(skipError.message.includes('Invalid confirmation code') ? 'The confirmation code is incorrect.' : skipError.message);
+      return;
+    }
+    setCoatingEvidenceFiles((current) => {
+      const next = { ...current };
+      delete next[coatingSkipSerial.id];
+      return next;
+    });
+    setCoatingEvidenceSkipped((current) => ({ ...current, [coatingSkipSerial.id]: true }));
+    setCoatingSkipSerial(null);
+    setCoatingSkipCode('');
   };
 
   const confirmCoatingEvidence = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!coatingEvidenceTarget || coatingEvidenceSaving) return;
-    const missingSerial = coatingEvidenceTarget.serials.find((serial) => !coatingEvidenceFiles[serial.id]);
+    const missingSerial = coatingEvidenceTarget.serials.find((serial) => !coatingEvidenceFiles[serial.id] && !coatingEvidenceSkipped[serial.id]);
     if (missingSerial) {
       setCoatingEvidenceError(`Add evidence for serial ${missingSerial.serialNumber}.`);
       return;
@@ -810,6 +853,7 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
     try {
       const stage = coatingEvidenceTarget.action === 'coating-sent' ? 'after-sharpening' : 'after-coating';
       for (const serial of coatingEvidenceTarget.serials) {
+        if (coatingEvidenceSkipped[serial.id]) continue;
         const file = coatingEvidenceFiles[serial.id];
         const safeFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '-');
         const filePath = `${organizationId}/${coatingEvidenceTarget.item.productionOrderId}/${serial.id}/${stage}/${Date.now()}-${safeFileName}`;
@@ -1181,21 +1225,51 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
               <div className="client-reception-coating-evidence-list">
                 {coatingEvidenceTarget.serials.map((serial) => {
                   const file = coatingEvidenceFiles[serial.id];
-                  return <label key={serial.id}>
+                  const skipped = coatingEvidenceSkipped[serial.id];
+                  return <div className={`client-reception-coating-evidence-row${skipped ? ' skipped' : ''}`} key={serial.id}>
                     <span><strong>{serial.serialNumber}</strong><small>{serial.toolId || 'Tool ID not specified'}</small></span>
-                    <span className={file ? 'selected' : ''}><Upload size={15} />{file?.name || 'Add photo or PDF'}</span>
-                    <input type="file" accept={coatingEvidenceAccept} onChange={(event) => {
-                      const nextFile = event.target.files?.[0];
-                      event.target.value = '';
-                      if (nextFile) setCoatingEvidenceFiles((current) => ({ ...current, [serial.id]: nextFile }));
-                    }} />
-                  </label>;
+                    <span className="client-reception-coating-evidence-choice">
+                      <button className="client-reception-coating-evidence-skip" type="button" disabled={coatingEvidenceSaving || skipped} onClick={() => { setCoatingSkipSerial(serial); setCoatingSkipCode(''); setCoatingSkipError(''); }}>
+                        {skipped ? 'Skipped' : 'Skip'}
+                      </button>
+                      <label className={skipped ? 'skipped' : ''}>
+                        <span className={file ? 'selected' : ''}>{skipped ? <Check size={15} /> : <Upload size={15} />}{skipped ? 'Evidence skipped' : file?.name || 'Add photo or PDF'}</span>
+                        <input type="file" accept={coatingEvidenceAccept} disabled={skipped} onChange={(event) => {
+                          const nextFile = event.target.files?.[0];
+                          event.target.value = '';
+                          if (nextFile) {
+                            setCoatingEvidenceSkipped((current) => ({ ...current, [serial.id]: false }));
+                            setCoatingEvidenceFiles((current) => ({ ...current, [serial.id]: nextFile }));
+                          }
+                        }} />
+                      </label>
+                    </span>
+                  </div>;
                 })}
               </div>
               {coatingEvidenceError ? <div className="clients-feedback error" role="alert">{coatingEvidenceError}</div> : null}
               <div className="client-reception-coating-evidence-actions">
                 <button type="button" className="secondary" onClick={() => setCoatingEvidenceTarget(null)} disabled={coatingEvidenceSaving}>Cancel</button>
-                <button type="submit" disabled={coatingEvidenceSaving || coatingEvidenceTarget.serials.some((serial) => !coatingEvidenceFiles[serial.id])}>{coatingEvidenceSaving ? 'Saving evidence...' : 'Save evidence and confirm'}</button>
+                <button type="submit" disabled={coatingEvidenceSaving || coatingEvidenceTarget.serials.some((serial) => !coatingEvidenceFiles[serial.id] && !coatingEvidenceSkipped[serial.id])}>{coatingEvidenceSaving ? 'Saving evidence...' : 'Save evidence and confirm'}</button>
+              </div>
+            </form>
+          </section>
+        </div>
+      ), document.body) : null}
+
+      {coatingSkipSerial && coatingEvidenceTarget ? createPortal((
+        <div className="mes-modal-backdrop client-reception-skip-backdrop" role="presentation">
+          <section className="mes-confirm-dialog client-reception-skip-dialog" role="dialog" aria-modal="true" aria-labelledby="coating-skip-title">
+            <ShieldAlert size={28} />
+            <p className="eyebrow">Authorized evidence override</p>
+            <h3 id="coating-skip-title">Skip inspection evidence?</h3>
+            <p>This will record that evidence was intentionally skipped for serial <strong>{coatingSkipSerial.serialNumber}</strong>.</p>
+            <form onSubmit={confirmCoatingEvidenceSkip}>
+              <label>Confirmation code<input type="password" inputMode="numeric" autoFocus value={coatingSkipCode} onChange={(event) => setCoatingSkipCode(event.target.value)} placeholder="Enter confirmation code" /></label>
+              {coatingSkipError ? <div className="clients-feedback error" role="alert">{coatingSkipError}</div> : null}
+              <div>
+                <button type="button" onClick={() => { setCoatingSkipSerial(null); setCoatingSkipCode(''); }} disabled={coatingSkipSaving}>Cancel</button>
+                <button type="submit" className="danger" disabled={coatingSkipSaving || !coatingSkipCode}>{coatingSkipSaving ? 'Authorizing...' : 'Confirm skip'}</button>
               </div>
             </form>
           </section>
