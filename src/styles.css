@@ -1493,6 +1493,39 @@ body.work-center-map-expanded .logged-workspace {
   }
 }
 
+.station-load-chart-name:is(button) {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.station-load-chart-name:is(button):hover strong,
+.station-load-chart-name:is(button):focus-visible strong {
+  color: #d85f00;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.station-load-chart-name:is(button):focus-visible {
+  border-radius: 6px;
+  outline: 2px solid rgba(255, 138, 31, 0.5);
+  outline-offset: 4px;
+}
+
+.station-card[id^="work-center-station-"] {
+  scroll-margin-top: calc(var(--header-height, 64px) + 18px);
+}
+
+@media (hover: none) {
+  .station-load-tooltip {
+    display: none !important;
+  }
+}
+
 .logged-workspace.manufacturing-workspace-active {
   position: relative;
   min-height: calc(100vh - var(--header-height));
@@ -7804,6 +7837,266 @@ body.work-center-map-expanded .logged-workspace {
 
 @media (max-width: 600px) {
   .client-reception-coating-evidence-list label { grid-template-columns: 1fr; }
+}
+
+/* Compact authenticated product header on phones. */
+@media (max-width: 760px) {
+  .site-shell-authenticated {
+    --header-height: 64px !important;
+  }
+
+  .site-shell-authenticated > .topbar-authenticated {
+    height: 64px;
+    min-height: 64px;
+    padding: 0 12px;
+  }
+
+  .site-shell-authenticated > .topbar-authenticated .brand {
+    top: 50%;
+    left: 12px;
+    gap: 5px;
+    min-width: 0;
+    transform: translateY(-50%);
+    transform-origin: left center;
+  }
+
+  .site-shell-authenticated > .topbar-authenticated .brand-logo-square {
+    width: 42px;
+    height: 42px;
+    filter: drop-shadow(0 7px 12px rgba(0, 0, 0, 0.22));
+    transform: none;
+  }
+
+  .site-shell-authenticated > .topbar-authenticated .brand-letters-wrap,
+  .site-shell-authenticated > .topbar-authenticated .brand-logo-letters {
+    width: 88px;
+  }
+
+  .site-shell-authenticated > .topbar-authenticated .menu-button {
+    display: none;
+  }
+
+  .site-shell-authenticated > .topbar-authenticated .compact-language-button {
+    top: 50%;
+    right: 150px;
+    left: auto;
+    width: 38px;
+    height: 38px;
+    transform: translateY(-50%);
+  }
+
+  .site-shell-authenticated > .topbar-authenticated .compact-user-card {
+    top: 50%;
+    right: 12px;
+    left: auto;
+    width: 128px;
+    max-width: 128px;
+    min-height: 40px;
+    gap: 7px;
+    padding: 3px 9px 3px 4px;
+    border-radius: 9px;
+    transform: translateY(-50%);
+  }
+
+  .site-shell-authenticated > .topbar-authenticated .compact-user-avatar-stack {
+    width: 34px;
+    min-width: 34px;
+    height: 34px;
+    place-items: center;
+  }
+
+  .site-shell-authenticated > .topbar-authenticated .compact-user-ring {
+    width: 32px;
+    height: 32px;
+  }
+
+  .site-shell-authenticated > .topbar-authenticated .compact-user-ring .compact-user-avatar {
+    width: 25px;
+    height: 25px;
+    border-width: 2px;
+  }
+
+  .site-shell-authenticated > .topbar-authenticated .compact-user-level,
+  .site-shell-authenticated > .topbar-authenticated .compact-user-meta {
+    display: none;
+  }
+
+  .site-shell-authenticated > .topbar-authenticated .compact-user-copy {
+    gap: 0;
+    overflow: hidden;
+  }
+
+  .site-shell-authenticated > .topbar-authenticated .compact-user-copy > strong {
+    max-width: 78px;
+    font-size: 11px;
+  }
+
+  .site-shell-authenticated > .topbar-authenticated .language-menu-panel,
+  .site-shell-authenticated > .topbar-authenticated .language-menu-panel.compact {
+    top: 56px;
+    right: 12px;
+    left: auto;
+  }
+}
+
+/* Dashboard navigation and workspace overview on phones. */
+@media (max-width: 760px) {
+  .logged-shell.primary-navigation-compact-shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .logged-shell.primary-navigation-compact-shell > .logged-sidebar.primary-navigation-compact {
+    position: relative;
+    top: auto;
+    bottom: auto;
+    left: auto;
+    z-index: 9;
+    width: 100%;
+    max-width: none;
+    height: auto;
+    gap: 8px;
+    overflow: hidden;
+    padding: 9px 14px;
+    border-bottom: 1px solid rgba(255, 138, 31, 0.38);
+    box-shadow: 0 10px 24px rgba(10, 14, 19, 0.14);
+  }
+
+  .logged-sidebar.primary-navigation-compact .logged-sidebar-title {
+    justify-content: space-between;
+    min-height: 42px;
+    padding: 0;
+  }
+
+  .logged-sidebar.primary-navigation-compact .logged-sidebar-title > div {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+  }
+
+  .logged-sidebar.primary-navigation-compact .logged-sidebar-title span {
+    font-size: 10px;
+  }
+
+  .logged-sidebar.primary-navigation-compact .logged-sidebar-title strong {
+    font-size: 18px;
+  }
+
+  .logged-sidebar.primary-navigation-compact .logged-sidebar-toggle {
+    display: grid;
+    width: 38px;
+    height: 38px;
+  }
+
+  .logged-sidebar.primary-navigation-compact nav,
+  .logged-sidebar.primary-navigation-compact > .logged-signout {
+    display: none;
+  }
+
+  .logged-sidebar.primary-navigation-compact.tablet-expanded {
+    gap: 10px;
+    padding-bottom: 14px;
+  }
+
+  .logged-sidebar.primary-navigation-compact.tablet-expanded nav {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .logged-sidebar.primary-navigation-compact.tablet-expanded > .logged-signout {
+    display: flex;
+    width: 100%;
+    min-height: 38px;
+    margin-top: 2px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .logged-sidebar.primary-navigation-compact.tablet-expanded nav button,
+  .logged-sidebar.primary-navigation-compact.tablet-expanded > .logged-signout {
+    justify-content: flex-start;
+    gap: 8px;
+    min-width: 0;
+    padding: 8px 10px;
+    font-size: 13px;
+  }
+
+  .logged-sidebar.primary-navigation-compact.tablet-expanded nav button span,
+  .logged-sidebar.primary-navigation-compact.tablet-expanded > .logged-signout span {
+    display: inline;
+    min-width: 0;
+    white-space: normal;
+  }
+
+  .logged-shell.primary-navigation-compact-shell > .logged-workspace {
+    grid-column: 1;
+    width: 100%;
+    min-width: 0;
+    padding: 22px 14px 54px;
+    overflow-x: hidden;
+  }
+
+  .workspace-main > .access-mode-switch {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+    margin-bottom: 24px;
+  }
+
+  .workspace-main > .access-mode-switch button {
+    min-width: 0;
+    padding: 0 8px;
+    font-size: 12px;
+  }
+
+  .workspace-heading {
+    gap: 9px;
+  }
+
+  .workspace-heading h1 {
+    font-size: clamp(34px, 10vw, 46px);
+    line-height: 1;
+  }
+
+  .workspace-heading p:last-child {
+    font-size: 15px;
+    line-height: 1.45;
+  }
+
+  .workspace-product-section {
+    margin-top: 28px;
+  }
+
+  .workspace-section-heading h2 {
+    font-size: 19px;
+  }
+
+  .workspace-flagship-card {
+    min-height: 0;
+    gap: 14px;
+    padding: 18px;
+  }
+
+  .workspace-module-logo {
+    width: 58px;
+    height: 58px;
+    border-radius: 14px;
+  }
+
+  .workspace-module-heading {
+    gap: 12px;
+  }
+
+  .workspace-module-heading > strong {
+    font-size: 21px;
+  }
+
+  .workspace-flagship-card .workspace-access-copy span {
+    font-size: 14px;
+  }
+
+  .workspace-secondary-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .client-reception-detail-bottom {
@@ -20917,7 +21210,7 @@ body.work-center-map-expanded .logged-workspace {
 }
 
 .station-load-chart-row:hover .station-load-tooltip,
-.station-load-chart-row:focus-within .station-load-tooltip {
+.station-load-chart-row:has(.station-load-chart-name:focus-visible) .station-load-tooltip {
   display: grid;
 }
 
@@ -40194,5 +40487,592 @@ body[data-screenshot-export="academy-track"] .academy-mobile-track-step button {
     grid-column: 1 / -1;
     grid-row: 2;
     justify-self: center;
+  }
+}
+
+/* Shared mobile heading pattern for Manufacturing applications. */
+@media (max-width: 760px) {
+  .manufacturing-focus-shell .mes-screen-header,
+  .manufacturing-focus-shell .production-orders-workspace .production-orders-heading {
+    grid-template-columns: 46px minmax(0, 1fr);
+    align-items: start;
+    justify-items: stretch;
+    gap: 12px 10px;
+  }
+
+  .manufacturing-focus-shell .mes-screen-header > .mes-workspace-back {
+    grid-column: 1;
+    grid-row: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    justify-self: start;
+    width: 46px;
+    min-width: 46px;
+    max-width: 46px;
+    height: 46px;
+    min-height: 46px;
+    overflow: hidden;
+    gap: 0;
+    border-radius: 10px;
+    padding: 0;
+    font-size: 0;
+    white-space: nowrap;
+  }
+
+  .manufacturing-focus-shell .mes-screen-header > .mes-workspace-back svg {
+    display: block;
+    flex: 0 0 18px;
+    width: 18px;
+    height: 18px;
+    margin: 0;
+  }
+
+  .manufacturing-focus-shell .mes-screen-header > .mes-workspace-heading {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: center;
+    min-width: 0;
+  }
+
+  .manufacturing-focus-shell .mes-screen-header > :not(.mes-workspace-back):not(.mes-workspace-heading) {
+    grid-column: 1 / -1;
+  }
+
+  .manufacturing-focus-shell .production-orders-workspace {
+    gap: 12px;
+    margin-top: 8px;
+    padding: 12px;
+  }
+
+  .manufacturing-focus-shell .production-orders-heading .mes-workspace-heading h2 {
+    font-size: 26px;
+  }
+
+  .manufacturing-focus-shell .production-orders-heading .mes-workspace-heading p:last-child {
+    font-size: 13px;
+    line-height: 1.4;
+  }
+
+  .manufacturing-focus-shell .production-orders-last-produced {
+    padding: 12px;
+  }
+
+  .manufacturing-focus-shell .production-orders-last-produced h3 {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  /* Production Orders: keep controls at their intrinsic height. */
+  .manufacturing-focus-shell .production-orders-main-panel {
+    align-self: start;
+    height: auto;
+  }
+
+  .manufacturing-focus-shell .production-orders-panel-title {
+    display: grid;
+    align-content: start;
+    align-items: stretch;
+    justify-content: stretch;
+    min-height: 0;
+    height: auto;
+    gap: 12px;
+    padding: 14px;
+  }
+
+  .manufacturing-focus-shell .production-orders-scope-filters {
+    display: grid;
+    grid-template-columns: 1fr;
+    align-content: start;
+    gap: 10px;
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    margin: 0;
+  }
+
+  .manufacturing-focus-shell .production-orders-client-filter {
+    display: grid;
+    align-content: start;
+    gap: 5px;
+    width: 100%;
+    min-height: 0;
+    margin: 0;
+  }
+
+  .manufacturing-focus-shell .production-orders-view-toggle {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    width: 100%;
+    overflow: visible;
+  }
+
+  .manufacturing-focus-shell .production-orders-view-toggle button {
+    min-width: 0;
+    padding: 0 5px;
+    white-space: nowrap;
+  }
+
+  /* A compact real table is easier to scan than stacked cards on a phone. */
+  .manufacturing-focus-shell .production-orders-table-wrap {
+    width: 100%;
+    overflow: hidden;
+  }
+
+  .manufacturing-focus-shell .production-orders-table {
+    display: table;
+    width: 100%;
+    min-width: 0;
+    table-layout: fixed;
+  }
+
+  .manufacturing-focus-shell .production-orders-table thead {
+    display: table-header-group;
+  }
+
+  .manufacturing-focus-shell .production-orders-table tbody {
+    display: table-row-group;
+    padding: 0;
+  }
+
+  .manufacturing-focus-shell .production-orders-table tbody tr {
+    display: table-row;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .manufacturing-focus-shell .production-orders-table th,
+  .manufacturing-focus-shell .production-orders-table tbody tr td,
+  .manufacturing-focus-shell .production-orders-table tbody tr td.production-order-number-cell {
+    display: table-cell;
+    width: auto;
+    height: 68px;
+    min-height: 0;
+    border-right: 1px solid #e2e8f0;
+    border-bottom: 1px solid #e2e8f0;
+    padding: 8px 6px;
+    font-size: 11px;
+    line-height: 1.2;
+    text-align: left;
+    vertical-align: middle;
+  }
+
+  .manufacturing-focus-shell .production-orders-table th {
+    height: 42px;
+    font-size: 9px;
+    line-height: 1.15;
+  }
+
+  .manufacturing-focus-shell .production-orders-table tbody tr td::before {
+    content: none;
+  }
+
+  .manufacturing-focus-shell .production-orders-table th:nth-child(1),
+  .manufacturing-focus-shell .production-orders-table td:nth-child(1) { width: 18%; }
+  .manufacturing-focus-shell .production-orders-table th:nth-child(2),
+  .manufacturing-focus-shell .production-orders-table td:nth-child(2) { width: 24%; }
+  .manufacturing-focus-shell .production-orders-table th:nth-child(3),
+  .manufacturing-focus-shell .production-orders-table td:nth-child(3) { width: 16%; text-align: center; }
+  .manufacturing-focus-shell .production-orders-table th:nth-child(4),
+  .manufacturing-focus-shell .production-orders-table td:nth-child(4) { width: 18%; text-align: center; }
+  .manufacturing-focus-shell .production-orders-table th:nth-child(6),
+  .manufacturing-focus-shell .production-orders-table td:nth-child(6) { width: 24%; }
+
+  .manufacturing-focus-shell .production-orders-table th:nth-child(5),
+  .manufacturing-focus-shell .production-orders-table td:nth-child(5),
+  .manufacturing-focus-shell .production-orders-table th:nth-child(7),
+  .manufacturing-focus-shell .production-orders-table td:nth-child(7),
+  .manufacturing-focus-shell .production-orders-table th:nth-child(8),
+  .manufacturing-focus-shell .production-orders-table td:nth-child(8),
+  .manufacturing-focus-shell .production-orders-table th:nth-child(9),
+  .manufacturing-focus-shell .production-orders-table td:nth-child(9) {
+    display: none;
+  }
+
+  .manufacturing-focus-shell .production-orders-table td strong,
+  .manufacturing-focus-shell .production-orders-table td span:not(.mes-status-badge) {
+    overflow-wrap: anywhere;
+    font-size: 11px;
+  }
+
+  .manufacturing-focus-shell .production-orders-table .mes-status-badge {
+    max-width: 100%;
+    min-width: 0;
+    padding: 0 6px;
+    font-size: 8px;
+  }
+
+  .manufacturing-focus-shell .production-orders-table tbody tr.selected td {
+    border-top: 2px solid #ff8a1f;
+    border-bottom: 2px solid #ff8a1f;
+    background: #fff0e3;
+  }
+
+  .manufacturing-focus-shell .production-orders-table tbody tr.selected td:first-child {
+    border-left: 2px solid #ff8a1f;
+  }
+
+  .manufacturing-focus-shell .production-orders-table tbody tr.selected td:nth-child(6) {
+    border-right: 2px solid #ff8a1f;
+  }
+
+  .manufacturing-focus-shell .production-orders-pagination {
+    align-items: center;
+    flex-direction: column;
+    gap: 9px;
+  }
+
+  .manufacturing-focus-shell .production-orders-pagination-desktop {
+    display: none;
+  }
+
+  .manufacturing-focus-shell .production-orders-pagination-mobile {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: 100%;
+    overflow: visible;
+    padding: 0;
+  }
+
+  .manufacturing-focus-shell .production-orders-pagination-mobile i {
+    color: #64748b;
+    font-style: normal;
+    font-weight: 900;
+  }
+
+  .manufacturing-focus-shell .production-orders-pagination-mobile button {
+    display: grid;
+    flex: 0 0 34px;
+    width: 34px;
+    min-width: 34px;
+    height: 34px;
+    min-height: 34px;
+    place-items: center;
+    padding: 0;
+  }
+}
+
+@media (min-width: 761px) {
+  .production-orders-pagination-mobile {
+    display: none;
+  }
+}
+
+/* Work Centers mobile layout. */
+@media (max-width: 760px) {
+  .manufacturing-focus-shell .work-centers-workspace {
+    width: 100%;
+    min-width: 0;
+    gap: 12px;
+    margin-top: 8px;
+    padding: 12px;
+    overflow: hidden;
+  }
+
+  .manufacturing-focus-shell .work-centers-header {
+    display: grid;
+    grid-template-columns: 46px minmax(0, 1fr);
+    align-items: start;
+    gap: 12px 10px;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .manufacturing-focus-shell .work-centers-header > .mes-workspace-back {
+    grid-column: 1;
+    grid-row: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 46px;
+    min-width: 46px;
+    max-width: 46px;
+    height: 46px;
+    min-height: 46px;
+    gap: 0;
+    overflow: hidden;
+    border-radius: 10px;
+    padding: 0;
+    font-size: 0;
+  }
+
+  .manufacturing-focus-shell .work-centers-header > .mes-workspace-back svg {
+    display: block;
+    flex: 0 0 18px;
+    width: 18px;
+    height: 18px;
+    margin: 0;
+  }
+
+  .manufacturing-focus-shell .work-centers-heading {
+    grid-column: 2;
+    grid-row: 1;
+    min-width: 0;
+    text-align: left;
+  }
+
+  .manufacturing-focus-shell .work-centers-heading .eyebrow {
+    margin: 0 0 4px;
+    font-size: 11px;
+  }
+
+  .manufacturing-focus-shell .work-centers-heading h2 {
+    margin: 0 0 5px;
+    font-size: 27px;
+    line-height: 1.05;
+  }
+
+  .manufacturing-focus-shell .work-centers-heading p:last-child {
+    font-size: 13px;
+    line-height: 1.4;
+  }
+
+  .manufacturing-focus-shell .work-centers-actions {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    width: 100%;
+  }
+
+  .manufacturing-focus-shell .work-centers-actions button {
+    width: 100%;
+    min-width: 0;
+    min-height: 42px;
+    padding: 0 8px;
+    font-size: 12px;
+  }
+
+  .manufacturing-focus-shell .work-centers-operations-layout,
+  .manufacturing-focus-shell .work-centers-location-rail,
+  .manufacturing-focus-shell .work-centers-operations-main,
+  .manufacturing-focus-shell .work-centers-management-panel,
+  .manufacturing-focus-shell .stations-management-panel {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .manufacturing-focus-shell .work-centers-operations-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .manufacturing-focus-shell .work-center-location-map {
+    width: 100%;
+    min-width: 0;
+    padding: 10px;
+  }
+
+  .manufacturing-focus-shell .google-work-center-map,
+  .manufacturing-focus-shell .google-work-center-map-fallback,
+  .manufacturing-focus-shell .work-center-map-canvas {
+    width: 100%;
+    min-width: 0;
+    min-height: 300px;
+    max-height: 300px;
+  }
+
+  .manufacturing-focus-shell .google-work-center-marker-card {
+    grid-template-columns: 20px minmax(0, 1fr);
+    width: 132px;
+    min-height: 46px;
+    padding: 5px 7px;
+  }
+
+  .manufacturing-focus-shell .google-work-center-marker-stations {
+    display: none;
+  }
+
+  .manufacturing-focus-shell .google-work-center-marker strong {
+    overflow: hidden;
+    font-size: 10px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .manufacturing-focus-shell .google-work-center-marker em {
+    overflow: hidden;
+    font-size: 8px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .manufacturing-focus-shell .work-center-map-note {
+    font-size: 11px;
+    line-height: 1.35;
+  }
+
+  .manufacturing-focus-shell .work-centers-panel-heading {
+    align-items: center;
+    gap: 8px;
+  }
+
+  .manufacturing-focus-shell .work-centers-heading-controls {
+    align-items: flex-end;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .manufacturing-focus-shell .work-centers-kpi-grid.compact {
+    display: grid;
+    grid-auto-flow: row;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    width: 100%;
+    overflow: visible;
+    padding: 2px 0;
+  }
+
+  .manufacturing-focus-shell .work-centers-kpi-grid.compact article {
+    min-width: 0;
+    min-height: 86px;
+    padding: 10px;
+  }
+
+  .manufacturing-focus-shell .work-centers-kpi-grid.compact article:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+
+  .manufacturing-focus-shell .work-centers-kpi-grid.compact article span {
+    font-size: 10px;
+    line-height: 1.2;
+  }
+
+  .manufacturing-focus-shell .work-centers-kpi-grid.compact article strong {
+    font-size: 23px;
+  }
+
+  .manufacturing-focus-shell .stations-management-panel,
+  .manufacturing-focus-shell .stations-management-grid,
+  .manufacturing-focus-shell .work-centers-card-grid,
+  .manufacturing-focus-shell .mes-work-center-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .manufacturing-focus-shell .work-centers-filter-bar.compact {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    width: 100%;
+    min-width: 0;
+    padding: 9px;
+  }
+
+  .manufacturing-focus-shell .work-centers-filter-bar.compact label:first-child {
+    grid-column: 1 / -1;
+  }
+
+  .manufacturing-focus-shell .work-centers-filter-bar.compact label,
+  .manufacturing-focus-shell .work-centers-filter-bar.compact .mes-order-dropdown {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .manufacturing-focus-shell .work-centers-filter-bar.compact input,
+  .manufacturing-focus-shell .work-centers-filter-bar.compact .mes-order-dropdown > button {
+    width: 100%;
+    min-width: 0;
+    padding-inline: 9px;
+    font-size: 12px;
+  }
+
+  .manufacturing-focus-shell .work-centers-table {
+    width: 100%;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .manufacturing-focus-shell .work-centers-table-row {
+    grid-template-columns: minmax(0, 46%) minmax(48px, 16%) minmax(54px, 18%) minmax(60px, 20%);
+    gap: 0;
+    width: 100%;
+    min-width: 0;
+    min-height: 66px;
+    padding: 0;
+  }
+
+  .manufacturing-focus-shell .work-centers-table-row.header {
+    min-height: 42px;
+  }
+
+  .manufacturing-focus-shell .work-centers-table-row > span {
+    display: flex;
+    align-items: center;
+    align-self: stretch;
+    min-width: 0;
+    border-right: 1px solid #e2e8f0;
+    padding: 8px 6px;
+    font-size: 10px;
+  }
+
+  .manufacturing-focus-shell .work-centers-table-row > span:nth-child(2),
+  .manufacturing-focus-shell .work-centers-table-row > span:nth-child(5) {
+    display: none;
+  }
+
+  .manufacturing-focus-shell .work-centers-table-row > span:nth-child(3),
+  .manufacturing-focus-shell .work-centers-table-row > span:nth-child(4) {
+    justify-content: center;
+    text-align: center;
+  }
+
+  .manufacturing-focus-shell .work-centers-table-row:not(.header) > span:nth-child(3),
+  .manufacturing-focus-shell .work-centers-table-row:not(.header) > span:nth-child(4) {
+    font-size: 16px;
+    font-weight: 900;
+  }
+
+  .manufacturing-focus-shell .work-centers-table-row > span:nth-child(6) {
+    justify-content: center;
+    border-right: 0;
+  }
+
+  .manufacturing-focus-shell .work-center-table-identity {
+    display: grid;
+    grid-template-columns: 20px minmax(0, 1fr);
+    gap: 7px;
+  }
+
+  .manufacturing-focus-shell .work-center-table-name-line > strong,
+  .manufacturing-focus-shell .work-centers-table-row em {
+    overflow: hidden;
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .manufacturing-focus-shell .work-center-risk-label {
+    align-self: center;
+    justify-self: center;
+    width: fit-content;
+    min-height: 30px;
+    gap: 4px;
+    padding: 3px 7px 3px 3px;
+    font-size: 9px;
+    white-space: nowrap;
+  }
+
+  .manufacturing-focus-shell .work-centers-table-row.header > span:nth-child(6) {
+    align-self: stretch;
+    justify-self: stretch;
+    width: auto;
+    padding: 8px 6px;
+    background: transparent;
+  }
+
+  .manufacturing-focus-shell .work-center-risk-label .risk-face {
+    width: 24px;
+    height: 24px;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5);
+  }
+
+  .manufacturing-focus-shell .work-center-risk-label .risk-face svg {
+    width: 16px;
+    height: 16px;
   }
 }

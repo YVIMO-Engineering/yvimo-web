@@ -4328,6 +4328,9 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, language
   const pageSize = 10;
   const pageCount = Math.max(1, Math.ceil(visibleOrders.length / pageSize));
   const currentPage = Math.min(page, pageCount);
+  const mobilePageNumbers = Array.from(new Set([1, currentPage - 1, currentPage, currentPage + 1, pageCount]))
+    .filter((pageNumber) => pageNumber >= 1 && pageNumber <= pageCount)
+    .sort((firstPage, secondPage) => firstPage - secondPage);
   const paginatedOrders = visibleOrders.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   const lastProducedOrder = lastProductionEvent?.production_order_id
     ? orders.find((order) => order.id === lastProductionEvent.production_order_id) ?? null
@@ -5838,18 +5841,18 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, language
                         }
                       }}
                     >
-                      <td><strong>{order.orderNumber}</strong></td>
-                      <td>
+                      <td data-label="Order"><strong>{order.orderNumber}</strong></td>
+                      <td data-label="Part">
                         <strong>{order.partNumber}</strong>
                         <span>{order.partName}</span>
                       </td>
-                      <td className="production-order-number-cell">{order.plannedQuantity.toLocaleString()}</td>
-                      <td className="production-order-number-cell">{order.completedQuantity.toLocaleString()}</td>
-                      <td className="production-order-number-cell">{order.scrapQuantity.toLocaleString()}</td>
-                      <td><MesStatusBadge value={order.status} /></td>
-                      <td><MesStatusBadge value={order.priority} tone="priority" /></td>
-                      <td>{orderDateColumn === 'due' ? formatDate(order.dueDate) : order.createdAt ? formatDate(toLocalIsoDate(order.createdAt)) : '-'}</td>
-                      <td><strong>{order.clientName?.trim() || 'Unassigned'}</strong></td>
+                      <td data-label="Planned" className="production-order-number-cell">{order.plannedQuantity.toLocaleString()}</td>
+                      <td data-label="Completed" className="production-order-number-cell">{order.completedQuantity.toLocaleString()}</td>
+                      <td data-label="Scrap" className="production-order-number-cell">{order.scrapQuantity.toLocaleString()}</td>
+                      <td data-label="Status"><MesStatusBadge value={order.status} /></td>
+                      <td data-label="Priority"><MesStatusBadge value={order.priority} tone="priority" /></td>
+                      <td data-label={orderDateColumn === 'due' ? 'Due' : 'Created'}>{orderDateColumn === 'due' ? formatDate(order.dueDate) : order.createdAt ? formatDate(toLocalIsoDate(order.createdAt)) : '-'}</td>
+                      <td data-label="Client"><strong>{order.clientName?.trim() || 'Unassigned'}</strong></td>
                     </tr>
                   );
                 })}
@@ -5859,7 +5862,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, language
           {visibleOrders.length > 0 ? (
             <div className="production-orders-pagination">
               <span>Page {currentPage} of {pageCount}</span>
-              <div>
+              <div className="production-orders-pagination-desktop">
                 <button type="button" disabled={currentPage === 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>
                   Previous
                 </button>
@@ -5875,6 +5878,28 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, language
                 ))}
                 <button type="button" disabled={currentPage === pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))}>
                   Next
+                </button>
+              </div>
+              <div className="production-orders-pagination-mobile" aria-label="Production order pages">
+                <button type="button" aria-label="Previous page" disabled={currentPage === 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>
+                  <ChevronLeft size={17} />
+                </button>
+                {mobilePageNumbers.map((pageNumber, index) => (
+                  <React.Fragment key={pageNumber}>
+                    {index > 0 && pageNumber - mobilePageNumbers[index - 1] > 1 ? <i aria-hidden="true">…</i> : null}
+                    <button
+                      className={pageNumber === currentPage ? 'active' : ''}
+                      type="button"
+                      aria-label={`Page ${pageNumber}`}
+                      aria-current={pageNumber === currentPage ? 'page' : undefined}
+                      onClick={() => setPage(pageNumber)}
+                    >
+                      {pageNumber}
+                    </button>
+                  </React.Fragment>
+                ))}
+                <button type="button" aria-label="Next page" disabled={currentPage === pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))}>
+                  <ChevronRight size={17} />
                 </button>
               </div>
             </div>
@@ -9466,10 +9491,20 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
               <div className="station-load-chart-list">
                 {stationLoadRows.map((load) => (
                   <div className="station-load-chart-row" key={load.stationId}>
-                    <div className="station-load-chart-name">
+                    <button
+                      className="station-load-chart-name"
+                      type="button"
+                      aria-label={`Go to ${load.stationName} station card`}
+                      onClick={() => {
+                        setSelectedStationId(load.stationId);
+                        window.requestAnimationFrame(() => {
+                          document.getElementById(`work-center-station-${load.stationId}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        });
+                      }}
+                    >
                       <strong>{load.stationName}</strong>
                       <small>{load.stationCode}</small>
-                    </div>
+                    </button>
                     <div
                       className="station-load-chart-track"
                       role="meter"
@@ -9578,6 +9613,7 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
                 const stationLoad = stationLoadRows.find((load) => load.stationId === station.id);
                 return (
                   <article
+                    id={`work-center-station-${station.id}`}
                     className={['station-card', stationSelected ? 'selected' : ''].filter(Boolean).join(' ')}
                     key={station.id}
                     role="button"

@@ -4753,12 +4753,14 @@ function LoggedDashboardPage({
                 className="logged-sidebar-toggle"
                 type="button"
                 aria-label={tabletSidebarExpanded ? 'Collapse dashboard menu' : 'Expand dashboard menu'}
+                aria-expanded={tabletSidebarExpanded}
+                aria-controls="dashboard-primary-navigation"
                 onClick={() => setTabletSidebarExpanded((expanded) => !expanded)}
               >
                 <Menu size={18} />
               </button>
             </div>
-            <nav aria-label="Dashboard navigation">
+            <nav id="dashboard-primary-navigation" aria-label="Dashboard navigation">
               {navItems.map((item, index) => {
                 const Icon = item.icon;
                 const active = activePath === item.path
@@ -6661,7 +6663,7 @@ function App() {
 
   return (
     <div
-      className={['site-shell', isMesApplicationScreen ? 'site-shell-mes-application' : '', isDirectHealthAppsPage ? 'site-shell-health-standalone' : '', currentPath === '/workspace/manufacturing-ops' || currentPath.startsWith('/workspace/manufacturing-ops/') ? 'site-shell-manufacturing-focus' : ''].filter(Boolean).join(' ')}
+      className={['site-shell', authUser ? 'site-shell-authenticated' : '', isMesApplicationScreen ? 'site-shell-mes-application' : '', isDirectHealthAppsPage ? 'site-shell-health-standalone' : '', currentPath === '/workspace/manufacturing-ops' || currentPath.startsWith('/workspace/manufacturing-ops/') ? 'site-shell-manufacturing-focus' : ''].filter(Boolean).join(' ')}
       style={
         {
           '--header-height': `${headerHeight}px`,

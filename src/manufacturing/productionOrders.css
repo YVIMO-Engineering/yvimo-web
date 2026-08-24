@@ -793,7 +793,10 @@
 
   .production-orders-panel-title {
     align-items: stretch;
+    justify-content: flex-start;
     flex-direction: column;
+    min-height: 0;
+    gap: 14px;
   }
 
   .production-orders-view-toggle {
@@ -803,6 +806,106 @@
 
   .production-orders-view-toggle button {
     flex: 1 0 auto;
+  }
+
+  .production-orders-table-wrap {
+    overflow: visible;
+    background: transparent;
+  }
+
+  .production-orders-table {
+    display: block;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .production-orders-table thead {
+    display: none;
+  }
+
+  .production-orders-table tbody {
+    display: grid;
+    gap: 10px;
+    padding: 10px;
+  }
+
+  .production-orders-table tbody tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    overflow: hidden;
+    border: 1px solid #d9e1ea;
+    border-left: 4px solid #ff8a1f;
+    border-radius: 9px;
+    background: #ffffff;
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
+  }
+
+  .production-orders-table tbody tr td,
+  .production-orders-table tbody tr td.production-order-number-cell {
+    display: grid;
+    align-content: center;
+    gap: 4px;
+    width: auto;
+    height: auto;
+    min-height: 62px;
+    border: 0;
+    border-bottom: 1px solid #e2e8f0;
+    padding: 10px 12px;
+    font-size: 14px;
+    line-height: 1.2;
+    text-align: left;
+  }
+
+  .production-orders-table tbody tr td:nth-child(odd) {
+    border-right: 1px solid #e2e8f0;
+  }
+
+  .production-orders-table tbody tr td::before {
+    content: attr(data-label);
+    color: #64748b;
+    font-size: 9px;
+    font-weight: 950;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .production-orders-table tbody tr td:last-child {
+    grid-column: 1 / -1;
+    border-bottom: 0;
+    border-right: 0;
+  }
+
+  .production-orders-table tbody tr.selected td,
+  .production-orders-table tbody tr:focus-visible td {
+    border-top: 0;
+    border-bottom-color: #fed7aa;
+    background: #fff7ed;
+  }
+
+  .production-orders-table tbody tr.selected td:first-child,
+  .production-orders-table tbody tr.selected td:last-child,
+  .production-orders-table tbody tr:focus-visible td:first-child,
+  .production-orders-table tbody tr:focus-visible td:last-child {
+    border-left: 0;
+    border-right: 0;
+  }
+
+  .production-orders-pagination {
+    align-items: stretch;
+    flex-direction: column;
+    padding: 10px;
+  }
+
+  .production-orders-pagination div {
+    justify-content: flex-start;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    scrollbar-width: thin;
+  }
+
+  .production-orders-pagination button {
+    flex: 0 0 auto;
   }
 }
 
