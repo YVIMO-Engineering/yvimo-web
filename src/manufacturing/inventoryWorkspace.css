@@ -30,6 +30,16 @@
   background: #fff4e9;
   color: #b95000;
 }
+.inventory-header-actions button.inventory-report-action.urgent {
+  border-color: #f1a7ad;
+  background: #fff1f2;
+  color: #b4232d;
+}
+.inventory-header-actions button.inventory-report-action.urgent:hover {
+  border-color: #dc2635;
+  background: #ffe4e6;
+  color: #991b25;
+}
 .inventory-header-actions button.primary, .inventory-empty button { border-color: #ff861b; background: #ff861b; color: #15100b; box-shadow: 0 8px 20px #ff861b2d; }
 .inventory-header-actions button:disabled { opacity: .45; cursor: not-allowed; }
 .inventory-content { display: grid; align-content: start; gap: 18px; padding: 16px 4px 12px; }

@@ -68,7 +68,7 @@ export function InventoryWorkspace({ onNavigate, organizationId, organizationNam
   const [imagePreviewItem, setImagePreviewItem] = React.useState<InventoryItem | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
-  const [reportGenerating, setReportGenerating] = React.useState(false);
+  const [reportGenerating, setReportGenerating] = React.useState<'inventory' | 'urgent' | null>(null);
   const [adjustingItemIds, setAdjustingItemIds] = React.useState<Set<string>>(new Set());
   const [message, setMessage] = React.useState('');
 
@@ -259,11 +259,19 @@ export function InventoryWorkspace({ onNavigate, organizationId, organizationNam
       : candidate));
   };
 
-  const downloadInventoryReport = async () => {
+  const downloadInventoryReport = async (urgentOnly = false) => {
     if (reportGenerating) return;
-    setReportGenerating(true);
+    setReportGenerating(urgentOnly ? 'urgent' : 'inventory');
     setMessage('');
     try {
+      const reportItems = urgentOnly
+        ? visibleItems.filter((item) => item.quantity < item.minimum_quantity)
+        : visibleItems;
+      const reportSections = sections.filter((section) => reportItems.some((item) => item.section_id === section.id));
+      if (urgentOnly && !reportItems.length) {
+        setMessage('There are no below-minimum inventory items to include in the urgent purchase report.');
+        return;
+      }
       const { default: jsPDF } = await import('jspdf');
       const pdf = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'letter' });
       const margin = 38;
@@ -272,9 +280,9 @@ export function InventoryWorkspace({ onNavigate, organizationId, organizationNam
       const contentWidth = pageWidth - (margin * 2);
       const generatedAt = new Date();
       let cursorY = margin;
-      const lowStockCount = visibleItems.filter((item) => item.quantity < item.minimum_quantity).length;
-      const atMinimumCount = visibleItems.filter((item) => item.quantity === item.minimum_quantity).length;
-      const totalQuantity = visibleItems.reduce((total, item) => total + Number(item.quantity), 0);
+      const lowStockCount = reportItems.filter((item) => item.quantity < item.minimum_quantity).length;
+      const atMinimumCount = reportItems.filter((item) => item.quantity === item.minimum_quantity).length;
+      const totalQuantity = reportItems.reduce((total, item) => total + Number(item.quantity), 0);
 
       const drawPageHeader = (continued = false) => {
         pdf.setFont('helvetica', 'bold');
@@ -286,7 +294,7 @@ export function InventoryWorkspace({ onNavigate, organizationId, organizationNam
         if (continued) {
           pdf.setTextColor(100, 116, 139);
           pdf.setFontSize(7);
-          pdf.text('INVENTORY REPORT · CONTINUED', pageWidth - margin, 39, { align: 'right' });
+          pdf.text(`${urgentOnly ? 'URGENT PURCHASE REPORT' : 'INVENTORY REPORT'} · CONTINUED`, pageWidth - margin, 39, { align: 'right' });
         }
         cursorY = 48;
       };
@@ -298,7 +306,7 @@ export function InventoryWorkspace({ onNavigate, organizationId, organizationNam
       pdf.setFont('helvetica', 'bold');
       pdf.setFontSize(22);
       pdf.setTextColor(7, 17, 28);
-      pdf.text('Inventory Report', margin, cursorY);
+      pdf.text(urgentOnly ? 'Urgent Purchase Report' : 'Inventory Report', margin, cursorY);
       pdf.setFont('helvetica', 'normal');
       pdf.setFontSize(9);
       pdf.setTextColor(82, 98, 115);
@@ -306,8 +314,8 @@ export function InventoryWorkspace({ onNavigate, organizationId, organizationNam
       cursorY += 26;
 
       const summaries = [
-        { label: 'SECTIONS', value: sections.length, detail: 'inventory categories', fill: [239, 246, 255], border: [59, 130, 246], text: [29, 78, 216] },
-        { label: 'ITEMS', value: visibleItems.length, detail: 'unique inventory items', fill: [245, 243, 255], border: [139, 92, 246], text: [109, 40, 217] },
+        { label: 'SECTIONS', value: reportSections.length, detail: 'inventory categories', fill: [239, 246, 255], border: [59, 130, 246], text: [29, 78, 216] },
+        { label: 'ITEMS', value: reportItems.length, detail: urgentOnly ? 'urgent purchase items' : 'unique inventory items', fill: [245, 243, 255], border: [139, 92, 246], text: [109, 40, 217] },
         { label: 'TOTAL QUANTITY', value: totalQuantity, detail: 'units currently recorded', fill: [236, 253, 245], border: [16, 185, 129], text: [4, 120, 87] },
         { label: 'AT MINIMUM', value: atMinimumCount, detail: 'items require attention', fill: [255, 251, 235], border: [245, 158, 11], text: [161, 98, 7] },
         { label: 'BELOW MINIMUM', value: lowStockCount, detail: 'items need replenishment', fill: [255, 241, 242], border: [239, 68, 68], text: [185, 28, 28] },
@@ -331,9 +339,9 @@ export function InventoryWorkspace({ onNavigate, organizationId, organizationNam
       });
       cursorY += 76;
 
-      sections.forEach((section, sectionIndex) => {
+      reportSections.forEach((section, sectionIndex) => {
         if (sectionIndex > 0) addPage();
-        const sectionItems = visibleItems.filter((item) => item.section_id === section.id);
+        const sectionItems = reportItems.filter((item) => item.section_id === section.id);
         pdf.setFillColor(255, 247, 237);
         pdf.setDrawColor(255, 138, 31);
         pdf.roundedRect(margin, cursorY, contentWidth, 28, 5, 5, 'FD');
@@ -475,12 +483,12 @@ export function InventoryWorkspace({ onNavigate, organizationId, organizationNam
         pdf.text(`${organizationName} · ${selectedWorkCenter?.name ?? 'Inventory'} · ${generatedAt.toISOString().slice(0, 10)}`, margin, pageHeight - 17);
         pdf.text(`Page ${page} of ${pageCount}`, pageWidth - margin, pageHeight - 17, { align: 'right' });
       }
-      pdf.save(`inventory-report-${generatedAt.toISOString().slice(0, 10)}.pdf`);
+      pdf.save(`${urgentOnly ? 'urgent-purchase-report' : 'inventory-report'}-${generatedAt.toISOString().slice(0, 10)}.pdf`);
     } catch (error) {
       console.error('Unable to generate Inventory report PDF', error);
-      setMessage('The Inventory report could not be generated. Try again.');
+      setMessage(`The ${urgentOnly ? 'urgent purchase' : 'Inventory'} report could not be generated. Try again.`);
     } finally {
-      setReportGenerating(false);
+      setReportGenerating(null);
     }
   };
 
@@ -524,8 +532,11 @@ export function InventoryWorkspace({ onNavigate, organizationId, organizationNam
         <div className="inventory-header-actions">
           <button type="button" onClick={() => { setSectionForm({ name: '', description: '' }); setMessage(''); setModal('section'); }}><Plus size={17} /> Add section</button>
           <button className="primary" type="button" disabled={!sections.length} onClick={openItemModal}><PackagePlus size={18} /> Add inventory item</button>
-          <button className="inventory-report-action" type="button" disabled={loading || reportGenerating} onClick={() => { void downloadInventoryReport(); }}>
-            <Download size={17} /> {reportGenerating ? 'Generating inventory report...' : 'Generate inventory PDF report'}
+          <button className="inventory-report-action" type="button" disabled={loading || Boolean(reportGenerating)} onClick={() => { void downloadInventoryReport(); }}>
+            <Download size={17} /> {reportGenerating === 'inventory' ? 'Generating inventory report...' : 'Generate inventory PDF report'}
+          </button>
+          <button className="inventory-report-action urgent" type="button" disabled={loading || Boolean(reportGenerating)} onClick={() => { void downloadInventoryReport(true); }}>
+            <AlertTriangle size={17} /> {reportGenerating === 'urgent' ? 'Generating urgent report...' : 'Generate urgent purchase PDF'}
           </button>
         </div>
       </div>
