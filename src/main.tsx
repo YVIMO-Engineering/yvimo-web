@@ -5285,7 +5285,7 @@ function LoggedDashboardPage({
                 <div className="manufacturing-page-header">
                   <button className="academy-back-button engineering-back-button" type="button" onClick={() => onNavigate('/dashboard')}>
                     <ArrowLeft size={16} />
-                    {t('Go Back')}
+                    <span>{t('Go Back')}</span>
                   </button>
                   <section className="engineering-tools-hero manufacturing-ops-hero">
                     <p className="eyebrow">{t('YVIMO PORTAL')}</p>
