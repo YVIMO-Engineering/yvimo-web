@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabaseClient';
 import { useSupabaseRealtimeRefresh } from '../lib/useSupabaseRealtimeRefresh';
 import type { ProductionOrderStatus } from './mesTypes';
 import { ProductionOrdersWorkspace } from './MesWorkspaces';
-import { DeliveryRiskTimeline, getDaysUntilDelivery, getDeliveryDistance, type DayCountMode } from './DeliveryRiskTimeline';
+import { DeliveryRiskTimeline, getDayCountBetween, getDaysUntilDelivery, getDeliveryDistance, type DayCountMode } from './DeliveryRiskTimeline';
 import { getOrderRiskLevel, type OrderRiskLevel } from './orderRisk';
 import './orderRisks.css';
 
@@ -106,15 +106,11 @@ function statusLabel(status: ProductionOrderStatus) {
   return status.split('-').map((word) => `${word.charAt(0).toUpperCase()}${word.slice(1)}`).join(' ');
 }
 
-function leadTimeLabel(createdAt: string) {
+function leadTimeLabel(createdAt: string, mode: DayCountMode, languageCode: string) {
   if (!createdAt) return 'Not available';
-  const start = new Date(createdAt);
-  const end = new Date();
-  if (Number.isNaN(start.getTime())) return 'Not available';
-  const startDay = Date.UTC(start.getFullYear(), start.getMonth(), start.getDate());
-  const endDay = Date.UTC(end.getFullYear(), end.getMonth(), end.getDate());
-  const days = Math.max(0, Math.round((endDay - startDay) / 86_400_000));
-  return `${days} day${days === 1 ? '' : 's'}`;
+  const days = getDayCountBetween(createdAt, new Date(), mode, languageCode);
+  if (days === null) return 'Not available';
+  return `${days} ${mode === 'business' ? 'business day' : 'day'}${days === 1 ? '' : 's'}`;
 }
 
 function coatingElapsedLabel(sentAt: string, returnedAt = '') {
@@ -342,7 +338,7 @@ export function OrderRisksWorkspace({ onNavigate, organizationId, languageCode }
     const timeout = window.setTimeout(() => setHighlightedOrderId(''), 3200);
     return () => window.clearTimeout(timeout);
   }, [highlightedOrderId]);
-  const timelineOrders = filteredOrders.map((order) => ({ id: order.id, orderNumber: order.order_number, clientName: order.client_name || 'Customer not assigned', deliveryDate: order.due_date, plannedQuantity: order.planned_quantity, completedQuantity: order.completed_quantity, scrapQuantity: order.scrap_quantity, stationLabels: order.stationCodes.map((code) => stationNameByCode.get(code) ? `${stationNameByCode.get(code)} · ${code}` : code), status: order.status, leadTime: leadTimeLabel(order.createdAt), risk: riskForOrder(order, dayCountMode, languageCode) }));
+  const timelineOrders = filteredOrders.map((order) => ({ id: order.id, orderNumber: order.order_number, clientName: order.client_name || 'Customer not assigned', deliveryDate: order.due_date, plannedQuantity: order.planned_quantity, completedQuantity: order.completed_quantity, scrapQuantity: order.scrap_quantity, stationLabels: order.stationCodes.map((code) => stationNameByCode.get(code) ? `${stationNameByCode.get(code)} · ${code}` : code), status: order.status, leadTime: leadTimeLabel(order.createdAt, dayCountMode, languageCode), risk: riskForOrder(order, dayCountMode, languageCode) }));
 
   return (
     <div className="order-risks-workspace">
@@ -469,7 +465,7 @@ export function OrderRisksWorkspace({ onNavigate, organizationId, languageCode }
                         <div className="order-risk-card-badges">
                           <span className={`mes-status-badge status-${order.status}`}>{statusLabel(order.status)}</span>
                           <span className="order-risk-due-metric"><small>{dueMetricTitle(order.due_date)}</small><strong>{dueLabel(order.due_date, dayCountMode, languageCode)}</strong></span>
-                          <span className="order-risk-lead-time"><small>Lead Time</small><strong>{leadTimeLabel(order.createdAt)}</strong></span>
+                          <span className="order-risk-lead-time"><small>Lead Time</small><strong>{leadTimeLabel(order.createdAt, dayCountMode, languageCode)}</strong></span>
                         </div>
                       </div>
                       <p className="order-risk-client">{order.client_name || 'Customer not assigned'}</p>
