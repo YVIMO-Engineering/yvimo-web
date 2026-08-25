@@ -1,7 +1,7 @@
 import React from 'react';
 import { useProductionOrdersI18n } from './productionOrdersI18n';
 import { createPortal } from 'react-dom';
-import { Activity, AlertTriangle, ArrowLeft, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleHelp, CircleX, ClipboardPlus, Clock3, Copy, Database, Download, Eye, Factory, Frown, FileText, ImagePlus, LoaderCircle, Maximize2, Meh, Minimize2, Minus, Move, PaintBucket, Pencil, Plus, Power, RadioTower, RotateCcw, Ruler, Search, Send, Smile, Timer, Trash2, Truck, Wrench, X, ZoomIn, ZoomOut } from 'lucide-react';
+import { Activity, AlertTriangle, ArrowLeft, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleHelp, CircleX, ClipboardPlus, Clock3, Copy, Database, Download, Eye, Factory, Frown, FileText, ImagePlus, LoaderCircle, Maximize2, Meh, Minimize2, Minus, Move, PackageCheck, PaintBucket, Pencil, Plus, Power, RadioTower, RotateCcw, Ruler, Search, Send, Smile, Timer, Trash2, Truck, Wrench, X, ZoomIn, ZoomOut } from 'lucide-react';
 import { GoogleWorkCentersMap } from '../components/maps/GoogleWorkCentersMap';
 import { resolveGooglePlacesAddressMatch, searchGooglePlacesAddressMatches, type GooglePlacesAddressMatch } from '../lib/maps/googlePlacesAddressLookup';
 import { supabase } from '../lib/supabaseClient';
@@ -602,6 +602,18 @@ type ProductionOrderCoatingTracking = {
   coatingReturnedAt: string;
   serials: ProductionOrderCoatingSerial[];
 };
+
+type ProductionOrderReceptionProcess = {
+  voucher: { id: string; voucherNumber: string; status: string; carrier: string; expectedDate: string; createdAt: string; clientCount: number; totalPieces: number };
+  item: { quantity: number; coatingSentAt: string; coatingReturnedAt: string; sentAt: string };
+  serials: Array<ProductionOrderCoatingSerial & { sentAt: string }>;
+};
+
+const receptionProcessSteps = ['Reception', 'Assign orders', 'Manufacturing', 'Quality inspection', 'Coating', 'Waiting to deliver', 'Sent'];
+
+function getReceptionProcessStep(status: string) {
+  return ({ reception: 0, 'assign-orders': 1, manufacturing: 2, 'quality-inspection': 3, discrepancy: 3, coating: 4, 'waiting-delivery': 5, sent: 6 } as Record<string, number>)[status] ?? 0;
+}
 
 type ConfirmationState = {
   title: string;
@@ -1893,7 +1905,7 @@ export function ProductionOrderDetailsModal({
   onPieceReleased?: () => Promise<void> | void;
   onClose: () => void;
 }) {
-  const [activeView, setActiveView] = React.useState<'production' | 'quality' | 'damage' | 'coating'>('production');
+  const [activeView, setActiveView] = React.useState<'production' | 'quality' | 'damage' | 'coating' | 'reception'>('production');
   const [preview, setPreview] = React.useState<ProductionOrderDetailPreview | null>(null);
   const [previewError, setPreviewError] = React.useState('');
   const [previewZoom, setPreviewZoom] = React.useState(1);
@@ -1916,6 +1928,8 @@ export function ProductionOrderDetailsModal({
   const [leadTimeDayCountMode, setLeadTimeDayCountMode] = React.useState<DayCountMode>('calendar');
   const [coatingTracking, setCoatingTracking] = React.useState<ProductionOrderCoatingTracking | null>(null);
   const [coatingLoading, setCoatingLoading] = React.useState(true);
+  const [receptionProcess, setReceptionProcess] = React.useState<ProductionOrderReceptionProcess | null>(null);
+  const [receptionProcessLoading, setReceptionProcessLoading] = React.useState(true);
   const qualityPieces = details.pieces.filter((piece) => getProductionOrderDetailQualityInspection(piece) || getProductionOrderDetailQualityMeasurements(piece).length > 0 || getProductionOrderDetailQualityDocuments(piece).length > 0);
   const damagePieces = details.pieces.filter(hasProductionOrderDetailDamage);
   const evidencePieces = details.pieces.filter((piece) => piece.evidence.length > 0 || hasProductionOrderDetailDamage(piece));
@@ -2032,6 +2046,65 @@ export function ProductionOrderDetailsModal({
       setCoatingLoading(false);
     };
     void loadCoatingTracking();
+    return () => { active = false; };
+  }, [organizationId, order.id]);
+  React.useEffect(() => {
+    let active = true;
+    const loadReceptionProcess = async () => {
+      setReceptionProcessLoading(true);
+      const { data: itemData, error: itemError } = await supabase
+        .from('mes_customer_reception_items')
+        .select('id, reception_voucher_id, quantity, coating_sent_at, coating_returned_at, sent_at')
+        .eq('organization_id', organizationId)
+        .eq('production_order_id', order.id)
+        .limit(1)
+        .maybeSingle();
+      if (!active) return;
+      if (itemError || !itemData?.id || !itemData.reception_voucher_id) {
+        setReceptionProcess(null);
+        setReceptionProcessLoading(false);
+        return;
+      }
+      const [voucherResult, voucherItemsResult, progressResult, serialResult] = await Promise.all([
+        supabase.from('mes_customer_reception_vouchers').select('id, voucher_number, status, carrier, expected_date, created_at').eq('organization_id', organizationId).eq('id', itemData.reception_voucher_id).maybeSingle(),
+        supabase.from('mes_customer_reception_items').select('customer_id, quantity').eq('organization_id', organizationId).eq('reception_voucher_id', itemData.reception_voucher_id),
+        supabase.from('mes_customer_reception_serial_progress').select('production_serial_id, coating_sent_at, coating_returned_at, sent_at').eq('organization_id', organizationId).eq('reception_item_id', itemData.id),
+        supabase.from('mes_production_serials').select('id, serial_number, tool_id').eq('organization_id', organizationId).eq('production_order_id', order.id).eq('result', 'good').order('piece_sequence'),
+      ]);
+      if (!active) return;
+      const voucher = voucherResult.data;
+      if (voucherResult.error || voucherItemsResult.error || progressResult.error || serialResult.error || !voucher) {
+        setReceptionProcess(null);
+        setReceptionProcessLoading(false);
+        return;
+      }
+      const voucherItems = voucherItemsResult.data ?? [];
+      const progressBySerial = new Map((progressResult.data ?? []).map((progress) => [progress.production_serial_id as string, progress]));
+      setReceptionProcess({
+        voucher: {
+          id: voucher.id,
+          voucherNumber: voucher.voucher_number,
+          status: voucher.status,
+          carrier: voucher.carrier ?? '',
+          expectedDate: voucher.expected_date ?? '',
+          createdAt: voucher.created_at ?? '',
+          clientCount: new Set(voucherItems.map((item) => item.customer_id)).size,
+          totalPieces: voucherItems.reduce((total, item) => total + (Number(item.quantity) || 0), 0),
+        },
+        item: {
+          quantity: Number(itemData.quantity) || 0,
+          coatingSentAt: itemData.coating_sent_at ?? '',
+          coatingReturnedAt: itemData.coating_returned_at ?? '',
+          sentAt: itemData.sent_at ?? '',
+        },
+        serials: (serialResult.data ?? []).map((serial) => {
+          const progress = progressBySerial.get(serial.id);
+          return { id: serial.id, serialNumber: serial.serial_number ?? 'Not assigned', toolId: serial.tool_id ?? '', coatingSentAt: progress?.coating_sent_at ?? '', coatingReturnedAt: progress?.coating_returned_at ?? '', sentAt: progress?.sent_at ?? '' };
+        }),
+      });
+      setReceptionProcessLoading(false);
+    };
+    void loadReceptionProcess();
     return () => { active = false; };
   }, [organizationId, order.id]);
   const coatingElapsedLabel = (sentAt: string, returnedAt = '') => {
@@ -2466,6 +2539,10 @@ export function ProductionOrderDetailsModal({
             <PaintBucket size={16} />Coating
             {coatingTracking?.serials.length ? <b>{coatingTracking.serials.length}</b> : null}
           </button>
+          <button type="button" className={activeView === 'reception' ? 'active' : ''} onClick={() => setActiveView('reception')} role="tab" aria-selected={activeView === 'reception'}>
+            <PackageCheck size={16} />Reception Process
+            {receptionProcess?.serials.length ? <b>{receptionProcess.serials.length}</b> : null}
+          </button>
         </div>
         {activeView === 'production' ? <div className="production-order-details-table-wrap">
           {details.loading ? (
@@ -2680,6 +2757,61 @@ export function ProductionOrderDetailsModal({
                 <div className="production-order-coating-totals"><span><small>Sub-reception Qty.</small><strong>{coatingTracking.quantity.toLocaleString()}</strong></span><span><small>Serials</small><strong>{coatingTracking.serials.length}</strong></span><span><small>Order elapsed</small><strong>{coatingTracking.coatingSentAt ? coatingElapsedLabel(coatingTracking.coatingSentAt, coatingTracking.coatingReturnedAt) : '—'}</strong></span></div>
               </article>
             ) : <div className="production-order-details-empty">No coating tracking has been recorded for this order yet.</div>}
+          </div>
+        ) : null}
+        {activeView === 'reception' ? (
+          <div className="production-order-reception-view">
+            {receptionProcessLoading ? <div className="production-order-details-empty">Loading reception process...</div> : receptionProcess ? (
+              <>
+                <div className="production-order-reception-timeline" aria-label="Reception process timeline">
+                  {receptionProcessSteps.map((step, index) => {
+                    const currentStep = getReceptionProcessStep(receptionProcess.voucher.status);
+                    const complete = index < currentStep || receptionProcess.voucher.status === 'sent';
+                    const current = index === currentStep && receptionProcess.voucher.status !== 'sent';
+                    return <React.Fragment key={step}>
+                      {index > 0 ? <i className={index <= currentStep ? 'complete' : ''} /> : null}
+                      <span className={`${complete ? 'complete' : ''}${current ? ' current' : ''}`}>
+                        <b>{complete ? <Check size={14} /> : index + 1}</b>
+                        <small>{step}</small>
+                      </span>
+                    </React.Fragment>;
+                  })}
+                </div>
+                <article className="production-order-reception-voucher">
+                  <header><span><PackageCheck size={22} /><small>Customer reception voucher</small><strong>{receptionProcess.voucher.voucherNumber}</strong></span><b>{formatTitleLabel(receptionProcess.voucher.status)}</b></header>
+                  <div>
+                    <span><small>Voucher ID</small><strong>{receptionProcess.voucher.voucherNumber}</strong></span>
+                    <span><small>Clients</small><strong>{receptionProcess.voucher.clientCount}</strong></span>
+                    <span><small>Total pieces</small><strong>{receptionProcess.voucher.totalPieces.toLocaleString()}</strong></span>
+                    <span><small>Carrier</small><strong>{receptionProcess.voucher.carrier || 'Not specified'}</strong></span>
+                    <span><small>Arrival date</small><strong>{receptionProcess.voucher.expectedDate ? formatDate(receptionProcess.voucher.expectedDate) : 'Not specified'}</strong></span>
+                  </div>
+                </article>
+                <article className="production-order-reception-item">
+                  <header><div><small>Associated sub-reception</small><strong>{order.clientName?.trim() || 'Unassigned client'}</strong></div><span>{receptionProcess.item.quantity.toLocaleString()} pieces</span></header>
+                  <div className="production-order-reception-item-summary">
+                    <span><small>Production order</small><strong>{order.orderNumber}</strong></span>
+                    <span><small>Produced</small><strong>{order.completedQuantity.toLocaleString()}</strong></span>
+                    <span><small>Scrap</small><strong>{order.scrapQuantity.toLocaleString()}</strong></span>
+                    <span><small>Order status</small><strong>{formatTitleLabel(order.status)}</strong></span>
+                    <span><small>Sub-reception status</small><strong>{receptionProcess.item.sentAt ? 'Sent' : receptionProcess.item.coatingReturnedAt ? 'Waiting to deliver' : order.status === 'completed' ? 'Coating' : order.status === 'waiting-inspection' ? 'Quality inspection' : 'Manufacturing'}</strong></span>
+                  </div>
+                  <div className="production-order-reception-serials">
+                    <header><strong>Serial numbers in this order</strong><span>{receptionProcess.serials.length} pieces</span></header>
+                    {receptionProcess.serials.length ? receptionProcess.serials.map((serial) => {
+                      const coatingNotRequired = order.pieceType === 'shavers';
+                      return <section key={serial.id}>
+                        <span><small>Serial number</small><strong>{serial.serialNumber}</strong></span>
+                        <span><small>Tool ID</small><strong>{serial.toolId || 'Not specified'}</strong></span>
+                        <span className={serial.coatingSentAt ? 'done' : ''}><small>Coating dispatch</small><strong>{coatingNotRequired ? 'Not required' : serial.coatingSentAt ? 'Sent' : 'Pending'}</strong>{!coatingNotRequired && serial.coatingSentAt ? <time>{new Date(serial.coatingSentAt).toLocaleString()}</time> : null}</span>
+                        <span className={serial.coatingReturnedAt ? 'done' : ''}><small>Coating return</small><strong>{coatingNotRequired ? 'Not required' : serial.coatingReturnedAt ? 'Received' : 'Pending'}</strong>{!coatingNotRequired && serial.coatingReturnedAt ? <time>{new Date(serial.coatingReturnedAt).toLocaleString()}</time> : null}</span>
+                        <span className={serial.sentAt ? 'done' : ''}><small>Delivery</small><strong>{serial.sentAt ? 'Sent' : 'Pending'}</strong>{serial.sentAt ? <time>{new Date(serial.sentAt).toLocaleString()}</time> : null}</span>
+                      </section>;
+                    }) : <div className="production-order-details-empty">No completed serials have been reported for this sub-reception.</div>}
+                  </div>
+                </article>
+              </>
+            ) : <div className="production-order-details-empty">This production order is not associated with a reception voucher.</div>}
           </div>
         ) : null}
       </section>
