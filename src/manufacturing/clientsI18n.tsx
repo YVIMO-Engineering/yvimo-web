@@ -233,6 +233,7 @@ const spanish: Record<string, string> = {
   'Send to Coating': 'Enviar a recubrimiento',
   'Receive Coating': 'Recibir de recubrimiento',
   Received: 'Recibido',
+  'Not required': 'No requerido',
   'Serial numbers will appear when completed pieces are reported for this order.': 'Los números de serie aparecerán cuando se reporten piezas terminadas para esta orden.',
   'Pending completion': 'Pendiente de completar',
   'Description & Notes': 'Descripción y notas',
