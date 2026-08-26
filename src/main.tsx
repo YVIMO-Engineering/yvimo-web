@@ -49,6 +49,7 @@ import {
   TerminalSquare,
   Truck,
   TrendingUp,
+  Target,
   UserPlus,
   Users,
   Workflow,
@@ -73,6 +74,7 @@ import { ImportCostingWorkspace } from './manufacturing/ImportCostingWorkspace';
 import { ProductionScheduleWorkspace } from './manufacturing/ProductionScheduleWorkspace';
 import { RevenueOpportunityWorkspace } from './manufacturing/RevenueOpportunityWorkspace';
 import { AnalysisToolWorkspace } from './manufacturing/AnalysisToolWorkspace';
+import { InvoiceTargetWorkspace } from './manufacturing/InvoiceTargetWorkspace';
 import { HealthPatientsWorkspace } from './health/HealthPatientsWorkspace';
 import './manufacturing/customerOperations.css';
 import './manufacturing/clientBalances.css';
@@ -3965,6 +3967,8 @@ function LoggedDashboardPage({
     ? 'income-flow'
     : activePath.endsWith('/balances')
       ? 'balances'
+      : activePath.endsWith('/invoice-target')
+        ? 'invoice-target'
       : 'price-misalignment';
   const supplierContextTabs: Array<{
     value: SupplierContextTab;
@@ -4053,6 +4057,9 @@ function LoggedDashboardPage({
       return <ProductionScheduleWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} />;
     }
     if (isRevenueOpportunitySection) {
+      if (activeRevenueSection === 'invoice-target') {
+        return <InvoiceTargetWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} />;
+      }
       if (activeRevenueSection === 'balances') {
         return <CustomerOperationsWorkspace onNavigate={onNavigate} activeTab="balances" organizationId={activeManufacturingOrganizationId} languageCode={languageCode} hostSection="financial-status" />;
       }
@@ -4927,6 +4934,7 @@ function LoggedDashboardPage({
             <button type="button" className="disabled" disabled aria-disabled="true"><TrendingUp size={18} /><span>Revenue Optimization</span></button>
             <button type="button" className={activeRevenueSection === 'income-flow' ? 'active' : ''} onClick={() => onNavigate('/workspace/manufacturing-ops/intelligence/revenue-opportunity/income-flow')}><BarChart3 size={18} /><span>Income Flow</span></button>
             <button type="button" className={activeRevenueSection === 'balances' ? 'active' : ''} onClick={() => onNavigate('/workspace/manufacturing-ops/intelligence/revenue-opportunity/balances')}><Calculator size={18} /><span>Balances</span></button>
+            <button type="button" className={activeRevenueSection === 'invoice-target' ? 'active' : ''} onClick={() => onNavigate('/workspace/manufacturing-ops/intelligence/revenue-opportunity/invoice-target')}><Target size={18} /><span>Invoice Target</span></button>
           </nav>
         </aside>
       ) : null}
