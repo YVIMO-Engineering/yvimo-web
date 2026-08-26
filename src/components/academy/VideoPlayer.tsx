@@ -161,9 +161,12 @@ export function VideoPlayer({
       <YvimoVideoPlayer
         src={r2Playback.url}
         title={title}
-        onError={() => {
+        onError={(mediaError) => {
           setR2PlaybackState('error');
-          setR2PlaybackMessage('The secure playback URL expired or the video could not be decoded.');
+          const detail = mediaError
+            ? `MediaError ${mediaError.code}${mediaError.message ? `: ${mediaError.message}` : ''}`
+            : 'unknown media error';
+          setR2PlaybackMessage(`R2 accepted the signed URL, but the browser rejected the media (${detail}).`);
         }}
         onProgress={handleProgress}
         onComplete={onComplete}
@@ -355,7 +358,7 @@ function YvimoVideoPlayer({
 }: {
   src: string;
   title: string;
-  onError: () => void;
+  onError: (error: MediaError | null) => void;
   onProgress: (video: HTMLVideoElement) => void;
   onComplete?: () => void;
 }) {
@@ -483,11 +486,12 @@ function YvimoVideoPlayer({
         disablePictureInPicture
         disableRemotePlayback
         playsInline
-        preload="none"
+        preload="metadata"
         title={title}
+        src={src}
         onContextMenu={(event) => event.preventDefault()}
         onClick={useNativeControls ? undefined : togglePlayback}
-        onError={onError}
+        onError={(event) => onError(event.currentTarget.error)}
         onLoadedMetadata={(event) => {
           setPlaybackMessage('');
           setDuration(event.currentTarget.duration);
@@ -516,9 +520,7 @@ function YvimoVideoPlayer({
           onProgress(event.currentTarget);
           onComplete?.();
         }}
-      >
-        <source src={src} type="video/mp4" />
-      </video>
+      />
 
       {playbackMessage ? <div className="academy-video-playback-message" role="alert">{playbackMessage}</div> : null}
 
