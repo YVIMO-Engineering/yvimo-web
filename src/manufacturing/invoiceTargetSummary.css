@@ -1,3 +1,12 @@
+.invoice-target-header > button {
+  min-height: 42px;
+  border-radius: 9px;
+  padding: 0 15px;
+  background: #ff7a00;
+  color: #fff;
+  font-weight: 950;
+}
+
 .invoice-annual-column {
   display: grid;
   min-width: 0;

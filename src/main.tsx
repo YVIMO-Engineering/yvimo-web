@@ -75,6 +75,7 @@ import { ProductionScheduleWorkspace } from './manufacturing/ProductionScheduleW
 import { RevenueOpportunityWorkspace } from './manufacturing/RevenueOpportunityWorkspace';
 import { AnalysisToolWorkspace } from './manufacturing/AnalysisToolWorkspace';
 import { InvoiceTargetWorkspace } from './manufacturing/InvoiceTargetWorkspace';
+import { ProductionTrackingWorkspace } from './manufacturing/ProductionTrackingWorkspace';
 import { HealthPatientsWorkspace } from './health/HealthPatientsWorkspace';
 import './manufacturing/customerOperations.css';
 import './manufacturing/clientBalances.css';
@@ -3963,6 +3964,7 @@ function LoggedDashboardPage({
   const isRevenueOpportunitySection = activePath.startsWith('/workspace/manufacturing-ops/intelligence/revenue-opportunity');
   const isAnalysisToolSection = activePath === '/workspace/manufacturing-ops/intelligence/analysis-tool'
     || activePath.startsWith('/workspace/manufacturing-ops/intelligence/analysis-tool/');
+  const activeAnalysisToolSection = activePath.endsWith('/production-tracking') ? 'production-tracking' : 'performance-check';
   const activeRevenueSection = activePath.endsWith('/income-flow')
     ? 'income-flow'
     : activePath.endsWith('/balances')
@@ -4066,6 +4068,9 @@ function LoggedDashboardPage({
       return <RevenueOpportunityWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} activeSection={activeRevenueSection} />;
     }
     if (isAnalysisToolSection) {
+      if (activeAnalysisToolSection === 'production-tracking') {
+        return <ProductionTrackingWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} />;
+      }
       return <AnalysisToolWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} />;
     }
     if (activePath === '/workspace/manufacturing-ops/mes/orders') {
@@ -4943,8 +4948,11 @@ function LoggedDashboardPage({
         <aside className="supplier-shell-context-menu analysis-tool-shell-context-menu" aria-label="Analysis Tool sections">
           <div><span>OPS INTELLIGENCE</span><strong>Analysis Tool</strong></div>
           <nav>
-            <button type="button" className="active" aria-current="page">
+            <button type="button" className={activeAnalysisToolSection === 'performance-check' ? 'active' : ''} aria-current={activeAnalysisToolSection === 'performance-check' ? 'page' : undefined} onClick={() => onNavigate('/workspace/manufacturing-ops/intelligence/analysis-tool')}>
               <Activity size={18} /><span>Performance Check</span>
+            </button>
+            <button type="button" className={activeAnalysisToolSection === 'production-tracking' ? 'active' : ''} aria-current={activeAnalysisToolSection === 'production-tracking' ? 'page' : undefined} onClick={() => onNavigate('/workspace/manufacturing-ops/intelligence/analysis-tool/production-tracking')}>
+              <FileText size={18} /><span>Production Tracking</span>
             </button>
           </nav>
         </aside>

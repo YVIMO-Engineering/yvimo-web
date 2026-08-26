@@ -1,0 +1,36 @@
+.production-tracking {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+.tracking-filters {
+  grid-template-columns: minmax(220px, 1fr) minmax(150px, 190px) minmax(0, 2fr);
+}
+
+.tracking-range { min-width: 0; }
+.tracking-kpis { width: 100%; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.tracking-kpis article { min-width: 0; }
+.tracking-kpis span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tracking-table > div { overflow-x: hidden; overflow-y: auto; }
+.tracking-table table { width: 100%; min-width: 0; table-layout: fixed; }
+.tracking-table th { padding: 11px 6px; font-size: .57rem; line-height: 1.25; white-space: normal; }
+.tracking-table td { overflow: hidden; padding: 13px 6px; font-size: .68rem; line-height: 1.3; text-overflow: ellipsis; white-space: nowrap; }
+.tracking-table td strong { font-size: .72rem; }
+.tracking-table .part-badge, .tracking-table .result { padding: 5px 8px; font-size: .62rem; font-weight: 850; }
+.tracking-table th:nth-child(15), .tracking-table td:nth-child(15) { display: none; }
+/* Shavers add one measurement column; keep Result visible and hide Status. */
+.tracking-table table:has(th:nth-child(17)) th:nth-child(15),
+.tracking-table table:has(th:nth-child(17)) td:nth-child(15) { display: table-cell; }
+.tracking-table table:has(th:nth-child(17)) th:nth-child(16),
+.tracking-table table:has(th:nth-child(17)) td:nth-child(16) { display: none; }
+/* Shapers use three measurement columns, so Status moves one place left. */
+.tracking-table table:has(th:nth-child(15)):not(:has(th:nth-child(16))) th:nth-child(14),
+.tracking-table table:has(th:nth-child(15)):not(:has(th:nth-child(16))) td:nth-child(14) { display: none; }
+.tracking-table table:has(th:nth-child(15)):not(:has(th:nth-child(16))) th:nth-child(15),
+.tracking-table table:has(th:nth-child(15)):not(:has(th:nth-child(16))) td:nth-child(15) { display: table-cell; }
+
+@media (max-width: 1250px) {
+  .tracking-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
