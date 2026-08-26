@@ -5,16 +5,17 @@ import './invoiceTargetWorkspace.css';
 
 type Props = { onNavigate: (path: string) => void; organizationId: string };
 type WorkCenter = { code: string; name: string };
-type InvoiceReport = { fileName: string; amount: number; total: number; currency: string; uploadedAt: string };
+type InvoiceReport = { id: string; fileName: string; filePath: string; amount: number; total: number; currency: string; uploadedAt: string };
 type SavedReports = Record<string, InvoiceReport>;
+type ReportRow = { id: string; work_center_code: string; report_month: number; currency: string; net_invoicing: number; gross_invoicing: number; file_name: string; file_path: string; updated_at: string };
 
 const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const colors = ['#f97316', '#0f766e', '#2563eb', '#7c3aed', '#db2777', '#65a30d', '#0891b2', '#dc2626', '#a16207', '#4f46e5', '#059669', '#9333ea'];
 const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 });
 const compactMoney = new Intl.NumberFormat('en-US', { notation: 'compact', style: 'currency', currency: 'MXN', maximumFractionDigits: 1 });
 
-const storageKey = (organizationId: string, year: number) => `yvimo:invoice-target:${organizationId}:${year}`;
 const reportKey = (workCenterCode: string, month: number) => `${workCenterCode}:${month}`;
+const bucket = 'mes-invoice-target-reports';
 
 const decodePdfString = (value: string) => value
   .replace(/\\([()\\])/g, '$1')
@@ -78,19 +79,46 @@ export function InvoiceTargetWorkspace({ onNavigate, organizationId }: Props) {
   const [selected, setSelected] = React.useState('');
   const [reports, setReports] = React.useState<SavedReports>({});
   const [message, setMessage] = React.useState('');
+  const [loading, setLoading] = React.useState(true);
+  const [savingKey, setSavingKey] = React.useState('');
   React.useEffect(() => { void supabase.from('mes_work_centers').select('code, name').eq('organization_id', organizationId).order('name').then(({ data }) => { const rows = (data ?? []) as WorkCenter[]; setWorkCenters(rows); setSelected((current) => current || rows[0]?.code || ''); }); }, [organizationId]);
-  React.useEffect(() => { try { setReports(JSON.parse(localStorage.getItem(storageKey(organizationId, year)) || '{}')); } catch { setReports({}); } }, [organizationId, year]);
-  const persist = (next: SavedReports) => { setReports(next); localStorage.setItem(storageKey(organizationId, year), JSON.stringify(next)); };
+  const loadReports = React.useCallback(async () => {
+    setLoading(true); setMessage('');
+    const { data, error } = await supabase.from('mes_invoice_target_reports').select('id, work_center_code, report_month, currency, net_invoicing, gross_invoicing, file_name, file_path, updated_at').eq('organization_id', organizationId).eq('report_year', year).order('report_month');
+    if (error) { setReports({}); setMessage(`Unable to load saved reports: ${error.message}`); setLoading(false); return; }
+    const next: SavedReports = {};
+    ((data ?? []) as ReportRow[]).forEach((row) => { next[reportKey(row.work_center_code, row.report_month - 1)] = { id: row.id, fileName: row.file_name, filePath: row.file_path, amount: Number(row.net_invoicing), total: Number(row.gross_invoicing), currency: row.currency, uploadedAt: row.updated_at }; });
+    setReports(next); setLoading(false);
+  }, [organizationId, year]);
+  React.useEffect(() => { void loadReports(); }, [loadReports]);
   const upload = async (month: number, file?: File) => {
     if (!file || !selected) return;
-    setMessage('');
+    const key = reportKey(selected, month); setSavingKey(key); setMessage('');
     try {
       const parsed = await parseContpaqReport(file);
       if (parsed.month >= 0 && parsed.month !== month) throw new Error(`This report belongs to ${months[parsed.month]}, not ${months[month]}.`);
       if (parsed.year && parsed.year !== year) throw new Error(`This report belongs to ${parsed.year}, not ${year}.`);
-      persist({ ...reports, [reportKey(selected, month)]: { fileName: file.name, amount: parsed.amount, total: parsed.total, currency: 'MXN', uploadedAt: new Date().toISOString() } });
+      const safeCenter = selected.replace(/[^a-z0-9_-]/gi, '_');
+      const oldReport = reports[key];
+      const filePath = `${organizationId}/${year}/${safeCenter}/${String(month + 1).padStart(2, '0')}-${Date.now()}.pdf`;
+      const { error: storageError } = await supabase.storage.from(bucket).upload(filePath, file, { upsert: true, contentType: 'application/pdf' });
+      if (storageError) throw new Error(`The PDF could not be saved: ${storageError.message}`);
+      const { error: databaseError } = await supabase.from('mes_invoice_target_reports').upsert({ organization_id: organizationId, work_center_code: selected, report_year: year, report_month: month + 1, currency: 'MXN', net_invoicing: parsed.amount, gross_invoicing: parsed.total, file_name: file.name, file_path: filePath, updated_at: new Date().toISOString() }, { onConflict: 'organization_id,work_center_code,report_year,report_month' });
+      if (databaseError) { await supabase.storage.from(bucket).remove([filePath]); throw new Error(`The report record could not be saved: ${databaseError.message}`); }
+      if (oldReport?.filePath && oldReport.filePath !== filePath) await supabase.storage.from(bucket).remove([oldReport.filePath]);
+      await loadReports();
       setMessage(`${months[month]} loaded: ${money.format(parsed.amount)} net invoicing.`);
     } catch (error) { setMessage(error instanceof Error ? error.message : 'The report could not be processed.'); }
+    finally { setSavingKey(''); }
+  };
+  const removeReport = async (month: number) => {
+    const key = reportKey(selected, month); const report = reports[key]; if (!report) return;
+    setSavingKey(key); setMessage('');
+    const { error } = await supabase.from('mes_invoice_target_reports').delete().eq('id', report.id).eq('organization_id', organizationId);
+    if (error) { setMessage(`The report could not be removed: ${error.message}`); setSavingKey(''); return; }
+    const { error: fileError } = await supabase.storage.from(bucket).remove([report.filePath]);
+    await loadReports(); setSavingKey('');
+    setMessage(fileError ? `The record was removed, but the PDF could not be deleted: ${fileError.message}` : `${months[month]} report removed.`);
   };
   const selectedName = workCenters.find((center) => center.code === selected)?.name ?? 'Workcenter';
   const annualTotal = Object.entries(reports).filter(([key]) => key.startsWith(`${selected}:`)).reduce((sum, [, report]) => sum + report.amount, 0);
@@ -98,7 +126,7 @@ export function InvoiceTargetWorkspace({ onNavigate, organizationId }: Props) {
     <header className="invoice-target-header"><button type="button" onClick={() => onNavigate('/workspace/manufacturing-ops/intelligence')}><ArrowLeft size={16} /> Ops Intelligence</button><div><span>OPS INTELLIGENCE / FINANCIAL STATUS</span><h1>Invoice Target</h1><p>Annual invoicing visibility by workcenter</p></div><label><span>Fiscal year</span><select value={year} onChange={(event) => setYear(Number(event.target.value))}>{Array.from({ length: 7 }, (_, index) => new Date().getFullYear() + 2 - index).map((value) => <option key={value}>{value}</option>)}</select></label></header>
     {message ? <div className="invoice-target-message">{message}</div> : null}
     <div className="invoice-target-layout">
-      <aside className="invoice-upload-panel"><header><FileUp size={19} /><div><span>REPORT INPUT</span><h2>Monthly sales files</h2></div></header><label className="invoice-workspace-select"><span>Workspace / workcenter</span><select value={selected} onChange={(event) => setSelected(event.target.value)}>{workCenters.map((center) => <option value={center.code} key={center.code}>{center.name} ({center.code})</option>)}</select></label><div className="invoice-month-list">{months.map((month, index) => { const report = reports[reportKey(selected, index)]; return <article className={report ? 'loaded' : ''} key={month}><span className="invoice-month-icon">{report ? <Check size={15} /> : <CalendarDays size={15} />}</span><div><strong>{month}</strong><small>{report ? `${money.format(report.amount)} · ${report.fileName}` : 'No report uploaded'}</small></div><label title={`Upload ${month} report`}><FileText size={16} /><span>{report ? 'Replace' : 'Upload'}</span><input type="file" accept="application/pdf,.pdf" onChange={(event) => { void upload(index, event.target.files?.[0]); event.currentTarget.value = ''; }} /></label>{report ? <button type="button" title="Remove report" onClick={() => { const next = { ...reports }; delete next[reportKey(selected, index)]; persist(next); }}><Trash2 size={15} /></button> : null}</article>; })}</div></aside>
+      <aside className="invoice-upload-panel"><header><FileUp size={19} /><div><span>REPORT INPUT</span><h2>Monthly sales files</h2></div></header><label className="invoice-workspace-select"><span>Workspace / workcenter</span><select value={selected} onChange={(event) => setSelected(event.target.value)}>{workCenters.map((center) => <option value={center.code} key={center.code}>{center.name} ({center.code})</option>)}</select></label><div className="invoice-month-list">{months.map((month, index) => { const key = reportKey(selected, index); const report = reports[key]; const saving = savingKey === key; return <article className={report ? 'loaded' : ''} key={month}><span className="invoice-month-icon">{report ? <Check size={15} /> : <CalendarDays size={15} />}</span><div><strong>{month}</strong><small>{saving ? 'Saving to Supabase…' : report ? `${money.format(report.amount)} · ${report.fileName}` : loading ? 'Loading…' : 'No report uploaded'}</small></div><label title={`Upload ${month} report`} aria-disabled={saving}><FileText size={16} /><span>{saving ? 'Saving' : report ? 'Replace' : 'Upload'}</span><input type="file" disabled={saving} accept="application/pdf,.pdf" onChange={(event) => { void upload(index, event.target.files?.[0]); event.currentTarget.value = ''; }} /></label>{report ? <button type="button" disabled={saving} title="Remove report" onClick={() => void removeReport(index)}><Trash2 size={15} /></button> : null}</article>; })}</div></aside>
       <main className="invoice-annual-panel"><header><div><span>ANNUAL PERFORMANCE · NET OF TAX</span><h2>{year} invoicing overview</h2><p>Every line represents one workcenter. Empty months remain unconnected until a report is uploaded.</p></div><div><small>{selectedName}</small><strong>{money.format(annualTotal)}</strong><span>selected annual total</span></div></header><AnnualChart workCenters={workCenters} reports={reports} /><footer><span><i /> Values use “Neto-Desc.” from the CONTPAQ Total General row.</span><strong>{Object.keys(reports).length} monthly reports loaded</strong></footer></main>
     </div>
   </section>;
