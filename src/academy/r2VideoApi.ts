@@ -22,7 +22,12 @@ async function authorizationHeaders() {
 }
 
 async function readApiResponse<T>(response: Response): Promise<T> {
-  const body = await response.json().catch(() => ({})) as { error?: string };
+  let body: { error?: string };
+  try {
+    body = await response.json() as { error?: string };
+  } catch {
+    throw new Error('The video service returned an unexpected response.');
+  }
   if (!response.ok) throw new Error(body.error || 'The video service request failed.');
   return body as T;
 }

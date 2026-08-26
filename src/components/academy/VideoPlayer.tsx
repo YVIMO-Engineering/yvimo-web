@@ -366,7 +366,6 @@ function YvimoVideoPlayer({
   const videoRef = React.useRef<HTMLVideoElement>(null);
   const progressTimer = React.useRef<number | null>(null);
   const controlsTimer = React.useRef<number | null>(null);
-  const playbackActionRef = React.useRef(false);
   const [isPlaying, setIsPlaying] = React.useState(false);
   const [isMuted, setIsMuted] = React.useState(false);
   const [volume, setVolume] = React.useState(1);
@@ -392,9 +391,8 @@ function YvimoVideoPlayer({
 
   const startPlayback = React.useCallback(async () => {
     const video = videoRef.current;
-    if (!video || playbackActionRef.current) return;
-    playbackActionRef.current = true;
-    setPlaybackMessage('');
+    if (!video) return;
+    setPlaybackMessage('Loading video...');
     try {
       await video.play();
     } catch (caught) {
@@ -408,14 +406,12 @@ function YvimoVideoPlayer({
           ? 'Your browser blocked playback. Allow media playback for www.yvimo.com and try again.'
           : `The browser could not start this video (${errorName}).`,
       );
-    } finally {
-      playbackActionRef.current = false;
     }
   }, []);
 
   const togglePlayback = React.useCallback(() => {
     const video = videoRef.current;
-    if (!video || playbackActionRef.current) return;
+    if (!video) return;
     if (video.paused) void startPlayback();
     else video.pause();
   }, [startPlayback]);
@@ -489,7 +485,7 @@ function YvimoVideoPlayer({
         disablePictureInPicture
         disableRemotePlayback
         playsInline
-        preload="metadata"
+        preload="auto"
         title={title}
         src={src}
         onContextMenu={(event) => event.preventDefault()}
@@ -510,7 +506,14 @@ function YvimoVideoPlayer({
           if (progressTimer.current) window.clearInterval(progressTimer.current);
           progressTimer.current = window.setInterval(() => onProgress(video), 10000);
         }}
+        onPlaying={() => {
+          setPlaybackMessage('');
+        }}
         onCanPlay={() => setPlaybackMessage('')}
+        onWaiting={() => setPlaybackMessage('Buffering video...')}
+        onStalled={() => {
+          setPlaybackMessage('The video download stalled. Press Play to retry.');
+        }}
         onPause={(event) => {
           setIsPlaying(false);
           setShowControls(true);
