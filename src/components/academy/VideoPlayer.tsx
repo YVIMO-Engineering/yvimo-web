@@ -393,34 +393,14 @@ function YvimoVideoPlayer({
     try {
       await video.play();
     } catch (caught) {
-      let playbackError: unknown = caught;
-      // Chromium can abort play() while the signed media response is still
-      // switching from metadata to a ranged request. Wait for playable data
-      // and retry once while retaining the original user interaction.
-      if (caught instanceof DOMException && caught.name === 'AbortError') {
-        try {
-          await new Promise<void>((resolve, reject) => {
-            const timeout = window.setTimeout(() => reject(new Error('timeout')), 8000);
-            video.addEventListener('canplay', () => {
-              window.clearTimeout(timeout);
-              resolve();
-            }, { once: true });
-            video.load();
-          });
-          await video.play();
-          return;
-        } catch (retryError) {
-          playbackError = retryError;
-        }
-      }
-      const errorName = playbackError instanceof DOMException
-        ? playbackError.name
+      const errorName = caught instanceof DOMException
+        ? caught.name
         : video.error
           ? `MediaError ${video.error.code}`
           : 'PlaybackError';
       setUseNativeControls(true);
       setPlaybackMessage(
-        playbackError instanceof DOMException && playbackError.name === 'NotAllowedError'
+        caught instanceof DOMException && caught.name === 'NotAllowedError'
           ? 'Your browser blocked playback. Allow media playback for www.yvimo.com and try again.'
           : `Chrome could not start this video (${errorName}). Try the browser controls below.`,
       );
@@ -503,9 +483,8 @@ function YvimoVideoPlayer({
         disablePictureInPicture
         disableRemotePlayback
         playsInline
-        preload="metadata"
+        preload="none"
         title={title}
-        src={src}
         onContextMenu={(event) => event.preventDefault()}
         onClick={useNativeControls ? undefined : togglePlayback}
         onError={onError}
@@ -537,7 +516,9 @@ function YvimoVideoPlayer({
           onProgress(event.currentTarget);
           onComplete?.();
         }}
-      />
+      >
+        <source src={src} type="video/mp4" />
+      </video>
 
       {playbackMessage ? <div className="academy-video-playback-message" role="alert">{playbackMessage}</div> : null}
 
