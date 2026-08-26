@@ -371,6 +371,7 @@ function YvimoVideoPlayer({
   const [buffered, setBuffered] = React.useState(0);
   const [showControls, setShowControls] = React.useState(true);
   const [playbackMessage, setPlaybackMessage] = React.useState('');
+  const [useNativeControls, setUseNativeControls] = React.useState(false);
 
   const revealControls = React.useCallback(() => {
     setShowControls(true);
@@ -392,6 +393,7 @@ function YvimoVideoPlayer({
     try {
       await video.play();
     } catch (caught) {
+      let playbackError: unknown = caught;
       // Chromium can abort play() while the signed media response is still
       // switching from metadata to a ranged request. Wait for playable data
       // and retry once while retaining the original user interaction.
@@ -407,14 +409,20 @@ function YvimoVideoPlayer({
           });
           await video.play();
           return;
-        } catch {
-          // Fall through to the actionable player message below.
+        } catch (retryError) {
+          playbackError = retryError;
         }
       }
+      const errorName = playbackError instanceof DOMException
+        ? playbackError.name
+        : video.error
+          ? `MediaError ${video.error.code}`
+          : 'PlaybackError';
+      setUseNativeControls(true);
       setPlaybackMessage(
-        caught instanceof DOMException && caught.name === 'NotAllowedError'
+        playbackError instanceof DOMException && playbackError.name === 'NotAllowedError'
           ? 'Your browser blocked playback. Allow media playback for www.yvimo.com and try again.'
-          : 'The browser could not start this video. Reload the page and try again.',
+          : `Chrome could not start this video (${errorName}). Try the browser controls below.`,
       );
     }
   }, []);
@@ -491,6 +499,7 @@ function YvimoVideoPlayer({
     >
       <video
         ref={videoRef}
+        controls={useNativeControls}
         disablePictureInPicture
         disableRemotePlayback
         playsInline
@@ -498,7 +507,7 @@ function YvimoVideoPlayer({
         title={title}
         src={src}
         onContextMenu={(event) => event.preventDefault()}
-        onClick={togglePlayback}
+        onClick={useNativeControls ? undefined : togglePlayback}
         onError={onError}
         onLoadedMetadata={(event) => {
           setPlaybackMessage('');
@@ -532,13 +541,13 @@ function YvimoVideoPlayer({
 
       {playbackMessage ? <div className="academy-video-playback-message" role="alert">{playbackMessage}</div> : null}
 
-      {!isPlaying && (
+      {!useNativeControls && !isPlaying && (
         <button className="academy-video-center-play" type="button" onClick={togglePlayback} aria-label="Play video">
           <Play size={32} fill="currentColor" />
         </button>
       )}
 
-      <div className="academy-video-controls" onClick={(event) => event.stopPropagation()}>
+      {!useNativeControls ? <div className="academy-video-controls" onClick={(event) => event.stopPropagation()}>
         <div className="academy-video-timeline">
           <div className="academy-video-buffered" style={{ width: `${buffered}%` }} />
           <div className="academy-video-played" style={{ width: `${playedPercent}%` }} />
@@ -601,7 +610,7 @@ function YvimoVideoPlayer({
             <Maximize size={21} />
           </button>
         </div>
-      </div>
+      </div> : null}
     </div>
   );
 }
