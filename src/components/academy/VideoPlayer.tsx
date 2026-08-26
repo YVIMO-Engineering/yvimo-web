@@ -374,7 +374,7 @@ function YvimoVideoPlayer({
   const [buffered, setBuffered] = React.useState(0);
   const [showControls, setShowControls] = React.useState(true);
   const [playbackMessage, setPlaybackMessage] = React.useState('');
-  const [useNativeControls, setUseNativeControls] = React.useState(false);
+  const useNativeControls = false;
 
   const revealControls = React.useCallback(() => {
     setShowControls(true);
@@ -401,11 +401,10 @@ function YvimoVideoPlayer({
         : video.error
           ? `MediaError ${video.error.code}`
           : 'PlaybackError';
-      setUseNativeControls(true);
       setPlaybackMessage(
         caught instanceof DOMException && caught.name === 'NotAllowedError'
           ? 'Your browser blocked playback. Allow media playback for www.yvimo.com and try again.'
-          : `Chrome could not start this video (${errorName}). Try the browser controls below.`,
+          : `The browser could not start this video (${errorName}).`,
       );
     }
   }, []);
@@ -473,10 +472,10 @@ function YvimoVideoPlayer({
       className={`academy-video-frame academy-yvimo-player${showControls ? ' controls-visible' : ''}`}
       tabIndex={0}
       aria-label={`${title} video player`}
-      onKeyDown={handleKeyDown}
+      onKeyDown={useNativeControls ? undefined : handleKeyDown}
       onMouseMove={revealControls}
       onMouseLeave={() => isPlaying && setShowControls(false)}
-      onClick={(event) => {
+      onClick={useNativeControls ? undefined : (event) => {
         if (event.target === event.currentTarget) togglePlayback();
       }}
     >

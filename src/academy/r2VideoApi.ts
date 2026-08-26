@@ -124,29 +124,10 @@ export async function fetchR2Playback(recordingId: string) {
     headers: { Authorization: headers.Authorization },
     cache: 'no-store',
   });
-  const playback = await readApiResponse<{
+  return readApiResponse<{
     playbackUrl: string;
     expiresAt: string;
     mimeType: string;
     durationSeconds: number | null;
   }>(response);
-
-  // Signing is an offline operation: invalid or stale production credentials
-  // can still produce a plausible URL. Validate a minimal ranged request before
-  // handing it to the media element so failures do not appear as a black player.
-  let probe: Response;
-  try {
-    probe = await fetch(playback.playbackUrl, {
-      headers: { Range: 'bytes=0-1' },
-      cache: 'no-store',
-    });
-  } catch {
-    throw new Error('R2 playback check failed (network or CORS). Verify the production R2 configuration.');
-  }
-  await probe.body?.cancel();
-  if (probe.status !== 206 && !probe.ok) {
-    throw new Error(`R2 rejected the production playback URL (HTTP ${probe.status}). Verify the Vercel R2 credentials.`);
-  }
-
-  return playback;
 }
