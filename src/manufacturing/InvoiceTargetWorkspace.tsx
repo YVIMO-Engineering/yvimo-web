@@ -87,7 +87,7 @@ export function InvoiceTargetWorkspace({ onNavigate, organizationId }: Props) {
     const { data, error } = await supabase.from('mes_invoice_target_reports').select('id, work_center_code, report_month, currency, net_invoicing, gross_invoicing, file_name, file_path, updated_at').eq('organization_id', organizationId).eq('report_year', year).order('report_month');
     if (error) { setReports({}); setMessage(`Unable to load saved reports: ${error.message}`); setLoading(false); return; }
     const next: SavedReports = {};
-    ((data ?? []) as ReportRow[]).forEach((row) => { next[reportKey(row.work_center_code, row.report_month - 1)] = { id: row.id, fileName: row.file_name, filePath: row.file_path, amount: Number(row.net_invoicing), total: Number(row.gross_invoicing), currency: row.currency, uploadedAt: row.updated_at }; });
+    ((data ?? []) as ReportRow[]).forEach((row) => { next[reportKey(row.work_center_code, row.report_month - 1)] = { id: row.id, fileName: row.file_name, filePath: row.file_path, amount: Number(row.gross_invoicing), total: Number(row.gross_invoicing), currency: row.currency, uploadedAt: row.updated_at }; });
     setReports(next); setLoading(false);
   }, [organizationId, year]);
   React.useEffect(() => { void loadReports(); }, [loadReports]);
@@ -107,7 +107,7 @@ export function InvoiceTargetWorkspace({ onNavigate, organizationId }: Props) {
       if (databaseError) { await supabase.storage.from(bucket).remove([filePath]); throw new Error(`The report record could not be saved: ${databaseError.message}`); }
       if (oldReport?.filePath && oldReport.filePath !== filePath) await supabase.storage.from(bucket).remove([oldReport.filePath]);
       await loadReports();
-      setMessage(`${months[month]} loaded: ${money.format(parsed.amount)} net invoicing.`);
+      setMessage(`${months[month]} loaded: ${money.format(parsed.total)} total invoicing.`);
     } catch (error) { setMessage(error instanceof Error ? error.message : 'The report could not be processed.'); }
     finally { setSavingKey(''); }
   };
@@ -127,7 +127,7 @@ export function InvoiceTargetWorkspace({ onNavigate, organizationId }: Props) {
     {message ? <div className="invoice-target-message">{message}</div> : null}
     <div className="invoice-target-layout">
       <aside className="invoice-upload-panel"><header><FileUp size={19} /><div><span>REPORT INPUT</span><h2>Monthly sales files</h2></div></header><label className="invoice-workspace-select"><span>Workspace / workcenter</span><select value={selected} onChange={(event) => setSelected(event.target.value)}>{workCenters.map((center) => <option value={center.code} key={center.code}>{center.name} ({center.code})</option>)}</select></label><div className="invoice-month-list">{months.map((month, index) => { const key = reportKey(selected, index); const report = reports[key]; const saving = savingKey === key; return <article className={report ? 'loaded' : ''} key={month}><span className="invoice-month-icon">{report ? <Check size={15} /> : <CalendarDays size={15} />}</span><div><strong>{month}</strong><small>{saving ? 'Saving to Supabase…' : report ? `${money.format(report.amount)} · ${report.fileName}` : loading ? 'Loading…' : 'No report uploaded'}</small></div><label title={`Upload ${month} report`} aria-disabled={saving}><FileText size={16} /><span>{saving ? 'Saving' : report ? 'Replace' : 'Upload'}</span><input type="file" disabled={saving} accept="application/pdf,.pdf" onChange={(event) => { void upload(index, event.target.files?.[0]); event.currentTarget.value = ''; }} /></label>{report ? <button type="button" disabled={saving} title="Remove report" onClick={() => void removeReport(index)}><Trash2 size={15} /></button> : null}</article>; })}</div></aside>
-      <main className="invoice-annual-panel"><header><div><span>ANNUAL PERFORMANCE · NET OF TAX</span><h2>{year} invoicing overview</h2><p>Every line represents one workcenter. Empty months remain unconnected until a report is uploaded.</p></div><div><small>{selectedName}</small><strong>{money.format(annualTotal)}</strong><span>selected annual total</span></div></header><AnnualChart workCenters={workCenters} reports={reports} /><footer><span><i /> Values use “Neto-Desc.” from the CONTPAQ Total General row.</span><strong>{Object.keys(reports).length} monthly reports loaded</strong></footer></main>
+      <main className="invoice-annual-panel"><header><div><span>ANNUAL PERFORMANCE · TOTAL INVOICING</span><h2>{year} invoicing overview</h2><p>Every line represents one workcenter. Empty months remain unconnected until a report is uploaded.</p></div><div><small>{selectedName}</small><strong>{money.format(annualTotal)}</strong><span>selected annual total</span></div></header><AnnualChart workCenters={workCenters} reports={reports} /><footer><span><i /> Values use “Total” (including tax) from the CONTPAQ Total General row.</span><strong>{Object.keys(reports).length} monthly reports loaded</strong></footer></main>
     </div>
   </section>;
 }
