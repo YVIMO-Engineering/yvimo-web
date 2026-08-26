@@ -366,6 +366,7 @@ function YvimoVideoPlayer({
   const videoRef = React.useRef<HTMLVideoElement>(null);
   const progressTimer = React.useRef<number | null>(null);
   const controlsTimer = React.useRef<number | null>(null);
+  const playbackActionRef = React.useRef(false);
   const [isPlaying, setIsPlaying] = React.useState(false);
   const [isMuted, setIsMuted] = React.useState(false);
   const [volume, setVolume] = React.useState(1);
@@ -391,13 +392,14 @@ function YvimoVideoPlayer({
 
   const startPlayback = React.useCallback(async () => {
     const video = videoRef.current;
-    if (!video) return;
+    if (!video || playbackActionRef.current) return;
+    playbackActionRef.current = true;
     setPlaybackMessage('');
     try {
       await video.play();
     } catch (caught) {
       const errorName = caught instanceof DOMException
-        ? caught.name
+        ? `${caught.name}${caught.message ? `: ${caught.message}` : ''}`
         : video.error
           ? `MediaError ${video.error.code}`
           : 'PlaybackError';
@@ -406,12 +408,14 @@ function YvimoVideoPlayer({
           ? 'Your browser blocked playback. Allow media playback for www.yvimo.com and try again.'
           : `The browser could not start this video (${errorName}).`,
       );
+    } finally {
+      playbackActionRef.current = false;
     }
   }, []);
 
   const togglePlayback = React.useCallback(() => {
     const video = videoRef.current;
-    if (!video) return;
+    if (!video || playbackActionRef.current) return;
     if (video.paused) void startPlayback();
     else video.pause();
   }, [startPlayback]);
@@ -524,7 +528,10 @@ function YvimoVideoPlayer({
       {playbackMessage ? <div className="academy-video-playback-message" role="alert">{playbackMessage}</div> : null}
 
       {!useNativeControls && !isPlaying && (
-        <button className="academy-video-center-play" type="button" onClick={togglePlayback} aria-label="Play video">
+        <button className="academy-video-center-play" type="button" onClick={(event) => {
+          event.stopPropagation();
+          togglePlayback();
+        }} aria-label="Play video">
           <Play size={32} fill="currentColor" />
         </button>
       )}
