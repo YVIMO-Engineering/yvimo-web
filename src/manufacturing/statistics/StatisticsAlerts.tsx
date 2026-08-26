@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertTriangle, BellRing, Check, ChevronLeft, ChevronRight, CircleX, Clock3, PackageX, Plus, Siren, Volume2, VolumeX, Wrench, X } from 'lucide-react';
+import { AlertTriangle, BellRing, Check, CheckCheck, ChevronLeft, ChevronRight, CircleX, Clock3, PackageX, Plus, Siren, Volume2, VolumeX, Wrench, X } from 'lucide-react';
 import type { StatisticsAlert, StatisticsAlertType } from './statisticsAlerts';
 
 const alertMeta: Record<StatisticsAlertType, { label: string; icon: typeof AlertTriangle }> = {
@@ -26,7 +26,7 @@ const playSoftAlertTone = (context: AudioContext) => {
   });
 };
 
-export function StatisticsAlertSlider({ alerts, onAcknowledge }: { alerts: StatisticsAlert[]; onAcknowledge: (id: string) => void }) {
+export function StatisticsAlertSlider({ alerts, onAcknowledge, onAcknowledgeAll }: { alerts: StatisticsAlert[]; onAcknowledge: (id: string) => void; onAcknowledgeAll: () => void }) {
   const [activeIndex, setActiveIndex] = React.useState(0);
   const [dismissing, setDismissing] = React.useState(false);
   const [soundEnabled, setSoundEnabled] = React.useState(true);
@@ -81,6 +81,16 @@ export function StatisticsAlertSlider({ alerts, onAcknowledge }: { alerts: Stati
       setDismissing(false);
     }, 260);
   };
+  const acknowledgeAll = () => {
+    if (dismissing) return;
+    stopAlertSound();
+    setDismissing(true);
+    window.setTimeout(() => {
+      onAcknowledgeAll();
+      setActiveIndex(0);
+      setDismissing(false);
+    }, 260);
+  };
   return (
     <section className={`statistics-alert-slider ${alert.severity}${dismissing ? ' dismissing' : ''}`} aria-live="polite">
       <span className="statistics-alert-icon"><MetaIcon size={32} strokeWidth={2.2} /></span>
@@ -90,6 +100,7 @@ export function StatisticsAlertSlider({ alerts, onAcknowledge }: { alerts: Stati
         <button className={`sound${soundEnabled ? ' enabled' : ' muted'}`} type="button" aria-label={soundEnabled ? 'Mute alarm sound' : 'Enable alarm sound'} aria-pressed={soundEnabled} onClick={() => setSoundEnabled((enabled) => !enabled)}>{soundEnabled ? <Volume2 size={17} /> : <VolumeX size={17} />}</button>
         {alerts.length > 1 ? <nav aria-label="Critical notifications"><button type="button" onClick={() => setActiveIndex((activeIndex - 1 + alerts.length) % alerts.length)}><ChevronLeft size={18} /></button><b>{activeIndex + 1} / {alerts.length}</b><button type="button" onClick={() => setActiveIndex((activeIndex + 1) % alerts.length)}><ChevronRight size={18} /></button></nav> : null}
         <button className="acknowledge" type="button" disabled={dismissing} onClick={acknowledgeCurrent}><Check size={17} /> Acknowledge</button>
+        <button className="acknowledge-all" type="button" disabled={dismissing} onClick={acknowledgeAll}><CheckCheck size={17} /> Acknowledge all</button>
       </div>
     </section>
   );

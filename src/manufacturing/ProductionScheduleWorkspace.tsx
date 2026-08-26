@@ -73,13 +73,27 @@ export function ProductionScheduleWorkspace({ onNavigate, organizationId }: Prop
       }));
       activeOrders = activeOrders.filter((order) => !reconciledOrderIds.has(order.id));
       const activeOrderIds = new Set(activeOrders.map((order) => order.id));
-      const staleQueueIds = loadedQueue.filter((item) => !activeOrderIds.has(item.production_order_id)).map((item) => item.id);
+      const activeOrdersById = new Map(activeOrders.map((order) => [order.id, order]));
+      const stationsByQueueId = new Map((stationResult.data ?? []).map((station) => [station.id, station as Station]));
+      const centersById = new Map((centerResult.data ?? []).map((center) => [center.id, center as WorkCenter]));
+      const staleQueueIds = loadedQueue.filter((item) => {
+        const order = activeOrdersById.get(item.production_order_id);
+        if (!order) return true;
+        if (order.manufacturing_type !== 'single-operation') return false;
+        const station = stationsByQueueId.get(item.station_id);
+        if (!station) return true;
+        const assignedStations = (order.assigned_station ?? '').split(',').map((code) => code.trim()).filter(Boolean);
+        if (assignedStations.length) return !assignedStations.includes(station.code);
+        const center = centersById.get(station.work_center_id);
+        return Boolean(order.assigned_work_center) && center?.code !== order.assigned_work_center;
+      }).map((item) => item.id);
+      const staleQueueIdSet = new Set(staleQueueIds);
       if (staleQueueIds.length) await supabase.from('mes_production_schedule_queue').delete().eq('organization_id', organizationId).in('id', staleQueueIds);
       setStations((stationResult.data ?? []) as Station[]);
       setWorkCenters((centerResult.data ?? []) as WorkCenter[]);
       setOrders(activeOrders);
       setProductionPieces((pieceResult.data ?? []) as ProductionPiece[]);
-      setQueue(loadedQueue.filter((item) => activeOrderIds.has(item.production_order_id)));
+      setQueue(loadedQueue.filter((item) => activeOrderIds.has(item.production_order_id) && !staleQueueIdSet.has(item.id)));
       setError('');
     }
     setLoading(false);

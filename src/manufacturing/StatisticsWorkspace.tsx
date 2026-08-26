@@ -397,6 +397,14 @@ export function StatisticsWorkspace({ onNavigate, organizationId, financialIncom
       return next;
     });
   };
+  const acknowledgeAllAlerts = () => {
+    setAcknowledgedAlertIds((current) => {
+      const allVisibleKeys = activeAlerts.flatMap((alert) => [alert.id, getAlertAcknowledgementKey(alert)]);
+      const next = [...new Set([...allVisibleKeys, ...current])].slice(0, 500);
+      window.localStorage.setItem(acknowledgedAlertsStorageKey, JSON.stringify(next));
+      return next;
+    });
+  };
   const createManualAlert = (type: StatisticsAlertType, title: string, message: string) => {
     const nextAlert: StatisticsAlert = { id: `manual:${crypto.randomUUID()}`, type, severity: 'critical', title, message, source: 'Manual test', createdAt: new Date().toISOString() };
     setManualAlerts((current) => {
@@ -429,7 +437,7 @@ export function StatisticsWorkspace({ onNavigate, organizationId, financialIncom
     <section className={`mes-workspace-panel statistics-workspace${financialIncome ? ' financial-income-workspace' : ''}`}>
       {!financialIncome && activeAlerts.length ? (
         <div className="statistics-alert-overlay" key={activeAlerts[0].id}>
-          <StatisticsAlertSlider alerts={activeAlerts} onAcknowledge={acknowledgeAlert} />
+          <StatisticsAlertSlider alerts={activeAlerts} onAcknowledge={acknowledgeAlert} onAcknowledgeAll={acknowledgeAllAlerts} />
         </div>
       ) : null}
       <div className="statistics-content">
