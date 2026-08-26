@@ -1,0 +1,45 @@
+.invoice-annual-column {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 12px;
+}
+
+.invoice-division-summary {
+  overflow: hidden;
+  border: 1px solid #dbe4ed;
+  border-top: 4px solid #10b981;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 10px 25px #0f172a0a;
+}
+
+.invoice-division-summary > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #dbe4ed;
+  padding: 14px 17px;
+  background: linear-gradient(90deg, #ecfdf5, #fff);
+}
+
+.invoice-division-summary header span { color: #059669; font-size: .58rem; font-weight: 950; letter-spacing: .08em; }
+.invoice-division-summary header h2 { margin: 2px 0 0; font-size: .92rem; }
+.invoice-division-summary header p { margin: 4px 0 0; color: #64748b; font-size: .65rem; }
+.invoice-division-summary > header > strong { color: #047857; font-size: 1.35rem; }
+.invoice-summary-table-wrap { overflow: auto; }
+.invoice-division-summary table { width: 100%; min-width: 690px; border-collapse: collapse; }
+.invoice-division-summary th { padding: 11px 16px; background: #f8fafc; color: #64748b; font-size: .59rem; letter-spacing: .04em; text-align: left; text-transform: uppercase; }
+.invoice-division-summary td { border-top: 1px solid #e7edf3; padding: 13px 16px; color: #334155; font-size: .7rem; }
+.invoice-division-summary td:first-child { font-weight: 900; }
+.invoice-division-summary td:last-child, .invoice-division-summary th:last-child { text-align: right; font-weight: 950; }
+.invoice-division-summary td:nth-child(4) { display: flex; align-items: center; gap: 8px; }
+.invoice-share { display: inline-block; width: 90px; height: 7px; overflow: hidden; border-radius: 999px; background: #e2e8f0; }
+.invoice-share i { display: block; height: 100%; border-radius: inherit; background: #10b981; }
+.invoice-division-summary td:nth-child(4) b { min-width: 38px; color: #047857; font-size: .62rem; }
+.invoice-division-summary tfoot th { border-top: 2px solid #10b981; background: #ecfdf5; color: #065f46; font-size: .68rem; }
+.invoice-summary-empty { color: #94a3b8 !important; font-weight: 700 !important; text-align: center !important; }
+
+@media (max-width: 650px) {
+  .invoice-division-summary > header { align-items: flex-start; flex-direction: column; gap: 10px; }
+}
