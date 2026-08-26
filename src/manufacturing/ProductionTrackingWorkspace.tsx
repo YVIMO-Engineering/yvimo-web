@@ -260,7 +260,6 @@ export function ProductionTrackingWorkspace({
       )
       .eq("organization_id", organizationId)
       .eq("customer_id", customerId)
-      .eq("status", "completed")
       .gte("created_at", `${range.from}T00:00:00`)
       .lte("created_at", `${range.to}T23:59:59.999`)
       .order("created_at", { ascending: false });
@@ -414,6 +413,40 @@ export function ProductionTrackingWorkspace({
         ))}
       </div>
     );
+  };
+  const pdfMeasurementHeaders = (pieceType: string) =>
+    pieceType.includes("shaver")
+      ? ["No. Afilado", "Diameter", "Span", "Teeth", "Damage"]
+      : pieceType.includes("shaper") || pieceType.includes("tallador")
+        ? ["Before height", "Stock to remove", "After height"]
+        : [
+            "Before notch",
+            "Before tooth length",
+            "Stock to remove",
+            "After tooth length",
+          ];
+  const pdfMeasurementValues = (row: Row) => {
+    const pieceType = (row.order.piece_type ?? "").toLowerCase();
+    return pieceType.includes("shaver")
+      ? [
+          payloadValue(row.traceability, "shaver_sharpening_number"),
+          payloadValue(row.traceability, "shaver_diameter"),
+          payloadValue(row.traceability, "shaver_span"),
+          payloadValue(row.traceability, "shaver_teeth"),
+          damageValue(row.traceability),
+        ]
+      : pieceType.includes("shaper") || pieceType.includes("tallador")
+        ? [
+            payloadValue(row.traceability, "before_height"),
+            number(row.serial?.stock_to_remove),
+            payloadValue(row.traceability, "after_height"),
+          ]
+        : [
+            number(row.serial?.before_notch),
+            number(row.serial?.before_tooth_length),
+            number(row.serial?.stock_to_remove),
+            number(row.traceability?.after_tooth_length),
+          ];
   };
   const selectedCustomer =
     customers.find((customer) => customer.id === customerId)?.customer_name ??
@@ -629,8 +662,7 @@ export function ProductionTrackingWorkspace({
                 <th>Machine</th>
                 <th>Reported</th>
                 <th>Result</th>
-                <th className="tracking-status-column">Status</th>
-                <th>Progress</th>
+                <th>Status</th>
               </tr>
             </thead>
             <tbody>
@@ -692,10 +724,10 @@ export function ProductionTrackingWorkspace({
                         {serial?.result || "pending"}
                       </b>
                     </td>
-                    <td className="tracking-status-column">{order.status}</td>
                     <td>
-                      {order.completed_quantity + order.scrap_quantity} /{" "}
-                      {order.planned_quantity}
+                      <span className={`tracking-order-status ${order.status}`}>
+                        {order.status}
+                      </span>
                     </td>
                   </tr>
                 );
@@ -705,7 +737,7 @@ export function ProductionTrackingWorkspace({
                   <td
                     className="empty"
                     colSpan={
-                      isAllParts ? 13 : isShaver ? 17 : isShaper ? 15 : 16
+                      isAllParts ? 12 : isShaver ? 16 : isShaper ? 14 : 15
                     }
                   >
                     {loading
@@ -749,19 +781,19 @@ export function ProductionTrackingWorkspace({
             </div>
           </header>
           <section className="tracking-pdf-summary">
-            <span>
+            <span className="orders">
               <small>Production orders</small>
               <b>{orderCount}</b>
             </span>
-            <span>
+            <span className="pieces">
               <small>Tracked pieces</small>
               <b>{rows.filter((row) => row.serial).length}</b>
             </span>
-            <span>
+            <span className="good">
               <small>Completed good</small>
               <b>{good}</b>
             </span>
-            <span>
+            <span className="scrap">
               <small>Scrap pieces</small>
               <b>{scrap}</b>
             </span>
@@ -783,14 +815,20 @@ export function ProductionTrackingWorkspace({
                   <tr>
                     <th>Order</th>
                     <th>Received</th>
+                    <th>Customer</th>
+                    <th>Part type</th>
                     <th>Part number</th>
                     <th>Tool ID</th>
                     <th>Serial number</th>
-                    <th>Process data</th>
+                    {pdfMeasurementHeaders(pieceType.toLowerCase()).map(
+                      (heading) => (
+                        <th key={heading}>{heading}</th>
+                      ),
+                    )}
                     <th>Machine</th>
                     <th>Reported</th>
                     <th>Result</th>
-                    <th>Progress</th>
+                    <th>Status</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -798,12 +836,20 @@ export function ProductionTrackingWorkspace({
                     <tr key={`pdf:${row.key}`}>
                       <td>#{row.order.order_number}</td>
                       <td>{date(row.order.created_at)}</td>
+                      <td>{row.order.client_name || "—"}</td>
+                      <td>
+                        <span className="part-badge">
+                          {row.order.piece_type || "other"}
+                        </span>
+                      </td>
                       <td>
                         {row.order.part_number || row.order.part_name || "—"}
                       </td>
                       <td>{row.serial?.tool_id || "—"}</td>
                       <td>{row.serial?.serial_number || "—"}</td>
-                      <td>{processData(row)}</td>
+                      {pdfMeasurementValues(row).map((value, index) => (
+                        <td key={`${row.key}:measurement:${index}`}>{value}</td>
+                      ))}
                       <td>
                         {row.serial?.assigned_station ||
                           row.order.assigned_station ||
@@ -811,11 +857,19 @@ export function ProductionTrackingWorkspace({
                           "—"}
                       </td>
                       <td>{date(row.serial?.reported_at)}</td>
-                      <td>{row.serial?.result || "pending"}</td>
                       <td>
-                        {row.order.completed_quantity +
-                          row.order.scrap_quantity}{" "}
-                        / {row.order.planned_quantity}
+                        <span
+                          className={`result ${row.serial?.result || "pending"}`}
+                        >
+                          {row.serial?.result || "pending"}
+                        </span>
+                      </td>
+                      <td>
+                        <span
+                          className={`tracking-order-status ${row.order.status}`}
+                        >
+                          {row.order.status}
+                        </span>
                       </td>
                     </tr>
                   ))}

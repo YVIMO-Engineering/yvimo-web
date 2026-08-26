@@ -85,8 +85,28 @@
   font-size: 0.62rem;
   font-weight: 850;
 }
-.tracking-table .tracking-status-column {
-  display: none;
+.tracking-order-status {
+  display: inline-flex;
+  border-radius: 999px;
+  padding: 5px 8px;
+  background: #e2e8f0;
+  color: #475569;
+  font-size: 0.62rem;
+  font-weight: 850;
+  text-transform: capitalize;
+}
+.tracking-order-status.completed {
+  background: #d1fae5;
+  color: #047857;
+}
+.tracking-order-status.running,
+.tracking-order-status.released {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+.tracking-order-status.paused {
+  background: #ffedd5;
+  color: #c2410c;
 }
 .tracking-process-data {
   display: flex;
@@ -200,6 +220,16 @@
   border-radius: 9px;
   padding: 13px;
 }
+.tracking-pdf-summary .orders,
+.tracking-pdf-summary .pieces {
+  border-top-color: #8b5cf6;
+}
+.tracking-pdf-summary .good {
+  border-top-color: #10b981;
+}
+.tracking-pdf-summary .scrap {
+  border-top-color: #ef4444;
+}
 .tracking-pdf-summary small {
   color: #64748b;
   font-size: 11px;
@@ -250,15 +280,21 @@
   font-size: 10px;
   vertical-align: top;
 }
-.tracking-pdf-part th:nth-child(6),
-.tracking-pdf-part td:nth-child(6) {
-  width: 25%;
+.tracking-pdf-part tbody tr:nth-child(even) {
+  background: #fafcff;
 }
-.tracking-pdf-part .tracking-process-data small {
+.tracking-pdf-part td:first-child {
+  color: #17233a;
+  font-weight: 800;
+}
+.tracking-pdf-part .part-badge,
+.tracking-pdf-part .result,
+.tracking-pdf-part .tracking-order-status {
+  display: inline-flex;
+  padding: 4px 7px;
   font-size: 8px;
-}
-.tracking-pdf-part .tracking-process-data b {
-  font-size: 9px;
+  font-weight: 850;
+  white-space: nowrap;
 }
 .tracking-pdf-document > footer {
   margin-top: 28px;
