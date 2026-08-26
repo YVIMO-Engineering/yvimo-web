@@ -127,6 +127,18 @@ type ServiceShowcaseItem = {
 
 type LanguageCode = 'en' | 'es' | 'zh';
 
+const languageStorageKey = 'yvimo:language';
+
+function getStoredLanguage(): LanguageCode {
+  if (typeof window === 'undefined') return 'en';
+  try {
+    const storedLanguage = window.localStorage.getItem(languageStorageKey);
+    return storedLanguage === 'es' || storedLanguage === 'zh' || storedLanguage === 'en' ? storedLanguage : 'en';
+  } catch {
+    return 'en';
+  }
+}
+
 type Translator = (text: string) => string;
 
 type SubscriptionTier = 'Explorer' | 'Professional' | 'Enterprise' | 'Founder' | 'Instructor' | 'Beta Tester' | 'Owner';
@@ -882,7 +894,7 @@ const translations: Record<Exclude<LanguageCode, 'en'>, Record<string, string>> 
     'Find available records': 'Buscar expedientes libres',
     'Hide available records': 'Ocultar expedientes libres',
     'Available records:': 'Expedientes disponibles:',
-    'No records are available from 0 to 100.': 'No hay expedientes disponibles del 0 al 100.',
+    'No records are available from 0 to 200.': 'No hay expedientes disponibles del 0 al 200.',
     'Search patients': 'Buscar pacientes',
     'Name, CURP, or medical record number': 'Nombre, CURP o número de expediente',
     'Patient register': 'Registro de pacientes',
@@ -5987,7 +5999,7 @@ function DashboardLoadingPage({ t }: { t: Translator }) {
 function App() {
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [languageMenuOpen, setLanguageMenuOpen] = React.useState(false);
-  const [language, setLanguage] = React.useState<LanguageCode>('en');
+  const [language, setLanguage] = React.useState<LanguageCode>(getStoredLanguage);
   const [activeSolution, setActiveSolution] = React.useState<string | null>(null);
   const [scrollProgress, setScrollProgress] = React.useState(0);
   const [currentPath, setCurrentPath] = React.useState(() =>
@@ -6005,6 +6017,14 @@ function App() {
   const [viewportWidth, setViewportWidth] = React.useState(() =>
     typeof window === 'undefined' ? 1440 : window.innerWidth,
   );
+
+  React.useEffect(() => {
+    try {
+      window.localStorage.setItem(languageStorageKey, language);
+    } catch {
+      // Keep the in-memory selection when browser storage is unavailable.
+    }
+  }, [language]);
 
   const closeMenu = () => setMenuOpen(false);
   const t = React.useCallback((text: string) => translate(language, text), [language]);
