@@ -1,62 +1,6 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import {
-  Activity,
-  AlertTriangle,
-  ArrowRight,
-  ArrowLeft,
-  BarChart3,
-  Blocks,
-  Building2,
-  Cable,
-  Calculator,
-  CalendarClock,
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-  Check,
-  CircuitBoard,
-  CircleDollarSign,
-  ClipboardCheck,
-  Cloud,
-  Code2,
-  Container,
-  Cpu,
-  Database,
-  Factory,
-  FileText,
-  FileUp,
-  FolderCheck,
-  GitBranch,
-  Gauge,
-  GraduationCap,
-  Hospital,
-  Languages,
-  LockKeyhole,
-  LogIn,
-  Mail,
-  Menu,
-  Network,
-  PackageCheck,
-  Pencil,
-  Plus,
-  RadioTower,
-  ReceiptText,
-  Rocket,
-  ServerCog,
-  ShieldCheck,
-  Star,
-  TerminalSquare,
-  Truck,
-  TrendingUp,
-  Target,
-  UserPlus,
-  Users,
-  Workflow,
-  Wrench,
-  ShieldAlert,
-  X,
-} from 'lucide-react';
+import { Activity, AlertTriangle, ArrowRight, ArrowLeft, BarChart3, Blocks, Building2, Cable, Calculator, CalendarClock, ChevronDown, ChevronLeft, ChevronRight, Check, CircuitBoard, CircleDollarSign, ClipboardCheck, Cloud, Code2, Container, Cpu, Database, Factory, FileText, FileUp, FolderCheck, GitBranch, Gauge, GraduationCap, Hospital, Languages, LockKeyhole, LogIn, Mail, Menu, Network, PackageCheck, Pencil, Plus, RadioTower, ReceiptText, Rocket, ServerCog, ShieldCheck, Star, TerminalSquare, Truck, TrendingUp, Target, UserPlus, Users, Workflow, Wrench, ShieldAlert, X } from 'lucide-react';
 import type { Session, User } from '@supabase/supabase-js';
 import { createSessionSupabaseClient, supabase } from './lib/supabaseClient';
 import { AcademyActivityPage, AcademyCatalogPage, AcademyCertificatesPage, AcademyCoursePage, AcademyHomePage, AcademyLessonPage, AcademyProgressPage, AcademyTrackPage } from './pages/AcademyPages';
@@ -252,11 +196,7 @@ function loadWorkspaceAccessMode(): WorkspaceAccessMode {
 }
 
 function isLegacyDefaultManufacturingOrganization(user: AppUser, organization: Partial<ManufacturingOrganization>) {
-  return organization.id === `local-${user.id}`
-    && organization.name === getManufacturingOrganizationNameSuggestion(user)
-    && (organization.role ?? 'Owner') === 'Owner'
-    && Math.max(1, Number(organization.memberCount) || 1) === 1
-    && !organization.logoUrl;
+  return organization.id === `local-${user.id}` && organization.name === getManufacturingOrganizationNameSuggestion(user) && (organization.role ?? 'Owner') === 'Owner' && Math.max(1, Number(organization.memberCount) || 1) === 1 && !organization.logoUrl;
 }
 
 function loadManufacturingOrganization(user: AppUser): ManufacturingOrganization | null {
@@ -288,36 +228,19 @@ function loadManufacturingOrganization(user: AppUser): ManufacturingOrganization
 }
 
 async function loadSupabaseManufacturingOrganization(userId: string): Promise<ManufacturingOrganization | null> {
-  const { data: memberRows, error: memberError } = await supabase
-    .from('manufacturing_organization_members')
-    .select('organization_id, role')
-    .eq('user_id', userId)
-    .order('created_at', { ascending: true })
-    .limit(1);
+  const { data: memberRows, error: memberError } = await supabase.from('manufacturing_organization_members').select('organization_id, role').eq('user_id', userId).order('created_at', { ascending: true }).limit(1);
 
   if (memberError) throw memberError;
   const member = (memberRows?.[0] ?? null) as ManufacturingOrganizationMemberRow | null;
   if (!member) return null;
 
-  const { data: organizationRow, error: organizationError } = await supabase
-    .from('manufacturing_organizations')
-    .select('id, name, logo_url')
-    .eq('id', member.organization_id)
-    .single();
+  const { data: organizationRow, error: organizationError } = await supabase.from('manufacturing_organizations').select('id, name, logo_url').eq('id', member.organization_id).single();
 
   if (organizationError) throw organizationError;
 
-  const { data: inviteRows } = await supabase
-    .from('manufacturing_organization_invites')
-    .select('organization_id, code, default_role')
-    .eq('organization_id', member.organization_id)
-    .eq('active', true)
-    .limit(1);
+  const { data: inviteRows } = await supabase.from('manufacturing_organization_invites').select('organization_id, code, default_role').eq('organization_id', member.organization_id).eq('active', true).limit(1);
 
-  const { count } = await supabase
-    .from('manufacturing_organization_members')
-    .select('id', { count: 'exact', head: true })
-    .eq('organization_id', member.organization_id);
+  const { count } = await supabase.from('manufacturing_organization_members').select('id', { count: 'exact', head: true }).eq('organization_id', member.organization_id);
 
   const organization = organizationRow as ManufacturingOrganizationRow;
   const invite = (inviteRows?.[0] ?? null) as ManufacturingOrganizationInviteRow | null;
@@ -334,44 +257,36 @@ async function loadSupabaseManufacturingOrganization(userId: string): Promise<Ma
 }
 
 async function loadSupabaseOrganizations(userId: string): Promise<ManufacturingOrganization[]> {
-  const { data: memberRows, error: memberError } = await supabase
-    .from('manufacturing_organization_members')
-    .select('organization_id, role')
-    .eq('user_id', userId)
-    .order('created_at', { ascending: true });
+  const { data: memberRows, error: memberError } = await supabase.from('manufacturing_organization_members').select('organization_id, role').eq('user_id', userId).order('created_at', { ascending: true });
 
   if (memberError) throw memberError;
   const memberships = (memberRows ?? []) as ManufacturingOrganizationMemberRow[];
   if (memberships.length === 0) return [];
 
   const organizationIds = memberships.map((membership) => membership.organization_id);
-  const [{ data: organizationRows, error: organizationError }, { data: inviteRows }] = await Promise.all([
-    supabase.from('manufacturing_organizations').select('id, name, logo_url').in('id', organizationIds),
-    supabase.from('manufacturing_organization_invites').select('organization_id, code, default_role').in('organization_id', organizationIds).eq('active', true),
-  ]);
+  const [{ data: organizationRows, error: organizationError }, { data: inviteRows }] = await Promise.all([supabase.from('manufacturing_organizations').select('id, name, logo_url').in('id', organizationIds), supabase.from('manufacturing_organization_invites').select('organization_id, code, default_role').in('organization_id', organizationIds).eq('active', true)]);
   if (organizationError) throw organizationError;
 
   const organizationsById = new Map(((organizationRows ?? []) as ManufacturingOrganizationRow[]).map((organization) => [organization.id, organization]));
   const invitesByOrganization = new Map(((inviteRows ?? []) as ManufacturingOrganizationInviteRow[]).map((invite) => [invite.organization_id, invite]));
 
-  return Promise.all(memberships.map(async (membership) => {
-    const organization = organizationsById.get(membership.organization_id);
-    if (!organization) return null;
-    const invite = invitesByOrganization.get(membership.organization_id);
-    const { count } = await supabase
-      .from('manufacturing_organization_members')
-      .select('id', { count: 'exact', head: true })
-      .eq('organization_id', membership.organization_id);
-    return {
-      id: organization.id,
-      name: organization.name,
-      logoUrl: organization.logo_url ?? '',
-      inviteCode: invite?.code ?? '',
-      role: membership.role,
-      inviteRole: invite?.default_role ?? 'Operator',
-      memberCount: Math.max(1, count ?? 1),
-    } satisfies ManufacturingOrganization;
-  })).then((organizations) => organizations.filter((organization): organization is ManufacturingOrganization => organization !== null));
+  return Promise.all(
+    memberships.map(async (membership) => {
+      const organization = organizationsById.get(membership.organization_id);
+      if (!organization) return null;
+      const invite = invitesByOrganization.get(membership.organization_id);
+      const { count } = await supabase.from('manufacturing_organization_members').select('id', { count: 'exact', head: true }).eq('organization_id', membership.organization_id);
+      return {
+        id: organization.id,
+        name: organization.name,
+        logoUrl: organization.logo_url ?? '',
+        inviteCode: invite?.code ?? '',
+        role: membership.role,
+        inviteRole: invite?.default_role ?? 'Operator',
+        memberCount: Math.max(1, count ?? 1),
+      } satisfies ManufacturingOrganization;
+    }),
+  ).then((organizations) => organizations.filter((organization): organization is ManufacturingOrganization => organization !== null));
 }
 
 function normalizeNonNegativeNumber(value: number | null | undefined, fallback = 0) {
@@ -388,7 +303,10 @@ function normalizeProfileProgress(value: number | null | undefined) {
 
 function getProfileInitials(name: string) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
-  const initials = parts.slice(0, 2).map((part) => part[0]?.toUpperCase()).join('');
+  const initials = parts
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join('');
   return initials || 'Y';
 }
 
@@ -429,10 +347,7 @@ function getSubscriptionBadgeImage(subscription: SubscriptionTier) {
 }
 
 function profileToAppUser(user: User, profile: UserProfile | null): AppUser {
-  const fullName = profile?.full_name?.trim()
-    || String(user.user_metadata?.full_name ?? '').trim()
-    || user.email?.split('@')[0]
-    || 'YVIMO User';
+  const fullName = profile?.full_name?.trim() || String(user.user_metadata?.full_name ?? '').trim() || user.email?.split('@')[0] || 'YVIMO User';
 
   return {
     id: user.id,
@@ -502,23 +417,21 @@ async function createCroppedAvatarFile(file: File, offset: AvatarOffset, zoom: n
     const outputOffsetX = offset.x * (outputSize / previewSize);
     const outputOffsetY = offset.y * (outputSize / previewSize);
 
-    context.drawImage(
-      image,
-      (outputSize - drawWidth) / 2 + outputOffsetX,
-      (outputSize - drawHeight) / 2 + outputOffsetY,
-      drawWidth,
-      drawHeight,
-    );
+    context.drawImage(image, (outputSize - drawWidth) / 2 + outputOffsetX, (outputSize - drawHeight) / 2 + outputOffsetY, drawWidth, drawHeight);
 
     const blob = await new Promise<Blob>((resolve, reject) => {
-      canvas.toBlob((result) => {
-        if (result) {
-          resolve(result);
-          return;
-        }
+      canvas.toBlob(
+        (result) => {
+          if (result) {
+            resolve(result);
+            return;
+          }
 
-        reject(new Error('Avatar image could not be created.'));
-      }, 'image/png', 0.92);
+          reject(new Error('Avatar image could not be created.'));
+        },
+        'image/png',
+        0.92,
+      );
     });
 
     return new File([blob], 'profile-avatar.png', { type: 'image/png' });
@@ -588,9 +501,7 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): 
 
 function getAuthMessageTone(message: string) {
   const normalized = message.toLowerCase();
-  const isPositive = normalized.includes('created')
-    || normalized.includes('redirecting')
-    || normalized.includes('check your email');
+  const isPositive = normalized.includes('created') || normalized.includes('redirecting') || normalized.includes('check your email');
 
   return isPositive ? 'auth-form-message success' : 'auth-form-message error';
 }
@@ -608,7 +519,7 @@ const languages: Array<{
 const translations: Record<Exclude<LanguageCode, 'en'>, Record<string, string>> = {
   es: {
     'Engineering Automation': 'Ingeniería de automatización',
-    'that': 'que',
+    that: 'que',
     'delivers results': 'entrega resultados',
     Services: 'Servicios',
     Gateway: 'Gateway',
@@ -630,60 +541,46 @@ const translations: Record<Exclude<LanguageCode, 'en'>, Record<string, string>> 
     Workspace: 'Espacio de trabajo',
     'YVIMO PORTAL': 'PORTAL YVIMO',
     'Workspace overview': 'Resumen del workspace',
-    'Your YVIMO tools, licenses, and learning access in one place.':
-      'Tus herramientas YVIMO, licencias y acceso de aprendizaje en un solo lugar.',
+    'Your YVIMO tools, licenses, and learning access in one place.': 'Tus herramientas YVIMO, licencias y acceso de aprendizaje en un solo lugar.',
     'Welcome back': 'Bienvenido de nuevo',
     'Your YVIMO workspace is ready.': 'Tu espacio YVIMO está listo.',
     'Gateway Online': 'Gateway Online',
-    'Design, simulate, and prepare industrial connectivity flows using virtual devices, labs, and Gateway tools.':
-      'Diseña, simula y prepara flujos de conectividad industrial usando dispositivos virtuales, laboratorios y herramientas Gateway.',
+    'Design, simulate, and prepare industrial connectivity flows using virtual devices, labs, and Gateway tools.': 'Diseña, simula y prepara flujos de conectividad industrial usando dispositivos virtuales, laboratorios y herramientas Gateway.',
     'Engineering Tools': 'Herramientas de ingeniería',
-    'Licenses': 'Licencias',
-    'Orders': 'Órdenes',
-    'Quotations': 'Cotizaciones',
-    'Academy': 'Academy',
-    'Settings': 'Configuración',
+    Licenses: 'Licencias',
+    Orders: 'Órdenes',
+    Quotations: 'Cotizaciones',
+    Academy: 'Academy',
+    Settings: 'Configuración',
     'Sign out': 'Cerrar sesión',
     'Account created. Redirecting to dashboard.': 'Cuenta creada. Redirigiendo al dashboard.',
-    'Account created. Check your email to confirm your account.':
-      'Cuenta creada. Revisa tu correo para confirmar tu cuenta.',
+    'Account created. Check your email to confirm your account.': 'Cuenta creada. Revisa tu correo para confirmar tu cuenta.',
     'Signed in. Redirecting to dashboard.': 'Sesión iniciada. Redirigiendo al dashboard.',
     'This email is already registered.': 'Este correo ya está registrado.',
     'Invalid email or password.': 'Correo o contraseña inválidos.',
     'Apple account ready. Redirecting to dashboard.': 'Cuenta Apple lista. Redirigiendo al dashboard.',
-    'Create a first project, manage access, or review platform modules from the navigation.':
-      'Crea un primer proyecto, administra accesos o revisa módulos de plataforma desde la navegación.',
-    'Open connected Gateway tools, demos, downloads, and project modules.':
-      'Abre herramientas conectadas de Gateway, demos, descargas y módulos de proyecto.',
-    'Free access to try YVIMO Academy, explore the platform, and start selected courses before upgrading.':
-      'Acceso gratis para probar YVIMO Academy, explorar la plataforma y comenzar cursos seleccionados antes de mejorar tu plan.',
-    'Continue courses, guided paths, progress, and professional learning.':
-      'Continúa cursos, rutas guiadas, progreso y aprendizaje profesional.',
-    'Access templates, calculators, quotation tools, network utilities, and controls resources for real industrial automation projects.':
-      'Accede a plantillas, calculadoras, herramientas de cotización, utilidades de red y recursos de control para proyectos reales de automatización industrial.',
-    'Review product seats, activations, renewals, and account entitlements.':
-      'Revisa puestos de producto, activaciones, renovaciones y permisos de cuenta.',
-    'Track quotations, purchase requests, project orders, and follow-up.':
-      'Da seguimiento a cotizaciones, solicitudes de compra, órdenes de proyecto y seguimiento.',
+    'Create a first project, manage access, or review platform modules from the navigation.': 'Crea un primer proyecto, administra accesos o revisa módulos de plataforma desde la navegación.',
+    'Open connected Gateway tools, demos, downloads, and project modules.': 'Abre herramientas conectadas de Gateway, demos, descargas y módulos de proyecto.',
+    'Free access to try YVIMO Academy, explore the platform, and start selected courses before upgrading.': 'Acceso gratis para probar YVIMO Academy, explorar la plataforma y comenzar cursos seleccionados antes de mejorar tu plan.',
+    'Continue courses, guided paths, progress, and professional learning.': 'Continúa cursos, rutas guiadas, progreso y aprendizaje profesional.',
+    'Access templates, calculators, quotation tools, network utilities, and controls resources for real industrial automation projects.': 'Accede a plantillas, calculadoras, herramientas de cotización, utilidades de red y recursos de control para proyectos reales de automatización industrial.',
+    'Review product seats, activations, renewals, and account entitlements.': 'Revisa puestos de producto, activaciones, renovaciones y permisos de cuenta.',
+    'Track quotations, purchase requests, project orders, and follow-up.': 'Da seguimiento a cotizaciones, solicitudes de compra, órdenes de proyecto y seguimiento.',
     'YVIMO Points': 'Puntos YVIMO',
     'Current Plan': 'Plan actual',
     'Upgrade to this Plan': 'Subir a este plan',
     'Choose your YVIMO membership': 'Elige tu membresía YVIMO',
     'Official team ranks': 'Rangos oficiales del equipo',
     'Our staff members': 'Nuestro equipo',
-    'To help you recognize official YVIMO staff easily, team profiles may carry one of these ranks. These badges identify people who create Academy content, test upcoming features, or represent YVIMO leadership.':
-      'Para que puedas reconocer facilmente al equipo oficial de YVIMO, los perfiles del staff pueden mostrar uno de estos rangos. Estas insignias identifican a quienes crean contenido de Academy, prueban nuevas funciones o representan el liderazgo de YVIMO.',
+    'To help you recognize official YVIMO staff easily, team profiles may carry one of these ranks. These badges identify people who create Academy content, test upcoming features, or represent YVIMO leadership.': 'Para que puedas reconocer facilmente al equipo oficial de YVIMO, los perfiles del staff pueden mostrar uno de estos rangos. Estas insignias identifican a quienes crean contenido de Academy, prueban nuevas funciones o representan el liderazgo de YVIMO.',
     'Academy staff': 'Staff de Academy',
     'Product testing': 'Pruebas de producto',
     'YVIMO leadership': 'Liderazgo YVIMO',
     'Beta Tester': 'Beta Tester',
     Owner: 'Owner',
-    'Official instructors and collaborators who create lessons, review learning material, and support students inside YVIMO Academy.':
-      'Instructores y colaboradores oficiales que crean lecciones, revisan material de aprendizaje y apoyan a estudiantes dentro de YVIMO Academy.',
-    'Trusted testers who validate new platform features, report issues, and help us improve tools before public release.':
-      'Testers de confianza que validan nuevas funciones, reportan problemas y nos ayudan a mejorar herramientas antes de publicarlas.',
-    'Official YVIMO ownership and leadership accounts responsible for platform direction, official decisions, and company-level communication.':
-      'Cuentas oficiales de propiedad y liderazgo de YVIMO responsables de la direccion de la plataforma, decisiones oficiales y comunicacion de la empresa.',
+    'Official instructors and collaborators who create lessons, review learning material, and support students inside YVIMO Academy.': 'Instructores y colaboradores oficiales que crean lecciones, revisan material de aprendizaje y apoyan a estudiantes dentro de YVIMO Academy.',
+    'Trusted testers who validate new platform features, report issues, and help us improve tools before public release.': 'Testers de confianza que validan nuevas funciones, reportan problemas y nos ayudan a mejorar herramientas antes de publicarlas.',
+    'Official YVIMO ownership and leadership accounts responsible for platform direction, official decisions, and company-level communication.': 'Cuentas oficiales de propiedad y liderazgo de YVIMO responsables de la direccion de la plataforma, decisiones oficiales y comunicacion de la empresa.',
     'Course guidance and mentoring': 'Guia de cursos y mentorias',
     'Academy content review': 'Revision de contenido de Academy',
     'Learning path support': 'Soporte en rutas de aprendizaje',
@@ -693,8 +590,7 @@ const translations: Record<Exclude<LanguageCode, 'en'>, Record<string, string>> 
     'Official YVIMO communication': 'Comunicacion oficial de YVIMO',
     'Platform and business decisions': 'Decisiones de plataforma y negocio',
     'Final escalation authority': 'Autoridad final de escalamiento',
-    'All official YVIMO staff members display one of these badges on their profile. Please do not trust accounts claiming to represent YVIMO if their profile does not show an official staff badge.':
-      'Todo el personal oficial de YVIMO muestra una de estas insignias en su perfil. No confies en cuentas que digan representar a YVIMO si su perfil no muestra una insignia oficial del staff.',
+    'All official YVIMO staff members display one of these badges on their profile. Please do not trust accounts claiming to represent YVIMO if their profile does not show an official staff badge.': 'Todo el personal oficial de YVIMO muestra una de estas insignias en su perfil. No confies en cuentas que digan representar a YVIMO si su perfil no muestra una insignia oficial del staff.',
     'Change profile picture': 'Cambiar foto de perfil',
     'Profile picture': 'Foto de perfil',
     'Choose image': 'Elegir imagen',
@@ -711,71 +607,51 @@ const translations: Record<Exclude<LanguageCode, 'en'>, Record<string, string>> 
     Close: 'Cerrar',
     'Profile picture updated.': 'Foto de perfil actualizada.',
     'Profile picture could not be uploaded.': 'No se pudo subir la foto de perfil.',
-    'Profile picture was uploaded, but your profile could not be updated.':
-      'La foto se subio, pero no se pudo actualizar tu perfil.',
+    'Profile picture was uploaded, but your profile could not be updated.': 'La foto se subio, pero no se pudo actualizar tu perfil.',
     'Sign in again to update your profile picture.': 'Inicia sesion de nuevo para actualizar tu foto de perfil.',
     'Go to Dashboard': 'Ir al dashboard',
     'Loading workspace...': 'Cargando espacio de trabajo...',
     'Loading dashboard...': 'Cargando dashboard...',
     'Access your YVIMO workspace': 'Accede a tu espacio YVIMO',
-    'Sign in to manage Gateway online access, licenses, learning, orders, and quotations as the platform grows.':
-      'Inicia sesión para administrar acceso online a Gateway, licencias, aprendizaje, órdenes y cotizaciones conforme crece la plataforma.',
-    'Create an account to start using YVIMO platform services as they become available.':
-      'Crea una cuenta para comenzar a usar los servicios de la plataforma YVIMO conforme estén disponibles.',
+    'Sign in to manage Gateway online access, licenses, learning, orders, and quotations as the platform grows.': 'Inicia sesión para administrar acceso online a Gateway, licencias, aprendizaje, órdenes y cotizaciones conforme crece la plataforma.',
+    'Create an account to start using YVIMO platform services as they become available.': 'Crea una cuenta para comenzar a usar los servicios de la plataforma YVIMO conforme estén disponibles.',
     'Email address': 'Correo electrónico',
     Password: 'Contraseña',
     'Remember me': 'Recordarme',
     'Forgot password?': '¿Olvidaste tu contraseña?',
-    'Continue': 'Continuar',
+    Continue: 'Continuar',
     'Platform preview': 'Vista previa de plataforma',
     'Gateway Online Access': 'Acceso online a Gateway',
-    'Use Gateway demos, downloads, connected services, and future web tools from one account.':
-      'Usa demos de Gateway, descargas, servicios conectados y futuras herramientas web desde una sola cuenta.',
-    'Licensing': 'Licenciamiento',
-    'Manage product seats, activations, renewals, and customer entitlements.':
-      'Administra puestos de producto, activaciones, renovaciones y permisos de cliente.',
-    'Access training, professional guidance, and industrial learning resources.':
-      'Accede a capacitación, guía profesional y recursos de aprendizaje industrial.',
+    'Use Gateway demos, downloads, connected services, and future web tools from one account.': 'Usa demos de Gateway, descargas, servicios conectados y futuras herramientas web desde una sola cuenta.',
+    Licensing: 'Licenciamiento',
+    'Manage product seats, activations, renewals, and customer entitlements.': 'Administra puestos de producto, activaciones, renovaciones y permisos de cliente.',
+    'Access training, professional guidance, and industrial learning resources.': 'Accede a capacitación, guía profesional y recursos de aprendizaje industrial.',
     'Orders and Quotation Management': 'Gestión de órdenes y cotizaciones',
-    'Track quotations, purchase requests, project orders, and commercial follow-up.':
-      'Da seguimiento a cotizaciones, solicitudes de compra, órdenes de proyecto y seguimiento comercial.',
+    'Track quotations, purchase requests, project orders, and commercial follow-up.': 'Da seguimiento a cotizaciones, solicitudes de compra, órdenes de proyecto y seguimiento comercial.',
     'Start a project': 'Iniciar un proyecto',
     'Select language': 'Seleccionar idioma',
     'Open navigation': 'Abrir navegación',
     'Close navigation': 'Cerrar navegación',
-    'Industrial automation, software services, and connected products':
-      'Automatización industrial, servicios de software y productos conectados',
-    'Automation systems built beyond the machine.':
-      'Sistemas de automatización construidos más allá de la máquina.',
-    'We build control systems, industrial software, and connected products that help manufacturers modernize machines, move data reliably, and turn operations into scalable digital systems.':
-      'Construimos sistemas de control, software industrial y productos conectados que ayudan a fabricantes a modernizar máquinas, mover datos de forma confiable y convertir operaciones en sistemas digitales escalables.',
+    'Industrial automation, software services, and connected products': 'Automatización industrial, servicios de software y productos conectados',
+    'Automation systems built beyond the machine.': 'Sistemas de automatización construidos más allá de la máquina.',
+    'We build control systems, industrial software, and connected products that help manufacturers modernize machines, move data reliably, and turn operations into scalable digital systems.': 'Construimos sistemas de control, software industrial y productos conectados que ayudan a fabricantes a modernizar máquinas, mover datos de forma confiable y convertir operaciones en sistemas digitales escalables.',
     'Explore our solutions': 'Explorar nuestras soluciones',
     'Our services': 'Nuestros servicios',
     'Services for connected manufacturing.': 'Servicios para manufactura conectada.',
-    'From controls and software to virtual commissioning, process optimization, manufacturing, and IT/OT integration.':
-      'Desde controles y software hasta comisionamiento virtual, optimización de procesos, manufactura e integración IT/OT.',
+    'From controls and software to virtual commissioning, process optimization, manufacturing, and IT/OT integration.': 'Desde controles y software hasta comisionamiento virtual, optimización de procesos, manufactura e integración IT/OT.',
     'Business lines': 'Líneas de negocio',
-    'The four divisions that move YVIMO forward.':
-      'Las cuatro divisiones que impulsan a YVIMO.',
-    'Industrial automation remains our core. Around it, YVIMO grows through software services, proprietary products, and YVIMO Academy: our learning space for the next generation of industrial talent.':
-      'La automatización industrial sigue siendo nuestro núcleo. Alrededor de ella, YVIMO crece mediante servicios de software, productos propios y YVIMO Academy: nuestro espacio de aprendizaje para la siguiente generación de talento industrial.',
+    'The four divisions that move YVIMO forward.': 'Las cuatro divisiones que impulsan a YVIMO.',
+    'Industrial automation remains our core. Around it, YVIMO grows through software services, proprietary products, and YVIMO Academy: our learning space for the next generation of industrial talent.': 'La automatización industrial sigue siendo nuestro núcleo. Alrededor de ella, YVIMO crece mediante servicios de software, productos propios y YVIMO Academy: nuestro espacio de aprendizaje para la siguiente generación de talento industrial.',
     'Compatible & flexible': 'Compatible y flexible',
-    'Built to work with the technologies you already use.':
-      'Diseñado para trabajar con las tecnologías que ya usas.',
-    'YVIMO integrates controls, robotics, software, and data systems across modern industrial environments.':
-      'YVIMO integra controles, robótica, software y sistemas de datos en entornos industriales modernos.',
+    'Built to work with the technologies you already use.': 'Diseñado para trabajar con las tecnologías que ya usas.',
+    'YVIMO integrates controls, robotics, software, and data systems across modern industrial environments.': 'YVIMO integra controles, robótica, software y sistemas de datos en entornos industriales modernos.',
     'How we work': 'Cómo trabajamos',
-    'A clear path from concept to working system.':
-      'Un camino claro desde el concepto hasta un sistema funcionando.',
-    'YVIMO combines industrial experience, software development, and commissioning discipline to move projects from technical need to real operation.':
-      'YVIMO combina experiencia industrial, desarrollo de software y disciplina de puesta en marcha para llevar proyectos desde una necesidad técnica hasta la operación real.',
+    'A clear path from concept to working system.': 'Un camino claro desde el concepto hasta un sistema funcionando.',
+    'YVIMO combines industrial experience, software development, and commissioning discipline to move projects from technical need to real operation.': 'YVIMO combina experiencia industrial, desarrollo de software y disciplina de puesta en marcha para llevar proyectos desde una necesidad técnica hasta la operación real.',
     Result: 'Resultado',
-    'A working automation, software, or integration system ready for real operations.':
-      'Un sistema de automatización, software o integración funcionando y listo para operaciones reales.',
-    'Tell us what you want to connect, automate, or improve.':
-      'Cuéntanos qué quieres conectar, automatizar o mejorar.',
-    'Share the machine, process, data flow, or operational challenge you have in mind. YVIMO can help define the right path-from controls and software to integration, validation, and deployment.':
-      'Comparte la máquina, proceso, flujo de datos o reto operativo que tienes en mente. YVIMO puede ayudar a definir el camino correcto: desde controles y software hasta integración, validación y despliegue.',
+    'A working automation, software, or integration system ready for real operations.': 'Un sistema de automatización, software o integración funcionando y listo para operaciones reales.',
+    'Tell us what you want to connect, automate, or improve.': 'Cuéntanos qué quieres conectar, automatizar o mejorar.',
+    'Share the machine, process, data flow, or operational challenge you have in mind. YVIMO can help define the right path-from controls and software to integration, validation, and deployment.': 'Comparte la máquina, proceso, flujo de datos o reto operativo que tienes en mente. YVIMO puede ayudar a definir el camino correcto: desde controles y software hasta integración, validación y despliegue.',
     'Explore YVIMO Gateway': 'Explorar YVIMO Gateway',
     'Project input': 'Entrada del proyecto',
     Ready: 'Listo',
@@ -784,36 +660,26 @@ const translations: Record<Exclude<LanguageCode, 'en'>, Record<string, string>> 
     'Expected output': 'Resultado esperado',
     'Working system': 'Sistema funcionando',
     'Featured product': 'Producto destacado',
-    'The industrial data layer for turning PLCs, edge devices, and shop-floor tags into clean routes, APIs, dashboards, and outputs.':
-      'La capa de datos industriales para convertir PLCs, dispositivos edge y tags de planta en rutas, APIs, dashboards y salidas limpias.',
+    'The industrial data layer for turning PLCs, edge devices, and shop-floor tags into clean routes, APIs, dashboards, and outputs.': 'La capa de datos industriales para convertir PLCs, dispositivos edge y tags de planta en rutas, APIs, dashboards y salidas limpias.',
     'Try Online Demo': 'Probar demo online',
     Discover: 'Descubrir',
     Architect: 'Arquitectar',
     Build: 'Construir',
     Validate: 'Validar',
     'Deploy & Support': 'Desplegar y soportar',
-    'We understand the machine, process, data, pain points, and business objective.':
-      'Entendemos la máquina, el proceso, los datos, los puntos de dolor y el objetivo de negocio.',
-    'We define the controls, software, data flow, hardware, interfaces, and deployment strategy.':
-      'Definimos controles, software, flujo de datos, hardware, interfaces y estrategia de despliegue.',
-    'We develop the PLC logic, applications, dashboards, integrations, or connected product features.':
-      'Desarrollamos lógica PLC, aplicaciones, dashboards, integraciones o funciones de producto conectado.',
-    'We test the system through simulation, offline checks, FAT-style reviews, and controlled startup.':
-      'Probamos el sistema mediante simulación, revisiones offline, validaciones tipo FAT y arranque controlado.',
-    'We commission, train, support, and improve the solution under real production conditions.':
-      'Comisionamos, capacitamos, damos soporte y mejoramos la solución bajo condiciones reales de producción.',
+    'We understand the machine, process, data, pain points, and business objective.': 'Entendemos la máquina, el proceso, los datos, los puntos de dolor y el objetivo de negocio.',
+    'We define the controls, software, data flow, hardware, interfaces, and deployment strategy.': 'Definimos controles, software, flujo de datos, hardware, interfaces y estrategia de despliegue.',
+    'We develop the PLC logic, applications, dashboards, integrations, or connected product features.': 'Desarrollamos lógica PLC, aplicaciones, dashboards, integraciones o funciones de producto conectado.',
+    'We test the system through simulation, offline checks, FAT-style reviews, and controlled startup.': 'Probamos el sistema mediante simulación, revisiones offline, validaciones tipo FAT y arranque controlado.',
+    'We commission, train, support, and improve the solution under real production conditions.': 'Comisionamos, capacitamos, damos soporte y mejoramos la solución bajo condiciones reales de producción.',
     'Controls & PLCs': 'Controles y PLCs',
     'Robotics & Motion': 'Robótica y movimiento',
     'Software Engineering': 'Ingeniería de software',
     'IT/OT & Cloud': 'IT/OT y nube',
-    'PLC programming, machine control, field devices, industrial networks, and troubleshooting.':
-      'Programación PLC, control de máquinas, dispositivos de campo, redes industriales y diagnóstico.',
-    'Robot cells, motion systems, safety integration, simulation, and commissioning.':
-      'Celdas robóticas, sistemas de movimiento, integración de seguridad, simulación y comisionamiento.',
-    'Web apps, mobile tools, APIs, dashboards, and industrial software platforms.':
-      'Apps web, herramientas móviles, APIs, dashboards y plataformas de software industrial.',
-    'Secure data routing from machines to databases, cloud systems, and reports.':
-      'Ruteo seguro de datos desde máquinas hacia bases de datos, sistemas cloud y reportes.',
+    'PLC programming, machine control, field devices, industrial networks, and troubleshooting.': 'Programación PLC, control de máquinas, dispositivos de campo, redes industriales y diagnóstico.',
+    'Robot cells, motion systems, safety integration, simulation, and commissioning.': 'Celdas robóticas, sistemas de movimiento, integración de seguridad, simulación y comisionamiento.',
+    'Web apps, mobile tools, APIs, dashboards, and industrial software platforms.': 'Apps web, herramientas móviles, APIs, dashboards y plataformas de software industrial.',
+    'Secure data routing from machines to databases, cloud systems, and reports.': 'Ruteo seguro de datos desde máquinas hacia bases de datos, sistemas cloud y reportes.',
     Controls: 'Controles',
     Software: 'Software',
     Products: 'Productos',
@@ -822,22 +688,14 @@ const translations: Record<Exclude<LanguageCode, 'en'>, Record<string, string>> 
     Manufacturing: 'Manufactura',
     'IT/OT Integration': 'Integración IT/OT',
     'Digital Manufacturing': 'Manufactura digital',
-    'PLC, HMI, SCADA, commissioning, troubleshooting, and plant-floor integration.':
-      'PLC, HMI, SCADA, comisionamiento, diagnóstico e integración en planta.',
-    'Modern web applications, backend APIs, dashboards, data workflows, and internal platforms.':
-      'Aplicaciones web modernas, APIs backend, dashboards, flujos de datos y plataformas internas.',
-    'YVIMO Gateway, account services, licensing, and tools for connected operations.':
-      'YVIMO Gateway, servicios de cuentas, licenciamiento y herramientas para operaciones conectadas.',
-    'Digital manufacturing cells, robot simulations, layout validation, and offline verification.':
-      'Celdas de manufactura digital, simulaciones robóticas, validación de layouts y verificación offline.',
-    'Process optimization, cycle-time analysis, material flow, bottleneck studies, and improvement roadmaps.':
-      'Optimización de procesos, análisis de ciclo, flujo de materiales, estudios de cuellos de botella y planes de mejora.',
-    'Production systems, robotic cells, fixtures, line support, and launch-ready execution.':
-      'Sistemas de producción, celdas robóticas, herramentales, soporte de línea y ejecución para arranque.',
-    'Connect PLCs, edge devices, APIs, databases, MQTT, cloud services, and reporting layers.':
-      'Conecta PLCs, dispositivos edge, APIs, bases de datos, MQTT, servicios cloud y capas de reporte.',
-    'Tecnomatix, DELMIA, simulation models, line studies, and connected engineering workflows.':
-      'Tecnomatix, DELMIA, modelos de simulación, estudios de línea y flujos de ingeniería conectados.',
+    'PLC, HMI, SCADA, commissioning, troubleshooting, and plant-floor integration.': 'PLC, HMI, SCADA, comisionamiento, diagnóstico e integración en planta.',
+    'Modern web applications, backend APIs, dashboards, data workflows, and internal platforms.': 'Aplicaciones web modernas, APIs backend, dashboards, flujos de datos y plataformas internas.',
+    'YVIMO Gateway, account services, licensing, and tools for connected operations.': 'YVIMO Gateway, servicios de cuentas, licenciamiento y herramientas para operaciones conectadas.',
+    'Digital manufacturing cells, robot simulations, layout validation, and offline verification.': 'Celdas de manufactura digital, simulaciones robóticas, validación de layouts y verificación offline.',
+    'Process optimization, cycle-time analysis, material flow, bottleneck studies, and improvement roadmaps.': 'Optimización de procesos, análisis de ciclo, flujo de materiales, estudios de cuellos de botella y planes de mejora.',
+    'Production systems, robotic cells, fixtures, line support, and launch-ready execution.': 'Sistemas de producción, celdas robóticas, herramentales, soporte de línea y ejecución para arranque.',
+    'Connect PLCs, edge devices, APIs, databases, MQTT, cloud services, and reporting layers.': 'Conecta PLCs, dispositivos edge, APIs, bases de datos, MQTT, servicios cloud y capas de reporte.',
+    'Tecnomatix, DELMIA, simulation models, line studies, and connected engineering workflows.': 'Tecnomatix, DELMIA, modelos de simulación, estudios de línea y flujos de ingeniería conectados.',
     'Industrial Automation': 'Automatización industrial',
     'Software Services': 'Servicios de software',
     'YVIMO Products': 'Productos YVIMO',
@@ -868,12 +726,14 @@ const translations: Record<Exclude<LanguageCode, 'en'>, Record<string, string>> 
     'Choose an organization': 'Elige una organización',
     'Required to open health modules': 'Requerida para abrir los módulos de salud',
     'Switch organization': 'Cambiar organización',
-    'Applications': 'Aplicaciones',
+    Applications: 'Aplicaciones',
     'Select a health module': 'Selecciona un módulo de salud',
     'Each app opens its own focused workspace.': 'Cada app abre su propio espacio de trabajo especializado.',
     'Care tools in one place': 'Herramientas de atención en un solo lugar',
     'Choose an application to open a focused workspace built for clear, efficient, and safer daily work.': 'Elige una aplicación para abrir un espacio enfocado en un trabajo diario más claro, eficiente y seguro.',
-    Simple: 'Simple', Focused: 'Enfocado', Clinical: 'Clínico',
+    Simple: 'Simple',
+    Focused: 'Enfocado',
+    Clinical: 'Clínico',
     Patients: 'Pacientes',
     'A secure, organization-based directory of patients with CURP, medical record number, and full name.': 'Un directorio seguro de pacientes por organización con CURP, número de expediente y nombre completo.',
     'Coming soon': 'Próximamente',
@@ -902,7 +762,8 @@ const translations: Record<Exclude<LanguageCode, 'en'>, Record<string, string>> 
     'Name, CURP, or medical record number': 'Nombre, CURP o número de expediente',
     'Patient register': 'Registro de pacientes',
     'Registered patients': 'Pacientes registrados',
-    showing: 'mostrando', total: 'total',
+    showing: 'mostrando',
+    total: 'total',
     'Loading patients...': 'Cargando pacientes...',
     'Try again': 'Intentar de nuevo',
     'No patients match your search.': 'Ningún paciente coincide con la búsqueda.',
@@ -919,11 +780,15 @@ const translations: Record<Exclude<LanguageCode, 'en'>, Record<string, string>> 
     of: 'de',
     Previous: 'Anterior',
     Next: 'Siguiente',
-    Sex: 'Sexo', Age: 'Edad', Registered: 'Registrado',
+    Sex: 'Sexo',
+    Age: 'Edad',
+    Registered: 'Registrado',
     'Birth date': 'Fecha de nacimiento',
     'Calculated from CURP': 'Calculada desde la CURP',
     Calculated: 'Calculada',
-    Male: 'Masculino', Female: 'Femenino', 'Select sex': 'Seleccionar sexo',
+    Male: 'Masculino',
+    Female: 'Femenino',
+    'Select sex': 'Seleccionar sexo',
     'Register new patient': 'Registrar paciente nuevo',
     'The patient will belong to': 'El paciente pertenecerá a',
     'First name and surnames': 'Nombre y apellidos',
@@ -962,7 +827,7 @@ const translations: Record<Exclude<LanguageCode, 'en'>, Record<string, string>> 
   },
   zh: {
     'Engineering Automation': '自动化工程',
-    'that': '交付',
+    that: '交付',
     'delivers results': '真实成果',
     Services: '服务',
     Gateway: 'Gateway',
@@ -984,39 +849,30 @@ const translations: Record<Exclude<LanguageCode, 'en'>, Record<string, string>> 
     Workspace: '工作区',
     'YVIMO PORTAL': 'YVIMO 门户',
     'Workspace overview': '工作区概览',
-    'Your YVIMO tools, licenses, and learning access in one place.':
-      '你的 YVIMO 工具、许可证和学习访问集中在一处。',
+    'Your YVIMO tools, licenses, and learning access in one place.': '你的 YVIMO 工具、许可证和学习访问集中在一处。',
     'Welcome back': '欢迎回来',
     'Your YVIMO workspace is ready.': '你的 YVIMO 工作区已准备就绪。',
     'Gateway Online': 'Gateway 在线',
-    'Design, simulate, and prepare industrial connectivity flows using virtual devices, labs, and Gateway tools.':
-      '使用虚拟设备、实验室和 Gateway 工具设计、模拟并准备工业连接流程。',
+    'Design, simulate, and prepare industrial connectivity flows using virtual devices, labs, and Gateway tools.': '使用虚拟设备、实验室和 Gateway 工具设计、模拟并准备工业连接流程。',
     'Engineering Tools': '工程工具',
-    'Licenses': '许可证',
-    'Orders': '订单',
-    'Quotations': '报价',
-    'Academy': '学院',
-    'Settings': '设置',
+    Licenses: '许可证',
+    Orders: '订单',
+    Quotations: '报价',
+    Academy: '学院',
+    Settings: '设置',
     'Sign out': '退出登录',
     'Account created. Redirecting to dashboard.': '账户已创建，正在跳转到仪表板。',
-    'Account created. Check your email to confirm your account.':
-      '账户已创建。请检查邮箱以确认账户。',
+    'Account created. Check your email to confirm your account.': '账户已创建。请检查邮箱以确认账户。',
     'Signed in. Redirecting to dashboard.': '已登录，正在跳转到仪表板。',
     'This email is already registered.': '此邮箱已注册。',
     'Invalid email or password.': '邮箱或密码无效。',
     'Apple account ready. Redirecting to dashboard.': 'Apple 账户已准备就绪，正在跳转到仪表板。',
-    'Create a first project, manage access, or review platform modules from the navigation.':
-      '从导航中创建第一个项目、管理访问权限或查看平台模块。',
-    'Open connected Gateway tools, demos, downloads, and project modules.':
-      '打开 Gateway 连接工具、演示、下载和项目模块。',
-    'Free access to try YVIMO Academy, explore the platform, and start selected courses before upgrading.':
-      '免费试用 YVIMO Academy、探索平台，并在升级前开始部分课程。',
-    'Continue courses, guided paths, progress, and professional learning.':
-      '继续课程、引导路径、进度和专业学习。',
-    'Review product seats, activations, renewals, and account entitlements.':
-      '查看产品席位、激活、续订和账户权益。',
-    'Track quotations, purchase requests, project orders, and follow-up.':
-      '跟踪报价、采购请求、项目订单和后续事项。',
+    'Create a first project, manage access, or review platform modules from the navigation.': '从导航中创建第一个项目、管理访问权限或查看平台模块。',
+    'Open connected Gateway tools, demos, downloads, and project modules.': '打开 Gateway 连接工具、演示、下载和项目模块。',
+    'Free access to try YVIMO Academy, explore the platform, and start selected courses before upgrading.': '免费试用 YVIMO Academy、探索平台，并在升级前开始部分课程。',
+    'Continue courses, guided paths, progress, and professional learning.': '继续课程、引导路径、进度和专业学习。',
+    'Review product seats, activations, renewals, and account entitlements.': '查看产品席位、激活、续订和账户权益。',
+    'Track quotations, purchase requests, project orders, and follow-up.': '跟踪报价、采购请求、项目订单和后续事项。',
     'YVIMO Points': 'YVIMO 积分',
     'Current Plan': '当前计划',
     'Upgrade to this Plan': '升级到此计划',
@@ -1025,64 +881,45 @@ const translations: Record<Exclude<LanguageCode, 'en'>, Record<string, string>> 
     'Loading workspace...': '正在加载工作区...',
     'Loading dashboard...': '正在加载仪表板...',
     'Access your YVIMO workspace': '访问你的 YVIMO 工作区',
-    'Sign in to manage Gateway online access, licenses, learning, orders, and quotations as the platform grows.':
-      '登录后可管理 Gateway 在线访问、许可、学习、订单和报价。',
-    'Create an account to start using YVIMO platform services as they become available.':
-      '创建账户以开始使用即将推出的 YVIMO 平台服务。',
+    'Sign in to manage Gateway online access, licenses, learning, orders, and quotations as the platform grows.': '登录后可管理 Gateway 在线访问、许可、学习、订单和报价。',
+    'Create an account to start using YVIMO platform services as they become available.': '创建账户以开始使用即将推出的 YVIMO 平台服务。',
     'Email address': '电子邮箱',
     Password: '密码',
     'Remember me': '记住我',
     'Forgot password?': '忘记密码？',
-    'Continue': '继续',
+    Continue: '继续',
     'Platform preview': '平台预览',
     'Gateway Online Access': 'Gateway 在线访问',
-    'Use Gateway demos, downloads, connected services, and future web tools from one account.':
-      '通过一个账户使用 Gateway 演示、下载、连接服务和未来的 Web 工具。',
-    'Licensing': '许可',
-    'Manage product seats, activations, renewals, and customer entitlements.':
-      '管理产品席位、激活、续订和客户权益。',
-    'Access training, professional guidance, and industrial learning resources.':
-      '访问培训、专业指导和工业学习资源。',
+    'Use Gateway demos, downloads, connected services, and future web tools from one account.': '通过一个账户使用 Gateway 演示、下载、连接服务和未来的 Web 工具。',
+    Licensing: '许可',
+    'Manage product seats, activations, renewals, and customer entitlements.': '管理产品席位、激活、续订和客户权益。',
+    'Access training, professional guidance, and industrial learning resources.': '访问培训、专业指导和工业学习资源。',
     'Orders and Quotation Management': '订单和报价管理',
-    'Track quotations, purchase requests, project orders, and commercial follow-up.':
-      '跟踪报价、采购请求、项目订单和商务跟进。',
+    'Track quotations, purchase requests, project orders, and commercial follow-up.': '跟踪报价、采购请求、项目订单和商务跟进。',
     'Start a project': '启动项目',
     'Select language': '选择语言',
     'Open navigation': '打开导航',
     'Close navigation': '关闭导航',
-    'Industrial automation, software services, and connected products':
-      '工业自动化、软件服务与连接产品',
-    'Automation systems built beyond the machine.':
-      '超越单机的自动化系统。',
-    'We build control systems, industrial software, and connected products that help manufacturers modernize machines, move data reliably, and turn operations into scalable digital systems.':
-      '我们构建控制系统、工业软件和连接产品，帮助制造团队升级设备、可靠传输数据，并将运营转化为可扩展的数字系统。',
+    'Industrial automation, software services, and connected products': '工业自动化、软件服务与连接产品',
+    'Automation systems built beyond the machine.': '超越单机的自动化系统。',
+    'We build control systems, industrial software, and connected products that help manufacturers modernize machines, move data reliably, and turn operations into scalable digital systems.': '我们构建控制系统、工业软件和连接产品，帮助制造团队升级设备、可靠传输数据，并将运营转化为可扩展的数字系统。',
     'Explore our solutions': '探索解决方案',
     'Our services': '我们的服务',
     'Services for connected manufacturing.': '面向连接制造的服务。',
-    'From controls and software to virtual commissioning, process optimization, manufacturing, and IT/OT integration.':
-      '从控制与软件，到虚拟调试、流程优化、制造支持以及 IT/OT 集成。',
+    'From controls and software to virtual commissioning, process optimization, manufacturing, and IT/OT integration.': '从控制与软件，到虚拟调试、流程优化、制造支持以及 IT/OT 集成。',
     'Business lines': '业务方向',
-    'The four divisions that move YVIMO forward.':
-      '推动 YVIMO 前进的四个业务板块。',
-    'Industrial automation remains our core. Around it, YVIMO grows through software services, proprietary products, and YVIMO Academy: our learning space for the next generation of industrial talent.':
-      '工业自动化始终是我们的核心。在此基础上，YVIMO 通过软件服务、自有产品和 YVIMO Academy 持续发展，培养下一代工业人才。',
+    'The four divisions that move YVIMO forward.': '推动 YVIMO 前进的四个业务板块。',
+    'Industrial automation remains our core. Around it, YVIMO grows through software services, proprietary products, and YVIMO Academy: our learning space for the next generation of industrial talent.': '工业自动化始终是我们的核心。在此基础上，YVIMO 通过软件服务、自有产品和 YVIMO Academy 持续发展，培养下一代工业人才。',
     'Compatible & flexible': '兼容且灵活',
-    'Built to work with the technologies you already use.':
-      '为配合你已在使用的技术而构建。',
-    'YVIMO integrates controls, robotics, software, and data systems across modern industrial environments.':
-      'YVIMO 在现代工业环境中集成控制、机器人、软件与数据系统。',
+    'Built to work with the technologies you already use.': '为配合你已在使用的技术而构建。',
+    'YVIMO integrates controls, robotics, software, and data systems across modern industrial environments.': 'YVIMO 在现代工业环境中集成控制、机器人、软件与数据系统。',
     'How we work': '工作方式',
-    'A clear path from concept to working system.':
-      '从概念到可运行系统的清晰路径。',
-    'YVIMO combines industrial experience, software development, and commissioning discipline to move projects from technical need to real operation.':
-      'YVIMO 结合工业经验、软件开发与调试纪律，将项目从技术需求推进到真实运行。',
+    'A clear path from concept to working system.': '从概念到可运行系统的清晰路径。',
+    'YVIMO combines industrial experience, software development, and commissioning discipline to move projects from technical need to real operation.': 'YVIMO 结合工业经验、软件开发与调试纪律，将项目从技术需求推进到真实运行。',
     Result: '结果',
-    'A working automation, software, or integration system ready for real operations.':
-      '一个可用于真实运营的自动化、软件或集成系统。',
-    'Tell us what you want to connect, automate, or improve.':
-      '告诉我们你想连接、自动化或改进什么。',
-    'Share the machine, process, data flow, or operational challenge you have in mind. YVIMO can help define the right path-from controls and software to integration, validation, and deployment.':
-      '分享你正在考虑的设备、流程、数据流或运营挑战。YVIMO 可以帮助定义正确路径：从控制与软件到集成、验证和部署。',
+    'A working automation, software, or integration system ready for real operations.': '一个可用于真实运营的自动化、软件或集成系统。',
+    'Tell us what you want to connect, automate, or improve.': '告诉我们你想连接、自动化或改进什么。',
+    'Share the machine, process, data flow, or operational challenge you have in mind. YVIMO can help define the right path-from controls and software to integration, validation, and deployment.': '分享你正在考虑的设备、流程、数据流或运营挑战。YVIMO 可以帮助定义正确路径：从控制与软件到集成、验证和部署。',
     'Explore YVIMO Gateway': '探索 YVIMO Gateway',
     'Project input': '项目输入',
     Ready: '就绪',
@@ -1091,36 +928,26 @@ const translations: Record<Exclude<LanguageCode, 'en'>, Record<string, string>> 
     'Expected output': '预期输出',
     'Working system': '运行系统',
     'Featured product': '精选产品',
-    'The industrial data layer for turning PLCs, edge devices, and shop-floor tags into clean routes, APIs, dashboards, and outputs.':
-      '工业数据层，用于将 PLC、边缘设备和车间标签转化为清晰的路由、API、仪表板和输出。',
+    'The industrial data layer for turning PLCs, edge devices, and shop-floor tags into clean routes, APIs, dashboards, and outputs.': '工业数据层，用于将 PLC、边缘设备和车间标签转化为清晰的路由、API、仪表板和输出。',
     'Try Online Demo': '试用在线演示',
     Discover: '发现',
     Architect: '架构',
     Build: '构建',
     Validate: '验证',
     'Deploy & Support': '部署与支持',
-    'We understand the machine, process, data, pain points, and business objective.':
-      '我们理解设备、流程、数据、痛点和业务目标。',
-    'We define the controls, software, data flow, hardware, interfaces, and deployment strategy.':
-      '我们定义控制、软件、数据流、硬件、接口和部署策略。',
-    'We develop the PLC logic, applications, dashboards, integrations, or connected product features.':
-      '我们开发 PLC 逻辑、应用、仪表板、集成或连接产品功能。',
-    'We test the system through simulation, offline checks, FAT-style reviews, and controlled startup.':
-      '我们通过仿真、离线检查、FAT 式评审和受控启动来测试系统。',
-    'We commission, train, support, and improve the solution under real production conditions.':
-      '我们在真实生产条件下完成调试、培训、支持并持续改进方案。',
+    'We understand the machine, process, data, pain points, and business objective.': '我们理解设备、流程、数据、痛点和业务目标。',
+    'We define the controls, software, data flow, hardware, interfaces, and deployment strategy.': '我们定义控制、软件、数据流、硬件、接口和部署策略。',
+    'We develop the PLC logic, applications, dashboards, integrations, or connected product features.': '我们开发 PLC 逻辑、应用、仪表板、集成或连接产品功能。',
+    'We test the system through simulation, offline checks, FAT-style reviews, and controlled startup.': '我们通过仿真、离线检查、FAT 式评审和受控启动来测试系统。',
+    'We commission, train, support, and improve the solution under real production conditions.': '我们在真实生产条件下完成调试、培训、支持并持续改进方案。',
     'Controls & PLCs': '控制与 PLC',
     'Robotics & Motion': '机器人与运动',
     'Software Engineering': '软件工程',
     'IT/OT & Cloud': 'IT/OT 与云',
-    'PLC programming, machine control, field devices, industrial networks, and troubleshooting.':
-      'PLC 编程、机器控制、现场设备、工业网络和故障排查。',
-    'Robot cells, motion systems, safety integration, simulation, and commissioning.':
-      '机器人单元、运动系统、安全集成、仿真和调试。',
-    'Web apps, mobile tools, APIs, dashboards, and industrial software platforms.':
-      'Web 应用、移动工具、API、仪表板和工业软件平台。',
-    'Secure data routing from machines to databases, cloud systems, and reports.':
-      '将机器数据安全路由到数据库、云系统和报表。',
+    'PLC programming, machine control, field devices, industrial networks, and troubleshooting.': 'PLC 编程、机器控制、现场设备、工业网络和故障排查。',
+    'Robot cells, motion systems, safety integration, simulation, and commissioning.': '机器人单元、运动系统、安全集成、仿真和调试。',
+    'Web apps, mobile tools, APIs, dashboards, and industrial software platforms.': 'Web 应用、移动工具、API、仪表板和工业软件平台。',
+    'Secure data routing from machines to databases, cloud systems, and reports.': '将机器数据安全路由到数据库、云系统和报表。',
     Controls: '控制',
     Software: '软件',
     Products: '产品',
@@ -1129,22 +956,14 @@ const translations: Record<Exclude<LanguageCode, 'en'>, Record<string, string>> 
     Manufacturing: '制造',
     'IT/OT Integration': 'IT/OT 集成',
     'Digital Manufacturing': '数字化制造',
-    'PLC, HMI, SCADA, commissioning, troubleshooting, and plant-floor integration.':
-      'PLC、HMI、SCADA、调试、故障排查和车间集成。',
-    'Modern web applications, backend APIs, dashboards, data workflows, and internal platforms.':
-      '现代 Web 应用、后端 API、仪表板、数据流程和内部平台。',
-    'YVIMO Gateway, account services, licensing, and tools for connected operations.':
-      'YVIMO Gateway、账户服务、许可和连接运营工具。',
-    'Digital manufacturing cells, robot simulations, layout validation, and offline verification.':
-      '数字制造单元、机器人仿真、布局验证和离线检查。',
-    'Process optimization, cycle-time analysis, material flow, bottleneck studies, and improvement roadmaps.':
-      '流程优化、节拍分析、物流、瓶颈研究和改进路线图。',
-    'Production systems, robotic cells, fixtures, line support, and launch-ready execution.':
-      '生产系统、机器人单元、工装夹具、产线支持和投产执行。',
-    'Connect PLCs, edge devices, APIs, databases, MQTT, cloud services, and reporting layers.':
-      '连接 PLC、边缘设备、API、数据库、MQTT、云服务和报表层。',
-    'Tecnomatix, DELMIA, simulation models, line studies, and connected engineering workflows.':
-      'Tecnomatix、DELMIA、仿真模型、产线研究和连接工程流程。',
+    'PLC, HMI, SCADA, commissioning, troubleshooting, and plant-floor integration.': 'PLC、HMI、SCADA、调试、故障排查和车间集成。',
+    'Modern web applications, backend APIs, dashboards, data workflows, and internal platforms.': '现代 Web 应用、后端 API、仪表板、数据流程和内部平台。',
+    'YVIMO Gateway, account services, licensing, and tools for connected operations.': 'YVIMO Gateway、账户服务、许可和连接运营工具。',
+    'Digital manufacturing cells, robot simulations, layout validation, and offline verification.': '数字制造单元、机器人仿真、布局验证和离线检查。',
+    'Process optimization, cycle-time analysis, material flow, bottleneck studies, and improvement roadmaps.': '流程优化、节拍分析、物流、瓶颈研究和改进路线图。',
+    'Production systems, robotic cells, fixtures, line support, and launch-ready execution.': '生产系统、机器人单元、工装夹具、产线支持和投产执行。',
+    'Connect PLCs, edge devices, APIs, databases, MQTT, cloud services, and reporting layers.': '连接 PLC、边缘设备、API、数据库、MQTT、云服务和报表层。',
+    'Tecnomatix, DELMIA, simulation models, line studies, and connected engineering workflows.': 'Tecnomatix、DELMIA、仿真模型、产线研究和连接工程流程。',
     'Industrial Automation': '工业自动化',
     'Software Services': '软件服务',
     'YVIMO Products': 'YVIMO 产品',
@@ -1180,8 +999,7 @@ Object.assign(translations.es, {
   News: 'Noticias',
   Resources: 'Recursos',
   'Industrial learning for connected manufacturing.': 'Aprendizaje industrial para manufactura conectada.',
-  'Courses, guided paths, and professional training for people building real automation, robotics, and industrial software systems.':
-    'Cursos, rutas guiadas y capacitaciÃ³n profesional para personas que construyen automatizaciÃ³n, robÃ³tica y software industrial real.',
+  'Courses, guided paths, and professional training for people building real automation, robotics, and industrial software systems.': 'Cursos, rutas guiadas y capacitaciÃ³n profesional para personas que construyen automatizaciÃ³n, robÃ³tica y software industrial real.',
   'PLC Programming': 'ProgramaciÃ³n PLC',
   Robotics: 'RobÃ³tica',
   'Industrial Software': 'Software industrial',
@@ -1194,31 +1012,23 @@ Object.assign(translations.es, {
   Featured: 'Destacado',
   FEATURED: 'DESTACADO',
   'Featured courses': 'Cursos destacados',
-  'Start with the courses we recommend first for each industrial learning area.':
-    'Empieza con los cursos que recomendamos primero para cada area de aprendizaje industrial.',
+  'Start with the courses we recommend first for each industrial learning area.': 'Empieza con los cursos que recomendamos primero para cada area de aprendizaje industrial.',
   'HOW YOU LEARN': 'COMO APRENDES',
   'A clear path from lesson to real industrial skill.': 'Un camino claro desde la leccion hasta una habilidad industrial real.',
-  'YVIMO Academy turns industrial automation concepts into structured learning paths, practical exercises, and progress you can track.':
-    'YVIMO Academy convierte conceptos de automatizacion industrial en rutas de aprendizaje estructuradas, ejercicios practicos y progreso que puedes medir.',
+  'YVIMO Academy turns industrial automation concepts into structured learning paths, practical exercises, and progress you can track.': 'YVIMO Academy convierte conceptos de automatizacion industrial en rutas de aprendizaje estructuradas, ejercicios practicos y progreso que puedes medir.',
   'How YVIMO Academy works': 'Como funciona YVIMO Academy',
   Explore: 'Explorar',
   Learn: 'Aprender',
   Practice: 'Practicar',
   'Track progress': 'Medir progreso',
   'Apply at work': 'Aplicar en el trabajo',
-  'Explore courses by topic: PLCs, robotics, industrial software, and career growth.':
-    'Explora cursos por tema: PLCs, robotica, software industrial y crecimiento profesional.',
-  'Follow focused lessons built around real automation and manufacturing scenarios.':
-    'Sigue lecciones enfocadas en escenarios reales de automatizacion y manufactura.',
-  'Apply concepts through guided examples, troubleshooting cases, simulations, or project-style exercises.':
-    'Aplica conceptos con ejemplos guiados, casos de diagnostico, simulaciones o ejercicios tipo proyecto.',
-  'Monitor completed lessons, course progress, certificates, and recommended next steps.':
-    'Monitorea lecciones completadas, avance del curso, certificados y siguientes pasos recomendados.',
-  'Use what you learned in real machines, production systems, projects, or your professional portfolio.':
-    'Usa lo aprendido en maquinas reales, sistemas de produccion, proyectos o tu portafolio profesional.',
+  'Explore courses by topic: PLCs, robotics, industrial software, and career growth.': 'Explora cursos por tema: PLCs, robotica, software industrial y crecimiento profesional.',
+  'Follow focused lessons built around real automation and manufacturing scenarios.': 'Sigue lecciones enfocadas en escenarios reales de automatizacion y manufactura.',
+  'Apply concepts through guided examples, troubleshooting cases, simulations, or project-style exercises.': 'Aplica conceptos con ejemplos guiados, casos de diagnostico, simulaciones o ejercicios tipo proyecto.',
+  'Monitor completed lessons, course progress, certificates, and recommended next steps.': 'Monitorea lecciones completadas, avance del curso, certificados y siguientes pasos recomendados.',
+  'Use what you learned in real machines, production systems, projects, or your professional portfolio.': 'Usa lo aprendido en maquinas reales, sistemas de produccion, proyectos o tu portafolio profesional.',
   RESULT: 'RESULTADO',
-  'A structured learning path that turns industrial knowledge into practical automation capability.':
-    'Una ruta de aprendizaje estructurada que convierte conocimiento industrial en capacidad practica de automatizacion.',
+  'A structured learning path that turns industrial knowledge into practical automation capability.': 'Una ruta de aprendizaje estructurada que convierte conocimiento industrial en capacidad practica de automatizacion.',
   'Featured learning paths': 'Rutas de aprendizaje destacadas',
   'Start with the Academy tracks we are prioritizing first.': 'Empieza con las rutas de Academy que estamos priorizando primero.',
   Catalog: 'CatÃ¡logo',
@@ -1284,8 +1094,7 @@ Object.assign(translations.es, {
   'Enroll in this course to access the lesson.': 'InscrÃ­bete en este curso para acceder a la lecciÃ³n.',
   'View course access': 'Ver acceso del curso',
   'Course routes': 'Rutas de curso',
-  'Follow every lesson path and see how far your completed route is glowing behind you.':
-    'Sigue la ruta completa de lecciones y mira cuÃ¡nto camino completado queda iluminado detrÃ¡s de ti.',
+  'Follow every lesson path and see how far your completed route is glowing behind you.': 'Sigue la ruta completa de lecciones y mira cuÃ¡nto camino completado queda iluminado detrÃ¡s de ti.',
   'Sign in to view your progress.': 'Inicia sesiÃ³n para ver tu progreso.',
   'Your Academy routes are attached to your account.': 'Tus rutas de Academy estÃ¡n vinculadas a tu cuenta.',
   'Loading progress...': 'Cargando progreso...',
@@ -1378,15 +1187,11 @@ Object.assign(translations.es, {
   'Import Orders': 'Importar órdenes',
   'Revenue Opportunity': 'Oportunidad de ingresos',
   'Financial Status': 'Estado financiero',
-  'Review realized income, compare legacy and YVIMO pricing, quantify revenue gaps, and identify realistic financial upside.':
-    'Consulta los ingresos realizados, compara precios históricos con YVIMO, cuantifica brechas e identifica oportunidades financieras realistas.',
+  'Review realized income, compare legacy and YVIMO pricing, quantify revenue gaps, and identify realistic financial upside.': 'Consulta los ingresos realizados, compara precios históricos con YVIMO, cuantifica brechas e identifica oportunidades financieras realistas.',
   'Analysis Tool': 'Herramienta de análisis',
-  'Plan, execute, track, and improve manufacturing operations from one connected YVIMO workspace.':
-    'Planea, ejecuta, rastrea y mejora las operaciones de manufactura desde un espacio de trabajo conectado de YVIMO.',
-  'Execute, track, and monitor production orders across work centers in real time.':
-    'Ejecuta, rastrea y monitorea órdenes de producción en los centros de trabajo en tiempo real.',
-  'Plan and schedule production using capacity, priorities, due dates, and operational constraints.':
-    'Planea y programa la producción utilizando capacidad, prioridades, fechas de entrega y restricciones operativas.',
+  'Plan, execute, track, and improve manufacturing operations from one connected YVIMO workspace.': 'Planea, ejecuta, rastrea y mejora las operaciones de manufactura desde un espacio de trabajo conectado de YVIMO.',
+  'Execute, track, and monitor production orders across work centers in real time.': 'Ejecuta, rastrea y monitorea órdenes de producción en los centros de trabajo en tiempo real.',
+  'Plan and schedule production using capacity, priorities, due dates, and operational constraints.': 'Planea y programa la producción utilizando capacidad, prioridades, fechas de entrega y restricciones operativas.',
   Applications: 'Aplicaciones',
   'Select a module to open its workspace.': 'Selecciona un módulo para abrir su espacio de trabajo.',
   Organization: 'Organización',
@@ -1395,8 +1200,7 @@ Object.assign(translations.es, {
   Statistics: 'Estadísticas',
   Suppliers: 'Proveedores',
   'Go Back': 'Regresar',
-  'MES, APS, production tracking, scheduling, and manufacturing intelligence in one connected workspace.':
-    'MES, APS, seguimiento de producci\u00f3n, programaci\u00f3n e inteligencia de manufactura en un workspace conectado.',
+  'MES, APS, production tracking, scheduling, and manufacturing intelligence in one connected workspace.': 'MES, APS, seguimiento de producci\u00f3n, programaci\u00f3n e inteligencia de manufactura en un workspace conectado.',
   'Flagship products': 'Productos principales',
   'Start with your main YVIMO workspaces': 'Comienza con tus workspaces principales de YVIMO',
   'Secondary modules': 'M\u00f3dulos secundarios',
@@ -1411,18 +1215,12 @@ Object.assign(translations.es, {
   'All modules': 'Todos los m\u00f3dulos',
   Events: 'Eventos',
   Quality: 'Calidad',
-  'This module is being structured. Data models, permissions, and CRUD workflows will be connected in a future step.':
-    'Este m\u00f3dulo se est\u00e1 estructurando. Los modelos de datos, permisos y flujos CRUD se conectar\u00e1n en un paso futuro.',
-  'This MES module is being structured. Data models, permissions, and CRUD workflows will be connected in a future step.':
-    'Este m\u00f3dulo MES se est\u00e1 estructurando. Los modelos de datos, permisos y flujos CRUD se conectar\u00e1n en un paso futuro.',
-  'Execute, track, and monitor production orders across work centers.':
-    'Ejecuta, rastrea y monitorea \u00f3rdenes de producci\u00f3n en centros de trabajo.',
-  'Plan and schedule production using capacity, priorities, and constraints.':
-    'Planea y programa producci\u00f3n usando capacidad, prioridades y restricciones.',
-  'Transform production data into actionable manufacturing KPIs.':
-    'Convierte datos de producci\u00f3n en KPIs de manufactura accionables.',
-  'Transform production data into actionable manufacturing KPIs, trends, and improvement insights.':
-    'Transforma los datos de producción en indicadores, tendencias y oportunidades de mejora accionables para manufactura.',
+  'This module is being structured. Data models, permissions, and CRUD workflows will be connected in a future step.': 'Este m\u00f3dulo se est\u00e1 estructurando. Los modelos de datos, permisos y flujos CRUD se conectar\u00e1n en un paso futuro.',
+  'This MES module is being structured. Data models, permissions, and CRUD workflows will be connected in a future step.': 'Este m\u00f3dulo MES se est\u00e1 estructurando. Los modelos de datos, permisos y flujos CRUD se conectar\u00e1n en un paso futuro.',
+  'Execute, track, and monitor production orders across work centers.': 'Ejecuta, rastrea y monitorea \u00f3rdenes de producci\u00f3n en centros de trabajo.',
+  'Plan and schedule production using capacity, priorities, and constraints.': 'Planea y programa producci\u00f3n usando capacidad, prioridades y restricciones.',
+  'Transform production data into actionable manufacturing KPIs.': 'Convierte datos de producci\u00f3n en KPIs de manufactura accionables.',
+  'Transform production data into actionable manufacturing KPIs, trends, and improvement insights.': 'Transforma los datos de producción en indicadores, tendencias y oportunidades de mejora accionables para manufactura.',
   'Production order tracking': 'Seguimiento de \u00f3rdenes de producci\u00f3n',
   'Work center status': 'Estado de centros de trabajo',
   'Operator actions': 'Acciones de operador',
@@ -1443,18 +1241,15 @@ Object.assign(translations.es, {
   'Open APS': 'Abrir APS',
   'Open Intelligence': 'Abrir Intelligence',
   'Operations Intelligence': 'Inteligencia Operativa',
-  'Manufacturing execution, production tracking, traceability, quality checkpoints, and shop-floor visibility.':
-    'Ejecuci\u00f3n de manufactura, seguimiento de producci\u00f3n, trazabilidad, puntos de calidad y visibilidad de piso.',
-  'Manufacturing execution, production tracking, work center visibility, downtime, quality, and traceability.':
-    'Ejecuci\u00f3n de manufactura, seguimiento de producci\u00f3n, visibilidad de centros de trabajo, paros, calidad y trazabilidad.',
-  'Advanced planning and scheduling for work centers, capacity, priorities, and delivery constraints.':
-    'Planeaci\u00f3n y programaci\u00f3n avanzada para centros de trabajo, capacidad, prioridades y restricciones de entrega.',
+  'Manufacturing execution, production tracking, traceability, quality checkpoints, and shop-floor visibility.': 'Ejecuci\u00f3n de manufactura, seguimiento de producci\u00f3n, trazabilidad, puntos de calidad y visibilidad de piso.',
+  'Manufacturing execution, production tracking, work center visibility, downtime, quality, and traceability.': 'Ejecuci\u00f3n de manufactura, seguimiento de producci\u00f3n, visibilidad de centros de trabajo, paros, calidad y trazabilidad.',
+  'Advanced planning and scheduling for work centers, capacity, priorities, and delivery constraints.': 'Planeaci\u00f3n y programaci\u00f3n avanzada para centros de trabajo, capacidad, prioridades y restricciones de entrega.',
   'Production Orders': '\u00d3rdenes de producci\u00f3n',
   'Work Centers': 'Centros de trabajo',
   Quotations: 'Cotizaciones',
   'Operator Terminal': 'Terminal de operador',
   'Production Events': 'Eventos de producci\u00f3n',
-  'Inventory': 'Inventario',
+  Inventory: 'Inventario',
   'Quality Checks': 'Revisiones de calidad',
   'Downtime Events': 'Eventos de paro',
   Clients: 'Clientes',
@@ -1465,57 +1260,37 @@ Object.assign(translations.es, {
   Balances: 'Saldos',
   'Docs & Vouchers': 'Documentos y vales',
   'Clients sections': 'Secciones de clientes',
-  'Create, release, assign, and track manufacturing orders from planned quantity to completion.':
-    'Crea, libera, asigna y rastrea \u00f3rdenes de manufactura desde la cantidad planeada hasta su terminaci\u00f3n.',
-  'Manage machines, lines, cells, and stations where production is executed.':
-    'Administra m\u00e1quinas, l\u00edneas, celdas y estaciones donde se ejecuta la producci\u00f3n.',
-  'Create and manage customer quotations for manufacturing products and services.':
-    'Crea y administra cotizaciones para productos y servicios de manufactura.',
-  'Simple shop-floor interface for starting jobs, reporting production, scrap, downtime, and completing operations.':
-    'Interfaz simple de piso para iniciar trabajos, reportar producci\u00f3n, scrap, paros y completar operaciones.',
-  'Timeline of execution events such as order started, quantity added, downtime started, quality check completed, and order completed.':
-    'Linea de tiempo de eventos como orden iniciada, cantidad agregada, paro iniciado, revisi\u00f3n de calidad completada y orden terminada.',
-  'Track machine stops, reason codes, duration, category, and notes.':
-    'Rastrea paros de m\u00e1quina, c\u00f3digos de raz\u00f3n, duraci\u00f3n, categor\u00eda y notas.',
-  'Record pass/fail checks, measurements, inspection results, and quality notes linked to production orders.':
-    'Registra revisiones aprobado/rechazado, mediciones, resultados de inspecci\u00f3n y notas de calidad ligadas a \u00f3rdenes de producci\u00f3n.',
-  'View the complete production history for an order, lot, serial number, work center, or operation.':
-    'Consulta el historial completo de producci\u00f3n por orden, lote, n\u00famero de serie, centro de trabajo u operaci\u00f3n.',
-  'Manage customers, their assets and equipment, deliveries, returns, balances, documents, and vouchers.':
-    'Administra clientes, sus activos y equipos, entregas, devoluciones, saldos, documentos y comprobantes.',
+  'Create, release, assign, and track manufacturing orders from planned quantity to completion.': 'Crea, libera, asigna y rastrea \u00f3rdenes de manufactura desde la cantidad planeada hasta su terminaci\u00f3n.',
+  'Manage machines, lines, cells, and stations where production is executed.': 'Administra m\u00e1quinas, l\u00edneas, celdas y estaciones donde se ejecuta la producci\u00f3n.',
+  'Create and manage customer quotations for manufacturing products and services.': 'Crea y administra cotizaciones para productos y servicios de manufactura.',
+  'Simple shop-floor interface for starting jobs, reporting production, scrap, downtime, and completing operations.': 'Interfaz simple de piso para iniciar trabajos, reportar producci\u00f3n, scrap, paros y completar operaciones.',
+  'Timeline of execution events such as order started, quantity added, downtime started, quality check completed, and order completed.': 'Linea de tiempo de eventos como orden iniciada, cantidad agregada, paro iniciado, revisi\u00f3n de calidad completada y orden terminada.',
+  'Track machine stops, reason codes, duration, category, and notes.': 'Rastrea paros de m\u00e1quina, c\u00f3digos de raz\u00f3n, duraci\u00f3n, categor\u00eda y notas.',
+  'Record pass/fail checks, measurements, inspection results, and quality notes linked to production orders.': 'Registra revisiones aprobado/rechazado, mediciones, resultados de inspecci\u00f3n y notas de calidad ligadas a \u00f3rdenes de producci\u00f3n.',
+  'View the complete production history for an order, lot, serial number, work center, or operation.': 'Consulta el historial completo de producci\u00f3n por orden, lote, n\u00famero de serie, centro de trabajo u operaci\u00f3n.',
+  'Manage customers, their assets and equipment, deliveries, returns, balances, documents, and vouchers.': 'Administra clientes, sus activos y equipos, entregas, devoluciones, saldos, documentos y comprobantes.',
   'Production Schedule': 'Programa de producci\u00f3n',
   'Capacity Planning': 'Planeaci\u00f3n de capacidad',
   'Work Center Loading': 'Carga de centros de trabajo',
   Bottlenecks: 'Cuellos de botella',
   'Priority Sequencing': 'Secuenciaci\u00f3n de prioridades',
-  'Build and review sequenced production plans across lines, cells, and work centers.':
-    'Construye y revisa planes de producci\u00f3n secuenciados entre l\u00edneas, celdas y centros de trabajo.',
-  'Compare demand against available machine, labor, and shift capacity.':
-    'Compara la demanda contra la capacidad disponible de m\u00e1quinas, mano de obra y turnos.',
-  'Visualize assigned workload by work center and planning horizon.':
-    'Visualiza carga asignada por centro de trabajo y horizonte de planeaci\u00f3n.',
-  'Identify constrained operations and overloaded resources before execution.':
-    'Identifica operaciones restringidas y recursos sobrecargados antes de ejecutar.',
-  'Sequence orders using due dates, priorities, changeovers, and constraints.':
-    'Secuencia \u00f3rdenes usando fechas compromiso, prioridades, cambios de modelo y restricciones.',
+  'Build and review sequenced production plans across lines, cells, and work centers.': 'Construye y revisa planes de producci\u00f3n secuenciados entre l\u00edneas, celdas y centros de trabajo.',
+  'Compare demand against available machine, labor, and shift capacity.': 'Compara la demanda contra la capacidad disponible de m\u00e1quinas, mano de obra y turnos.',
+  'Visualize assigned workload by work center and planning horizon.': 'Visualiza carga asignada por centro de trabajo y horizonte de planeaci\u00f3n.',
+  'Identify constrained operations and overloaded resources before execution.': 'Identifica operaciones restringidas y recursos sobrecargados antes de ejecutar.',
+  'Sequence orders using due dates, priorities, changeovers, and constraints.': 'Secuencia \u00f3rdenes usando fechas compromiso, prioridades, cambios de modelo y restricciones.',
   'OEE Dashboard': 'Dashboard OEE',
   'Downtime Analysis': 'An\u00e1lisis de paros',
   'Cycle Time Trends': 'Tendencias de tiempo ciclo',
   'Throughput Visibility': 'Visibilidad del flujo de producción',
   'Production Reports': 'Reportes de producci\u00f3n',
-  'Monitor availability, performance, quality, and total OEE by area or work center.':
-    'Monitorea disponibilidad, rendimiento, calidad y OEE total por \u00e1rea o centro de trabajo.',
-  'Analyze stops by reason, category, equipment, duration, and trend.':
-    'Analiza paros por raz\u00f3n, categor\u00eda, equipo, duraci\u00f3n y tendencia.',
-  'Track cycle time behavior and variation across products, shifts, and operations.':
-    'Rastrea comportamiento y variaci\u00f3n de tiempo ciclo por productos, turnos y operaciones.',
-  'Review output, pace, constraints, and production flow across the plant.':
-    'Revisa salida, ritmo, restricciones y flujo de producci\u00f3n en la planta.',
-  'Prepare production summaries, KPI reports, and execution history snapshots.':
-    'Prepara res\u00famenes de producci\u00f3n, reportes KPI e instant\u00e1neas del historial de ejecuci\u00f3n.',
+  'Monitor availability, performance, quality, and total OEE by area or work center.': 'Monitorea disponibilidad, rendimiento, calidad y OEE total por \u00e1rea o centro de trabajo.',
+  'Analyze stops by reason, category, equipment, duration, and trend.': 'Analiza paros por raz\u00f3n, categor\u00eda, equipo, duraci\u00f3n y tendencia.',
+  'Track cycle time behavior and variation across products, shifts, and operations.': 'Rastrea comportamiento y variaci\u00f3n de tiempo ciclo por productos, turnos y operaciones.',
+  'Review output, pace, constraints, and production flow across the plant.': 'Revisa salida, ritmo, restricciones y flujo de producci\u00f3n en la planta.',
+  'Prepare production summaries, KPI reports, and execution history snapshots.': 'Prepara res\u00famenes de producci\u00f3n, reportes KPI e instant\u00e1neas del historial de ejecuci\u00f3n.',
   Preview: 'Preview',
-  'Courses, guided paths, and professional training for people building real automation, robotics, and industrial software systems.':
-    'Cursos, rutas guiadas y capacitaci\u00f3n profesional para personas que construyen automatizaci\u00f3n, rob\u00f3tica y software industrial real.',
+  'Courses, guided paths, and professional training for people building real automation, robotics, and industrial software systems.': 'Cursos, rutas guiadas y capacitaci\u00f3n profesional para personas que construyen automatizaci\u00f3n, rob\u00f3tica y software industrial real.',
   'PLC Programming': 'Programaci\u00f3n PLC',
   Robotics: 'Rob\u00f3tica',
   'Control logic, signals, troubleshooting': 'L\u00f3gica de control, se\u00f1ales, diagn\u00f3stico',
@@ -1540,8 +1315,7 @@ Object.assign(translations.es, {
   'Lesson locked': 'Lecci\u00f3n bloqueada',
   'Sign in to access this lesson.': 'Inicia sesi\u00f3n para acceder a esta lecci\u00f3n.',
   'Enroll in this course to access the lesson.': 'Inscr\u00edbete en este curso para acceder a la lecci\u00f3n.',
-  'Follow every lesson path and see how far your completed route is glowing behind you.':
-    'Sigue la ruta completa de lecciones y mira cu\u00e1nto camino completado queda iluminado detr\u00e1s de ti.',
+  'Follow every lesson path and see how far your completed route is glowing behind you.': 'Sigue la ruta completa de lecciones y mira cu\u00e1nto camino completado queda iluminado detr\u00e1s de ti.',
   'Sign in to view your progress.': 'Inicia sesi\u00f3n para ver tu progreso.',
   'Your Academy routes are attached to your account.': 'Tus rutas de Academy est\u00e1n vinculadas a tu cuenta.',
   'No course progress yet.': 'A\u00fan no hay progreso de cursos.',
@@ -1564,46 +1338,38 @@ const businessLines: BusinessLine[] = [
   {
     title: 'Industrial Automation',
     eyebrow: 'Controls and field systems',
-    description:
-      'The core of YVIMO: controls engineering, plant-floor systems, automation design, commissioning, and production support.',
+    description: 'The core of YVIMO: controls engineering, plant-floor systems, automation design, commissioning, and production support.',
     icon: Factory,
     points: ['PLC and HMI engineering', 'Machine integration', 'Commissioning and support'],
     slug: 'industrial-automation',
-    detail:
-      'Industrial Automation is the technical core of YVIMO. This division covers PLC and HMI engineering, machine integration, commissioning, troubleshooting, and automation support for production environments that need reliable execution on the plant floor.',
+    detail: 'Industrial Automation is the technical core of YVIMO. This division covers PLC and HMI engineering, machine integration, commissioning, troubleshooting, and automation support for production environments that need reliable execution on the plant floor.',
   },
   {
     title: 'Software Services',
     eyebrow: 'Apps, APIs, and data systems',
-    description:
-      'Custom software for manufacturers and teams that need useful dashboards, reliable APIs, and operational tools.',
+    description: 'Custom software for manufacturers and teams that need useful dashboards, reliable APIs, and operational tools.',
     icon: Code2,
     points: ['Web applications', 'Backend APIs', 'Operational dashboards'],
     slug: 'software-services',
-    detail:
-      'Software Services turns industrial and business workflows into practical digital tools: web apps, APIs, dashboards, internal platforms, and data systems designed around how teams actually operate.',
+    detail: 'Software Services turns industrial and business workflows into practical digital tools: web apps, APIs, dashboards, internal platforms, and data systems designed around how teams actually operate.',
   },
   {
     title: 'YVIMO Products',
     eyebrow: 'Physical and digital proprietary products',
-    description:
-      'Physical and digital products created by YVIMO to solve specific problems for industry, operations, and users.',
+    description: 'Physical and digital products created by YVIMO to solve specific problems for industry, operations, and users.',
     icon: Blocks,
     points: ['YVIMO Gateway', 'Industrial tools', 'Digital platforms'],
     slug: 'yvimo-products',
-    detail:
-      'YVIMO Products is our proprietary product division for physical and digital tools. These products are created to solve specific industry problems, improve user workflows, and package repeatable solutions into scalable offerings.',
+    detail: 'YVIMO Products is our proprietary product division for physical and digital tools. These products are created to solve specific industry problems, improve user workflows, and package repeatable solutions into scalable offerings.',
   },
   {
     title: 'YVIMO Academy',
     eyebrow: 'Online academy and professional guidance',
-    description:
-      'An online academy for learning industrial automation, staying current with industry demands, and receiving practical guidance.',
+    description: 'An online academy for learning industrial automation, staying current with industry demands, and receiving practical guidance.',
     icon: GraduationCap,
     points: ['Automation training', 'Mentoring and reviews', 'Industry updates'],
     slug: 'yvimo-academy',
-    detail:
-      'YVIMO Academy is our online learning division. It teaches industrial automation, provides mentoring, reviews work, guides learners through real industry expectations, and helps professionals stay current as technology changes.',
+    detail: 'YVIMO Academy is our online learning division. It teaches industrial automation, provides mentoring, reviews work, guides learners through real industry expectations, and helps professionals stay current as technology changes.',
   },
 ];
 
@@ -1684,8 +1450,7 @@ const solutions: Solution[] = [
         logoSrc: '/assets/logos/ecosystem/inovance.jpg',
       },
     ],
-    description:
-      'PLC programming, machine control, field devices, industrial networks, and troubleshooting.',
+    description: 'PLC programming, machine control, field devices, industrial networks, and troubleshooting.',
     icon: CircuitBoard,
   },
   {
@@ -1718,8 +1483,7 @@ const solutions: Solution[] = [
         logoSrc: '/assets/logos/ecosystem/yaskawa.jpg',
       },
     ],
-    description:
-      'Robot cells, motion systems, safety integration, simulation, and commissioning.',
+    description: 'Robot cells, motion systems, safety integration, simulation, and commissioning.',
     icon: Workflow,
   },
   {
@@ -1732,8 +1496,7 @@ const solutions: Solution[] = [
       { name: '.NET', color: '#512bd4', logoSlug: 'dotnet' },
       { name: 'Swift', color: '#f05138', logoSlug: 'swift' },
     ],
-    description:
-      'Web apps, mobile tools, APIs, dashboards, and industrial software platforms.',
+    description: 'Web apps, mobile tools, APIs, dashboards, and industrial software platforms.',
     icon: Code2,
   },
   {
@@ -1773,8 +1536,7 @@ const solutions: Solution[] = [
         logoSrc: '/assets/logos/ecosystem/azure.png',
       },
     ],
-    description:
-      'Secure data routing from machines to databases, cloud systems, and reports.',
+    description: 'Secure data routing from machines to databases, cloud systems, and reports.',
     icon: Cloud,
   },
 ];
@@ -1819,41 +1581,32 @@ const gatewayFeatures: GatewayFeature[] = [
 const processSteps: ProcessStep[] = [
   {
     title: 'Discover',
-    description:
-      'We understand the machine, process, data, pain points, and business objective.',
+    description: 'We understand the machine, process, data, pain points, and business objective.',
     icon: Gauge,
   },
   {
     title: 'Architect',
-    description:
-      'We define the controls, software, data flow, hardware, interfaces, and deployment strategy.',
+    description: 'We define the controls, software, data flow, hardware, interfaces, and deployment strategy.',
     icon: Network,
   },
   {
     title: 'Build',
-    description:
-      'We develop the PLC logic, applications, dashboards, integrations, or connected product features.',
+    description: 'We develop the PLC logic, applications, dashboards, integrations, or connected product features.',
     icon: Code2,
   },
   {
     title: 'Validate',
-    description:
-      'We test the system through simulation, offline checks, FAT-style reviews, and controlled startup.',
+    description: 'We test the system through simulation, offline checks, FAT-style reviews, and controlled startup.',
     icon: ShieldCheck,
   },
   {
     title: 'Deploy & Support',
-    description:
-      'We commission, train, support, and improve the solution under real production conditions.',
+    description: 'We commission, train, support, and improve the solution under real production conditions.',
     icon: Rocket,
   },
 ];
 
-const repeatedServiceShowcase = [
-  ...serviceShowcase,
-  ...serviceShowcase,
-  ...serviceShowcase,
-];
+const repeatedServiceShowcase = [...serviceShowcase, ...serviceShowcase, ...serviceShowcase];
 
 const processParticles = Array.from({ length: 26 }, (_, index) => index);
 
@@ -1866,55 +1619,56 @@ function ServicesShowcase({ t }: { t: Translator }) {
   const resetTimeoutRef = React.useRef<number | null>(null);
   const scrollTimeoutRef = React.useRef<number | null>(null);
 
-  const activeIndex =
-    ((servicePosition % serviceCount) + serviceCount) % serviceCount;
+  const activeIndex = ((servicePosition % serviceCount) + serviceCount) % serviceCount;
 
   React.useEffect(() => {
     servicePositionRef.current = servicePosition;
   }, [servicePosition]);
 
-  const scrollToPosition = React.useCallback((
-    position: number,
-    behavior: ScrollBehavior = 'smooth',
-  ) => {
+  const scrollToPosition = React.useCallback((position: number, behavior: ScrollBehavior = 'smooth') => {
     const track = trackRef.current;
-    const card = trackRef.current?.querySelector<HTMLElement>(
-      `[data-service-position="${position}"]`,
-    );
+    const card = trackRef.current?.querySelector<HTMLElement>(`[data-service-position="${position}"]`);
 
     if (!track || !card) return;
 
-    const targetLeft =
-      card.offsetLeft - (track.clientWidth - card.offsetWidth) / 2;
+    const targetLeft = card.offsetLeft - (track.clientWidth - card.offsetWidth) / 2;
 
     setServicePosition(position);
     track.scrollTo({ left: targetLeft, behavior });
   }, []);
 
-  const normalizePosition = React.useCallback((position: number) => {
-    if (resetTimeoutRef.current !== null) {
-      window.clearTimeout(resetTimeoutRef.current);
-    }
+  const normalizePosition = React.useCallback(
+    (position: number) => {
+      if (resetTimeoutRef.current !== null) {
+        window.clearTimeout(resetTimeoutRef.current);
+      }
 
-    const normalizedIndex =
-      ((position % serviceCount) + serviceCount) % serviceCount;
-    const middlePosition = serviceCount + normalizedIndex;
+      const normalizedIndex = ((position % serviceCount) + serviceCount) % serviceCount;
+      const middlePosition = serviceCount + normalizedIndex;
 
-    if (position >= serviceCount && position < serviceCount * 2) return;
+      if (position >= serviceCount && position < serviceCount * 2) return;
 
-    resetTimeoutRef.current = window.setTimeout(() => {
-      scrollToPosition(middlePosition, 'auto');
-    }, 520);
-  }, [scrollToPosition, serviceCount]);
+      resetTimeoutRef.current = window.setTimeout(() => {
+        scrollToPosition(middlePosition, 'auto');
+      }, 520);
+    },
+    [scrollToPosition, serviceCount],
+  );
 
-  const moveToPosition = React.useCallback((position: number) => {
-    scrollToPosition(position);
-    normalizePosition(position);
-  }, [normalizePosition, scrollToPosition]);
+  const moveToPosition = React.useCallback(
+    (position: number) => {
+      scrollToPosition(position);
+      normalizePosition(position);
+    },
+    [normalizePosition, scrollToPosition],
+  );
 
-  const moveToIndex = React.useCallback((index: number) => {
-    moveToPosition(serviceCount + index);
-  }, [moveToPosition, serviceCount]);
+  const moveToIndex = React.useCallback(
+    (index: number) => {
+      moveToPosition(serviceCount + index);
+    },
+    [moveToPosition, serviceCount],
+  );
 
   React.useEffect(() => {
     if (isPaused) return;
@@ -1955,9 +1709,7 @@ function ServicesShowcase({ t }: { t: Translator }) {
     }
 
     scrollTimeoutRef.current = window.setTimeout(() => {
-      const cards = Array.from(
-        track.querySelectorAll<HTMLElement>('[data-service-position]'),
-      );
+      const cards = Array.from(track.querySelectorAll<HTMLElement>('[data-service-position]'));
       const trackCenter = track.scrollLeft + track.clientWidth / 2;
       const nearestCard = cards.reduce<HTMLElement | null>((nearest, card) => {
         if (nearest === null) return card;
@@ -1965,14 +1717,9 @@ function ServicesShowcase({ t }: { t: Translator }) {
         const cardCenter = card.offsetLeft + card.offsetWidth / 2;
         const nearestCenter = nearest.offsetLeft + nearest.offsetWidth / 2;
 
-        return Math.abs(cardCenter - trackCenter) <
-          Math.abs(nearestCenter - trackCenter)
-          ? card
-          : nearest;
+        return Math.abs(cardCenter - trackCenter) < Math.abs(nearestCenter - trackCenter) ? card : nearest;
       }, null);
-      const nearestPosition = Number(
-        nearestCard?.dataset.servicePosition ?? serviceCount,
-      );
+      const nearestPosition = Number(nearestCard?.dataset.servicePosition ?? serviceCount);
 
       if (Number.isNaN(nearestPosition)) return;
 
@@ -1986,38 +1733,16 @@ function ServicesShowcase({ t }: { t: Translator }) {
       <div className="services-heading">
         <p className="eyebrow">{t('Our services')}</p>
         <h2>{t('Services for connected manufacturing.')}</h2>
-        <p>
-          {t('From controls and software to virtual commissioning, process optimization, manufacturing, and IT/OT integration.')}
-        </p>
+        <p>{t('From controls and software to virtual commissioning, process optimization, manufacturing, and IT/OT integration.')}</p>
       </div>
 
-      <div
-        className="services-carousel"
-        onMouseEnter={() => setIsPaused(true)}
-        onMouseLeave={() => setIsPaused(false)}
-        onFocus={() => setIsPaused(true)}
-        onBlur={() => setIsPaused(false)}
-      >
-        <button
-          className="service-nav service-nav-left"
-          type="button"
-          aria-label="Previous service"
-          onClick={() => moveToPosition(servicePosition - 1)}
-        >
+      <div className="services-carousel" onMouseEnter={() => setIsPaused(true)} onMouseLeave={() => setIsPaused(false)} onFocus={() => setIsPaused(true)} onBlur={() => setIsPaused(false)}>
+        <button className="service-nav service-nav-left" type="button" aria-label="Previous service" onClick={() => moveToPosition(servicePosition - 1)}>
           <ChevronLeft size={24} />
         </button>
         <div className="services-track" ref={trackRef} onScroll={handleTrackScroll}>
           {repeatedServiceShowcase.map((service, index) => (
-            <article
-              className={
-                index % serviceCount === activeIndex
-                  ? 'service-panel active'
-                  : 'service-panel'
-              }
-              data-service-position={index}
-              key={`${service.title}-${index}`}
-              onClick={() => moveToPosition(index)}
-            >
+            <article className={index % serviceCount === activeIndex ? 'service-panel active' : 'service-panel'} data-service-position={index} key={`${service.title}-${index}`} onClick={() => moveToPosition(index)}>
               <img src={service.image} alt="" aria-hidden="true" />
               <div className="service-panel-shade" />
               <div className="service-panel-copy">
@@ -2028,50 +1753,27 @@ function ServicesShowcase({ t }: { t: Translator }) {
             </article>
           ))}
         </div>
-        <button
-          className="service-nav service-nav-right"
-          type="button"
-          aria-label="Next service"
-          onClick={() => moveToPosition(servicePosition + 1)}
-        >
+        <button className="service-nav service-nav-right" type="button" aria-label="Next service" onClick={() => moveToPosition(servicePosition + 1)}>
           <ChevronRight size={24} />
         </button>
       </div>
 
       <div className="service-dots" aria-label="Service carousel position">
         {serviceShowcase.map((service, index) => (
-          <button
-            className={index === activeIndex ? 'active' : ''}
-            type="button"
-            key={service.title}
-            aria-label={`Show ${t(service.title)}`}
-            onClick={() => moveToIndex(index)}
-          />
+          <button className={index === activeIndex ? 'active' : ''} type="button" key={service.title} aria-label={`Show ${t(service.title)}`} onClick={() => moveToIndex(index)} />
         ))}
       </div>
     </section>
   );
 }
 
-function BusinessLinePage({
-  line,
-  onNavigateHome,
-  t,
-}: {
-  line: BusinessLine;
-  onNavigateHome: (hash?: string) => void;
-  t: Translator;
-}) {
+function BusinessLinePage({ line, onNavigateHome, t }: { line: BusinessLine; onNavigateHome: (hash?: string) => void; t: Translator }) {
   const Icon = line.icon;
 
   return (
     <main>
       <section className="business-detail-page">
-        <button
-          className="business-back-link"
-          type="button"
-          onClick={() => onNavigateHome('#lines')}
-        >
+        <button className="business-back-link" type="button" onClick={() => onNavigateHome('#lines')}>
           <ArrowRight size={17} />
           {t('Back to business lines')}
         </button>
@@ -2082,11 +1784,15 @@ function BusinessLinePage({
             <p>{t(line.detail)}</p>
           </div>
           <div className="business-detail-card">
-            <div className="card-icon"><Icon size={28} /></div>
+            <div className="card-icon">
+              <Icon size={28} />
+            </div>
             <h2>{t('What this division covers')}</h2>
             <ul>
               {line.points.map((point) => (
-                <li key={point}><Check size={17} /> {t(point)}</li>
+                <li key={point}>
+                  <Check size={17} /> {t(point)}
+                </li>
               ))}
             </ul>
           </div>
@@ -2096,21 +1802,7 @@ function BusinessLinePage({
   );
 }
 
-function LoginPage({
-  onNavigateSignUp,
-  onSignIn,
-  onAppleSignIn,
-  onMicrosoftSignIn,
-  onGoogleSignIn,
-  t,
-}: {
-  onNavigateSignUp: () => void;
-  onSignIn: (email: string, password: string) => Promise<string | null>;
-  onAppleSignIn: () => Promise<string | null>;
-  onMicrosoftSignIn: () => Promise<string | null>;
-  onGoogleSignIn: () => Promise<string | null>;
-  t: Translator;
-}) {
+function LoginPage({ onNavigateSignUp, onSignIn, onAppleSignIn, onMicrosoftSignIn, onGoogleSignIn, t }: { onNavigateSignUp: () => void; onSignIn: (email: string, password: string) => Promise<string | null>; onAppleSignIn: () => Promise<string | null>; onMicrosoftSignIn: () => Promise<string | null>; onGoogleSignIn: () => Promise<string | null>; t: Translator }) {
   const [formMessage, setFormMessage] = React.useState<string | null>(null);
   const [authBusy, setAuthBusy] = React.useState(false);
 
@@ -2145,9 +1837,7 @@ function LoginPage({
           <div className="login-copy">
             <p className="eyebrow">{t('Platform preview')}</p>
             <h1>{t('Access your YVIMO workspace')}</h1>
-            <p>
-              {t('Sign in to manage Gateway online access, licenses, learning, orders, and quotations as the platform grows.')}
-            </p>
+            <p>{t('Sign in to manage Gateway online access, licenses, learning, orders, and quotations as the platform grows.')}</p>
             <div className="login-feature-list">
               <article>
                 <ServerCog size={20} />
@@ -2314,25 +2004,7 @@ function LoginPage({
   );
 }
 
-function HealthAccessLoginPage({
-  onSignIn,
-  onMicrosoftSignIn,
-  onGoogleSignIn,
-  onNavigateSignUp,
-  onNavigateHome,
-  onToggleLanguage,
-  languageCode,
-  t,
-}: {
-  onSignIn: (email: string, password: string) => Promise<string | null>;
-  onMicrosoftSignIn: () => Promise<string | null>;
-  onGoogleSignIn: () => Promise<string | null>;
-  onNavigateSignUp: () => void;
-  onNavigateHome: () => void;
-  onToggleLanguage: () => void;
-  languageCode: LanguageCode;
-  t: Translator;
-}) {
+function HealthAccessLoginPage({ onSignIn, onMicrosoftSignIn, onGoogleSignIn, onNavigateSignUp, onNavigateHome, onToggleLanguage, languageCode, t }: { onSignIn: (email: string, password: string) => Promise<string | null>; onMicrosoftSignIn: () => Promise<string | null>; onGoogleSignIn: () => Promise<string | null>; onNavigateSignUp: () => void; onNavigateHome: () => void; onToggleLanguage: () => void; languageCode: LanguageCode; t: Translator }) {
   const [message, setMessage] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
 
@@ -2351,42 +2023,105 @@ function HealthAccessLoginPage({
 
   const oauth = async (provider: 'microsoft' | 'google') => {
     setBusy(true);
-    try { setMessage(await (provider === 'microsoft' ? onMicrosoftSignIn() : onGoogleSignIn())); }
-    catch (error) { setMessage(error instanceof Error ? error.message : 'Invalid email or password.'); }
-    finally { setBusy(false); }
+    try {
+      setMessage(await (provider === 'microsoft' ? onMicrosoftSignIn() : onGoogleSignIn()));
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Invalid email or password.');
+    } finally {
+      setBusy(false);
+    }
   };
 
-  return <main className="health-direct-access">
-    <div className="health-direct-preview" aria-hidden="true">
-      <span>YVIMO HEALTH</span><h1>{t('Health Apps')}</h1><p>{t('Practical digital tools designed around everyday healthcare workflows.')}</p>
-      <section><small>{t('Applications')}</small><h2>{t('Select a health module')}</h2><div><article><Users size={24} /><strong>{t('Patients')}</strong></article>{Array.from({ length: 5 }, (_, index) => <article className="disabled" key={index}><Plus size={20} /><strong>{t('Coming soon')}</strong></article>)}</div></section>
-    </div>
-    <div className="health-access-backdrop">
-      <form className="health-access-login" onSubmit={submit}>
-        <button className="health-access-language" type="button" onClick={onToggleLanguage} aria-label={t('Change language')}><Languages size={16} /><span>{languageCode === 'es' ? 'English' : 'Español'}</span></button>
-        <button className="health-access-home" type="button" onClick={onNavigateHome} aria-label={t('Back to home')}><X size={18} /></button>
-        <div className="health-access-login-heading"><span><Hospital size={25} /></span><div><small>YVIMO HEALTH</small><h2>{t('Sign in to continue')}</h2><p>{t('Use your YVIMO account to access your organization and health applications.')}</p></div></div>
-        <label><span>{t('Email address')}</span><div><Mail size={18} /><input type="email" name="email" autoComplete="email" placeholder="name@company.com" required /></div></label>
-        <label><span>{t('Password')}</span><div><LockKeyhole size={18} /><input type="password" name="password" autoComplete="current-password" placeholder="••••••••" required /></div></label>
-        <button className="health-access-submit" type="submit" disabled={busy}>{busy ? t('Signing in...') : t('Continue to Health Apps')} <ArrowRight size={17} /></button>
-        <div className="health-access-separator"><span>{t('or')}</span></div>
-        <div className="health-access-oauth"><button type="button" disabled={busy} onClick={() => void oauth('microsoft')}><span className="microsoft-mark"><span /><span /><span /><span /></span>Microsoft</button><button type="button" disabled={busy} onClick={() => void oauth('google')}><span className="health-google-g">G</span>Google</button></div>
-        <div className="health-access-signup"><span>{t('New to YVIMO?')}</span><button type="button" onClick={onNavigateSignUp}>{t('Create account')}</button></div>
-        {message ? <p className={getAuthMessageTone(message)}>{t(message)}</p> : null}
-      </form>
-    </div>
-  </main>;
+  return (
+    <main className="health-direct-access">
+      <div className="health-direct-preview" aria-hidden="true">
+        <span>YVIMO HEALTH</span>
+        <h1>{t('Health Apps')}</h1>
+        <p>{t('Practical digital tools designed around everyday healthcare workflows.')}</p>
+        <section>
+          <small>{t('Applications')}</small>
+          <h2>{t('Select a health module')}</h2>
+          <div>
+            <article>
+              <Users size={24} />
+              <strong>{t('Patients')}</strong>
+            </article>
+            {Array.from({ length: 5 }, (_, index) => (
+              <article className="disabled" key={index}>
+                <Plus size={20} />
+                <strong>{t('Coming soon')}</strong>
+              </article>
+            ))}
+          </div>
+        </section>
+      </div>
+      <div className="health-access-backdrop">
+        <form className="health-access-login" onSubmit={submit}>
+          <button className="health-access-language" type="button" onClick={onToggleLanguage} aria-label={t('Change language')}>
+            <Languages size={16} />
+            <span>{languageCode === 'es' ? 'English' : 'Español'}</span>
+          </button>
+          <button className="health-access-home" type="button" onClick={onNavigateHome} aria-label={t('Back to home')}>
+            <X size={18} />
+          </button>
+          <div className="health-access-login-heading">
+            <span>
+              <Hospital size={25} />
+            </span>
+            <div>
+              <small>YVIMO HEALTH</small>
+              <h2>{t('Sign in to continue')}</h2>
+              <p>{t('Use your YVIMO account to access your organization and health applications.')}</p>
+            </div>
+          </div>
+          <label>
+            <span>{t('Email address')}</span>
+            <div>
+              <Mail size={18} />
+              <input type="email" name="email" autoComplete="email" placeholder="name@company.com" required />
+            </div>
+          </label>
+          <label>
+            <span>{t('Password')}</span>
+            <div>
+              <LockKeyhole size={18} />
+              <input type="password" name="password" autoComplete="current-password" placeholder="••••••••" required />
+            </div>
+          </label>
+          <button className="health-access-submit" type="submit" disabled={busy}>
+            {busy ? t('Signing in...') : t('Continue to Health Apps')} <ArrowRight size={17} />
+          </button>
+          <div className="health-access-separator">
+            <span>{t('or')}</span>
+          </div>
+          <div className="health-access-oauth">
+            <button type="button" disabled={busy} onClick={() => void oauth('microsoft')}>
+              <span className="microsoft-mark">
+                <span />
+                <span />
+                <span />
+                <span />
+              </span>
+              Microsoft
+            </button>
+            <button type="button" disabled={busy} onClick={() => void oauth('google')}>
+              <span className="health-google-g">G</span>Google
+            </button>
+          </div>
+          <div className="health-access-signup">
+            <span>{t('New to YVIMO?')}</span>
+            <button type="button" onClick={onNavigateSignUp}>
+              {t('Create account')}
+            </button>
+          </div>
+          {message ? <p className={getAuthMessageTone(message)}>{t(message)}</p> : null}
+        </form>
+      </div>
+    </main>
+  );
 }
 
-function SignUpPage({
-  onNavigateLogin,
-  onSignUp,
-  t,
-}: {
-  onNavigateLogin: () => void;
-  onSignUp: (name: string, company: string, email: string, password: string) => Promise<string | null>;
-  t: Translator;
-}) {
+function SignUpPage({ onNavigateLogin, onSignUp, t }: { onNavigateLogin: () => void; onSignUp: (name: string, company: string, email: string, password: string) => Promise<string | null>; t: Translator }) {
   const [formMessage, setFormMessage] = React.useState<string | null>(null);
   const [authBusy, setAuthBusy] = React.useState(false);
 
@@ -2517,40 +2252,25 @@ function SignUpPage({
   );
 }
 
-function LoggedDashboardPage({
-  user,
-  onSignOut,
-  onNavigate,
-  onUpdateAvatar,
-  activePath,
-  t,
-  languageCode,
-  standaloneHealth = false,
-  publicHealth = false,
-  onToggleLanguage,
-}: {
-  user: AppUser;
-  onSignOut: () => void;
-  onNavigate: (path: string) => void;
-  onUpdateAvatar: (file: File) => Promise<AvatarUploadResult>;
-  activePath: string;
-  t: Translator;
-  languageCode: LanguageCode;
-  standaloneHealth?: boolean;
-  publicHealth?: boolean;
-  onToggleLanguage?: () => void;
-}) {
+function LoggedDashboardPage({ user, onSignOut, onNavigate, onUpdateAvatar, activePath, t, languageCode, standaloneHealth = false, publicHealth = false, onToggleLanguage }: { user: AppUser; onSignOut: () => void; onNavigate: (path: string) => void; onUpdateAvatar: (file: File) => Promise<AvatarUploadResult>; activePath: string; t: Translator; languageCode: LanguageCode; standaloneHealth?: boolean; publicHealth?: boolean; onToggleLanguage?: () => void }) {
   const [billingPeriod, setBillingPeriod] = React.useState<BillingPeriod>('monthly');
   const [checkoutMessage, setCheckoutMessage] = React.useState<string | null>(null);
   const [avatarDialogOpen, setAvatarDialogOpen] = React.useState(false);
   const [avatarFile, setAvatarFile] = React.useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = React.useState<string | null>(null);
-  const [avatarOffset, setAvatarOffset] = React.useState<AvatarOffset>({ x: 0, y: 0 });
+  const [avatarOffset, setAvatarOffset] = React.useState<AvatarOffset>({
+    x: 0,
+    y: 0,
+  });
   const [avatarZoom, setAvatarZoom] = React.useState(1);
   const [tabletSidebarExpanded, setTabletSidebarExpanded] = React.useState(false);
   const [healthOrganizations, setHealthOrganizations] = React.useState<ManufacturingOrganization[]>([]);
   const [healthOrganizationId, setHealthOrganizationId] = React.useState<string | null>(() => {
-    try { return window.localStorage.getItem(`yvimo-health-organization:${user.id}`); } catch { return null; }
+    try {
+      return window.localStorage.getItem(`yvimo-health-organization:${user.id}`);
+    } catch {
+      return null;
+    }
   });
   const [healthOrganizationDialogOpen, setHealthOrganizationDialogOpen] = React.useState(false);
   const [healthOrganizationJoinCode, setHealthOrganizationJoinCode] = React.useState('');
@@ -2560,7 +2280,12 @@ function LoggedDashboardPage({
   const [healthOrganizationToLeave, setHealthOrganizationToLeave] = React.useState<ManufacturingOrganization | null>(null);
   const [healthOrganizationEditName, setHealthOrganizationEditName] = React.useState('');
   const [healthOrganizationInviteRole, setHealthOrganizationInviteRole] = React.useState<ManufacturingOrganizationInviteRole>('Operator');
-  const avatarDragRef = React.useRef<{ pointerId: number; startX: number; startY: number; origin: AvatarOffset } | null>(null);
+  const avatarDragRef = React.useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    origin: AvatarOffset;
+  } | null>(null);
   const [avatarMessage, setAvatarMessage] = React.useState<string | null>(null);
   const [avatarSaving, setAvatarSaving] = React.useState(false);
   const membershipRank: Record<SubscriptionTier, number> = {
@@ -2655,17 +2380,17 @@ function LoggedDashboardPage({
     }
     setHealthOrganizationBusy(true);
     try {
-      const { data: invite, error: inviteError } = await supabase
-        .from('manufacturing_organization_invites')
-        .select('organization_id, code, default_role')
-        .eq('code', code)
-        .eq('active', true)
-        .single();
+      const { data: invite, error: inviteError } = await supabase.from('manufacturing_organization_invites').select('organization_id, code, default_role').eq('code', code).eq('active', true).single();
       if (inviteError) throw inviteError;
       const inviteRow = invite as ManufacturingOrganizationInviteRow;
-      const { error: memberError } = await supabase
-        .from('manufacturing_organization_members')
-        .upsert({ organization_id: inviteRow.organization_id, user_id: user.id, role: inviteRow.default_role }, { onConflict: 'organization_id,user_id', ignoreDuplicates: true });
+      const { error: memberError } = await supabase.from('manufacturing_organization_members').upsert(
+        {
+          organization_id: inviteRow.organization_id,
+          user_id: user.id,
+          role: inviteRow.default_role,
+        },
+        { onConflict: 'organization_id,user_id', ignoreDuplicates: true },
+      );
       if (memberError) throw memberError;
       await refreshHealthOrganizations();
       setHealthOrganizationId(inviteRow.organization_id);
@@ -2687,17 +2412,22 @@ function LoggedDashboardPage({
     }
     setHealthOrganizationBusy(true);
     try {
-      const { data: organization, error: organizationError } = await supabase
-        .from('manufacturing_organizations')
-        .insert({ name, created_by: user.id })
-        .select('id, name, logo_url')
-        .single();
+      const { data: organization, error: organizationError } = await supabase.from('manufacturing_organizations').insert({ name, created_by: user.id }).select('id, name, logo_url').single();
       if (organizationError) throw organizationError;
       const organizationRow = organization as ManufacturingOrganizationRow;
       const inviteCode = createManufacturingInviteCode(name);
       const [{ error: memberError }, { error: inviteError }] = await Promise.all([
-        supabase.from('manufacturing_organization_members').insert({ organization_id: organizationRow.id, user_id: user.id, role: 'Owner' }),
-        supabase.from('manufacturing_organization_invites').insert({ organization_id: organizationRow.id, code: inviteCode, default_role: 'Operator', created_by: user.id }),
+        supabase.from('manufacturing_organization_members').insert({
+          organization_id: organizationRow.id,
+          user_id: user.id,
+          role: 'Owner',
+        }),
+        supabase.from('manufacturing_organization_invites').insert({
+          organization_id: organizationRow.id,
+          code: inviteCode,
+          default_role: 'Operator',
+          created_by: user.id,
+        }),
       ]);
       if (memberError) throw memberError;
       if (inviteError) throw inviteError;
@@ -2723,13 +2453,7 @@ function LoggedDashboardPage({
     }
     setHealthOrganizationBusy(true);
     try {
-      const { error } = organization.role === 'Owner' && organization.memberCount === 1
-        ? await supabase.from('manufacturing_organizations').delete().eq('id', organization.id)
-        : await supabase
-          .from('manufacturing_organization_members')
-          .delete()
-          .eq('organization_id', organization.id)
-          .eq('user_id', user.id);
+      const { error } = organization.role === 'Owner' && organization.memberCount === 1 ? await supabase.from('manufacturing_organizations').delete().eq('id', organization.id) : await supabase.from('manufacturing_organization_members').delete().eq('organization_id', organization.id).eq('user_id', user.id);
       if (error) throw error;
       const remainingOrganizations = healthOrganizations.filter((item) => item.id !== organization.id);
       setHealthOrganizations(remainingOrganizations);
@@ -2752,7 +2476,7 @@ function LoggedDashboardPage({
     try {
       const { error } = await supabase.from('manufacturing_organizations').update({ name }).eq('id', organization.id);
       if (error) throw error;
-      setHealthOrganizations((organizations) => organizations.map((item) => item.id === organization.id ? { ...item, name } : item));
+      setHealthOrganizations((organizations) => organizations.map((item) => (item.id === organization.id ? { ...item, name } : item)));
       setHealthOrganizationMessage('Organization details updated.');
     } catch (error) {
       console.warn('Unable to update Health Apps organization', error);
@@ -2775,7 +2499,7 @@ function LoggedDashboardPage({
       const { data } = supabase.storage.from('manufacturing-organization-logos').getPublicUrl(filePath);
       const { error: updateError } = await supabase.from('manufacturing_organizations').update({ logo_url: data.publicUrl }).eq('id', organization.id);
       if (updateError) throw updateError;
-      setHealthOrganizations((organizations) => organizations.map((item) => item.id === organization.id ? { ...item, logoUrl: data.publicUrl } : item));
+      setHealthOrganizations((organizations) => organizations.map((item) => (item.id === organization.id ? { ...item, logoUrl: data.publicUrl } : item)));
       setHealthOrganizationMessage('Organization image updated.');
     } catch (error) {
       console.warn('Unable to upload Health Apps organization logo', error);
@@ -2793,9 +2517,24 @@ function LoggedDashboardPage({
     const code = createManufacturingInviteCode(organization.name);
     try {
       await supabase.from('manufacturing_organization_invites').update({ active: false }).eq('organization_id', organization.id).eq('active', true);
-      const { error } = await supabase.from('manufacturing_organization_invites').insert({ organization_id: organization.id, code, default_role: healthOrganizationInviteRole, created_by: user.id });
+      const { error } = await supabase.from('manufacturing_organization_invites').insert({
+        organization_id: organization.id,
+        code,
+        default_role: healthOrganizationInviteRole,
+        created_by: user.id,
+      });
       if (error) throw error;
-      setHealthOrganizations((organizations) => organizations.map((item) => item.id === organization.id ? { ...item, inviteCode: code, inviteRole: healthOrganizationInviteRole } : item));
+      setHealthOrganizations((organizations) =>
+        organizations.map((item) =>
+          item.id === organization.id
+            ? {
+                ...item,
+                inviteCode: code,
+                inviteRole: healthOrganizationInviteRole,
+              }
+            : item,
+        ),
+      );
       setHealthOrganizationMessage('A new invitation code was generated. The previous code is no longer valid.');
     } catch (error) {
       console.warn('Unable to generate Health Apps invitation code', error);
@@ -2859,33 +2598,30 @@ function LoggedDashboardPage({
 
   React.useEffect(() => {
     if (!manufacturingOrganization || manufacturingOrganization.id.startsWith('local-') || manufacturingOrganization.id.startsWith('joined-')) {
-      setManufacturingOrganizationMembers(manufacturingOrganization ? [{
-        id: 'local-current-user',
-        userId: user.id,
-        role: manufacturingOrganization.role,
-        profile: user,
-      }] : []);
+      setManufacturingOrganizationMembers(
+        manufacturingOrganization
+          ? [
+              {
+                id: 'local-current-user',
+                userId: user.id,
+                role: manufacturingOrganization.role,
+                profile: user,
+              },
+            ]
+          : [],
+      );
       return;
     }
 
     let cancelled = false;
     const loadMembers = async () => {
-      const { data, error } = await supabase
-        .from('manufacturing_organization_members')
-        .select('id, user_id, role')
-        .eq('organization_id', manufacturingOrganization.id)
-        .order('created_at', { ascending: true });
+      const { data, error } = await supabase.from('manufacturing_organization_members').select('id, user_id, role').eq('organization_id', manufacturingOrganization.id).order('created_at', { ascending: true });
 
       if (cancelled) return;
       if (error) throw error;
       const memberRows = (data ?? []) as ManufacturingOrganizationMemberTableRow[];
       const memberIds = Array.from(new Set(memberRows.map((member) => member.user_id)));
-      const { data: profileRows, error: profileError } = memberIds.length > 0
-        ? await supabase
-          .from('profiles')
-          .select('id, full_name, subscription_tier, yvimo_points, experience_points, profile_level, profile_level_progress, avatar_url')
-          .in('id', memberIds)
-        : { data: [], error: null };
+      const { data: profileRows, error: profileError } = memberIds.length > 0 ? await supabase.from('profiles').select('id, full_name, subscription_tier, yvimo_points, experience_points, profile_level, profile_level_progress, avatar_url').in('id', memberIds) : { data: [], error: null };
 
       if (cancelled) return;
       if (profileError) throw profileError;
@@ -2898,44 +2634,57 @@ function LoggedDashboardPage({
       }));
       const nextMembers = members.some((member) => member.userId === user.id)
         ? members
-        : [{
-          id: 'local-current-user',
-          userId: user.id,
-          role: manufacturingOrganization.role,
-          profile: user,
-        }, ...members];
+        : [
+            {
+              id: 'local-current-user',
+              userId: user.id,
+              role: manufacturingOrganization.role,
+              profile: user,
+            },
+            ...members,
+          ];
       setManufacturingOrganizationMembers(nextMembers);
-      setManufacturingOrganization((currentOrganization) => currentOrganization?.id === manufacturingOrganization.id
-        ? { ...currentOrganization, memberCount: Math.max(1, nextMembers.length) }
-        : currentOrganization);
+      setManufacturingOrganization((currentOrganization) =>
+        currentOrganization?.id === manufacturingOrganization.id
+          ? {
+              ...currentOrganization,
+              memberCount: Math.max(1, nextMembers.length),
+            }
+          : currentOrganization,
+      );
       const nextOwner = nextMembers.find((member) => member.userId !== user.id);
       setManufacturingNewOwnerUserId((currentOwnerId) => currentOwnerId || nextOwner?.userId || '');
     };
 
-    void loadMembers()
-      .catch((error) => {
-        console.warn('Unable to load manufacturing organization members', error);
-        setManufacturingOrganizationMembers([{
+    void loadMembers().catch((error) => {
+      console.warn('Unable to load manufacturing organization members', error);
+      setManufacturingOrganizationMembers([
+        {
           id: 'local-current-user',
           userId: user.id,
           role: manufacturingOrganization.role,
           profile: user,
-        }]);
-      });
+        },
+      ]);
+    });
 
     const refreshTimer = window.setInterval(() => {
       if (manufacturingOrganizationDialogOpen) void loadMembers().catch((error) => console.warn('Unable to refresh manufacturing organization members', error));
     }, 20000);
     const membersChannel = supabase
       .channel(`manufacturing-organization-members:${manufacturingOrganization.id}`)
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'manufacturing_organization_members',
-        filter: `organization_id=eq.${manufacturingOrganization.id}`,
-      }, () => {
-        void loadMembers().catch((error) => console.warn('Unable to refresh manufacturing organization members', error));
-      })
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'manufacturing_organization_members',
+          filter: `organization_id=eq.${manufacturingOrganization.id}`,
+        },
+        () => {
+          void loadMembers().catch((error) => console.warn('Unable to refresh manufacturing organization members', error));
+        },
+      )
       .subscribe();
 
     return () => {
@@ -2963,31 +2712,27 @@ function LoggedDashboardPage({
     };
 
     try {
-      const { data: organization, error: organizationError } = await supabase
-        .from('manufacturing_organizations')
-        .insert({ name: nextName, created_by: user.id })
-        .select('id, name, logo_url')
-        .single();
+      const { data: organization, error: organizationError } = await supabase.from('manufacturing_organizations').insert({ name: nextName, created_by: user.id }).select('id, name, logo_url').single();
 
       if (organizationError) throw organizationError;
 
       const organizationRow = organization as ManufacturingOrganizationRow;
       const nextInviteCode = createManufacturingInviteCode(nextName);
 
-      const { error: memberError } = await supabase
-        .from('manufacturing_organization_members')
-        .insert({ organization_id: organizationRow.id, user_id: user.id, role: 'Owner' });
+      const { error: memberError } = await supabase.from('manufacturing_organization_members').insert({
+        organization_id: organizationRow.id,
+        user_id: user.id,
+        role: 'Owner',
+      });
 
       if (memberError) throw memberError;
 
-      const { error: inviteError } = await supabase
-        .from('manufacturing_organization_invites')
-        .insert({
-          organization_id: organizationRow.id,
-          code: nextInviteCode,
-          default_role: manufacturingInviteRole,
-          created_by: user.id,
-        });
+      const { error: inviteError } = await supabase.from('manufacturing_organization_invites').insert({
+        organization_id: organizationRow.id,
+        code: nextInviteCode,
+        default_role: manufacturingInviteRole,
+        created_by: user.id,
+      });
 
       if (inviteError) throw inviteError;
 
@@ -3018,23 +2763,16 @@ function LoggedDashboardPage({
     }
 
     try {
-      const { data: invite, error: inviteError } = await supabase
-        .from('manufacturing_organization_invites')
-        .select('organization_id, code, default_role')
-        .eq('code', nextCode)
-        .eq('active', true)
-        .single();
+      const { data: invite, error: inviteError } = await supabase.from('manufacturing_organization_invites').select('organization_id, code, default_role').eq('code', nextCode).eq('active', true).single();
 
       if (inviteError) throw inviteError;
       const inviteRow = invite as ManufacturingOrganizationInviteRow;
 
-      const { error: memberError } = await supabase
-        .from('manufacturing_organization_members')
-        .insert({
-          organization_id: inviteRow.organization_id,
-          user_id: user.id,
-          role: inviteRow.default_role,
-        });
+      const { error: memberError } = await supabase.from('manufacturing_organization_members').insert({
+        organization_id: inviteRow.organization_id,
+        user_id: user.id,
+        role: inviteRow.default_role,
+      });
 
       if (memberError) throw memberError;
 
@@ -3071,13 +2809,10 @@ function LoggedDashboardPage({
       return;
     }
 
-    setManufacturingOrganization((currentOrganization) => currentOrganization ? ({ ...currentOrganization, name: nextName }) : currentOrganization);
+    setManufacturingOrganization((currentOrganization) => (currentOrganization ? { ...currentOrganization, name: nextName } : currentOrganization));
 
     try {
-      const { error } = await supabase
-        .from('manufacturing_organizations')
-        .update({ name: nextName })
-        .eq('id', manufacturingOrganization.id);
+      const { error } = await supabase.from('manufacturing_organizations').update({ name: nextName }).eq('id', manufacturingOrganization.id);
 
       if (error) throw error;
       setManufacturingOrganizationMode('manage');
@@ -3132,60 +2867,33 @@ function LoggedDashboardPage({
     try {
       if (isSupabaseOrganization) {
         if (isOwner && manufacturingSwitchAction === 'transfer') {
-          const { error: transferError } = await supabase
-            .from('manufacturing_organization_members')
-            .update({ role: 'Owner' })
-            .eq('organization_id', manufacturingOrganization.id)
-            .eq('user_id', manufacturingNewOwnerUserId);
+          const { error: transferError } = await supabase.from('manufacturing_organization_members').update({ role: 'Owner' }).eq('organization_id', manufacturingOrganization.id).eq('user_id', manufacturingNewOwnerUserId);
 
           if (transferError) throw transferError;
 
-          const { error: leaveError } = await supabase
-            .from('manufacturing_organization_members')
-            .delete()
-            .eq('organization_id', manufacturingOrganization.id)
-            .eq('user_id', user.id);
+          const { error: leaveError } = await supabase.from('manufacturing_organization_members').delete().eq('organization_id', manufacturingOrganization.id).eq('user_id', user.id);
 
           if (leaveError) throw leaveError;
         } else if (isOwner && manufacturingSwitchAction === 'disband') {
-          const { error: inviteError } = await supabase
-            .from('manufacturing_organization_invites')
-            .update({ active: false })
-            .eq('organization_id', manufacturingOrganization.id);
+          const { error: inviteError } = await supabase.from('manufacturing_organization_invites').update({ active: false }).eq('organization_id', manufacturingOrganization.id);
 
           if (inviteError) throw inviteError;
 
-          const { error: otherMembersError } = await supabase
-            .from('manufacturing_organization_members')
-            .delete()
-            .eq('organization_id', manufacturingOrganization.id)
-            .neq('user_id', user.id);
+          const { error: otherMembersError } = await supabase.from('manufacturing_organization_members').delete().eq('organization_id', manufacturingOrganization.id).neq('user_id', user.id);
 
           if (otherMembersError) throw otherMembersError;
 
-          const { error: currentMemberError } = await supabase
-            .from('manufacturing_organization_members')
-            .delete()
-            .eq('organization_id', manufacturingOrganization.id)
-            .eq('user_id', user.id);
+          const { error: currentMemberError } = await supabase.from('manufacturing_organization_members').delete().eq('organization_id', manufacturingOrganization.id).eq('user_id', user.id);
 
           if (currentMemberError) throw currentMemberError;
         } else {
-          const { error: leaveError } = await supabase
-            .from('manufacturing_organization_members')
-            .delete()
-            .eq('organization_id', manufacturingOrganization.id)
-            .eq('user_id', user.id);
+          const { error: leaveError } = await supabase.from('manufacturing_organization_members').delete().eq('organization_id', manufacturingOrganization.id).eq('user_id', user.id);
 
           if (leaveError) throw leaveError;
         }
       }
 
-      resetManufacturingOrganizationSelection(
-        isOwner && manufacturingSwitchAction === 'disband'
-          ? 'Organization disbanded. Members and active invites were removed; historical data remains in Supabase.'
-          : 'Organization switched. Choose or join another organization.'
-      );
+      resetManufacturingOrganizationSelection(isOwner && manufacturingSwitchAction === 'disband' ? 'Organization disbanded. Members and active invites were removed; historical data remains in Supabase.' : 'Organization switched. Choose or join another organization.');
     } catch (error) {
       console.warn('Unable to switch manufacturing organization', error);
       setManufacturingOrganizationMessage('Could not switch organization. Check Supabase permissions.');
@@ -3200,27 +2908,25 @@ function LoggedDashboardPage({
       return;
     }
     const nextInviteCode = createManufacturingInviteCode(manufacturingOrganization.name);
-    setManufacturingOrganization((currentOrganization) => currentOrganization ? ({
-      ...currentOrganization,
-      inviteCode: nextInviteCode,
-      inviteRole: manufacturingInviteRole,
-    }) : currentOrganization);
+    setManufacturingOrganization((currentOrganization) =>
+      currentOrganization
+        ? {
+            ...currentOrganization,
+            inviteCode: nextInviteCode,
+            inviteRole: manufacturingInviteRole,
+          }
+        : currentOrganization,
+    );
 
     try {
-      await supabase
-        .from('manufacturing_organization_invites')
-        .update({ active: false })
-        .eq('organization_id', manufacturingOrganization.id)
-        .eq('active', true);
+      await supabase.from('manufacturing_organization_invites').update({ active: false }).eq('organization_id', manufacturingOrganization.id).eq('active', true);
 
-      const { error } = await supabase
-        .from('manufacturing_organization_invites')
-        .insert({
-          organization_id: manufacturingOrganization.id,
-          code: nextInviteCode,
-          default_role: manufacturingInviteRole,
-          created_by: user.id,
-        });
+      const { error } = await supabase.from('manufacturing_organization_invites').insert({
+        organization_id: manufacturingOrganization.id,
+        code: nextInviteCode,
+        default_role: manufacturingInviteRole,
+        created_by: user.id,
+      });
 
       if (error) throw error;
       setManufacturingOrganizationMessage('New Supabase invite code generated.');
@@ -3250,27 +2956,25 @@ function LoggedDashboardPage({
     if (!manufacturingOrganization) return;
 
     const nextInviteCode = createManufacturingInviteCode(manufacturingOrganization.name);
-    setManufacturingOrganization((currentOrganization) => currentOrganization ? ({
-      ...currentOrganization,
-      inviteCode: nextInviteCode,
-      inviteRole: role,
-    }) : currentOrganization);
+    setManufacturingOrganization((currentOrganization) =>
+      currentOrganization
+        ? {
+            ...currentOrganization,
+            inviteCode: nextInviteCode,
+            inviteRole: role,
+          }
+        : currentOrganization,
+    );
 
     try {
-      await supabase
-        .from('manufacturing_organization_invites')
-        .update({ active: false })
-        .eq('organization_id', manufacturingOrganization.id)
-        .eq('active', true);
+      await supabase.from('manufacturing_organization_invites').update({ active: false }).eq('organization_id', manufacturingOrganization.id).eq('active', true);
 
-      const { error } = await supabase
-        .from('manufacturing_organization_invites')
-        .insert({
-          organization_id: manufacturingOrganization.id,
-          code: nextInviteCode,
-          default_role: role,
-          created_by: user.id,
-        });
+      const { error } = await supabase.from('manufacturing_organization_invites').insert({
+        organization_id: manufacturingOrganization.id,
+        code: nextInviteCode,
+        default_role: role,
+        created_by: user.id,
+      });
 
       if (error) throw error;
       setManufacturingOrganizationMessage(`New invite code generated for ${role}.`);
@@ -3298,25 +3002,18 @@ function LoggedDashboardPage({
     try {
       const extension = file.name.split('.').pop()?.toLowerCase() || 'png';
       const filePath = `${user.id}/${manufacturingOrganization.id}-${Date.now()}.${extension}`;
-      const { error: uploadError } = await supabase.storage
-        .from('manufacturing-organization-logos')
-        .upload(filePath, file, { upsert: true, contentType: file.type });
+      const { error: uploadError } = await supabase.storage.from('manufacturing-organization-logos').upload(filePath, file, { upsert: true, contentType: file.type });
 
       if (uploadError) throw uploadError;
 
-      const { data: publicUrlData } = supabase.storage
-        .from('manufacturing-organization-logos')
-        .getPublicUrl(filePath);
+      const { data: publicUrlData } = supabase.storage.from('manufacturing-organization-logos').getPublicUrl(filePath);
 
       const logoUrl = publicUrlData.publicUrl;
-      const { error: updateError } = await supabase
-        .from('manufacturing_organizations')
-        .update({ logo_url: logoUrl })
-        .eq('id', manufacturingOrganization.id);
+      const { error: updateError } = await supabase.from('manufacturing_organizations').update({ logo_url: logoUrl }).eq('id', manufacturingOrganization.id);
 
       if (updateError) throw updateError;
 
-      setManufacturingOrganization((currentOrganization) => currentOrganization ? ({ ...currentOrganization, logoUrl }) : currentOrganization);
+      setManufacturingOrganization((currentOrganization) => (currentOrganization ? { ...currentOrganization, logoUrl } : currentOrganization));
       setManufacturingOrganizationMessage('Organization logo updated.');
     } catch (error) {
       console.warn('Unable to upload manufacturing organization logo', error);
@@ -3376,15 +3073,7 @@ function LoggedDashboardPage({
         plan_key: 'explorer_free',
         note: null,
       },
-      features: [
-        'Access to selected free lessons',
-        'Preview selected Academy tracks',
-        'Explore industrial learning paths',
-        'Basic progress tracking',
-        'Limited portal access',
-        'Platform updates',
-        'Upgrade anytime',
-      ],
+      features: ['Access to selected free lessons', 'Preview selected Academy tracks', 'Explore industrial learning paths', 'Basic progress tracking', 'Limited portal access', 'Platform updates', 'Upgrade anytime'],
     },
     {
       name: 'Professional',
@@ -3419,17 +3108,7 @@ function LoggedDashboardPage({
         plan_key: 'professional_annual',
         note: 'Best value for committed learners',
       },
-      features: [
-        'Full access to YVIMO Academy',
-        'Complete Academy tracks and learning paths',
-        'Gateway Online access',
-        'Priority handling for orders and quotation requests',
-        'Certificates of completion',
-        'Downloadable resources and templates',
-        'Advanced project files',
-        'Early access to new tracks',
-        'Professional certificate path',
-      ],
+      features: ['Full access to YVIMO Academy', 'Complete Academy tracks and learning paths', 'Gateway Online access', 'Priority handling for orders and quotation requests', 'Certificates of completion', 'Downloadable resources and templates', 'Advanced project files', 'Early access to new tracks', 'Professional certificate path'],
     },
     {
       name: 'Enterprise',
@@ -3464,18 +3143,7 @@ function LoggedDashboardPage({
         plan_key: 'enterprise_contact',
         note: 'Team and institutional pricing',
       },
-      features: [
-        'Team or classroom access',
-        'Multiple users or seats',
-        'Admin and progress visibility',
-        'Custom learning paths',
-        'University or company training programs',
-        'Gateway Online access for approved users',
-        'Priority handling for orders, quotations, and project requests',
-        'Invoice and purchase order support',
-        'Optional private onboarding',
-        'Optional custom training or implementation support',
-      ],
+      features: ['Team or classroom access', 'Multiple users or seats', 'Admin and progress visibility', 'Custom learning paths', 'University or company training programs', 'Gateway Online access for approved users', 'Priority handling for orders, quotations, and project requests', 'Invoice and purchase order support', 'Optional private onboarding', 'Optional custom training or implementation support'],
     },
   ];
   const staffRanks: Array<{
@@ -3490,33 +3158,21 @@ function LoggedDashboardPage({
       badgeImage: '/assets/academy/badges/license-instructor.png',
       eyebrow: 'Academy staff',
       description: 'Official instructors and collaborators who create lessons, review learning material, and support students inside YVIMO Academy.',
-      responsibilities: [
-        'Course guidance and mentoring',
-        'Academy content review',
-        'Learning path support',
-      ],
+      responsibilities: ['Course guidance and mentoring', 'Academy content review', 'Learning path support'],
     },
     {
       name: 'Beta Tester',
       badgeImage: '/assets/academy/badges/license-beta-tester.png',
       eyebrow: 'Product testing',
       description: 'Trusted testers who validate new platform features, report issues, and help us improve tools before public release.',
-      responsibilities: [
-        'Early feature validation',
-        'Bug reporting and feedback',
-        'Preview workflow testing',
-      ],
+      responsibilities: ['Early feature validation', 'Bug reporting and feedback', 'Preview workflow testing'],
     },
     {
       name: 'Owner',
       badgeImage: '/assets/academy/badges/license-owner.png',
       eyebrow: 'YVIMO leadership',
       description: 'Official YVIMO ownership and leadership accounts responsible for platform direction, official decisions, and company-level communication.',
-      responsibilities: [
-        'Official YVIMO communication',
-        'Platform and business decisions',
-        'Final escalation authority',
-      ],
+      responsibilities: ['Official YVIMO communication', 'Platform and business decisions', 'Final escalation authority'],
     },
   ];
   const quickAccessItems: Array<{
@@ -3577,24 +3233,53 @@ function LoggedDashboardPage({
   const secondaryAccessItems = quickAccessItems.filter((item) => !item.flagship);
   const navItems = [
     { label: 'Workspace', icon: Blocks, featured: false, path: '/dashboard' },
-    { label: 'Health Apps', icon: Hospital, featured: true, path: '/workspace/health-apps' },
+    {
+      label: 'Health Apps',
+      icon: Hospital,
+      featured: true,
+      path: '/workspace/health-apps',
+    },
     { label: 'Academy', icon: GraduationCap, featured: true, path: '/academy' },
-    { label: 'Manufacturing Ops', icon: Factory, featured: true, path: '/workspace/manufacturing-ops' },
-    { label: 'Engineering Tools', icon: Wrench, featured: true, path: '/portal/engineering-tools' },
-    { label: 'Licenses', icon: ShieldCheck, featured: false, path: '/dashboard/licenses' },
-    { label: 'Orders', icon: FileUp, featured: false, path: '/dashboard/orders' },
-    { label: 'Quotations', icon: Database, featured: false, path: '/dashboard/quotations' },
-    { label: 'Settings', icon: Gauge, featured: false, path: '/dashboard/settings' },
+    {
+      label: 'Manufacturing Ops',
+      icon: Factory,
+      featured: true,
+      path: '/workspace/manufacturing-ops',
+    },
+    {
+      label: 'Engineering Tools',
+      icon: Wrench,
+      featured: true,
+      path: '/portal/engineering-tools',
+    },
+    {
+      label: 'Licenses',
+      icon: ShieldCheck,
+      featured: false,
+      path: '/dashboard/licenses',
+    },
+    {
+      label: 'Orders',
+      icon: FileUp,
+      featured: false,
+      path: '/dashboard/orders',
+    },
+    {
+      label: 'Quotations',
+      icon: Database,
+      featured: false,
+      path: '/dashboard/quotations',
+    },
+    {
+      label: 'Settings',
+      icon: Gauge,
+      featured: false,
+      path: '/dashboard/settings',
+    },
   ];
   const isLicensesPage = activePath === '/dashboard/licenses';
-  const isGatewayOnlinePage =
-    activePath === '/portal/gateway-online'
-    || activePath.startsWith('/portal/gateway-online/')
-    || activePath === '/dashboard/gateway'
-    || activePath.startsWith('/dashboard/gateway/');
-  const isHealthAppsPage =
-    activePath === '/workspace/health-apps'
-    || activePath.startsWith('/workspace/health-apps/');
+  const isGatewayOnlinePage = activePath === '/portal/gateway-online' || activePath.startsWith('/portal/gateway-online/') || activePath === '/dashboard/gateway' || activePath.startsWith('/dashboard/gateway/');
+  const isHealthAppsPage = activePath === '/workspace/health-apps' || activePath.startsWith('/workspace/health-apps/');
   const healthAppModules = [
     {
       label: 'Patients',
@@ -3632,12 +3317,7 @@ function LoggedDashboardPage({
     {
       label: 'MES',
       description: 'Execute, track, and monitor production orders across work centers in real time.',
-      features: [
-        'Production order tracking',
-        'Work center status',
-        'Operator actions',
-        'Downtime and scrap capture',
-      ],
+      features: ['Production order tracking', 'Work center status', 'Operator actions', 'Downtime and scrap capture'],
       icon: Factory,
       path: '/workspace/manufacturing-ops/mes',
       cta: 'Open MES',
@@ -3647,12 +3327,7 @@ function LoggedDashboardPage({
     {
       label: 'APS',
       description: 'Plan and schedule production using capacity, priorities, due dates, and operational constraints.',
-      features: [
-        'Production schedule',
-        'Capacity planning',
-        'Work center loading',
-        'Bottleneck visibility',
-      ],
+      features: ['Production schedule', 'Capacity planning', 'Work center loading', 'Bottleneck visibility'],
       icon: Workflow,
       path: '/workspace/manufacturing-ops/aps',
       cta: 'Open APS',
@@ -3661,12 +3336,7 @@ function LoggedDashboardPage({
     {
       label: 'Operations Intelligence',
       description: 'Transform production data into actionable manufacturing KPIs, trends, and improvement insights.',
-      features: [
-        'OEE dashboard',
-        'Downtime analysis',
-        'Cycle time trends',
-        'Throughput visibility',
-      ],
+      features: ['OEE dashboard', 'Downtime analysis', 'Cycle time trends', 'Throughput visibility'],
       icon: Gauge,
       path: '/workspace/manufacturing-ops/intelligence',
       cta: 'Open Intelligence',
@@ -3868,9 +3538,7 @@ function LoggedDashboardPage({
       path: '/workspace/manufacturing-ops/intelligence/reports',
     },
   ];
-  const isManufacturingOpsPage =
-    activePath === '/workspace/manufacturing-ops'
-    || activePath.startsWith('/workspace/manufacturing-ops/');
+  const isManufacturingOpsPage = activePath === '/workspace/manufacturing-ops' || activePath.startsWith('/workspace/manufacturing-ops/');
   const isWorkspaceOverviewPage = activePath === '/dashboard';
   const isSupplierAccessOverview = isWorkspaceOverviewPage && workspaceAccessMode === 'supplier';
   const supplierPortalCustomers = [
@@ -3878,8 +3546,7 @@ function LoggedDashboardPage({
     { name: 'Dana', logo: 'DANA', color: '#eef7ff' },
     { name: 'Ford', logo: 'Ford', color: '#edf3ff' },
   ];
-  const selectedSupplierCustomer =
-    supplierPortalCustomers.find((customer) => customer.name === supplierSelectedCustomer) ?? supplierPortalCustomers[0];
+  const selectedSupplierCustomer = supplierPortalCustomers.find((customer) => customer.name === supplierSelectedCustomer) ?? supplierPortalCustomers[0];
   const supplierPortalNavItems = [
     { label: 'Overview', icon: Blocks },
     { label: 'Transfers', icon: Truck },
@@ -3898,20 +3565,10 @@ function LoggedDashboardPage({
     setSupplierInvitationCode('');
     setSupplierJoinMessage('Invitation code received. Customer join flow will be connected soon.');
   };
-  const isMesPage =
-    activePath === '/workspace/manufacturing-ops/mes'
-    || activePath.startsWith('/workspace/manufacturing-ops/mes/');
-  const isApsPage =
-    activePath === '/workspace/manufacturing-ops/aps'
-    || activePath.startsWith('/workspace/manufacturing-ops/aps/');
-  const isOperationsIntelligencePage =
-    activePath === '/workspace/manufacturing-ops/intelligence'
-    || activePath.startsWith('/workspace/manufacturing-ops/intelligence/');
-  const activeManufacturingModule = isApsPage
-    ? manufacturingOpsModules[1]
-    : isOperationsIntelligencePage
-      ? manufacturingOpsModules[2]
-      : manufacturingOpsModules[0];
+  const isMesPage = activePath === '/workspace/manufacturing-ops/mes' || activePath.startsWith('/workspace/manufacturing-ops/mes/');
+  const isApsPage = activePath === '/workspace/manufacturing-ops/aps' || activePath.startsWith('/workspace/manufacturing-ops/aps/');
+  const isOperationsIntelligencePage = activePath === '/workspace/manufacturing-ops/intelligence' || activePath.startsWith('/workspace/manufacturing-ops/intelligence/');
+  const activeManufacturingModule = isApsPage ? manufacturingOpsModules[1] : isOperationsIntelligencePage ? manufacturingOpsModules[2] : manufacturingOpsModules[0];
   const getManufacturingPanelTitle = (label: string) => {
     if (label === 'MES') return 'Manufacturing Execution System';
     if (label === 'APS') return 'Advanced Production Scheduling';
@@ -3930,13 +3587,9 @@ function LoggedDashboardPage({
     };
     return positionsByModule[moduleLabel]?.[index] ?? index + 1;
   };
-  const activeSpecialtyModules = isApsPage
-    ? apsModules
-    : isOperationsIntelligencePage
-      ? intelligenceModules
-      : mesModules;
+  const activeSpecialtyModules = isApsPage ? apsModules : isOperationsIntelligencePage ? intelligenceModules : mesModules;
   const isManufacturingAppImplemented = (module: { implemented?: boolean }) => module.implemented === true;
-  const getManufacturingAppToneClass = (module: { tone?: 'green' | 'blue' | 'orange' | 'purple' | 'red' }) => module.tone ? `tone-${module.tone}` : '';
+  const getManufacturingAppToneClass = (module: { tone?: 'green' | 'blue' | 'orange' | 'purple' | 'red' }) => (module.tone ? `tone-${module.tone}` : '');
   const handleManufacturingAppLaunch = (module: { label: string; path: string; implemented?: boolean }) => {
     if (!isManufacturingAppImplemented(module)) {
       setManufacturingUnavailableApp(module.label);
@@ -3945,33 +3598,19 @@ function LoggedDashboardPage({
     setManufacturingUnavailableApp('');
     onNavigate(module.path);
   };
-  const activeMesModule = mesModules.find((module) => activePath === module.path
-    || (module.path === '/workspace/manufacturing-ops/mes/quality' && activePath.startsWith('/workspace/manufacturing-ops/mes/quality/'))
-    || (module.path === '/workspace/manufacturing-ops/mes/clients' && activePath.startsWith('/workspace/manufacturing-ops/mes/clients/')));
+  const activeMesModule = mesModules.find((module) => activePath === module.path || (module.path === '/workspace/manufacturing-ops/mes/quality' && activePath.startsWith('/workspace/manufacturing-ops/mes/quality/')) || (module.path === '/workspace/manufacturing-ops/mes/clients' && activePath.startsWith('/workspace/manufacturing-ops/mes/clients/')));
   const isOperatorTerminalPage = activePath === '/workspace/manufacturing-ops/mes/operator-terminal';
   const isSupplierOperationsPage = activePath === '/workspace/manufacturing-ops/mes/suppliers';
   const isQualityOperationsPage = activePath === '/workspace/manufacturing-ops/mes/quality' || activePath.startsWith('/workspace/manufacturing-ops/mes/quality/');
   const isClientsOperationsPage = activePath === '/workspace/manufacturing-ops/mes/clients' || activePath.startsWith('/workspace/manufacturing-ops/mes/clients/');
-  const isCompactMesApplicationPage = activePath === '/workspace/manufacturing-ops/mes/orders'
-    || activePath === '/workspace/manufacturing-ops/mes/work-centers'
-    || activePath === '/workspace/manufacturing-ops/mes/quotations'
-    || activePath === '/workspace/manufacturing-ops/mes/inventory'
-    || activePath === '/workspace/manufacturing-ops/mes/statistics'
-    || activePath === '/workspace/manufacturing-ops/mes/traceability';
+  const isCompactMesApplicationPage = activePath === '/workspace/manufacturing-ops/mes/orders' || activePath === '/workspace/manufacturing-ops/mes/work-centers' || activePath === '/workspace/manufacturing-ops/mes/quotations' || activePath === '/workspace/manufacturing-ops/mes/inventory' || activePath === '/workspace/manufacturing-ops/mes/statistics' || activePath === '/workspace/manufacturing-ops/mes/traceability';
   const isOrderRisksPage = activePath === '/workspace/manufacturing-ops/intelligence/order-risks';
   const isImportCostingPage = activePath === '/workspace/manufacturing-ops/intelligence/import-costing';
   const isProductionSchedulePage = activePath === '/workspace/manufacturing-ops/aps/schedule';
   const isRevenueOpportunitySection = activePath.startsWith('/workspace/manufacturing-ops/intelligence/revenue-opportunity');
-  const isAnalysisToolSection = activePath === '/workspace/manufacturing-ops/intelligence/analysis-tool'
-    || activePath.startsWith('/workspace/manufacturing-ops/intelligence/analysis-tool/');
+  const isAnalysisToolSection = activePath === '/workspace/manufacturing-ops/intelligence/analysis-tool' || activePath.startsWith('/workspace/manufacturing-ops/intelligence/analysis-tool/');
   const activeAnalysisToolSection = activePath.endsWith('/production-tracking') ? 'production-tracking' : 'performance-check';
-  const activeRevenueSection = activePath.endsWith('/income-flow')
-    ? 'income-flow'
-    : activePath.endsWith('/balances')
-      ? 'balances'
-      : activePath.endsWith('/invoice-target')
-        ? 'invoice-target'
-      : 'price-misalignment';
+  const activeRevenueSection = activePath.endsWith('/income-flow') ? 'income-flow' : activePath.endsWith('/balances') ? 'balances' : activePath.endsWith('/invoice-target') ? 'invoice-target' : 'price-misalignment';
   const supplierContextTabs: Array<{
     value: SupplierContextTab;
     label: string;
@@ -3991,13 +3630,51 @@ function LoggedDashboardPage({
     icon: React.ComponentType<{ size?: number }>;
     disabled?: boolean;
   }> = [
-    { value: 'dashboard', label: 'Dashboard', path: '/workspace/manufacturing-ops/mes/quality', icon: Gauge },
-    { value: 'inspections', label: 'Inspections', path: '/workspace/manufacturing-ops/mes/quality/inspections', icon: ClipboardCheck },
-    { value: 'quality-plans', label: 'Quality Plans', path: '/workspace/manufacturing-ops/mes/quality/quality-plans', icon: FolderCheck, disabled: true },
-    { value: 'specifications', label: 'Specifications', path: '/workspace/manufacturing-ops/mes/quality/specifications', icon: ShieldCheck },
-    { value: 'certificates-docs', label: 'Certificates & Docs', path: '/workspace/manufacturing-ops/mes/quality/certificates-docs', icon: FileText },
-    { value: 'ncrs', label: 'NCRs', path: '/workspace/manufacturing-ops/mes/quality/ncrs', icon: AlertTriangle, disabled: true },
-    { value: 'holds-releases', label: 'Holds & Releases', path: '/workspace/manufacturing-ops/mes/quality/holds-releases', icon: PackageCheck, disabled: true },
+    {
+      value: 'dashboard',
+      label: 'Dashboard',
+      path: '/workspace/manufacturing-ops/mes/quality',
+      icon: Gauge,
+    },
+    {
+      value: 'inspections',
+      label: 'Inspections',
+      path: '/workspace/manufacturing-ops/mes/quality/inspections',
+      icon: ClipboardCheck,
+    },
+    {
+      value: 'quality-plans',
+      label: 'Quality Plans',
+      path: '/workspace/manufacturing-ops/mes/quality/quality-plans',
+      icon: FolderCheck,
+      disabled: true,
+    },
+    {
+      value: 'specifications',
+      label: 'Specifications',
+      path: '/workspace/manufacturing-ops/mes/quality/specifications',
+      icon: ShieldCheck,
+    },
+    {
+      value: 'certificates-docs',
+      label: 'Certificates & Docs',
+      path: '/workspace/manufacturing-ops/mes/quality/certificates-docs',
+      icon: FileText,
+    },
+    {
+      value: 'ncrs',
+      label: 'NCRs',
+      path: '/workspace/manufacturing-ops/mes/quality/ncrs',
+      icon: AlertTriangle,
+      disabled: true,
+    },
+    {
+      value: 'holds-releases',
+      label: 'Holds & Releases',
+      path: '/workspace/manufacturing-ops/mes/quality/holds-releases',
+      icon: PackageCheck,
+      disabled: true,
+    },
   ];
   const activeQualityContextTab = qualityContextTabs.find((tab) => activePath === tab.path && !tab.disabled)?.value ?? 'dashboard';
   const clientsContextTabs: Array<{
@@ -4007,18 +3684,41 @@ function LoggedDashboardPage({
     icon: React.ComponentType<{ size?: number }>;
     disabled?: boolean;
   }> = [
-    { value: 'customers', label: 'Customers', path: '/workspace/manufacturing-ops/mes/clients', icon: Users },
-    { value: 'assets-equipment', label: 'Assets & Equipment', path: '/workspace/manufacturing-ops/mes/clients/assets-equipment', icon: Wrench },
-    { value: 'receptions', label: 'Receptions', path: '/workspace/manufacturing-ops/mes/clients/receptions', icon: PackageCheck },
-    { value: 'deliveries-returns', label: 'Deliveries & Returns', path: '/workspace/manufacturing-ops/mes/clients/deliveries-returns', icon: Truck, disabled: true },
-    { value: 'docs-vouchers', label: 'Docs & Vouchers', path: '/workspace/manufacturing-ops/mes/clients/docs-vouchers', icon: FileText, disabled: true },
+    {
+      value: 'customers',
+      label: 'Customers',
+      path: '/workspace/manufacturing-ops/mes/clients',
+      icon: Users,
+    },
+    {
+      value: 'assets-equipment',
+      label: 'Assets & Equipment',
+      path: '/workspace/manufacturing-ops/mes/clients/assets-equipment',
+      icon: Wrench,
+    },
+    {
+      value: 'receptions',
+      label: 'Receptions',
+      path: '/workspace/manufacturing-ops/mes/clients/receptions',
+      icon: PackageCheck,
+    },
+    {
+      value: 'deliveries-returns',
+      label: 'Deliveries & Returns',
+      path: '/workspace/manufacturing-ops/mes/clients/deliveries-returns',
+      icon: Truck,
+      disabled: true,
+    },
+    {
+      value: 'docs-vouchers',
+      label: 'Docs & Vouchers',
+      path: '/workspace/manufacturing-ops/mes/clients/docs-vouchers',
+      icon: FileText,
+      disabled: true,
+    },
   ];
   const activeClientsContextTab = clientsContextTabs.find((tab) => activePath === tab.path && !tab.disabled)?.value ?? 'customers';
-  const activeManufacturingOrganizationId = manufacturingOrganization
-    && !manufacturingOrganization.id.startsWith('local-')
-    && !manufacturingOrganization.id.startsWith('joined-')
-    ? manufacturingOrganization.id
-    : '';
+  const activeManufacturingOrganizationId = manufacturingOrganization && !manufacturingOrganization.id.startsWith('local-') && !manufacturingOrganization.id.startsWith('joined-') ? manufacturingOrganization.id : '';
   const manufacturingOrganizationRequiredPanel = (
     <section className="mes-workspace-panel">
       <div className="mes-screen-header">
@@ -4033,9 +3733,7 @@ function LoggedDashboardPage({
       </div>
       <div className="manufacturing-organization-card manufacturing-organization-required-card">
         <button className="manufacturing-organization-trigger manufacturing-organization-required-trigger" type="button" onClick={() => setManufacturingOrganizationDialogOpen(true)}>
-          <span className="manufacturing-organization-icon">
-            {manufacturingOrganization?.logoUrl ? <img src={manufacturingOrganization.logoUrl} alt="" aria-hidden="true" /> : <Building2 size={19} />}
-          </span>
+          <span className="manufacturing-organization-icon">{manufacturingOrganization?.logoUrl ? <img src={manufacturingOrganization.logoUrl} alt="" aria-hidden="true" /> : <Building2 size={19} />}</span>
           <span>
             <em>Organization</em>
             <strong>{manufacturingOrganization?.name || 'No organization'}</strong>
@@ -4069,7 +3767,7 @@ function LoggedDashboardPage({
     }
     if (isAnalysisToolSection) {
       if (activeAnalysisToolSection === 'production-tracking') {
-        return <ProductionTrackingWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} />;
+        return <ProductionTrackingWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} organizationName={manufacturingOrganization?.name ?? 'Manufacturing Organization'} organizationLogoUrl={manufacturingOrganization?.logoUrl ?? ''} />;
       }
       return <AnalysisToolWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} />;
     }
@@ -4101,14 +3799,7 @@ function LoggedDashboardPage({
       return <CustomerOperationsWorkspace onNavigate={onNavigate} activeTab={activeClientsContextTab} organizationId={activeManufacturingOrganizationId} languageCode={languageCode} />;
     }
     if (isSupplierOperationsPage) {
-      return (
-        <SupplierOperationsWorkspace
-          onNavigate={onNavigate}
-          organizationId={activeManufacturingOrganizationId}
-          activeTab={supplierContextTab}
-          onActiveTabChange={setSupplierContextTab}
-        />
-      );
+      return <SupplierOperationsWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} activeTab={supplierContextTab} onActiveTabChange={setSupplierContextTab} />;
     }
     return null;
   };
@@ -4174,28 +3865,12 @@ function LoggedDashboardPage({
   const gatewayRouteSlug = activePath.split('/').filter(Boolean)[2];
   const activeGatewayFeature = gatewayOnlineFeatures.find((item) => item.path.endsWith(`/${gatewayRouteSlug}`));
   const gatewayOverviewItems = activeGatewayFeature ? [activeGatewayFeature] : gatewayOnlineFeatures;
-  const isEngineeringToolsPage =
-    activePath === '/portal/engineering-tools'
-    || activePath.startsWith('/portal/engineering-tools/')
-    || activePath === '/dashboard/engineering-tools'
-    || activePath.startsWith('/dashboard/engineering-tools/');
+  const isEngineeringToolsPage = activePath === '/portal/engineering-tools' || activePath.startsWith('/portal/engineering-tools/') || activePath === '/dashboard/engineering-tools' || activePath.startsWith('/dashboard/engineering-tools/');
   const engineeringCategories = [
     {
       label: 'Industrial Templates',
       description: 'Standards, checklists, FAT/SAT documents, commissioning forms, and project handover templates.',
-      examples: [
-        'PLC programming standards',
-        'HMI design standards',
-        'FAT checklist',
-        'SAT checklist',
-        'I/O checkout sheet',
-        'Commissioning checklist',
-        'Risk assessment template',
-        'Network documentation template',
-        'Controls project handover template',
-        'Machine troubleshooting report',
-        'Customer requirement form',
-      ],
+      examples: ['PLC programming standards', 'HMI design standards', 'FAT checklist', 'SAT checklist', 'I/O checkout sheet', 'Commissioning checklist', 'Risk assessment template', 'Network documentation template', 'Controls project handover template', 'Machine troubleshooting report', 'Customer requirement form'],
       icon: FileUp,
       path: '/portal/engineering-tools/templates',
       badge: 'Coming soon',
@@ -4203,16 +3878,7 @@ function LoggedDashboardPage({
     {
       label: 'Quotation Tools',
       description: 'Estimators and calculators to help structure automation projects, service visits, and technical proposals.',
-      examples: [
-        'Quotation calculator',
-        'Labor hour estimator',
-        'Controls panel cost estimator',
-        'PLC/HMI hardware list builder',
-        'Automation cell budget estimator',
-        'Service visit cost calculator',
-        'Project timeline estimator',
-        'ROI calculator for automation projects',
-      ],
+      examples: ['Quotation calculator', 'Labor hour estimator', 'Controls panel cost estimator', 'PLC/HMI hardware list builder', 'Automation cell budget estimator', 'Service visit cost calculator', 'Project timeline estimator', 'ROI calculator for automation projects'],
       icon: Calculator,
       path: '/portal/engineering-tools/quotation-tools',
       badge: 'Coming soon',
@@ -4220,19 +3886,7 @@ function LoggedDashboardPage({
     {
       label: 'Controls Utilities',
       description: 'Technical utilities for industrial networks, PLC connectivity, and controls troubleshooting.',
-      examples: [
-        'IP scanner',
-        'Device discovery tool',
-        'Subnet calculator',
-        'PLC connection tester',
-        'Modbus TCP tester',
-        'OPC UA endpoint tester',
-        'MQTT test client',
-        'Port scanner',
-        'Ping sweep tool',
-        'Network topology helper',
-        'Siemens S7 connection validator',
-      ],
+      examples: ['IP scanner', 'Device discovery tool', 'Subnet calculator', 'PLC connection tester', 'Modbus TCP tester', 'OPC UA endpoint tester', 'MQTT test client', 'Port scanner', 'Ping sweep tool', 'Network topology helper', 'Siemens S7 connection validator'],
       icon: Network,
       path: '/portal/engineering-tools/controls-utilities',
       badge: 'Coming soon',
@@ -4240,18 +3894,7 @@ function LoggedDashboardPage({
     {
       label: 'Engineering Calculators',
       description: 'Fast calculators for common controls, automation, and industrial engineering tasks.',
-      examples: [
-        '4-20 mA scaling calculator',
-        '0-10 V scaling calculator',
-        'Sensor scaling calculator',
-        'Gear ratio calculator',
-        'Motor speed calculator',
-        'Cycle time calculator',
-        'OEE calculator',
-        'Air consumption calculator',
-        'Safety distance calculator',
-        'Industrial unit converter',
-      ],
+      examples: ['4-20 mA scaling calculator', '0-10 V scaling calculator', 'Sensor scaling calculator', 'Gear ratio calculator', 'Motor speed calculator', 'Cycle time calculator', 'OEE calculator', 'Air consumption calculator', 'Safety distance calculator', 'Industrial unit converter'],
       icon: Gauge,
       path: '/portal/engineering-tools/calculators',
       badge: 'Coming soon',
@@ -4259,14 +3902,7 @@ function LoggedDashboardPage({
     {
       label: 'Downloads & Resources',
       description: 'Downloadable software tools, reference files, guides, and starter kits for engineering work.',
-      examples: [
-        'Software utilities',
-        'Quick reference guides',
-        'Starter project files',
-        'Network setup references',
-        'Gateway examples',
-        'Industrial communication references',
-      ],
+      examples: ['Software utilities', 'Quick reference guides', 'Starter project files', 'Network setup references', 'Gateway examples', 'Industrial communication references'],
       icon: Cloud,
       path: '/portal/engineering-tools/downloads',
       badge: 'Coming soon',
@@ -4418,19 +4054,11 @@ function LoggedDashboardPage({
 
   const manufacturingOrganizationTrigger = (
     <button className="manufacturing-organization-trigger" type="button" onClick={() => setManufacturingOrganizationDialogOpen(true)}>
-      <span className="manufacturing-organization-icon">
-        {manufacturingOrganization?.logoUrl ? <img src={manufacturingOrganization.logoUrl} alt="" aria-hidden="true" /> : <Building2 size={19} />}
-      </span>
+      <span className="manufacturing-organization-icon">{manufacturingOrganization?.logoUrl ? <img src={manufacturingOrganization.logoUrl} alt="" aria-hidden="true" /> : <Building2 size={19} />}</span>
       <span>
         <em>{t('Organization')}</em>
         <strong>{manufacturingOrganization?.name || t('No organization')}</strong>
-        <small>
-          {manufacturingOrganization
-            ? languageCode === 'es'
-              ? `${manufacturingOrganization.role === 'Owner' ? 'Propietario' : t(manufacturingOrganization.role)} · ${manufacturingOrganization.memberCount} ${manufacturingOrganization.memberCount === 1 ? 'miembro' : 'miembros'}`
-              : `${manufacturingOrganization.role} access · ${manufacturingOrganization.memberCount} member${manufacturingOrganization.memberCount === 1 ? '' : 's'}`
-            : t('Create or join a team workspace')}
-        </small>
+        <small>{manufacturingOrganization ? (languageCode === 'es' ? `${manufacturingOrganization.role === 'Owner' ? 'Propietario' : t(manufacturingOrganization.role)} · ${manufacturingOrganization.memberCount} ${manufacturingOrganization.memberCount === 1 ? 'miembro' : 'miembros'}` : `${manufacturingOrganization.role} access · ${manufacturingOrganization.memberCount} member${manufacturingOrganization.memberCount === 1 ? '' : 's'}`) : t('Create or join a team workspace')}</small>
       </span>
     </button>
   );
@@ -4439,21 +4067,13 @@ function LoggedDashboardPage({
 
   const manufacturingOrganizationDialog = manufacturingOrganizationDialogOpen ? (
     <div className="manufacturing-organization-dialog-backdrop" role="presentation" onMouseDown={() => setManufacturingOrganizationDialogOpen(false)}>
-      <section
-        className={['manufacturing-organization-dialog', manufacturingOrganizationMode === 'members' ? 'members-open' : ''].filter(Boolean).join(' ')}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="manufacturing-organization-dialog-title"
-        onMouseDown={(event) => event.stopPropagation()}
-      >
+      <section className={['manufacturing-organization-dialog', manufacturingOrganizationMode === 'members' ? 'members-open' : ''].filter(Boolean).join(' ')} role="dialog" aria-modal="true" aria-labelledby="manufacturing-organization-dialog-title" onMouseDown={(event) => event.stopPropagation()}>
         <button className="manufacturing-organization-dialog-close" type="button" aria-label="Close organization menu" onClick={() => setManufacturingOrganizationDialogOpen(false)}>
           <X size={18} />
         </button>
         <div className="manufacturing-organization-zone manufacturing-organization-details-zone">
           <div className="manufacturing-organization-dialog-heading">
-            <span className="manufacturing-organization-icon">
-              {manufacturingOrganization?.logoUrl ? <img src={manufacturingOrganization.logoUrl} alt="" aria-hidden="true" /> : <Building2 size={30} />}
-            </span>
+            <span className="manufacturing-organization-icon">{manufacturingOrganization?.logoUrl ? <img src={manufacturingOrganization.logoUrl} alt="" aria-hidden="true" /> : <Building2 size={30} />}</span>
             <div>
               <span>Manufacturing organization</span>
               <h2 id="manufacturing-organization-dialog-title">{manufacturingOrganization?.name || 'No organization selected'}</h2>
@@ -4471,29 +4091,38 @@ function LoggedDashboardPage({
                   <label className="manufacturing-organization-logo-edit">
                     <span>Organization image</span>
                     <span className="manufacturing-organization-logo-edit-control">
-                      <span className="manufacturing-organization-icon">
-                        {manufacturingOrganization.logoUrl ? <img src={manufacturingOrganization.logoUrl} alt="" aria-hidden="true" /> : <Building2 size={24} />}
-                      </span>
+                      <span className="manufacturing-organization-icon">{manufacturingOrganization.logoUrl ? <img src={manufacturingOrganization.logoUrl} alt="" aria-hidden="true" /> : <Building2 size={24} />}</span>
                       <strong>{manufacturingOrganizationUploadingLogo ? 'Uploading...' : 'Change image'}</strong>
                     </span>
                     <input type="file" accept="image/*" onChange={uploadManufacturingOrganizationLogo} disabled={manufacturingOrganizationUploadingLogo} />
                   </label>
-                  <button type="button" onClick={() => void saveManufacturingOrganizationName()}>Save changes</button>
-                  <button type="button" onClick={() => setManufacturingOrganizationMode('manage')}>Cancel</button>
+                  <button type="button" onClick={() => void saveManufacturingOrganizationName()}>
+                    Save changes
+                  </button>
+                  <button type="button" onClick={() => setManufacturingOrganizationMode('manage')}>
+                    Cancel
+                  </button>
                 </>
               ) : manufacturingOrganizationMode === 'members' ? (
                 <div className="manufacturing-organization-members">
                   <div className="manufacturing-organization-members-heading">
                     <span>Organization members</span>
-                    <button type="button" onClick={() => setManufacturingOrganizationMode('manage')}>Done</button>
+                    <button type="button" onClick={() => setManufacturingOrganizationMode('manage')}>
+                      Done
+                    </button>
                   </div>
                   <div className="manufacturing-organization-member-list">
-                    {(manufacturingOrganizationMembers.length > 0 ? manufacturingOrganizationMembers : [{
-                      id: 'local-current-user',
-                      userId: user.id,
-                      role: manufacturingOrganization.role,
-                      profile: user,
-                    }]).map((member) => {
+                    {(manufacturingOrganizationMembers.length > 0
+                      ? manufacturingOrganizationMembers
+                      : [
+                          {
+                            id: 'local-current-user',
+                            userId: user.id,
+                            role: manufacturingOrganization.role,
+                            profile: user,
+                          },
+                        ]
+                    ).map((member) => {
                       const isCurrentUser = member.userId === user.id;
                       const memberUser: AppUser = isCurrentUser ? user : member.profile;
 
@@ -4501,13 +4130,20 @@ function LoggedDashboardPage({
                         <div className="manufacturing-organization-member-row" key={member.id}>
                           <div
                             className="manufacturing-organization-member-ring"
-                            style={{ '--member-progress': `${memberUser.profileLevelProgress}%` } as React.CSSProperties}
+                            style={
+                              {
+                                '--member-progress': `${memberUser.profileLevelProgress}%`,
+                              } as React.CSSProperties
+                            }
                             aria-label={`${memberUser.profileLevelProgress}% level progress`}
                           >
                             <UserAvatar user={memberUser} className="manufacturing-organization-member-avatar" />
                           </div>
                           <div>
-                            <strong>{memberUser.name}{isCurrentUser ? ' (You)' : ''}</strong>
+                            <strong>
+                              {memberUser.name}
+                              {isCurrentUser ? ' (You)' : ''}
+                            </strong>
                             <span>{member.role} access</span>
                           </div>
                           <em>Level {memberUser.profileLevel}</em>
@@ -4518,9 +4154,15 @@ function LoggedDashboardPage({
                 </div>
               ) : (
                 <>
-                  <button type="button" onClick={() => setManufacturingOrganizationMode('edit')}><Pencil size={15} /> Edit Organization</button>
-                  <button type="button" onClick={() => setManufacturingOrganizationMode('members')}><Users size={15} /> View Members</button>
-                  <button type="button" onClick={openManufacturingSwitchConfirmation}>Switch Organization</button>
+                  <button type="button" onClick={() => setManufacturingOrganizationMode('edit')}>
+                    <Pencil size={15} /> Edit Organization
+                  </button>
+                  <button type="button" onClick={() => setManufacturingOrganizationMode('members')}>
+                    <Users size={15} /> View Members
+                  </button>
+                  <button type="button" onClick={openManufacturingSwitchConfirmation}>
+                    Switch Organization
+                  </button>
                 </>
               )}
             </div>
@@ -4530,12 +4172,16 @@ function LoggedDashboardPage({
                 <span>Create organization</span>
                 <input value={manufacturingOrganizationName} onChange={(event) => setManufacturingOrganizationName(event.target.value)} placeholder="Organization name" />
               </label>
-              <button type="button" onClick={() => void createManufacturingOrganization()}><Plus size={15} /> Create</button>
+              <button type="button" onClick={() => void createManufacturingOrganization()}>
+                <Plus size={15} /> Create
+              </button>
               <label>
                 <span>Join organization</span>
                 <input value={manufacturingJoinCode} onChange={(event) => setManufacturingJoinCode(event.target.value.toUpperCase())} placeholder="CODE-123ABC" />
               </label>
-              <button type="button" onClick={() => void joinManufacturingOrganization()}><UserPlus size={15} /> Join</button>
+              <button type="button" onClick={() => void joinManufacturingOrganization()}>
+                <UserPlus size={15} /> Join
+              </button>
             </div>
           )}
         </div>
@@ -4548,19 +4194,18 @@ function LoggedDashboardPage({
             <fieldset className="manufacturing-organization-roles" aria-label="Invite permission">
               <legend>Invite permission</legend>
               {(['Admin', 'Operator', 'Viewer', 'Supplier'] as ManufacturingOrganizationInviteRole[]).map((role) => (
-                <button
-                  type="button"
-                  className={role === manufacturingInviteRole ? 'active' : ''}
-                  key={role}
-                  onClick={() => void updateManufacturingInviteRole(role)}
-                >
+                <button type="button" className={role === manufacturingInviteRole ? 'active' : ''} key={role} onClick={() => void updateManufacturingInviteRole(role)}>
                   {role}
                 </button>
               ))}
             </fieldset>
             <div className="manufacturing-organization-actions">
-              <button type="button" onClick={copyManufacturingInviteCode}><Users size={15} /> Copy invite</button>
-              <button type="button" onClick={regenerateManufacturingInviteCode}>New code</button>
+              <button type="button" onClick={copyManufacturingInviteCode}>
+                <Users size={15} /> Copy invite
+              </button>
+              <button type="button" onClick={regenerateManufacturingInviteCode}>
+                New code
+              </button>
               <span>{manufacturingOrganizationMessage || 'Shared MES data will use this organization context.'}</span>
             </div>
           </div>
@@ -4571,43 +4216,23 @@ function LoggedDashboardPage({
         ) : null}
       </section>
       {manufacturingSwitchDialogOpen ? (
-        <section
-          className="manufacturing-organization-switch-confirm"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="manufacturing-organization-switch-title"
-          onMouseDown={(event) => event.stopPropagation()}
-        >
+        <section className="manufacturing-organization-switch-confirm" role="dialog" aria-modal="true" aria-labelledby="manufacturing-organization-switch-title" onMouseDown={(event) => event.stopPropagation()}>
           <div>
             <span>Organization switch</span>
             <h3 id="manufacturing-organization-switch-title">Confirm switch</h3>
-            <p>
-              {manufacturingOrganization?.role === 'Owner'
-                ? 'Owner access needs a clean handoff before you leave this organization.'
-                : 'This removes your membership from the current organization and lets you choose another one.'}
-            </p>
+            <p>{manufacturingOrganization?.role === 'Owner' ? 'Owner access needs a clean handoff before you leave this organization.' : 'This removes your membership from the current organization and lets you choose another one.'}</p>
           </div>
           {manufacturingOrganization?.role === 'Owner' ? (
             <>
               <div className="manufacturing-organization-switch-options">
                 {assignableManufacturingOrganizationOwners.length > 0 ? (
                   <label className={manufacturingSwitchAction === 'transfer' ? 'active' : ''}>
-                    <input
-                      type="radio"
-                      name="manufacturing-switch-action"
-                      checked={manufacturingSwitchAction === 'transfer'}
-                      onChange={() => setManufacturingSwitchAction('transfer')}
-                    />
+                    <input type="radio" name="manufacturing-switch-action" checked={manufacturingSwitchAction === 'transfer'} onChange={() => setManufacturingSwitchAction('transfer')} />
                     <span>Assign another Owner</span>
                   </label>
                 ) : null}
                 <label className={manufacturingSwitchAction === 'disband' ? 'active danger' : 'danger'}>
-                  <input
-                    type="radio"
-                    name="manufacturing-switch-action"
-                    checked={manufacturingSwitchAction === 'disband'}
-                    onChange={() => setManufacturingSwitchAction('disband')}
-                  />
+                  <input type="radio" name="manufacturing-switch-action" checked={manufacturingSwitchAction === 'disband'} onChange={() => setManufacturingSwitchAction('disband')} />
                   <span>Disband organization</span>
                 </label>
               </div>
@@ -4624,29 +4249,18 @@ function LoggedDashboardPage({
                   </select>
                 </label>
               ) : (
-                <p className="manufacturing-organization-switch-warning">
-                  Disbanding removes all organization members and disables active invite codes. The organization record and historical MES data stay in Supabase.
-                </p>
+                <p className="manufacturing-organization-switch-warning">Disbanding removes all organization members and disables active invite codes. The organization record and historical MES data stay in Supabase.</p>
               )}
             </>
           ) : (
-            <p className="manufacturing-organization-switch-warning">
-              You can join or create another organization right after leaving this one.
-            </p>
+            <p className="manufacturing-organization-switch-warning">You can join or create another organization right after leaving this one.</p>
           )}
           <div className="manufacturing-organization-switch-actions">
-            <button type="button" onClick={() => setManufacturingSwitchDialogOpen(false)} disabled={manufacturingSwitchBusy}>Cancel</button>
-            <button
-              type="button"
-              className={manufacturingSwitchAction === 'disband' ? 'danger' : ''}
-              onClick={() => void confirmManufacturingOrganizationSwitch()}
-              disabled={manufacturingSwitchBusy || (manufacturingOrganization?.role === 'Owner' && manufacturingSwitchAction === 'transfer' && !manufacturingNewOwnerUserId)}
-            >
-              {manufacturingSwitchBusy
-                ? 'Working...'
-                : manufacturingSwitchAction === 'disband'
-                  ? 'Disband and switch'
-                  : 'Confirm switch'}
+            <button type="button" onClick={() => setManufacturingSwitchDialogOpen(false)} disabled={manufacturingSwitchBusy}>
+              Cancel
+            </button>
+            <button type="button" className={manufacturingSwitchAction === 'disband' ? 'danger' : ''} onClick={() => void confirmManufacturingOrganizationSwitch()} disabled={manufacturingSwitchBusy || (manufacturingOrganization?.role === 'Owner' && manufacturingSwitchAction === 'transfer' && !manufacturingNewOwnerUserId)}>
+              {manufacturingSwitchBusy ? 'Working...' : manufacturingSwitchAction === 'disband' ? 'Disband and switch' : 'Confirm switch'}
             </button>
           </div>
         </section>
@@ -4655,51 +4269,67 @@ function LoggedDashboardPage({
   ) : null;
 
   return (
-    <main className={[
-      'logged-shell',
-      !isSupplierAccessOverview ? 'primary-navigation-compact-shell' : '',
-      isOperatorTerminalPage ? 'operator-terminal-shell' : '',
-      isCompactMesApplicationPage || isOrderRisksPage || isImportCostingPage || isProductionSchedulePage || isRevenueOpportunitySection || isAnalysisToolSection ? 'compact-mes-application-shell' : '',
-      isSupplierOperationsPage || isQualityOperationsPage || isClientsOperationsPage || isRevenueOpportunitySection || isAnalysisToolSection ? 'supplier-context-shell' : '',
-      isSupplierAccessOverview ? 'supplier-access-shell' : '',
-      isSupplierAccessOverview && supplierCustomerPickerOpen ? 'supplier-customer-picker-open' : '',
-      standaloneHealth ? 'standalone-health-shell' : '',
-      isManufacturingOpsPage ? 'manufacturing-focus-shell' : '',
-      publicHealth ? 'public-health-shell' : '',
-    ].filter(Boolean).join(' ')}>
+    <main className={['logged-shell', !isSupplierAccessOverview ? 'primary-navigation-compact-shell' : '', isOperatorTerminalPage ? 'operator-terminal-shell' : '', isCompactMesApplicationPage || isOrderRisksPage || isImportCostingPage || isProductionSchedulePage || isRevenueOpportunitySection || isAnalysisToolSection ? 'compact-mes-application-shell' : '', isSupplierOperationsPage || isQualityOperationsPage || isClientsOperationsPage || isRevenueOpportunitySection || isAnalysisToolSection ? 'supplier-context-shell' : '', isSupplierAccessOverview ? 'supplier-access-shell' : '', isSupplierAccessOverview && supplierCustomerPickerOpen ? 'supplier-customer-picker-open' : '', standaloneHealth ? 'standalone-health-shell' : '', isManufacturingOpsPage ? 'manufacturing-focus-shell' : '', publicHealth ? 'public-health-shell' : ''].filter(Boolean).join(' ')}>
       {standaloneHealth ? (
         <header className="health-clinical-topbar">
           <button className="health-clinical-brand" type="button" onClick={() => onNavigate(publicHealth ? '/health' : '/workspace/health-apps')}>
-            <span><img src="/assets/health/yvimo-health-logo.png" alt="" aria-hidden="true" /></span><strong>YVIMO <em>Health</em></strong>
+            <span>
+              <img src="/assets/health/yvimo-health-logo.png" alt="" aria-hidden="true" />
+            </span>
+            <strong>
+              YVIMO <em>Health</em>
+            </strong>
           </button>
           <div className="health-clinical-actions">
-            <button type="button" onClick={onToggleLanguage}><Languages size={17} /> {languageCode === 'es' ? 'ES' : 'EN'}</button>
-            <button className="health-clinical-profile" type="button" onClick={() => setAvatarDialogOpen(true)}><UserAvatar user={user} /><span><strong>{user.name}</strong><small>{t('Profile')}</small></span></button>
-            <button type="button" onClick={onSignOut} title={t('Sign out')}><LogIn size={17} /></button>
+            <button type="button" onClick={onToggleLanguage}>
+              <Languages size={17} /> {languageCode === 'es' ? 'ES' : 'EN'}
+            </button>
+            <button className="health-clinical-profile" type="button" onClick={() => setAvatarDialogOpen(true)}>
+              <UserAvatar user={user} />
+              <span>
+                <strong>{user.name}</strong>
+                <small>{t('Profile')}</small>
+              </span>
+            </button>
+            <button type="button" onClick={onSignOut} title={t('Sign out')}>
+              <LogIn size={17} />
+            </button>
           </div>
         </header>
       ) : null}
       {isManufacturingOpsPage ? (
         <header className="manufacturing-focus-topbar">
           <button className="manufacturing-focus-brand" type="button" onClick={() => onNavigate('/workspace/manufacturing-ops')}>
-            <span><img src="/assets/workspace/manufacturing-ops-logo.png" alt="" aria-hidden="true" /></span>
-            <strong>YVIMO <em>Manufacturing Ops</em></strong>
+            <span>
+              <img src="/assets/workspace/manufacturing-ops-logo.png" alt="" aria-hidden="true" />
+            </span>
+            <strong>
+              YVIMO <em>Manufacturing Ops</em>
+            </strong>
           </button>
           <div className="manufacturing-focus-actions">
-            <button type="button" onClick={onToggleLanguage}><Languages size={17} /> {languageCode === 'es' ? 'ES' : 'EN'}</button>
-            <button className="manufacturing-focus-profile" type="button" onClick={() => setAvatarDialogOpen(true)}><UserAvatar user={user} /><span><strong>{user.name}</strong><small>{t('Profile')}</small></span></button>
+            <button type="button" onClick={onToggleLanguage}>
+              <Languages size={17} /> {languageCode === 'es' ? 'ES' : 'EN'}
+            </button>
+            <button className="manufacturing-focus-profile" type="button" onClick={() => setAvatarDialogOpen(true)}>
+              <UserAvatar user={user} />
+              <span>
+                <strong>{user.name}</strong>
+                <small>{t('Profile')}</small>
+              </span>
+            </button>
             {activeMesWorkspace ? (
               <button className="manufacturing-focus-organization" type="button" onClick={() => setManufacturingOrganizationDialogOpen(true)}>
-                <span>
-                  {manufacturingOrganization?.logoUrl ? <img src={manufacturingOrganization.logoUrl} alt="" aria-hidden="true" /> : <Building2 size={16} />}
-                </span>
+                <span>{manufacturingOrganization?.logoUrl ? <img src={manufacturingOrganization.logoUrl} alt="" aria-hidden="true" /> : <Building2 size={16} />}</span>
                 <span>
                   <strong>{manufacturingOrganization?.name || t('No organization')}</strong>
                 </span>
                 <ChevronDown size={14} />
               </button>
             ) : null}
-            <button type="button" onClick={onSignOut} title={t('Sign out')}><LogIn size={17} /></button>
+            <button type="button" onClick={onSignOut} title={t('Sign out')}>
+              <LogIn size={17} />
+            </button>
           </div>
         </header>
       ) : null}
@@ -4711,18 +4341,15 @@ function LoggedDashboardPage({
                 <span>YVIMO</span>
                 <strong>Supplier Portal</strong>
               </div>
-              <button
-                className="logged-sidebar-toggle"
-                type="button"
-                aria-label={tabletSidebarExpanded ? 'Collapse supplier menu' : 'Expand supplier menu'}
-                onClick={() => setTabletSidebarExpanded((expanded) => !expanded)}
-              >
+              <button className="logged-sidebar-toggle" type="button" aria-label={tabletSidebarExpanded ? 'Collapse supplier menu' : 'Expand supplier menu'} onClick={() => setTabletSidebarExpanded((expanded) => !expanded)}>
                 <Menu size={18} />
               </button>
             </div>
 
             <div className="supplier-company-identity-card">
-              <span className="supplier-company-logo" aria-hidden="true">RN</span>
+              <span className="supplier-company-logo" aria-hidden="true">
+                RN
+              </span>
               <div>
                 <span>Supplier Company</span>
                 <strong>Recubrimientos del Norte</strong>
@@ -4731,12 +4358,7 @@ function LoggedDashboardPage({
 
             <div className="supplier-customer-card">
               <span>Selected Customer</span>
-              <button
-                className="supplier-selected-customer-card"
-                type="button"
-                aria-expanded={supplierCustomerPickerOpen}
-                onClick={() => setSupplierCustomerPickerOpen((open) => !open)}
-              >
+              <button className="supplier-selected-customer-card" type="button" aria-expanded={supplierCustomerPickerOpen} onClick={() => setSupplierCustomerPickerOpen((open) => !open)}>
                 <span className="supplier-customer-logo" style={{ background: selectedSupplierCustomer.color }}>
                   {selectedSupplierCustomer.logo}
                 </span>
@@ -4753,12 +4375,7 @@ function LoggedDashboardPage({
               {supplierPortalNavItems.map((item, index) => {
                 const Icon = item.icon;
                 return (
-                  <button
-                    className={index === 0 ? 'active' : ''}
-                    type="button"
-                    key={item.label}
-                    title={item.label}
-                  >
+                  <button className={index === 0 ? 'active' : ''} type="button" key={item.label} title={item.label}>
                     <Icon size={18} />
                     <span>{item.label}</span>
                   </button>
@@ -4773,31 +4390,14 @@ function LoggedDashboardPage({
                 <span>YVIMO</span>
                 <strong>{t('Dashboard')}</strong>
               </div>
-              <button
-                className="logged-sidebar-toggle"
-                type="button"
-                aria-label={tabletSidebarExpanded ? 'Collapse dashboard menu' : 'Expand dashboard menu'}
-                aria-expanded={tabletSidebarExpanded}
-                aria-controls="dashboard-primary-navigation"
-                onClick={() => setTabletSidebarExpanded((expanded) => !expanded)}
-              >
+              <button className="logged-sidebar-toggle" type="button" aria-label={tabletSidebarExpanded ? 'Collapse dashboard menu' : 'Expand dashboard menu'} aria-expanded={tabletSidebarExpanded} aria-controls="dashboard-primary-navigation" onClick={() => setTabletSidebarExpanded((expanded) => !expanded)}>
                 <Menu size={18} />
               </button>
             </div>
             <nav id="dashboard-primary-navigation" aria-label="Dashboard navigation">
               {navItems.map((item, index) => {
                 const Icon = item.icon;
-                const active = activePath === item.path
-                  || (item.path === '/academy' && activePath.startsWith('/academy'))
-                  || (item.path === '/portal/gateway-online' && (
-                    activePath.startsWith('/portal/gateway-online')
-                    || activePath.startsWith('/dashboard/gateway')
-                  ))
-                  || (item.path === '/workspace/manufacturing-ops' && activePath.startsWith('/workspace/manufacturing-ops'))
-                  || (item.path === '/portal/engineering-tools' && (
-                    activePath.startsWith('/portal/engineering-tools')
-                    || activePath.startsWith('/dashboard/engineering-tools')
-                  ));
+                const active = activePath === item.path || (item.path === '/academy' && activePath.startsWith('/academy')) || (item.path === '/portal/gateway-online' && (activePath.startsWith('/portal/gateway-online') || activePath.startsWith('/dashboard/gateway'))) || (item.path === '/workspace/manufacturing-ops' && activePath.startsWith('/workspace/manufacturing-ops')) || (item.path === '/portal/engineering-tools' && (activePath.startsWith('/portal/engineering-tools') || activePath.startsWith('/dashboard/engineering-tools')));
                 return (
                   <button
                     className={[active || (index === 0 && activePath === '/dashboard') ? 'active' : '', item.featured ? 'featured' : ''].filter(Boolean).join(' ')}
@@ -4840,7 +4440,9 @@ function LoggedDashboardPage({
                   setSupplierCustomerPickerOpen(false);
                 }}
               >
-                <span className="supplier-customer-logo" style={{ background: customer.color }}>{customer.logo}</span>
+                <span className="supplier-customer-logo" style={{ background: customer.color }}>
+                  {customer.logo}
+                </span>
                 <strong>{customer.name}</strong>
               </button>
             ))}
@@ -4858,12 +4460,7 @@ function LoggedDashboardPage({
             {supplierContextTabs.map((tab) => {
               const Icon = tab.icon;
               return (
-                <button
-                  type="button"
-                  key={tab.value}
-                  className={supplierContextTab === tab.value ? 'active' : ''}
-                  onClick={() => setSupplierContextTab(tab.value)}
-                >
+                <button type="button" key={tab.value} className={supplierContextTab === tab.value ? 'active' : ''} onClick={() => setSupplierContextTab(tab.value)}>
                   <Icon size={18} />
                   <span>{tab.label}</span>
                 </button>
@@ -4933,58 +4530,65 @@ function LoggedDashboardPage({
 
       {isRevenueOpportunitySection ? (
         <aside className="supplier-shell-context-menu clients-shell-context-menu revenue-shell-context-menu" aria-label="Financial Status sections">
-          <div><span>OPS INTELLIGENCE</span><strong>Financial Status</strong></div>
+          <div>
+            <span>OPS INTELLIGENCE</span>
+            <strong>Financial Status</strong>
+          </div>
           <nav>
-            <button type="button" className={activeRevenueSection === 'price-misalignment' ? 'active' : ''} onClick={() => onNavigate('/workspace/manufacturing-ops/intelligence/revenue-opportunity/price-misalignment')}><CircleDollarSign size={18} /><span>Price Misalignment</span></button>
-            <button type="button" className="disabled" disabled aria-disabled="true"><TrendingUp size={18} /><span>Revenue Optimization</span></button>
-            <button type="button" className={activeRevenueSection === 'income-flow' ? 'active' : ''} onClick={() => onNavigate('/workspace/manufacturing-ops/intelligence/revenue-opportunity/income-flow')}><BarChart3 size={18} /><span>Income Flow</span></button>
-            <button type="button" className={activeRevenueSection === 'balances' ? 'active' : ''} onClick={() => onNavigate('/workspace/manufacturing-ops/intelligence/revenue-opportunity/balances')}><Calculator size={18} /><span>Balances</span></button>
-            <button type="button" className={activeRevenueSection === 'invoice-target' ? 'active' : ''} onClick={() => onNavigate('/workspace/manufacturing-ops/intelligence/revenue-opportunity/invoice-target')}><Target size={18} /><span>Invoice Target</span></button>
+            <button type="button" className={activeRevenueSection === 'price-misalignment' ? 'active' : ''} onClick={() => onNavigate('/workspace/manufacturing-ops/intelligence/revenue-opportunity/price-misalignment')}>
+              <CircleDollarSign size={18} />
+              <span>Price Misalignment</span>
+            </button>
+            <button type="button" className="disabled" disabled aria-disabled="true">
+              <TrendingUp size={18} />
+              <span>Revenue Optimization</span>
+            </button>
+            <button type="button" className={activeRevenueSection === 'income-flow' ? 'active' : ''} onClick={() => onNavigate('/workspace/manufacturing-ops/intelligence/revenue-opportunity/income-flow')}>
+              <BarChart3 size={18} />
+              <span>Income Flow</span>
+            </button>
+            <button type="button" className={activeRevenueSection === 'balances' ? 'active' : ''} onClick={() => onNavigate('/workspace/manufacturing-ops/intelligence/revenue-opportunity/balances')}>
+              <Calculator size={18} />
+              <span>Balances</span>
+            </button>
+            <button type="button" className={activeRevenueSection === 'invoice-target' ? 'active' : ''} onClick={() => onNavigate('/workspace/manufacturing-ops/intelligence/revenue-opportunity/invoice-target')}>
+              <Target size={18} />
+              <span>Invoice Target</span>
+            </button>
           </nav>
         </aside>
       ) : null}
 
       {isAnalysisToolSection ? (
         <aside className="supplier-shell-context-menu analysis-tool-shell-context-menu" aria-label="Analysis Tool sections">
-          <div><span>OPS INTELLIGENCE</span><strong>Analysis Tool</strong></div>
+          <div>
+            <span>OPS INTELLIGENCE</span>
+            <strong>Analysis Tool</strong>
+          </div>
           <nav>
             <button type="button" className={activeAnalysisToolSection === 'performance-check' ? 'active' : ''} aria-current={activeAnalysisToolSection === 'performance-check' ? 'page' : undefined} onClick={() => onNavigate('/workspace/manufacturing-ops/intelligence/analysis-tool')}>
-              <Activity size={18} /><span>Performance Check</span>
+              <Activity size={18} />
+              <span>Performance Check</span>
             </button>
             <button type="button" className={activeAnalysisToolSection === 'production-tracking' ? 'active' : ''} aria-current={activeAnalysisToolSection === 'production-tracking' ? 'page' : undefined} onClick={() => onNavigate('/workspace/manufacturing-ops/intelligence/analysis-tool/production-tracking')}>
-              <FileText size={18} /><span>Production Tracking</span>
+              <FileText size={18} />
+              <span>Production Tracking</span>
             </button>
           </nav>
         </aside>
       ) : null}
 
-      <section
-        className={[
-          'logged-workspace',
-          isManufacturingOpsPage ? 'manufacturing-workspace-active' : '',
-          activeMesWorkspace ? 'mes-application-screen-active' : '',
-          isOperatorTerminalPage ? 'operator-terminal-workspace-active' : '',
-        ].filter(Boolean).join(' ')}
-      >
+      <section className={['logged-workspace', isManufacturingOpsPage ? 'manufacturing-workspace-active' : '', activeMesWorkspace ? 'mes-application-screen-active' : '', isOperatorTerminalPage ? 'operator-terminal-workspace-active' : ''].filter(Boolean).join(' ')}>
         {isLicensesPage ? (
           <div className="license-page">
             <section className="license-pricing-hero">
               <p className="eyebrow">{t('YVIMO MEMBERSHIP')}</p>
               <h1>{t('Choose your YVIMO membership')}</h1>
-              <p>
-                {t('Access industrial automation training, Gateway Online tools, and priority commercial support through one YVIMO portal.')}
-              </p>
+              <p>{t('Access industrial automation training, Gateway Online tools, and priority commercial support through one YVIMO portal.')}</p>
               <span>{t('Specialized industrial training, digital tools, and workflow support built for automation professionals.')}</span>
               <div className="billing-toggle" role="tablist" aria-label="Billing period">
                 {billingOptions.map((option) => (
-                  <button
-                    className={billingPeriod === option.value ? 'active' : ''}
-                    type="button"
-                    role="tab"
-                    aria-selected={billingPeriod === option.value}
-                    key={option.value}
-                    onClick={() => setBillingPeriod(option.value)}
-                  >
+                  <button className={billingPeriod === option.value ? 'active' : ''} type="button" role="tab" aria-selected={billingPeriod === option.value} key={option.value} onClick={() => setBillingPeriod(option.value)}>
                     {t(option.label)}
                   </button>
                 ))}
@@ -4998,45 +4602,34 @@ function LoggedDashboardPage({
             ) : null}
 
             <section className="founding-member-card" aria-label="Founding Member offer">
-              <img
-                className="founding-member-badge"
-                src="/assets/academy/badges/license-founder.png"
-                alt=""
-                aria-hidden="true"
-              />
+              <img className="founding-member-badge" src="/assets/academy/badges/license-founder.png" alt="" aria-hidden="true" />
               <div className="founding-member-copy">
                 <span>{t('Limited early access')}</span>
                 <h2>{t('Founding Member')}</h2>
                 <p>{t('Get Professional-level YVIMO access for $1,000 MXN/month while the platform is being built.')}</p>
                 <p>{t('Join early, help shape the platform, and lock in early-access pricing while your subscription stays active.')}</p>
-                <strong>{currentFoundingMemberPricing.price} <em>{t(currentFoundingMemberPricing.label)}</em></strong>
+                <strong>
+                  {currentFoundingMemberPricing.price} <em>{t(currentFoundingMemberPricing.label)}</em>
+                </strong>
                 <button
                   className={foundingMemberIsCurrent ? 'current-plan' : ''}
                   type="button"
                   disabled={foundingMemberIsCurrent}
-                  onClick={() => handleCheckout({
-                    product_key: 'yvimo_membership',
-                    plan_key: currentFoundingMemberPricing.plan_key,
-                    billing_period: billingPeriod,
-                    price_display: currentFoundingMemberPricing.price_display,
-                    price_id: null,
-                  })}
+                  onClick={() =>
+                    handleCheckout({
+                      product_key: 'yvimo_membership',
+                      plan_key: currentFoundingMemberPricing.plan_key,
+                      billing_period: billingPeriod,
+                      price_display: currentFoundingMemberPricing.price_display,
+                      price_id: null,
+                    })
+                  }
                 >
                   {t(foundingMemberCta)} {!foundingMemberIsCurrent ? <ArrowRight size={17} /> : null}
                 </button>
               </div>
               <ul>
-                {[
-                  'Full Academy access',
-                  'Professional-level access at early-user pricing',
-                  'Gateway Online access',
-                  'Priority handling for orders and quotation requests',
-                  'Locked-in pricing while subscription stays active',
-                  'Access to content as it is released',
-                  'Influence future lessons, tools, and tracks',
-                  'Founding Member badge',
-                  'Early access to new Academy tracks',
-                ].map((feature) => (
+                {['Full Academy access', 'Professional-level access at early-user pricing', 'Gateway Online access', 'Priority handling for orders and quotation requests', 'Locked-in pricing while subscription stays active', 'Access to content as it is released', 'Influence future lessons, tools, and tracks', 'Founding Member badge', 'Early access to new Academy tracks'].map((feature) => (
                   <li key={feature}>
                     <Check size={17} />
                     {t(feature)}
@@ -5053,29 +4646,13 @@ function LoggedDashboardPage({
                 const isCurrentPlan = user.subscription === planName;
                 const currentRank = membershipRank[user.subscription];
                 const planRank = membershipRank[planName];
-                const planCta = isCurrentPlan
-                  ? 'Current Plan'
-                  : planName === 'Explorer'
-                    ? 'Start Free'
-                    : planName === 'Enterprise'
-                      ? 'Contact sales'
-                      : planRank > currentRank
-                        ? 'Upgrade to this Plan'
-                        : pricing.cta;
+                const planCta = isCurrentPlan ? 'Current Plan' : planName === 'Explorer' ? 'Start Free' : planName === 'Enterprise' ? 'Contact sales' : planRank > currentRank ? 'Upgrade to this Plan' : pricing.cta;
                 return (
-                  <article
-                    className={[
-                      'license-plan-card',
-                      plan.badge === 'Recommended' ? 'recommended' : '',
-                    ].filter(Boolean).join(' ')}
-                    key={plan.name}
-                  >
+                  <article className={['license-plan-card', plan.badge === 'Recommended' ? 'recommended' : ''].filter(Boolean).join(' ')} key={plan.name}>
                     {plan.badge ? <span className="license-plan-status">{t(plan.badge)}</span> : null}
                     <div className="license-plan-heading">
                       <h2>
-                        <span className={`license-plan-tier subscription-pill subscription-${getSubscriptionSlug(plan.name)}`}>
-                          {t(plan.name)}
-                        </span>
+                        <span className={`license-plan-tier subscription-pill subscription-${getSubscriptionSlug(plan.name)}`}>{t(plan.name)}</span>
                       </h2>
                     </div>
                     <img className="license-plan-badge-image" src={plan.badgeImage} alt="" aria-hidden="true" />
@@ -5097,13 +4674,15 @@ function LoggedDashboardPage({
                       className={isCurrentPlan ? 'current-plan' : ''}
                       type="button"
                       disabled={isCurrentPlan}
-                      onClick={() => handleCheckout({
-                        product_key: 'yvimo_membership',
-                        plan_key: pricing.plan_key,
-                        billing_period: billingPeriod,
-                        price_display: priceDisplay,
-                        price_id: null,
-                      })}
+                      onClick={() =>
+                        handleCheckout({
+                          product_key: 'yvimo_membership',
+                          plan_key: pricing.plan_key,
+                          billing_period: billingPeriod,
+                          price_display: priceDisplay,
+                          price_id: null,
+                        })
+                      }
                     >
                       {t(planCta)}
                     </button>
@@ -5116,9 +4695,7 @@ function LoggedDashboardPage({
               <div className="license-staff-heading">
                 <span>{t('Official team ranks')}</span>
                 <h2 id="license-staff-title">{t('Our staff members')}</h2>
-                <p>
-                  {t('To help you recognize official YVIMO staff easily, team profiles may carry one of these ranks. These badges identify people who create Academy content, test upcoming features, or represent YVIMO leadership.')}
-                </p>
+                <p>{t('To help you recognize official YVIMO staff easily, team profiles may carry one of these ranks. These badges identify people who create Academy content, test upcoming features, or represent YVIMO leadership.')}</p>
               </div>
 
               <div className="license-staff-grid">
@@ -5142,35 +4719,32 @@ function LoggedDashboardPage({
 
               <div className="license-staff-warning" role="note">
                 <ShieldCheck size={20} />
-                <p>
-                  {t('All official YVIMO staff members display one of these badges on their profile. Please do not trust accounts claiming to represent YVIMO if their profile does not show an official staff badge.')}
-                </p>
+                <p>{t('All official YVIMO staff members display one of these badges on their profile. Please do not trust accounts claiming to represent YVIMO if their profile does not show an official staff badge.')}</p>
               </div>
             </section>
           </div>
         ) : isHealthAppsPage ? (
           activeHealthModule?.path === '/workspace/health-apps/patients' && healthOrganization ? (
-            <HealthPatientsWorkspace
-              organizationId={healthOrganization.id}
-              organizationName={healthOrganization.name}
-              onNavigate={onNavigate}
-              t={t}
-              languageCode={languageCode}
-            />
+            <HealthPatientsWorkspace organizationId={healthOrganization.id} organizationName={healthOrganization.name} onNavigate={onNavigate} t={t} languageCode={languageCode} />
           ) : activeHealthModule ? (
             <div className="health-module-page">
               <button className="health-apps-back" type="button" onClick={() => onNavigate('/workspace/health-apps')}>
                 <ArrowLeft size={17} /> {t('All Health Apps')}
               </button>
               <section className="health-module-placeholder">
-                <span className="health-apps-hero-icon"><activeHealthModule.icon size={30} /></span>
+                <span className="health-apps-hero-icon">
+                  <activeHealthModule.icon size={30} />
+                </span>
                 <p className="eyebrow">YVIMO HEALTH</p>
                 <h1>{t(activeHealthModule.label)}</h1>
                 <p>{t(activeHealthModule.description)}</p>
                 {healthOrganization ? (
                   <button className="health-module-organization" type="button" onClick={() => setHealthOrganizationDialogOpen(true)}>
                     <Building2 size={17} />
-                    <span><small>{t('Organization context')}</small><strong>{healthOrganization.name}</strong></span>
+                    <span>
+                      <small>{t('Organization context')}</small>
+                      <strong>{healthOrganization.name}</strong>
+                    </span>
                     <ChevronRight size={17} />
                   </button>
                 ) : (
@@ -5181,61 +4755,54 @@ function LoggedDashboardPage({
               </section>
             </div>
           ) : (
-          <div className="health-apps-page">
-            <button className="health-apps-back" type="button" onClick={() => onNavigate('/dashboard')}>
-              <ArrowLeft size={17} /> {t('Go Back')}
-            </button>
-            <header className="health-apps-header">
-              <div className="health-apps-title-group">
-                <p className="eyebrow">YVIMO HEALTH</p>
-                <h1>{t('Health Apps')}</h1>
-                <p>{t('Practical digital tools designed around everyday healthcare workflows.')}</p>
-              </div>
-              <button className="health-organization-trigger" type="button" onClick={() => setHealthOrganizationDialogOpen(true)}>
-                <span className="health-organization-logo">
-                  {healthOrganization?.logoUrl ? <img src={healthOrganization.logoUrl} alt="" aria-hidden="true" /> : <Building2 size={19} />}
-                </span>
-                <span>
-                  <small>{t('Organization')}</small>
-                  <strong>{healthOrganization?.name ?? t('Choose an organization')}</strong>
-                  <em>{healthOrganization ? `${healthOrganization.role} · ${healthOrganization.memberCount} member${healthOrganization.memberCount === 1 ? '' : 's'}` : t('Required to open health modules')}</em>
-                </span>
-                <ChevronRight size={16} />
+            <div className="health-apps-page">
+              <button className="health-apps-back" type="button" onClick={() => onNavigate('/dashboard')}>
+                <ArrowLeft size={17} /> {t('Go Back')}
               </button>
-            </header>
+              <header className="health-apps-header">
+                <div className="health-apps-title-group">
+                  <p className="eyebrow">YVIMO HEALTH</p>
+                  <h1>{t('Health Apps')}</h1>
+                  <p>{t('Practical digital tools designed around everyday healthcare workflows.')}</p>
+                </div>
+                <button className="health-organization-trigger" type="button" onClick={() => setHealthOrganizationDialogOpen(true)}>
+                  <span className="health-organization-logo">{healthOrganization?.logoUrl ? <img src={healthOrganization.logoUrl} alt="" aria-hidden="true" /> : <Building2 size={19} />}</span>
+                  <span>
+                    <small>{t('Organization')}</small>
+                    <strong>{healthOrganization?.name ?? t('Choose an organization')}</strong>
+                    <em>{healthOrganization ? `${healthOrganization.role} · ${healthOrganization.memberCount} member${healthOrganization.memberCount === 1 ? '' : 's'}` : t('Required to open health modules')}</em>
+                  </span>
+                  <ChevronRight size={16} />
+                </button>
+              </header>
 
-            <div className="health-apps-hub">
-              <section className="health-apps-directory" aria-label="Health applications">
-                <div className="health-apps-directory-heading">
-                  <span>{t('Applications')}</span>
-                  <h2>{t('Select a health module')}</h2>
-                  <p>{t('Each app opens its own focused workspace.')}</p>
-                </div>
-                <div className="health-apps-module-grid">
-                  {healthAppModules.map((module) => {
-                    const Icon = module.icon;
-                    return (
-                      <button
-                        className={module.disabled ? 'health-app-module-placeholder' : ''}
-                        type="button"
-                        key={module.path}
-                        onClick={() => !module.disabled && (healthOrganization ? onNavigate(module.path) : setHealthOrganizationDialogOpen(true))}
-                        disabled={module.disabled}
-                        aria-label={module.disabled ? 'Reserved future health module' : healthOrganization ? `Open ${module.label}` : `${module.label}: choose an organization first`}
-                      >
-                        <span className="health-app-module-icon"><Icon size={23} /></span>
-                        <span>
-                          <strong>{module.disabled ? t('Coming soon') : t(module.label)}</strong>
-                          <small>{module.disabled ? t('Reserved for a future application') : t(module.description)}</small>
-                        </span>
-                        {module.disabled ? <LockKeyhole size={16} /> : <ArrowRight size={17} />}
-                      </button>
-                    );
-                  })}
-                </div>
-              </section>
+              <div className="health-apps-hub">
+                <section className="health-apps-directory" aria-label="Health applications">
+                  <div className="health-apps-directory-heading">
+                    <span>{t('Applications')}</span>
+                    <h2>{t('Select a health module')}</h2>
+                    <p>{t('Each app opens its own focused workspace.')}</p>
+                  </div>
+                  <div className="health-apps-module-grid">
+                    {healthAppModules.map((module) => {
+                      const Icon = module.icon;
+                      return (
+                        <button className={module.disabled ? 'health-app-module-placeholder' : ''} type="button" key={module.path} onClick={() => !module.disabled && (healthOrganization ? onNavigate(module.path) : setHealthOrganizationDialogOpen(true))} disabled={module.disabled} aria-label={module.disabled ? 'Reserved future health module' : healthOrganization ? `Open ${module.label}` : `${module.label}: choose an organization first`}>
+                          <span className="health-app-module-icon">
+                            <Icon size={23} />
+                          </span>
+                          <span>
+                            <strong>{module.disabled ? t('Coming soon') : t(module.label)}</strong>
+                            <small>{module.disabled ? t('Reserved for a future application') : t(module.description)}</small>
+                          </span>
+                          {module.disabled ? <LockKeyhole size={16} /> : <ArrowRight size={17} />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+              </div>
             </div>
-          </div>
           )
         ) : isGatewayOnlinePage ? (
           <div className="engineering-tools-page gateway-online-page">
@@ -5247,9 +4814,7 @@ function LoggedDashboardPage({
               <p className="eyebrow">{t('YVIMO PORTAL')}</p>
               <h1>{t('Gateway Online')}</h1>
               <p>{t('Design, simulate, test, and prepare industrial connectivity flows from your browser.')}</p>
-              <span>
-                {t('Gateway Online helps users practice with virtual devices, build data-flow concepts, generate project configurations, and prepare real industrial integrations before going onsite.')}
-              </span>
+              <span>{t('Gateway Online helps users practice with virtual devices, build data-flow concepts, generate project configurations, and prepare real industrial integrations before going onsite.')}</span>
             </section>
 
             {activeGatewayFeature ? (
@@ -5260,9 +4825,7 @@ function LoggedDashboardPage({
                 <div>
                   <strong>{t(activeGatewayFeature.label)}</strong>
                   <p>{t(activeGatewayFeature.description)}</p>
-                  <small>
-                    {t('This Gateway Online module is being prepared. It will be connected to the full YVIMO Gateway web app in a future release.')}
-                  </small>
+                  <small>{t('This Gateway Online module is being prepared. It will be connected to the full YVIMO Gateway web app in a future release.')}</small>
                 </div>
                 <span className="engineering-access-badge">{t(activeGatewayFeature.badge)}</span>
                 <button type="button">{t('Access module')}</button>
@@ -5281,12 +4844,7 @@ function LoggedDashboardPage({
               {gatewayOverviewItems.map((item) => {
                 const Icon = item.icon;
                 return (
-                  <button
-                    className="engineering-category-card gateway-feature-card"
-                    type="button"
-                    key={item.label}
-                    onClick={() => onNavigate(item.path)}
-                  >
+                  <button className="engineering-category-card gateway-feature-card" type="button" key={item.label} onClick={() => onNavigate(item.path)}>
                     <span className="gateway-card-top">
                       <span className="engineering-category-icon">
                         <Icon size={22} />
@@ -5325,218 +4883,155 @@ function LoggedDashboardPage({
                   {manufacturingOrganizationTrigger}
                 </div>
                 {isMesPage || isApsPage || isOperationsIntelligencePage ? (
-              <>
-        {manufacturingOrganizationDialog}
-                <section
-                  className={[
-                    'manufacturing-suite-stage',
-                    'manufacturing-specialty-stage',
-                    `active-${getSubscriptionSlug(activeManufacturingModule.label)}`,
-                  ].join(' ')}
-                  aria-label="Manufacturing Ops modules"
-                >
-                  <span className="manufacturing-flow flow-description-to-orbit" aria-hidden="true" />
-                  <span className="manufacturing-flow flow-orbit-entry" aria-hidden="true" />
-                  <span className="manufacturing-flow flow-orbit-to-row" aria-hidden="true" />
-                  <span className="manufacturing-flow flow-row-to-watch" aria-hidden="true" />
-                  <article className="manufacturing-suite-panel">
-                    <div className="manufacturing-suite-panel-top">
-                      <span className="manufacturing-suite-icon">
-                        {React.createElement(activeManufacturingModule.icon, { size: 30 })}
-                      </span>
-                      <span className="engineering-access-badge">{t('Active')}</span>
-                    </div>
-                    <h2>{t(getManufacturingPanelTitle(activeManufacturingModule.label))}</h2>
-                    <p>{t(activeManufacturingModule.description)}</p>
-                    <div className="manufacturing-suite-metrics" aria-label={`${activeManufacturingModule.label} capability groups`}>
-                      {activeManufacturingModule.features.slice(0, 4).map((item) => (
-                        <span key={item}>{t(item)}</span>
-                      ))}
-                    </div>
-                  </article>
-
-                  <div className="manufacturing-suite-orbit" aria-label="Manufacturing Ops selector">
-                    {manufacturingOpsModules.map((module) => {
-                      const Icon = module.icon;
-                      const moduleActive = module.label === activeManufacturingModule.label;
-                      return (
-                        <button
-                          className={moduleActive ? 'active' : ''}
-                          type="button"
-                          key={module.label}
-                          aria-label={t(module.label)}
-                          onClick={() => onNavigate(module.path)}
-                        >
-                          <Icon size={24} />
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  <div className="manufacturing-suite-right">
-                    <div className="manufacturing-suite-menu">
-                      {manufacturingOpsModules.map((module) => {
-                        const moduleActive = module.label === activeManufacturingModule.label;
-                        return (
-                          <button
-                            className={['manufacturing-suite-row', moduleActive ? 'active' : ''].filter(Boolean).join(' ')}
-                            type="button"
-                            key={module.label}
-                            onClick={() => onNavigate(module.path)}
-                          >
-                            <strong>{t(getManufacturingRowLabel(module.label))}</strong>
-                          </button>
-                        );
-                      })}
-                    </div>
-                    <div className="manufacturing-app-launcher-stack">
-                      {manufacturingUnavailableApp ? (
-                        <div className="manufacturing-app-alert" role="alert">
-                          <strong>{t(manufacturingUnavailableApp)}</strong>
-                          <span>{t('This feature/app is not implemented yet. You will be able to access it soon when it is ready.')}</span>
+                  <>
+                    {manufacturingOrganizationDialog}
+                    <section className={['manufacturing-suite-stage', 'manufacturing-specialty-stage', `active-${getSubscriptionSlug(activeManufacturingModule.label)}`].join(' ')} aria-label="Manufacturing Ops modules">
+                      <span className="manufacturing-flow flow-description-to-orbit" aria-hidden="true" />
+                      <span className="manufacturing-flow flow-orbit-entry" aria-hidden="true" />
+                      <span className="manufacturing-flow flow-orbit-to-row" aria-hidden="true" />
+                      <span className="manufacturing-flow flow-row-to-watch" aria-hidden="true" />
+                      <article className="manufacturing-suite-panel">
+                        <div className="manufacturing-suite-panel-top">
+                          <span className="manufacturing-suite-icon">{React.createElement(activeManufacturingModule.icon, { size: 30 })}</span>
+                          <span className="engineering-access-badge">{t('Active')}</span>
                         </div>
-                      ) : null}
-                      <section className="manufacturing-app-launcher" aria-label={`${activeManufacturingModule.label} modules`}>
-                        <div className="manufacturing-app-launcher-header">
-                          <strong>{t('Applications')}</strong>
-                          <span>{t('Select a module to open its workspace.')}</span>
+                        <h2>{t(getManufacturingPanelTitle(activeManufacturingModule.label))}</h2>
+                        <p>{t(activeManufacturingModule.description)}</p>
+                        <div className="manufacturing-suite-metrics" aria-label={`${activeManufacturingModule.label} capability groups`}>
+                          {activeManufacturingModule.features.slice(0, 4).map((item) => (
+                            <span key={item}>{t(item)}</span>
+                          ))}
                         </div>
-                        {activeSpecialtyModules.map((module, index) => {
+                      </article>
+
+                      <div className="manufacturing-suite-orbit" aria-label="Manufacturing Ops selector">
+                        {manufacturingOpsModules.map((module) => {
                           const Icon = module.icon;
-                          const activeModule = activePath === module.path;
-                          const implementedModule = isManufacturingAppImplemented(module);
+                          const moduleActive = module.label === activeManufacturingModule.label;
                           return (
-                            <button
-                              className={[
-                                'manufacturing-app-icon',
-                                `position-${getManufacturingAppPosition(activeManufacturingModule.label, index)}`,
-                                implementedModule ? 'implemented' : 'unimplemented',
-                                getManufacturingAppToneClass(module),
-                                activeModule ? 'active' : '',
-                              ].filter(Boolean).join(' ')}
-                              type="button"
-                              key={module.label}
-                              aria-disabled={!implementedModule}
-                              onClick={() => handleManufacturingAppLaunch(module)}
-                            >
-                              <span className="manufacturing-app-glyph">
-                                <Icon size={26} />
-                              </span>
-                              <strong>{t(module.label)}</strong>
+                            <button className={moduleActive ? 'active' : ''} type="button" key={module.label} aria-label={t(module.label)} onClick={() => onNavigate(module.path)}>
+                              <Icon size={24} />
                             </button>
                           );
                         })}
-                      </section>
-                    </div>
-                  </div>
-                </section>
-              </>
-            ) : (
-              <>
-                {manufacturingOrganizationDialog}
-                <section
-                  className={[
-                    'manufacturing-suite-stage',
-                    `active-${getSubscriptionSlug(activeManufacturingModule.label)}`,
-                  ].join(' ')}
-                  aria-label="Manufacturing Ops modules"
-                >
-                  <span className="manufacturing-flow flow-description-to-orbit" aria-hidden="true" />
-                  <span className="manufacturing-flow flow-orbit-entry" aria-hidden="true" />
-                  <span className="manufacturing-flow flow-orbit-to-row" aria-hidden="true" />
-                  <span className="manufacturing-flow flow-row-to-watch" aria-hidden="true" />
-                  <article className="manufacturing-suite-panel">
-                    <div className="manufacturing-suite-panel-top">
-                      <span className="manufacturing-suite-icon">
-                        {React.createElement(activeManufacturingModule.icon, { size: 30 })}
-                      </span>
-                      <span className="engineering-access-badge">{t('Active')}</span>
-                    </div>
-                    <h2>{t(getManufacturingPanelTitle(activeManufacturingModule.label))}</h2>
-                    <p>{t(activeManufacturingModule.description)}</p>
-                    <div className="manufacturing-suite-metrics" aria-label="MES capability groups">
-                      {activeManufacturingModule.features.slice(0, 4).map((item) => (
-                        <span key={item}>{t(item)}</span>
-                      ))}
-                    </div>
-                  </article>
+                      </div>
 
-                  <div className="manufacturing-suite-orbit" aria-label="Manufacturing Ops selector">
-                    {manufacturingOpsModules.map((module) => {
-                      const Icon = module.icon;
-                      const moduleActive = module.label === activeManufacturingModule.label;
-                      return (
-                        <button
-                          className={moduleActive ? 'active' : ''}
-                          type="button"
-                          key={module.label}
-                          aria-label={t(module.label)}
-                          onClick={() => onNavigate(module.path)}
-                        >
-                          <Icon size={24} />
-                        </button>
-                      );
-                    })}
-                  </div>
+                      <div className="manufacturing-suite-right">
+                        <div className="manufacturing-suite-menu">
+                          {manufacturingOpsModules.map((module) => {
+                            const moduleActive = module.label === activeManufacturingModule.label;
+                            return (
+                              <button className={['manufacturing-suite-row', moduleActive ? 'active' : ''].filter(Boolean).join(' ')} type="button" key={module.label} onClick={() => onNavigate(module.path)}>
+                                <strong>{t(getManufacturingRowLabel(module.label))}</strong>
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <div className="manufacturing-app-launcher-stack">
+                          {manufacturingUnavailableApp ? (
+                            <div className="manufacturing-app-alert" role="alert">
+                              <strong>{t(manufacturingUnavailableApp)}</strong>
+                              <span>{t('This feature/app is not implemented yet. You will be able to access it soon when it is ready.')}</span>
+                            </div>
+                          ) : null}
+                          <section className="manufacturing-app-launcher" aria-label={`${activeManufacturingModule.label} modules`}>
+                            <div className="manufacturing-app-launcher-header">
+                              <strong>{t('Applications')}</strong>
+                              <span>{t('Select a module to open its workspace.')}</span>
+                            </div>
+                            {activeSpecialtyModules.map((module, index) => {
+                              const Icon = module.icon;
+                              const activeModule = activePath === module.path;
+                              const implementedModule = isManufacturingAppImplemented(module);
+                              return (
+                                <button className={['manufacturing-app-icon', `position-${getManufacturingAppPosition(activeManufacturingModule.label, index)}`, implementedModule ? 'implemented' : 'unimplemented', getManufacturingAppToneClass(module), activeModule ? 'active' : ''].filter(Boolean).join(' ')} type="button" key={module.label} aria-disabled={!implementedModule} onClick={() => handleManufacturingAppLaunch(module)}>
+                                  <span className="manufacturing-app-glyph">
+                                    <Icon size={26} />
+                                  </span>
+                                  <strong>{t(module.label)}</strong>
+                                </button>
+                              );
+                            })}
+                          </section>
+                        </div>
+                      </div>
+                    </section>
+                  </>
+                ) : (
+                  <>
+                    {manufacturingOrganizationDialog}
+                    <section className={['manufacturing-suite-stage', `active-${getSubscriptionSlug(activeManufacturingModule.label)}`].join(' ')} aria-label="Manufacturing Ops modules">
+                      <span className="manufacturing-flow flow-description-to-orbit" aria-hidden="true" />
+                      <span className="manufacturing-flow flow-orbit-entry" aria-hidden="true" />
+                      <span className="manufacturing-flow flow-orbit-to-row" aria-hidden="true" />
+                      <span className="manufacturing-flow flow-row-to-watch" aria-hidden="true" />
+                      <article className="manufacturing-suite-panel">
+                        <div className="manufacturing-suite-panel-top">
+                          <span className="manufacturing-suite-icon">{React.createElement(activeManufacturingModule.icon, { size: 30 })}</span>
+                          <span className="engineering-access-badge">{t('Active')}</span>
+                        </div>
+                        <h2>{t(getManufacturingPanelTitle(activeManufacturingModule.label))}</h2>
+                        <p>{t(activeManufacturingModule.description)}</p>
+                        <div className="manufacturing-suite-metrics" aria-label="MES capability groups">
+                          {activeManufacturingModule.features.slice(0, 4).map((item) => (
+                            <span key={item}>{t(item)}</span>
+                          ))}
+                        </div>
+                      </article>
 
-                  <div className="manufacturing-suite-right">
-                    <div className="manufacturing-suite-menu">
-                      {manufacturingOpsModules.map((module) => {
-                        return (
-                          <button
-                            className={['manufacturing-suite-row', module.label === activeManufacturingModule.label ? 'active' : ''].filter(Boolean).join(' ')}
-                            type="button"
-                            key={module.label}
-                            onClick={() => onNavigate(module.path)}
-                          >
-                            <strong>{t(getManufacturingRowLabel(module.label))}</strong>
-                          </button>
-                        );
-                      })}
-                    </div>
-                    <div className="manufacturing-app-launcher-stack">
-                      {manufacturingUnavailableApp ? (
-                        <div className="manufacturing-app-alert" role="alert">
-                          <strong>{t(manufacturingUnavailableApp)}</strong>
-                          <span>{t('This feature/app is not implemented yet. You will be able to access it soon when it is ready.')}</span>
-                        </div>
-                      ) : null}
-                      <section className="manufacturing-app-launcher compact" aria-label="MES modules">
-                        <div className="manufacturing-app-launcher-header">
-                          <strong>{t('Applications')}</strong>
-                          <span>{t('Select a module to open its workspace.')}</span>
-                        </div>
-                        {mesModules.map((module, index) => {
+                      <div className="manufacturing-suite-orbit" aria-label="Manufacturing Ops selector">
+                        {manufacturingOpsModules.map((module) => {
                           const Icon = module.icon;
-                          const activeModule = activePath === module.path;
-                          const implementedModule = isManufacturingAppImplemented(module);
+                          const moduleActive = module.label === activeManufacturingModule.label;
                           return (
-                            <button
-                              className={[
-                                'manufacturing-app-icon',
-                                `position-${getManufacturingAppPosition('MES', index)}`,
-                                implementedModule ? 'implemented' : 'unimplemented',
-                                getManufacturingAppToneClass(module),
-                                activeModule ? 'active' : '',
-                              ].filter(Boolean).join(' ')}
-                              type="button"
-                              key={module.label}
-                              aria-disabled={!implementedModule}
-                              onClick={() => handleManufacturingAppLaunch(module)}
-                            >
-                              <span className="manufacturing-app-glyph">
-                                <Icon size={24} />
-                              </span>
-                              <strong>{t(module.label)}</strong>
+                            <button className={moduleActive ? 'active' : ''} type="button" key={module.label} aria-label={t(module.label)} onClick={() => onNavigate(module.path)}>
+                              <Icon size={24} />
                             </button>
                           );
                         })}
-                      </section>
-                    </div>
-                  </div>
-                </section>
-              </>
-            )}
+                      </div>
+
+                      <div className="manufacturing-suite-right">
+                        <div className="manufacturing-suite-menu">
+                          {manufacturingOpsModules.map((module) => {
+                            return (
+                              <button className={['manufacturing-suite-row', module.label === activeManufacturingModule.label ? 'active' : ''].filter(Boolean).join(' ')} type="button" key={module.label} onClick={() => onNavigate(module.path)}>
+                                <strong>{t(getManufacturingRowLabel(module.label))}</strong>
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <div className="manufacturing-app-launcher-stack">
+                          {manufacturingUnavailableApp ? (
+                            <div className="manufacturing-app-alert" role="alert">
+                              <strong>{t(manufacturingUnavailableApp)}</strong>
+                              <span>{t('This feature/app is not implemented yet. You will be able to access it soon when it is ready.')}</span>
+                            </div>
+                          ) : null}
+                          <section className="manufacturing-app-launcher compact" aria-label="MES modules">
+                            <div className="manufacturing-app-launcher-header">
+                              <strong>{t('Applications')}</strong>
+                              <span>{t('Select a module to open its workspace.')}</span>
+                            </div>
+                            {mesModules.map((module, index) => {
+                              const Icon = module.icon;
+                              const activeModule = activePath === module.path;
+                              const implementedModule = isManufacturingAppImplemented(module);
+                              return (
+                                <button className={['manufacturing-app-icon', `position-${getManufacturingAppPosition('MES', index)}`, implementedModule ? 'implemented' : 'unimplemented', getManufacturingAppToneClass(module), activeModule ? 'active' : ''].filter(Boolean).join(' ')} type="button" key={module.label} aria-disabled={!implementedModule} onClick={() => handleManufacturingAppLaunch(module)}>
+                                  <span className="manufacturing-app-glyph">
+                                    <Icon size={24} />
+                                  </span>
+                                  <strong>{t(module.label)}</strong>
+                                </button>
+                              );
+                            })}
+                          </section>
+                        </div>
+                      </div>
+                    </section>
+                  </>
+                )}
               </>
             )}
           </div>
@@ -5573,14 +5068,9 @@ function LoggedDashboardPage({
               {engineeringOverviewItems.map((item) => {
                 const Icon = item.icon;
                 return (
-                  <button
-                    className="engineering-category-card"
-                    type="button"
-                    key={item.label}
-                    onClick={() => onNavigate(item.path)}
-                    >
+                  <button className="engineering-category-card" type="button" key={item.label} onClick={() => onNavigate(item.path)}>
                     <span className="engineering-category-icon">
-                        <Icon size={22} />
+                      <Icon size={22} />
                     </span>
                     <span className="engineering-category-copy">
                       <strong>{t(item.label)}</strong>
@@ -5590,8 +5080,8 @@ function LoggedDashboardPage({
                         <span className="engineering-detail-description">{t(item.description)}</span>
                         <span className="engineering-example-list">
                           {item.examples.map((example) => (
-                        <em key={example}>{t(example)}</em>
-                      ))}
+                            <em key={example}>{t(example)}</em>
+                          ))}
                         </span>
                       </>
                     ) : null}
@@ -5606,22 +5096,10 @@ function LoggedDashboardPage({
         ) : isSupplierAccessOverview ? (
           <div className="supplier-portal-overview">
             <div className="access-mode-switch" role="tablist" aria-label="Access mode">
-              <button
-                type="button"
-                role="tab"
-                aria-selected={workspaceAccessMode === 'workspace'}
-                className={workspaceAccessMode === 'workspace' ? 'active' : ''}
-                onClick={() => setAccessMode('workspace')}
-              >
+              <button type="button" role="tab" aria-selected={workspaceAccessMode === 'workspace'} className={workspaceAccessMode === 'workspace' ? 'active' : ''} onClick={() => setAccessMode('workspace')}>
                 Workspace Access
               </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={workspaceAccessMode === 'supplier'}
-                className={workspaceAccessMode === 'supplier' ? 'active' : ''}
-                onClick={() => setAccessMode('supplier')}
-              >
+              <button type="button" role="tab" aria-selected={workspaceAccessMode === 'supplier'} className={workspaceAccessMode === 'supplier' ? 'active' : ''} onClick={() => setAccessMode('supplier')}>
                 Supplier Access
               </button>
             </div>
@@ -5633,7 +5111,11 @@ function LoggedDashboardPage({
               <span>This portal will allow suppliers to confirm received parts, update external process status, upload certificates, and return completed work.</span>
             </section>
 
-            {supplierJoinMessage ? <div className="supplier-portal-toast" role="status">{supplierJoinMessage}</div> : null}
+            {supplierJoinMessage ? (
+              <div className="supplier-portal-toast" role="status">
+                {supplierJoinMessage}
+              </div>
+            ) : null}
 
             <section className="supplier-portal-kpis" aria-label="Supplier portal metrics">
               {[
@@ -5656,237 +5138,207 @@ function LoggedDashboardPage({
             </section>
           </div>
         ) : (
-        <div className="workspace-layout">
-          <div className="workspace-main">
-            <div className="access-mode-switch" role="tablist" aria-label="Access mode">
-              <button
-                type="button"
-                role="tab"
-                aria-selected={workspaceAccessMode === 'workspace'}
-                className={workspaceAccessMode === 'workspace' ? 'active' : ''}
-                onClick={() => setAccessMode('workspace')}
-              >
-                Workspace Access
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={workspaceAccessMode === 'supplier'}
-                className={workspaceAccessMode === 'supplier' ? 'active' : ''}
-                onClick={() => setAccessMode('supplier')}
-              >
-                Supplier Access
-              </button>
-            </div>
-            <div className="workspace-heading">
-              <p className="eyebrow">{t('YVIMO PORTAL')}</p>
-              <h1>{t('Workspace overview')}</h1>
-              <p>{t('Your YVIMO tools, licenses, and learning access in one place.')}</p>
-            </div>
-            <section className="workspace-product-section" aria-label="Flagship products">
-              <div className="workspace-section-heading">
-                <span>{t('Flagship products')}</span>
-                <h2>{t('Start with your main YVIMO workspaces')}</h2>
-              </div>
-              <div className="workspace-grid workspace-flagship-grid">
-                {flagshipAccessItems.map((item) => {
-                  const Icon = item.icon;
-                  return (
-                    <button
-                      className={`workspace-access-card workspace-flagship-card${item.theme ? ` workspace-${item.theme}-card` : ''}`}
-                      type="button"
-                      key={item.label}
-                      onClick={() => onNavigate(item.path)}
-                    >
-                      <span className="workspace-module-heading">
-                        {item.logo ? (
-                          <span className="workspace-module-logo"><img src={item.logo} alt="" /></span>
-                        ) : (
-                          <span className="workspace-access-icon"><Icon size={24} /></span>
-                        )}
-                        <strong>{t(item.label)}</strong>
-                      </span>
-                      <span className="workspace-access-copy">
-                        <span>{t(item.description)}</span>
-                      </span>
-                      <ArrowRight size={18} />
-                    </button>
-                  );
-                })}
-              </div>
-            </section>
-
-            <section className="workspace-product-section workspace-secondary-section" aria-label="Secondary modules">
-              <div className="workspace-section-heading">
-                <span>{t('Secondary modules')}</span>
-                <h2>{t('Tools, licenses, and commercial workflows')}</h2>
-              </div>
-              <div className="workspace-grid workspace-secondary-grid">
-                {secondaryAccessItems.map((item) => {
-                  const Icon = item.icon;
-                  return (
-                    <button
-                      className="workspace-secondary-tile"
-                      type="button"
-                      key={item.label}
-                      onClick={() => onNavigate(item.path)}
-                    >
-                      <span className="workspace-access-icon">
-                        <Icon size={18} />
-                      </span>
-                      <span className="workspace-access-copy">
-                        <strong>{t(item.label)}</strong>
-                      </span>
-                      <ArrowRight size={16} />
-                    </button>
-                  );
-                })}
-              </div>
-            </section>
-          </div>
-
-          <aside className="workspace-profile-card" aria-label="Workspace profile">
-            <div className="workspace-profile-copy">
-              <strong>{user.name}</strong>
-            </div>
-            <button
-              className="workspace-profile-avatar-button"
-              type="button"
-              onClick={() => setAvatarDialogOpen(true)}
-              aria-label={t('Change profile picture')}
-            >
-              <span
-                className="workspace-profile-ring"
-                style={{ '--profile-progress': `${profileLevelProgress}%` } as React.CSSProperties}
-                aria-label={`${profileLevelProgress}% level progress`}
-              >
-                <UserAvatar user={user} className="workspace-profile-avatar" />
-                <span className="workspace-profile-edit-icon" aria-hidden="true">
-                  <Pencil size={16} />
-                </span>
-              </span>
-            </button>
-            <div className="workspace-profile-level" aria-label={`Level ${profileLevel}`}>
-              <span>LV</span>
-              <strong>{profileLevel}</strong>
-            </div>
-            <img
-              className="workspace-profile-badge"
-              src={getSubscriptionBadgeImage(user.subscription)}
-              alt={`${user.subscription} badge`}
-            />
-            <span className={`${getSubscriptionClass(user.subscription)} workspace-profile-tier`}>
-              {user.subscription}
-            </span>
-            <div className="workspace-profile-points">
-              <Star size={19} fill="currentColor" />
-              <strong>{yvimoPoints.toLocaleString()}</strong>
-              <span>{t('YVIMO Points')}</span>
-            </div>
-          </aside>
-
-          {avatarDialogOpen ? (
-            <div className="profile-avatar-dialog-backdrop" role="presentation" onMouseDown={() => setAvatarDialogOpen(false)}>
-              <section
-                className="profile-avatar-dialog"
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby="profile-avatar-dialog-title"
-                onMouseDown={(event) => event.stopPropagation()}
-              >
-                <button
-                  className="profile-avatar-dialog-close"
-                  type="button"
-                  onClick={() => setAvatarDialogOpen(false)}
-                  aria-label={t('Close')}
-                >
-                  <X size={18} />
+          <div className="workspace-layout">
+            <div className="workspace-main">
+              <div className="access-mode-switch" role="tablist" aria-label="Access mode">
+                <button type="button" role="tab" aria-selected={workspaceAccessMode === 'workspace'} className={workspaceAccessMode === 'workspace' ? 'active' : ''} onClick={() => setAccessMode('workspace')}>
+                  Workspace Access
                 </button>
-                <div className="profile-avatar-dialog-heading">
-                  <span>{t('Profile picture')}</span>
-                  <h2 id="profile-avatar-dialog-title">{t('Change profile picture')}</h2>
+                <button type="button" role="tab" aria-selected={workspaceAccessMode === 'supplier'} className={workspaceAccessMode === 'supplier' ? 'active' : ''} onClick={() => setAccessMode('supplier')}>
+                  Supplier Access
+                </button>
+              </div>
+              <div className="workspace-heading">
+                <p className="eyebrow">{t('YVIMO PORTAL')}</p>
+                <h1>{t('Workspace overview')}</h1>
+                <p>{t('Your YVIMO tools, licenses, and learning access in one place.')}</p>
+              </div>
+              <section className="workspace-product-section" aria-label="Flagship products">
+                <div className="workspace-section-heading">
+                  <span>{t('Flagship products')}</span>
+                  <h2>{t('Start with your main YVIMO workspaces')}</h2>
                 </div>
-                <div
-                  className={avatarPreview ? 'profile-avatar-preview editable' : 'profile-avatar-preview'}
-                  aria-label={t('Drag image to reposition it')}
-                  onPointerDown={handleAvatarPointerDown}
-                  onPointerMove={handleAvatarPointerMove}
-                  onPointerUp={handleAvatarPointerEnd}
-                  onPointerCancel={handleAvatarPointerEnd}
-                >
-                  {avatarPreview ? (
-                    <img
-                      src={avatarPreview}
-                      alt=""
-                      draggable={false}
-                      style={{
-                        transform: `translate(${avatarOffset.x}px, ${avatarOffset.y}px) scale(${avatarZoom})`,
-                      }}
-                    />
-                  ) : (
-                    <UserAvatar user={user} className="profile-avatar-preview-fallback" />
-                  )}
+                <div className="workspace-grid workspace-flagship-grid">
+                  {flagshipAccessItems.map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <button className={`workspace-access-card workspace-flagship-card${item.theme ? ` workspace-${item.theme}-card` : ''}`} type="button" key={item.label} onClick={() => onNavigate(item.path)}>
+                        <span className="workspace-module-heading">
+                          {item.logo ? (
+                            <span className="workspace-module-logo">
+                              <img src={item.logo} alt="" />
+                            </span>
+                          ) : (
+                            <span className="workspace-access-icon">
+                              <Icon size={24} />
+                            </span>
+                          )}
+                          <strong>{t(item.label)}</strong>
+                        </span>
+                        <span className="workspace-access-copy">
+                          <span>{t(item.description)}</span>
+                        </span>
+                        <ArrowRight size={18} />
+                      </button>
+                    );
+                  })}
                 </div>
-                <div className="profile-avatar-crop-controls">
-                  <label>
-                    <span>{t('Zoom')}</span>
-                    <input
-                      type="range"
-                      min="1"
-                      max="2.6"
-                      step="0.01"
-                      value={avatarZoom}
-                      disabled={!avatarPreview}
-                      onChange={(event) => setAvatarZoom(Number(event.target.value))}
-                    />
-                  </label>
-                  <button type="button" onClick={resetAvatarCrop} disabled={!avatarPreview}>
-                    {t('Center image')}
-                  </button>
+              </section>
+
+              <section className="workspace-product-section workspace-secondary-section" aria-label="Secondary modules">
+                <div className="workspace-section-heading">
+                  <span>{t('Secondary modules')}</span>
+                  <h2>{t('Tools, licenses, and commercial workflows')}</h2>
                 </div>
-                <label className="profile-avatar-file-control">
-                  <Pencil size={17} />
-                  <span>{avatarFile ? avatarFile.name : t('Choose image')}</span>
-                  <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={handleAvatarFileChange} />
-                </label>
-                {avatarMessage ? <p className="profile-avatar-message">{t(avatarMessage)}</p> : null}
-                <div className="profile-avatar-dialog-actions">
-                  <button type="button" onClick={() => setAvatarDialogOpen(false)}>
-                    {t('Cancel')}
-                  </button>
-                  <button type="button" onClick={handleAvatarSave} disabled={!avatarFile || avatarSaving}>
-                    {avatarSaving ? t('Saving...') : t('Save picture')}
-                  </button>
+                <div className="workspace-grid workspace-secondary-grid">
+                  {secondaryAccessItems.map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <button className="workspace-secondary-tile" type="button" key={item.label} onClick={() => onNavigate(item.path)}>
+                        <span className="workspace-access-icon">
+                          <Icon size={18} />
+                        </span>
+                        <span className="workspace-access-copy">
+                          <strong>{t(item.label)}</strong>
+                        </span>
+                        <ArrowRight size={16} />
+                      </button>
+                    );
+                  })}
                 </div>
               </section>
             </div>
-          ) : null}
-        </div>
+
+            <aside className="workspace-profile-card" aria-label="Workspace profile">
+              <div className="workspace-profile-copy">
+                <strong>{user.name}</strong>
+              </div>
+              <button className="workspace-profile-avatar-button" type="button" onClick={() => setAvatarDialogOpen(true)} aria-label={t('Change profile picture')}>
+                <span
+                  className="workspace-profile-ring"
+                  style={
+                    {
+                      '--profile-progress': `${profileLevelProgress}%`,
+                    } as React.CSSProperties
+                  }
+                  aria-label={`${profileLevelProgress}% level progress`}
+                >
+                  <UserAvatar user={user} className="workspace-profile-avatar" />
+                  <span className="workspace-profile-edit-icon" aria-hidden="true">
+                    <Pencil size={16} />
+                  </span>
+                </span>
+              </button>
+              <div className="workspace-profile-level" aria-label={`Level ${profileLevel}`}>
+                <span>LV</span>
+                <strong>{profileLevel}</strong>
+              </div>
+              <img className="workspace-profile-badge" src={getSubscriptionBadgeImage(user.subscription)} alt={`${user.subscription} badge`} />
+              <span className={`${getSubscriptionClass(user.subscription)} workspace-profile-tier`}>{user.subscription}</span>
+              <div className="workspace-profile-points">
+                <Star size={19} fill="currentColor" />
+                <strong>{yvimoPoints.toLocaleString()}</strong>
+                <span>{t('YVIMO Points')}</span>
+              </div>
+            </aside>
+
+            {avatarDialogOpen ? (
+              <div className="profile-avatar-dialog-backdrop" role="presentation" onMouseDown={() => setAvatarDialogOpen(false)}>
+                <section className="profile-avatar-dialog" role="dialog" aria-modal="true" aria-labelledby="profile-avatar-dialog-title" onMouseDown={(event) => event.stopPropagation()}>
+                  <button className="profile-avatar-dialog-close" type="button" onClick={() => setAvatarDialogOpen(false)} aria-label={t('Close')}>
+                    <X size={18} />
+                  </button>
+                  <div className="profile-avatar-dialog-heading">
+                    <span>{t('Profile picture')}</span>
+                    <h2 id="profile-avatar-dialog-title">{t('Change profile picture')}</h2>
+                  </div>
+                  <div className={avatarPreview ? 'profile-avatar-preview editable' : 'profile-avatar-preview'} aria-label={t('Drag image to reposition it')} onPointerDown={handleAvatarPointerDown} onPointerMove={handleAvatarPointerMove} onPointerUp={handleAvatarPointerEnd} onPointerCancel={handleAvatarPointerEnd}>
+                    {avatarPreview ? (
+                      <img
+                        src={avatarPreview}
+                        alt=""
+                        draggable={false}
+                        style={{
+                          transform: `translate(${avatarOffset.x}px, ${avatarOffset.y}px) scale(${avatarZoom})`,
+                        }}
+                      />
+                    ) : (
+                      <UserAvatar user={user} className="profile-avatar-preview-fallback" />
+                    )}
+                  </div>
+                  <div className="profile-avatar-crop-controls">
+                    <label>
+                      <span>{t('Zoom')}</span>
+                      <input type="range" min="1" max="2.6" step="0.01" value={avatarZoom} disabled={!avatarPreview} onChange={(event) => setAvatarZoom(Number(event.target.value))} />
+                    </label>
+                    <button type="button" onClick={resetAvatarCrop} disabled={!avatarPreview}>
+                      {t('Center image')}
+                    </button>
+                  </div>
+                  <label className="profile-avatar-file-control">
+                    <Pencil size={17} />
+                    <span>{avatarFile ? avatarFile.name : t('Choose image')}</span>
+                    <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={handleAvatarFileChange} />
+                  </label>
+                  {avatarMessage ? <p className="profile-avatar-message">{t(avatarMessage)}</p> : null}
+                  <div className="profile-avatar-dialog-actions">
+                    <button type="button" onClick={() => setAvatarDialogOpen(false)}>
+                      {t('Cancel')}
+                    </button>
+                    <button type="button" onClick={handleAvatarSave} disabled={!avatarFile || avatarSaving}>
+                      {avatarSaving ? t('Saving...') : t('Save picture')}
+                    </button>
+                  </div>
+                </section>
+              </div>
+            ) : null}
+          </div>
         )}
         {healthOrganizationDialogOpen ? (
           <div className="health-organization-dialog-backdrop" role="presentation" onMouseDown={() => setHealthOrganizationDialogOpen(false)}>
             <section className="health-organization-dialog" role="dialog" aria-modal="true" aria-labelledby="health-organization-dialog-title" onMouseDown={(event) => event.stopPropagation()}>
-              <button className="health-organization-dialog-close" type="button" aria-label="Close organization selector" onClick={() => setHealthOrganizationDialogOpen(false)}><X size={18} /></button>
+              <button className="health-organization-dialog-close" type="button" aria-label="Close organization selector" onClick={() => setHealthOrganizationDialogOpen(false)}>
+                <X size={18} />
+              </button>
               <div className="health-organization-dialog-heading">
-                <span><Building2 size={24} /></span>
-                <div><small>YVIMO HEALTH</small><h2 id="health-organization-dialog-title">{t('Switch organization')}</h2><p>{t('Changing context does not remove you from any organization.')}</p></div>
+                <span>
+                  <Building2 size={24} />
+                </span>
+                <div>
+                  <small>YVIMO HEALTH</small>
+                  <h2 id="health-organization-dialog-title">{t('Switch organization')}</h2>
+                  <p>{t('Changing context does not remove you from any organization.')}</p>
+                </div>
               </div>
               <div className="health-organization-list">
-                {healthOrganizations.length > 0 ? healthOrganizations.map((organization) => (
-                  <div className={organization.id === healthOrganizationId ? 'active' : ''} key={organization.id}>
-                    <button className="health-organization-select" type="button" onClick={() => {
-                      setHealthOrganizationId(organization.id);
-                      setHealthOrganizationMessage(`${organization.name} is now active in Health Apps.`);
-                    }}>
-                    <span className="health-organization-logo">{organization.logoUrl ? <img src={organization.logoUrl} alt="" aria-hidden="true" /> : <Building2 size={20} />}</span>
-                    <span><strong>{organization.name}</strong><small>{organization.role} · {organization.memberCount} member{organization.memberCount === 1 ? '' : 's'}</small></span>
-                    {organization.id === healthOrganizationId ? <Check size={18} /> : <ChevronRight size={18} />}
-                    </button>
-                    <button className="health-organization-leave" type="button" onClick={() => setHealthOrganizationToLeave(organization)} aria-label={`Leave ${organization.name}`} title={t('Leave organization')}>
-                      <LogIn size={16} />
-                    </button>
-                  </div>
-                )) : <p className="health-organization-empty">{t('You have not joined an organization yet.')}</p>}
+                {healthOrganizations.length > 0 ? (
+                  healthOrganizations.map((organization) => (
+                    <div className={organization.id === healthOrganizationId ? 'active' : ''} key={organization.id}>
+                      <button
+                        className="health-organization-select"
+                        type="button"
+                        onClick={() => {
+                          setHealthOrganizationId(organization.id);
+                          setHealthOrganizationMessage(`${organization.name} is now active in Health Apps.`);
+                        }}
+                      >
+                        <span className="health-organization-logo">{organization.logoUrl ? <img src={organization.logoUrl} alt="" aria-hidden="true" /> : <Building2 size={20} />}</span>
+                        <span>
+                          <strong>{organization.name}</strong>
+                          <small>
+                            {organization.role} · {organization.memberCount} member{organization.memberCount === 1 ? '' : 's'}
+                          </small>
+                        </span>
+                        {organization.id === healthOrganizationId ? <Check size={18} /> : <ChevronRight size={18} />}
+                      </button>
+                      <button className="health-organization-leave" type="button" onClick={() => setHealthOrganizationToLeave(organization)} aria-label={`Leave ${organization.name}`} title={t('Leave organization')}>
+                        <LogIn size={16} />
+                      </button>
+                    </div>
+                  ))
+                ) : (
+                  <p className="health-organization-empty">{t('You have not joined an organization yet.')}</p>
+                )}
               </div>
               {healthOrganization && canManageHealthOrganization ? (
                 <div className="health-organization-admin">
@@ -5895,51 +5347,80 @@ function LoggedDashboardPage({
                     <strong>{healthOrganization.name}</strong>
                   </div>
                   <div className="health-organization-edit-row">
-                    <label><span>{t('Organization name')}</span><input value={healthOrganizationEditName} onChange={(event) => setHealthOrganizationEditName(event.target.value)} /></label>
+                    <label>
+                      <span>{t('Organization name')}</span>
+                      <input value={healthOrganizationEditName} onChange={(event) => setHealthOrganizationEditName(event.target.value)} />
+                    </label>
                     <label className="health-organization-logo-upload">
                       <span>{t('Organization image')}</span>
-                      <span className="health-organization-logo-upload-control"><span className="health-organization-logo">{healthOrganization.logoUrl ? <img src={healthOrganization.logoUrl} alt="" /> : <Building2 size={19} />}</span>{t('Choose image')}</span>
+                      <span className="health-organization-logo-upload-control">
+                        <span className="health-organization-logo">{healthOrganization.logoUrl ? <img src={healthOrganization.logoUrl} alt="" /> : <Building2 size={19} />}</span>
+                        {t('Choose image')}
+                      </span>
                       <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={uploadHealthOrganizationLogo} disabled={healthOrganizationBusy} />
                     </label>
-                    <button type="button" onClick={() => void updateHealthOrganization()} disabled={healthOrganizationBusy || !healthOrganizationEditName.trim()}>{t('Save')}</button>
+                    <button type="button" onClick={() => void updateHealthOrganization()} disabled={healthOrganizationBusy || !healthOrganizationEditName.trim()}>
+                      {t('Save')}
+                    </button>
                   </div>
                   <div className="health-organization-invite-panel">
-                    <div className="health-organization-code"><small>{t('Invitation code')}</small><strong>{healthOrganization.inviteCode || t('No active code')}</strong></div>
+                    <div className="health-organization-code">
+                      <small>{t('Invitation code')}</small>
+                      <strong>{healthOrganization.inviteCode || t('No active code')}</strong>
+                    </div>
                     <div className="health-organization-role-picker">
                       <span>{t('New members join as')}</span>
                       {(['Admin', 'Operator', 'Viewer', 'Supplier'] as ManufacturingOrganizationInviteRole[]).map((role) => (
-                        <button className={healthOrganizationInviteRole === role ? 'active' : ''} type="button" key={role} onClick={() => setHealthOrganizationInviteRole(role)}>{t(role)}</button>
+                        <button className={healthOrganizationInviteRole === role ? 'active' : ''} type="button" key={role} onClick={() => setHealthOrganizationInviteRole(role)}>
+                          {t(role)}
+                        </button>
                       ))}
                     </div>
                     <div className="health-organization-invite-actions">
-                      <button type="button" onClick={() => void copyHealthInviteCode()} disabled={!healthOrganization.inviteCode}><ClipboardCheck size={15} /> {t('Copy code')}</button>
-                      <button type="button" onClick={() => void regenerateHealthInviteCode()} disabled={healthOrganizationBusy}><Plus size={15} /> {t('Generate new code')}</button>
+                      <button type="button" onClick={() => void copyHealthInviteCode()} disabled={!healthOrganization.inviteCode}>
+                        <ClipboardCheck size={15} /> {t('Copy code')}
+                      </button>
+                      <button type="button" onClick={() => void regenerateHealthInviteCode()} disabled={healthOrganizationBusy}>
+                        <Plus size={15} /> {t('Generate new code')}
+                      </button>
                     </div>
                   </div>
                 </div>
               ) : null}
               <div className="health-organization-create">
-                <label><span>{t('Create organization')}</span><input value={healthOrganizationCreateName} onChange={(event) => setHealthOrganizationCreateName(event.target.value)} placeholder={t('Organization name')} /></label>
-                <button type="button" onClick={() => void createHealthOrganization()} disabled={healthOrganizationBusy}><Plus size={16} /> {t('Create')}</button>
+                <label>
+                  <span>{t('Create organization')}</span>
+                  <input value={healthOrganizationCreateName} onChange={(event) => setHealthOrganizationCreateName(event.target.value)} placeholder={t('Organization name')} />
+                </label>
+                <button type="button" onClick={() => void createHealthOrganization()} disabled={healthOrganizationBusy}>
+                  <Plus size={16} /> {t('Create')}
+                </button>
               </div>
               <div className="health-organization-join">
-                <label><span>{t('Join another organization')}</span><input value={healthOrganizationJoinCode} onChange={(event) => setHealthOrganizationJoinCode(event.target.value.toUpperCase())} placeholder="CODE-123ABC" /></label>
-                <button type="button" onClick={() => void joinHealthOrganization()} disabled={healthOrganizationBusy}><UserPlus size={16} /> {healthOrganizationBusy ? t('Joining...') : t('Join organization')}</button>
+                <label>
+                  <span>{t('Join another organization')}</span>
+                  <input value={healthOrganizationJoinCode} onChange={(event) => setHealthOrganizationJoinCode(event.target.value.toUpperCase())} placeholder="CODE-123ABC" />
+                </label>
+                <button type="button" onClick={() => void joinHealthOrganization()} disabled={healthOrganizationBusy}>
+                  <UserPlus size={16} /> {healthOrganizationBusy ? t('Joining...') : t('Join organization')}
+                </button>
               </div>
-              {healthOrganizationMessage ? <p className="health-organization-message" role="status">{t(healthOrganizationMessage)}</p> : null}
+              {healthOrganizationMessage ? (
+                <p className="health-organization-message" role="status">
+                  {t(healthOrganizationMessage)}
+                </p>
+              ) : null}
               {healthOrganizationToLeave ? (
                 <div className="health-organization-confirm" role="alertdialog" aria-modal="true" aria-labelledby="health-leave-title">
                   <div>
                     <span>{t('Leave organization')}</span>
                     <h3 id="health-leave-title">{healthOrganizationToLeave.name}</h3>
-                    <p>{healthOrganizationToLeave.role === 'Owner' && healthOrganizationToLeave.memberCount === 1
-                      ? t('You are the only member. Leaving will permanently delete this empty organization. This cannot be undone.')
-                      : healthOrganizationToLeave.role === 'Owner'
-                        ? t('You must transfer ownership before leaving because this organization has other members.')
-                        : t('Your access to this organization and its Health Apps data will be removed. Your other memberships will not change.')}</p>
+                    <p>{healthOrganizationToLeave.role === 'Owner' && healthOrganizationToLeave.memberCount === 1 ? t('You are the only member. Leaving will permanently delete this empty organization. This cannot be undone.') : healthOrganizationToLeave.role === 'Owner' ? t('You must transfer ownership before leaving because this organization has other members.') : t('Your access to this organization and its Health Apps data will be removed. Your other memberships will not change.')}</p>
                   </div>
                   <div className="health-organization-confirm-actions">
-                    <button type="button" onClick={() => setHealthOrganizationToLeave(null)}>{t('Cancel')}</button>
+                    <button type="button" onClick={() => setHealthOrganizationToLeave(null)}>
+                      {t('Cancel')}
+                    </button>
                     <button className="danger" type="button" onClick={() => void leaveHealthOrganization()} disabled={healthOrganizationBusy || (healthOrganizationToLeave.role === 'Owner' && healthOrganizationToLeave.memberCount > 1)}>
                       {healthOrganizationBusy ? t('Working...') : healthOrganizationToLeave.role === 'Owner' && healthOrganizationToLeave.memberCount === 1 ? t('Delete and leave') : t('Leave organization')}
                     </button>
@@ -5951,19 +5432,8 @@ function LoggedDashboardPage({
         ) : null}
         {supplierJoinDialogOpen ? (
           <div className="supplier-join-dialog-backdrop" role="presentation" onMouseDown={() => setSupplierJoinDialogOpen(false)}>
-            <section
-              className="supplier-join-dialog"
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="supplier-join-dialog-title"
-              onMouseDown={(event) => event.stopPropagation()}
-            >
-              <button
-                className="supplier-join-dialog-close"
-                type="button"
-                onClick={() => setSupplierJoinDialogOpen(false)}
-                aria-label="Close"
-              >
+            <section className="supplier-join-dialog" role="dialog" aria-modal="true" aria-labelledby="supplier-join-dialog-title" onMouseDown={(event) => event.stopPropagation()}>
+              <button className="supplier-join-dialog-close" type="button" onClick={() => setSupplierJoinDialogOpen(false)} aria-label="Close">
                 <X size={18} />
               </button>
               <div className="supplier-join-dialog-heading">
@@ -5974,14 +5444,12 @@ function LoggedDashboardPage({
               <form onSubmit={joinCustomerWorkspace}>
                 <label>
                   <span>Invitation code</span>
-                  <input
-                    value={supplierInvitationCode}
-                    onChange={(event) => setSupplierInvitationCode(event.target.value)}
-                    placeholder="GLSN-SUP-2026"
-                  />
+                  <input value={supplierInvitationCode} onChange={(event) => setSupplierInvitationCode(event.target.value)} placeholder="GLSN-SUP-2026" />
                 </label>
                 <div className="supplier-join-dialog-actions">
-                  <button type="button" onClick={() => setSupplierJoinDialogOpen(false)}>Cancel</button>
+                  <button type="button" onClick={() => setSupplierJoinDialogOpen(false)}>
+                    Cancel
+                  </button>
                   <button type="submit">Join customer</button>
                 </div>
               </form>
@@ -6018,9 +5486,7 @@ function App() {
   const [language, setLanguage] = React.useState<LanguageCode>(getStoredLanguage);
   const [activeSolution, setActiveSolution] = React.useState<string | null>(null);
   const [scrollProgress, setScrollProgress] = React.useState(0);
-  const [currentPath, setCurrentPath] = React.useState(() =>
-    typeof window === 'undefined' ? '/' : window.location.pathname,
-  );
+  const [currentPath, setCurrentPath] = React.useState(() => (typeof window === 'undefined' ? '/' : window.location.pathname));
   const [authSession, setAuthSession] = React.useState<Session | null>(null);
   const [authUser, setAuthUser] = React.useState<AppUser | null>(null);
   const [authLoading, setAuthLoading] = React.useState(true);
@@ -6030,9 +5496,7 @@ function App() {
   const authSessionRef = React.useRef<Session | null>(null);
   const authProfileRequestRef = React.useRef(0);
   const explicitSignOutRef = React.useRef(false);
-  const [viewportWidth, setViewportWidth] = React.useState(() =>
-    typeof window === 'undefined' ? 1440 : window.innerWidth,
-  );
+  const [viewportWidth, setViewportWidth] = React.useState(() => (typeof window === 'undefined' ? 1440 : window.innerWidth));
 
   React.useEffect(() => {
     try {
@@ -6049,31 +5513,9 @@ function App() {
   const isSignUpPage = currentPath === '/signup';
   const isStandaloneHealthPage = currentPath === '/health' || currentPath.startsWith('/health/');
   const isDirectHealthAppsPage = isStandaloneHealthPage || currentPath === '/workspace/health-apps' || currentPath.startsWith('/workspace/health-apps/');
-  const healthWorkspacePath = isStandaloneHealthPage
-    ? currentPath === '/health' ? '/workspace/health-apps' : currentPath.replace(/^\/health/, '/workspace/health-apps')
-    : currentPath;
-  const isDashboardPage =
-    currentPath === '/dashboard'
-    || currentPath.startsWith('/dashboard/')
-    || currentPath === '/portal/gateway-online'
-    || currentPath.startsWith('/portal/gateway-online/')
-    || currentPath === '/portal/engineering-tools'
-    || currentPath.startsWith('/portal/engineering-tools/')
-    || currentPath === '/workspace/health-apps'
-    || currentPath.startsWith('/workspace/health-apps/')
-    || isStandaloneHealthPage
-    || currentPath === '/workspace/manufacturing-ops'
-    || currentPath.startsWith('/workspace/manufacturing-ops/');
-  const isMesApplicationScreen =
-    currentPath === '/workspace/manufacturing-ops/mes/orders'
-    || currentPath === '/workspace/manufacturing-ops/mes/work-centers'
-    || currentPath === '/workspace/manufacturing-ops/mes/operator-terminal'
-    || currentPath === '/workspace/manufacturing-ops/mes/traceability'
-    || currentPath === '/workspace/manufacturing-ops/mes/suppliers'
-    || currentPath === '/workspace/manufacturing-ops/mes/quality'
-    || currentPath.startsWith('/workspace/manufacturing-ops/mes/quality/')
-    || currentPath === '/workspace/manufacturing-ops/mes/clients'
-    || currentPath.startsWith('/workspace/manufacturing-ops/mes/clients/');
+  const healthWorkspacePath = isStandaloneHealthPage ? (currentPath === '/health' ? '/workspace/health-apps' : currentPath.replace(/^\/health/, '/workspace/health-apps')) : currentPath;
+  const isDashboardPage = currentPath === '/dashboard' || currentPath.startsWith('/dashboard/') || currentPath === '/portal/gateway-online' || currentPath.startsWith('/portal/gateway-online/') || currentPath === '/portal/engineering-tools' || currentPath.startsWith('/portal/engineering-tools/') || currentPath === '/workspace/health-apps' || currentPath.startsWith('/workspace/health-apps/') || isStandaloneHealthPage || currentPath === '/workspace/manufacturing-ops' || currentPath.startsWith('/workspace/manufacturing-ops/');
+  const isMesApplicationScreen = currentPath === '/workspace/manufacturing-ops/mes/orders' || currentPath === '/workspace/manufacturing-ops/mes/work-centers' || currentPath === '/workspace/manufacturing-ops/mes/operator-terminal' || currentPath === '/workspace/manufacturing-ops/mes/traceability' || currentPath === '/workspace/manufacturing-ops/mes/suppliers' || currentPath === '/workspace/manufacturing-ops/mes/quality' || currentPath.startsWith('/workspace/manufacturing-ops/mes/quality/') || currentPath === '/workspace/manufacturing-ops/mes/clients' || currentPath.startsWith('/workspace/manufacturing-ops/mes/clients/');
   const isWorkspacePage = currentPath === '/dashboard';
   const isAcademyPage = currentPath === '/academy' || currentPath.startsWith('/academy/');
   const isAuthPage = isLoginPage || isSignUpPage;
@@ -6087,39 +5529,23 @@ function App() {
   const compactHeaderHeight = compactViewport ? 82 : 94;
   const expandedWaveDepth = compactViewport ? 34 : 48;
   const expandedBrandWidth = tinyViewport ? 82 : compactViewport ? 330 : viewportWidth < 1040 ? 372 : 420;
-  const headerHeight =
-    expandedHeaderHeight - headerProgress * (expandedHeaderHeight - compactHeaderHeight);
+  const headerHeight = expandedHeaderHeight - headerProgress * (expandedHeaderHeight - compactHeaderHeight);
   const waveDepth = expandedWaveDepth * (1 - headerProgress);
-  const startBrandCenter = tinyViewport
-    ? Math.min(Math.max(viewportWidth * 0.22, 86), 114)
-    : compactViewport
-      ? Math.min(Math.max(viewportWidth * 0.28, 190), 254)
-      : Math.min(Math.max(viewportWidth * 0.2, 305), 370);
-  const brandLeft =
-    startBrandCenter + (viewportWidth / 2 - startBrandCenter) * headerProgress;
+  const startBrandCenter = tinyViewport ? Math.min(Math.max(viewportWidth * 0.22, 86), 114) : compactViewport ? Math.min(Math.max(viewportWidth * 0.28, 190), 254) : Math.min(Math.max(viewportWidth * 0.2, 305), 370);
+  const brandLeft = startBrandCenter + (viewportWidth / 2 - startBrandCenter) * headerProgress;
   const expandedBrandTop = expandedHeaderHeight / 2 + expandedWaveDepth * 0.34;
-  const brandTop =
-    expandedBrandTop + (headerHeight / 2 - expandedBrandTop) * headerProgress;
+  const brandTop = expandedBrandTop + (headerHeight / 2 - expandedBrandTop) * headerProgress;
   const expandedNavTop = expandedHeaderHeight / 2 + expandedWaveDepth * 0.42;
   const navTop = expandedNavTop + (headerHeight / 2 - expandedNavTop) * headerProgress;
   const expandedNavRight = Math.max(viewportWidth * 0.22, 300);
   const compactNavRight = Math.min(Math.max(viewportWidth * 0.04, 18), 54);
-  const navRight =
-    expandedNavRight + (compactNavRight - expandedNavRight) * headerProgress;
+  const navRight = expandedNavRight + (compactNavRight - expandedNavRight) * headerProgress;
   const expandedSloganCenter = viewportWidth * 0.78;
-  const sloganLeft =
-    expandedSloganCenter + (viewportWidth - compactNavRight - 260 - expandedSloganCenter) * headerProgress;
-  const expandedMenuLeft = Math.min(
-    expandedSloganCenter + Math.min(210, viewportWidth * 0.14) + 30,
-    viewportWidth - 240,
-  );
+  const sloganLeft = expandedSloganCenter + (viewportWidth - compactNavRight - 260 - expandedSloganCenter) * headerProgress;
+  const expandedMenuLeft = Math.min(expandedSloganCenter + Math.min(210, viewportWidth * 0.14) + 30, viewportWidth - 240);
   const compactMenuLeft = viewportWidth - compactNavRight - 62;
-  const expandedMenuLeftPosition =
-    expandedMenuLeft + (compactMenuLeft - expandedMenuLeft) * headerProgress;
-  const expandedMenuPanelLeft = Math.min(
-    expandedMenuLeftPosition,
-    viewportWidth - 220 - compactNavRight,
-  );
+  const expandedMenuLeftPosition = expandedMenuLeft + (compactMenuLeft - expandedMenuLeft) * headerProgress;
+  const expandedMenuPanelLeft = Math.min(expandedMenuLeftPosition, viewportWidth - 220 - compactNavRight);
   const navScale = 1.08 - headerProgress * 0.08;
   const navRevealProgress = Math.min(Math.max((headerProgress - 0.34) / 0.42, 0), 1);
   const sloganProgress = 1 - Math.min(Math.max(headerProgress / 0.42, 0), 1);
@@ -6133,38 +5559,16 @@ function App() {
     return currentPath === `/business/${line.slug}`;
   });
   const academyPathParts = currentPath.split('/').filter(Boolean);
-  const academyCourseSlug =
-    academyPathParts[0] === 'academy' && !['courses', 'tracks', 'progress', 'certificates'].includes(academyPathParts[1] ?? '')
-      ? academyPathParts[1]
-      : undefined;
-  const academyTrackSlug =
-    academyPathParts[0] === 'academy' && academyPathParts[1] === 'tracks'
-      ? academyPathParts[2]
-      : undefined;
-  const academyLessonSlug =
-    academyPathParts[0] === 'academy' && academyPathParts[2] === 'lessons'
-      ? academyPathParts[3]
-      : undefined;
-  const academyLiveSessionSlug =
-    academyPathParts[0] === 'academy' && academyPathParts[2] === 'live-sessions'
-      ? academyPathParts[3]
-      : undefined;
-  const academyActivityId =
-    academyPathParts[0] === 'academy' && academyPathParts[2] === 'activities'
-      ? academyPathParts[3]
-      : undefined;
+  const academyCourseSlug = academyPathParts[0] === 'academy' && !['courses', 'tracks', 'progress', 'certificates'].includes(academyPathParts[1] ?? '') ? academyPathParts[1] : undefined;
+  const academyTrackSlug = academyPathParts[0] === 'academy' && academyPathParts[1] === 'tracks' ? academyPathParts[2] : undefined;
+  const academyLessonSlug = academyPathParts[0] === 'academy' && academyPathParts[2] === 'lessons' ? academyPathParts[3] : undefined;
+  const academyLiveSessionSlug = academyPathParts[0] === 'academy' && academyPathParts[2] === 'live-sessions' ? academyPathParts[3] : undefined;
+  const academyActivityId = academyPathParts[0] === 'academy' && academyPathParts[2] === 'activities' ? academyPathParts[3] : undefined;
   const isAcademyCatalogPage = currentPath === '/academy/courses';
   const isAcademyProgressPage = currentPath === '/academy/progress';
   const isAcademyCertificatesPage = currentPath === '/academy/certificates' || currentPath.startsWith('/academy/certificates/');
-  const academyCertificateId =
-    academyPathParts[0] === 'academy' && academyPathParts[1] === 'certificates'
-      ? academyPathParts[2]
-      : undefined;
-  const orangeEdgePath =
-    `M0 0 C80 ${62 * edgeShape} 210 ${80 * edgeShape} 360 ${56 * edgeShape} ` +
-    `C500 ${34 * edgeShape} 570 0 710 0 ` +
-    `C850 0 930 ${46 * edgeShape} 1080 ${76 * edgeShape} ` +
-    `C1225 ${105 * edgeShape} 1410 ${84 * edgeShape} 1600 ${28 * edgeShape}`;
+  const academyCertificateId = academyPathParts[0] === 'academy' && academyPathParts[1] === 'certificates' ? academyPathParts[2] : undefined;
+  const orangeEdgePath = `M0 0 C80 ${62 * edgeShape} 210 ${80 * edgeShape} 360 ${56 * edgeShape} ` + `C500 ${34 * edgeShape} 570 0 710 0 ` + `C850 0 930 ${46 * edgeShape} 1080 ${76 * edgeShape} ` + `C1225 ${105 * edgeShape} 1410 ${84 * edgeShape} 1600 ${28 * edgeShape}`;
 
   React.useEffect(() => {
     authSessionRef.current = authSession;
@@ -6187,15 +5591,7 @@ function App() {
 
       console.log('[auth] profile fetch start', user.id);
 
-      const { data, error } = await withTimeout(
-        profileClient
-          .from('profiles')
-          .select('id, full_name, company_name, role, subscription_tier, yvimo_points, experience_points, profile_level, profile_level_progress, avatar_url, created_at, updated_at')
-          .eq('id', user.id)
-          .maybeSingle<UserProfile>(),
-        7000,
-        'Profile fetch',
-      );
+      const { data, error } = await withTimeout(profileClient.from('profiles').select('id, full_name, company_name, role, subscription_tier, yvimo_points, experience_points, profile_level, profile_level_progress, avatar_url, created_at, updated_at').eq('id', user.id).maybeSingle<UserProfile>(), 7000, 'Profile fetch');
 
       if (error) {
         throw error;
@@ -6208,22 +5604,12 @@ function App() {
 
       const fallbackProfile = {
         id: user.id,
-        full_name: String(user.user_metadata?.full_name ?? '').trim()
-          || user.email?.split('@')[0]
-          || 'YVIMO User',
+        full_name: String(user.user_metadata?.full_name ?? '').trim() || user.email?.split('@')[0] || 'YVIMO User',
         company_name: String(user.user_metadata?.company_name ?? '').trim(),
         role: String(user.user_metadata?.role ?? '').trim(),
       };
 
-      const { data: insertedProfile, error: insertError } = await withTimeout(
-        profileClient
-          .from('profiles')
-          .insert(fallbackProfile)
-          .select('id, full_name, company_name, role, subscription_tier, yvimo_points, experience_points, profile_level, profile_level_progress, avatar_url, created_at, updated_at')
-          .single<UserProfile>(),
-        7000,
-        'Profile insert',
-      );
+      const { data: insertedProfile, error: insertError } = await withTimeout(profileClient.from('profiles').insert(fallbackProfile).select('id, full_name, company_name, role, subscription_tier, yvimo_points, experience_points, profile_level, profile_level_progress, avatar_url, created_at, updated_at').single<UserProfile>(), 7000, 'Profile insert');
 
       if (insertError) {
         throw insertError;
@@ -6237,36 +5623,39 @@ function App() {
     }
   }, []);
 
-  const syncSessionUser = React.useCallback(async (session: Session | null) => {
-    console.log('[auth] session value', session);
-    const requestId = ++authProfileRequestRef.current;
-    setAuthSession(session);
+  const syncSessionUser = React.useCallback(
+    async (session: Session | null) => {
+      console.log('[auth] session value', session);
+      const requestId = ++authProfileRequestRef.current;
+      setAuthSession(session);
 
-    if (!session?.user) {
-      setAuthUser(null);
-      setProfileLoadState('idle');
-      setProfileLoadError(null);
-      return;
-    }
+      if (!session?.user) {
+        setAuthUser(null);
+        setProfileLoadState('idle');
+        setProfileLoadError(null);
+        return;
+      }
 
-    setAuthUser(profileToAppUser(session.user, null));
-    setProfileLoadState('loading');
-    setProfileLoadError(null);
-
-    try {
-      const profile = await fetchOrCreateProfile(session);
-      if (requestId !== authProfileRequestRef.current) return;
-      setAuthUser(profileToAppUser(session.user, profile));
-      setProfileLoadState(profile ? 'loaded' : 'error');
-      setProfileLoadError(profile ? null : 'Profile could not be loaded.');
-    } catch (error) {
-      if (requestId !== authProfileRequestRef.current) return;
-      console.error('[auth] session profile sync error', error);
       setAuthUser(profileToAppUser(session.user, null));
-      setProfileLoadState('error');
-      setProfileLoadError(error instanceof Error ? error.message : 'Profile could not be loaded.');
-    }
-  }, [fetchOrCreateProfile]);
+      setProfileLoadState('loading');
+      setProfileLoadError(null);
+
+      try {
+        const profile = await fetchOrCreateProfile(session);
+        if (requestId !== authProfileRequestRef.current) return;
+        setAuthUser(profileToAppUser(session.user, profile));
+        setProfileLoadState(profile ? 'loaded' : 'error');
+        setProfileLoadError(profile ? null : 'Profile could not be loaded.');
+      } catch (error) {
+        if (requestId !== authProfileRequestRef.current) return;
+        console.error('[auth] session profile sync error', error);
+        setAuthUser(profileToAppUser(session.user, null));
+        setProfileLoadState('error');
+        setProfileLoadError(error instanceof Error ? error.message : 'Profile could not be loaded.');
+      }
+    },
+    [fetchOrCreateProfile],
+  );
 
   const refreshAuthProfile = React.useCallback(async () => {
     if (!authSession?.user) return;
@@ -6276,9 +5665,7 @@ function App() {
 
     try {
       const profile = await fetchOrCreateProfile(authSession);
-      setAuthUser((currentUser) => (
-        profile || !currentUser ? profileToAppUser(authSession.user, profile) : currentUser
-      ));
+      setAuthUser((currentUser) => (profile || !currentUser ? profileToAppUser(authSession.user, profile) : currentUser));
       setProfileLoadState(profile ? 'loaded' : 'error');
       setProfileLoadError(profile ? null : 'Profile could not be loaded.');
     } catch (error) {
@@ -6371,11 +5758,7 @@ function App() {
           return;
         }
 
-        if (
-          event === 'SIGNED_IN'
-          && session?.user?.id
-          && session.user.id === authSessionRef.current?.user?.id
-        ) {
+        if (event === 'SIGNED_IN' && session?.user?.id && session.user.id === authSessionRef.current?.user?.id) {
           setAuthSession(session);
           return;
         }
@@ -6388,14 +5771,14 @@ function App() {
         if (event === 'USER_UPDATED') {
           setAuthSession(session);
           if (session?.user) {
-            setAuthUser((currentUser) => currentUser
-              ? {
-                  ...currentUser,
-                  avatarUrl: typeof session.user.user_metadata?.avatar_url === 'string'
-                    ? session.user.user_metadata.avatar_url
-                    : currentUser.avatarUrl,
-                }
-              : profileToAppUser(session.user, null));
+            setAuthUser((currentUser) =>
+              currentUser
+                ? {
+                    ...currentUser,
+                    avatarUrl: typeof session.user.user_metadata?.avatar_url === 'string' ? session.user.user_metadata.avatar_url : currentUser.avatarUrl,
+                  }
+                : profileToAppUser(session.user, null),
+            );
           }
           return;
         }
@@ -6422,12 +5805,7 @@ function App() {
   }, [authLoading, authSession, isDashboardPage, isDirectHealthAppsPage]);
 
   React.useEffect(() => {
-    if (
-      authLoading
-      || !authSession?.user
-      || !isDashboardPage
-      || profileLoadState !== 'idle'
-    ) return;
+    if (authLoading || !authSession?.user || !isDashboardPage || profileLoadState !== 'idle') return;
 
     refreshAuthProfile().catch((error) => {
       console.error('[auth] dashboard profile refresh error', error);
@@ -6493,9 +5871,7 @@ function App() {
   const completeAuth = async (session: Session | null, message: string) => {
     if (session) {
       const savedReturnPath = window.sessionStorage.getItem('yvimo-auth-return-path');
-      const returnPath = isDirectHealthAppsPage
-        ? currentPath
-        : savedReturnPath?.startsWith('/workspace/health-apps') || savedReturnPath?.startsWith('/health') ? savedReturnPath : '';
+      const returnPath = isDirectHealthAppsPage ? currentPath : savedReturnPath?.startsWith('/workspace/health-apps') || savedReturnPath?.startsWith('/health') ? savedReturnPath : '';
       explicitSignOutRef.current = false;
       await supabase.auth.setSession({
         access_token: session.access_token,
@@ -6635,27 +6011,31 @@ function App() {
 
   const handleUpdateAvatar = async (file: File): Promise<AvatarUploadResult> => {
     if (!authSession?.user) {
-      return { ok: false, message: 'Sign in again to update your profile picture.' };
+      return {
+        ok: false,
+        message: 'Sign in again to update your profile picture.',
+      };
     }
 
-    const extension = file.name.split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '') || 'png';
+    const extension =
+      file.name
+        .split('.')
+        .pop()
+        ?.toLowerCase()
+        .replace(/[^a-z0-9]/g, '') || 'png';
     const filePath = `${authSession.user.id}/avatar-${Date.now()}.${extension}`;
 
-    const { error: uploadError } = await supabase.storage
-      .from('profile-avatars')
-      .upload(filePath, file, {
-        cacheControl: '3600',
-        upsert: false,
-      });
+    const { error: uploadError } = await supabase.storage.from('profile-avatars').upload(filePath, file, {
+      cacheControl: '3600',
+      upsert: false,
+    });
 
     if (uploadError) {
       console.error('[auth] avatar upload error', uploadError);
       return { ok: false, message: 'Profile picture could not be uploaded.' };
     }
 
-    const { data: publicUrlData } = supabase.storage
-      .from('profile-avatars')
-      .getPublicUrl(filePath);
+    const { data: publicUrlData } = supabase.storage.from('profile-avatars').getPublicUrl(filePath);
 
     const avatarUrl = publicUrlData.publicUrl;
     const { data, error: updateError } = await supabase.auth.updateUser({
@@ -6664,20 +6044,23 @@ function App() {
 
     if (updateError) {
       console.error('[auth] avatar metadata update error', updateError);
-      return { ok: false, message: 'Profile picture was uploaded, but your profile could not be updated.' };
+      return {
+        ok: false,
+        message: 'Profile picture was uploaded, but your profile could not be updated.',
+      };
     }
 
-    const { error: profileUpdateError } = await supabase
-      .from('profiles')
-      .update({ avatar_url: avatarUrl })
-      .eq('id', authSession.user.id);
+    const { error: profileUpdateError } = await supabase.from('profiles').update({ avatar_url: avatarUrl }).eq('id', authSession.user.id);
 
     if (profileUpdateError) {
       console.error('[auth] profile avatar update error', profileUpdateError);
-      return { ok: false, message: 'Profile picture was saved to your account, but could not be shared with your organization.' };
+      return {
+        ok: false,
+        message: 'Profile picture was saved to your account, but could not be shared with your organization.',
+      };
     }
 
-    setAuthUser((currentUser) => currentUser ? { ...currentUser, avatarUrl } : currentUser);
+    setAuthUser((currentUser) => (currentUser ? { ...currentUser, avatarUrl } : currentUser));
     setAuthSession((currentSession) => {
       if (!currentSession || !data.user) return currentSession;
       return { ...currentSession, user: data.user };
@@ -6732,18 +6115,9 @@ function App() {
           }}
           aria-label="YVIMO home"
         >
-          <img
-            className="brand-logo brand-logo-square"
-            src="/assets/logos/yvimo-square-logo-2024.png"
-            alt=""
-            aria-hidden="true"
-          />
+          <img className="brand-logo brand-logo-square" src="/assets/logos/yvimo-square-logo-2024.png" alt="" aria-hidden="true" />
           <span className="brand-letters-wrap">
-            <img
-              className="brand-logo brand-logo-letters"
-              src="/assets/logos/yvimo-logo-letters-holding.png"
-          alt="YVIMO"
-            />
+            <img className="brand-logo brand-logo-letters" src="/assets/logos/yvimo-logo-letters-holding.png" alt="YVIMO" />
           </span>
         </a>
         <div className="header-slogan" aria-hidden="true">
@@ -6765,11 +6139,7 @@ function App() {
           {menuOpen ? <X size={24} /> : <Menu size={24} />}
         </button>
         <button
-          className={
-            expandedMenuActive
-              ? 'language-circle-button expanded-language-button active'
-              : 'language-circle-button expanded-language-button'
-          }
+          className={expandedMenuActive ? 'language-circle-button expanded-language-button active' : 'language-circle-button expanded-language-button'}
           type="button"
           aria-label={t('Select language')}
           aria-expanded={languageMenuOpen}
@@ -6792,11 +6162,7 @@ function App() {
           {menuOpen ? <X size={20} /> : <Menu size={20} />}
         </button>
         <button
-          className={
-            expandedMenuActive
-              ? 'language-circle-button compact-language-button'
-              : 'language-circle-button compact-language-button active'
-          }
+          className={expandedMenuActive ? 'language-circle-button compact-language-button' : 'language-circle-button compact-language-button active'}
           type="button"
           aria-label={t('Select language')}
           aria-expanded={languageMenuOpen}
@@ -6809,11 +6175,7 @@ function App() {
         </button>
         {!isAuthPage && !authUser && (
           <a
-            className={
-              expandedMenuActive
-                ? 'compact-login-button'
-                : 'compact-login-button active'
-            }
+            className={expandedMenuActive ? 'compact-login-button' : 'compact-login-button active'}
             href="/login"
             aria-label={t('Open sign in')}
             onClick={(event) => {
@@ -6829,7 +6191,11 @@ function App() {
           <button className="compact-user-card" type="button" onClick={navigateDashboard}>
             <span
               className="compact-user-avatar-stack"
-              style={{ '--compact-profile-progress': `${headerProfileLevelProgress}%` } as React.CSSProperties}
+              style={
+                {
+                  '--compact-profile-progress': `${headerProfileLevelProgress}%`,
+                } as React.CSSProperties
+              }
               aria-hidden="true"
             >
               <span className="compact-user-ring">
@@ -6842,9 +6208,7 @@ function App() {
             <span className="compact-user-copy">
               <strong>{authUser.name}</strong>
               <span className="compact-user-meta">
-                <span className={getSubscriptionClass(authUser.subscription)}>
-                  {authUser.subscription}
-                </span>
+                <span className={getSubscriptionClass(authUser.subscription)}>{authUser.subscription}</span>
                 <span className="compact-user-points">
                   <Star size={15} fill="currentColor" />
                   <strong>{headerYvimoPoints.toLocaleString()}</strong>
@@ -6853,15 +6217,7 @@ function App() {
             </span>
           </button>
         )}
-        <div
-          className={
-            [
-              'language-menu-panel',
-              languageMenuOpen ? 'open' : '',
-              expandedMenuActive ? 'expanded' : 'compact',
-            ].filter(Boolean).join(' ')
-          }
-        >
+        <div className={['language-menu-panel', languageMenuOpen ? 'open' : '', expandedMenuActive ? 'expanded' : 'compact'].filter(Boolean).join(' ')}>
           {languages.map((item) => (
             <button
               className={item.code === currentLanguage.code ? 'active' : ''}
@@ -6877,22 +6233,52 @@ function App() {
             </button>
           ))}
         </div>
-        <div
-          className={
-            menuOpen && expandedMenuActive
-              ? 'expanded-menu-panel open'
-              : 'expanded-menu-panel'
-          }
-        >
-          <a href="/#services" onClick={(event) => { event.preventDefault(); navigateHome('#services'); }}>{t('Services')}</a>
-          <a href="/#gateway" onClick={(event) => { event.preventDefault(); navigateHome('#gateway'); }}>{t('Gateway')}</a>
-          <a href="/#solutions" onClick={(event) => { event.preventDefault(); navigateHome('#solutions'); }}>{t('Solutions')}</a>
-          <a href="/#platform" onClick={(event) => { event.preventDefault(); navigateHome('#platform'); }}>{t('Platform')}</a>
+        <div className={menuOpen && expandedMenuActive ? 'expanded-menu-panel open' : 'expanded-menu-panel'}>
+          <a
+            href="/#services"
+            onClick={(event) => {
+              event.preventDefault();
+              navigateHome('#services');
+            }}
+          >
+            {t('Services')}
+          </a>
+          <a
+            href="/#gateway"
+            onClick={(event) => {
+              event.preventDefault();
+              navigateHome('#gateway');
+            }}
+          >
+            {t('Gateway')}
+          </a>
+          <a
+            href="/#solutions"
+            onClick={(event) => {
+              event.preventDefault();
+              navigateHome('#solutions');
+            }}
+          >
+            {t('Solutions')}
+          </a>
+          <a
+            href="/#platform"
+            onClick={(event) => {
+              event.preventDefault();
+              navigateHome('#platform');
+            }}
+          >
+            {t('Platform')}
+          </a>
           {authUser ? (
             <button className="panel-user-card" type="button" onClick={navigateDashboard}>
               <span
                 className="compact-user-avatar-stack"
-                style={{ '--compact-profile-progress': `${headerProfileLevelProgress}%` } as React.CSSProperties}
+                style={
+                  {
+                    '--compact-profile-progress': `${headerProfileLevelProgress}%`,
+                  } as React.CSSProperties
+                }
                 aria-hidden="true"
               >
                 <span className="compact-user-ring">
@@ -6905,9 +6291,7 @@ function App() {
               <span className="compact-user-copy">
                 <strong>{authUser.name}</strong>
                 <span className="compact-user-meta">
-                  <span className={getSubscriptionClass(authUser.subscription)}>
-                    {authUser.subscription}
-                  </span>
+                  <span className={getSubscriptionClass(authUser.subscription)}>{authUser.subscription}</span>
                   <span className="compact-user-points">
                     <Star size={15} fill="currentColor" />
                     <strong>{headerYvimoPoints.toLocaleString()}</strong>
@@ -6917,24 +6301,78 @@ function App() {
               </span>
             </button>
           ) : (
-            <a className="panel-login" href="/login" onClick={(event) => { event.preventDefault(); navigateLogin(); }}><LogIn size={16} />{t('Sign in')}</a>
+            <a
+              className="panel-login"
+              href="/login"
+              onClick={(event) => {
+                event.preventDefault();
+                navigateLogin();
+              }}
+            >
+              <LogIn size={16} />
+              {t('Sign in')}
+            </a>
           )}
-          <a className="panel-cta" href="/#contact" onClick={(event) => { event.preventDefault(); navigateHome('#contact'); }}>{t('Start a project')}</a>
+          <a
+            className="panel-cta"
+            href="/#contact"
+            onClick={(event) => {
+              event.preventDefault();
+              navigateHome('#contact');
+            }}
+          >
+            {t('Start a project')}
+          </a>
         </div>
         <nav className={menuOpen ? 'nav-links open' : 'nav-links'} aria-label="Primary navigation">
-          <a href="/#services" onClick={(event) => { event.preventDefault(); navigateHome('#services'); }}>{t('Services')}</a>
-          <a href="/#gateway" onClick={(event) => { event.preventDefault(); navigateHome('#gateway'); }}>{t('Gateway')}</a>
-          <a href="/#solutions" onClick={(event) => { event.preventDefault(); navigateHome('#solutions'); }}>{t('Solutions')}</a>
-          <a href="/#platform" onClick={(event) => { event.preventDefault(); navigateHome('#platform'); }}>{t('Platform')}</a>
-          <a className="nav-cta" href="/#contact" onClick={(event) => { event.preventDefault(); navigateHome('#contact'); }}>{t('Start a project')}</a>
+          <a
+            href="/#services"
+            onClick={(event) => {
+              event.preventDefault();
+              navigateHome('#services');
+            }}
+          >
+            {t('Services')}
+          </a>
+          <a
+            href="/#gateway"
+            onClick={(event) => {
+              event.preventDefault();
+              navigateHome('#gateway');
+            }}
+          >
+            {t('Gateway')}
+          </a>
+          <a
+            href="/#solutions"
+            onClick={(event) => {
+              event.preventDefault();
+              navigateHome('#solutions');
+            }}
+          >
+            {t('Solutions')}
+          </a>
+          <a
+            href="/#platform"
+            onClick={(event) => {
+              event.preventDefault();
+              navigateHome('#platform');
+            }}
+          >
+            {t('Platform')}
+          </a>
+          <a
+            className="nav-cta"
+            href="/#contact"
+            onClick={(event) => {
+              event.preventDefault();
+              navigateHome('#contact');
+            }}
+          >
+            {t('Start a project')}
+          </a>
         </nav>
-        <svg
-          className="header-wave"
-          viewBox="0 0 1600 120"
-          preserveAspectRatio="none"
-          aria-hidden="true"
-          focusable="false"
-        >
+        <svg className="header-wave" viewBox="0 0 1600 120" preserveAspectRatio="none" aria-hidden="true" focusable="false">
           <path d="M0 0 C80 62 210 80 360 56 C500 34 570 0 710 0 C850 0 930 46 1080 76 C1225 105 1410 84 1600 28 L1600 0 Z" />
         </svg>
         <div className="header-orange-edge" aria-hidden="true">
@@ -6954,20 +6392,9 @@ function App() {
       ) : dashboardTransition ? (
         <DashboardLoadingPage t={t} />
       ) : isLoginPage ? (
-        <LoginPage
-          onNavigateSignUp={navigateSignUp}
-          onSignIn={handleSignIn}
-          onAppleSignIn={handleAppleSignIn}
-          onMicrosoftSignIn={handleMicrosoftSignIn}
-          onGoogleSignIn={handleGoogleSignIn}
-          t={t}
-        />
+        <LoginPage onNavigateSignUp={navigateSignUp} onSignIn={handleSignIn} onAppleSignIn={handleAppleSignIn} onMicrosoftSignIn={handleMicrosoftSignIn} onGoogleSignIn={handleGoogleSignIn} t={t} />
       ) : isSignUpPage ? (
-        <SignUpPage
-          onNavigateLogin={navigateLogin}
-          onSignUp={handleSignUp}
-          t={t}
-        />
+        <SignUpPage onNavigateLogin={navigateLogin} onSignUp={handleSignUp} t={t} />
       ) : isDashboardPage ? (
         authSession?.user ? (
           authUser ? (
@@ -6987,33 +6414,15 @@ function App() {
               languageCode={language}
               standaloneHealth={isDirectHealthAppsPage}
               publicHealth={isStandaloneHealthPage}
-              onToggleLanguage={() => setLanguage((current) => current === 'es' ? 'en' : 'es')}
+              onToggleLanguage={() => setLanguage((current) => (current === 'es' ? 'en' : 'es'))}
             />
           ) : (
             <DashboardLoadingPage t={t} />
           )
+        ) : isDirectHealthAppsPage ? (
+          <HealthAccessLoginPage onNavigateSignUp={navigateSignUp} onNavigateHome={() => navigateHome()} onSignIn={handleSignIn} onMicrosoftSignIn={handleMicrosoftSignIn} onGoogleSignIn={handleGoogleSignIn} onToggleLanguage={() => setLanguage((current) => (current === 'es' ? 'en' : 'es'))} languageCode={language} t={t} />
         ) : (
-          isDirectHealthAppsPage ? (
-            <HealthAccessLoginPage
-              onNavigateSignUp={navigateSignUp}
-              onNavigateHome={() => navigateHome()}
-              onSignIn={handleSignIn}
-              onMicrosoftSignIn={handleMicrosoftSignIn}
-              onGoogleSignIn={handleGoogleSignIn}
-              onToggleLanguage={() => setLanguage((current) => current === 'es' ? 'en' : 'es')}
-              languageCode={language}
-              t={t}
-            />
-          ) : (
-            <LoginPage
-              onNavigateSignUp={navigateSignUp}
-              onSignIn={handleSignIn}
-              onAppleSignIn={handleAppleSignIn}
-              onMicrosoftSignIn={handleMicrosoftSignIn}
-              onGoogleSignIn={handleGoogleSignIn}
-              t={t}
-            />
-          )
+          <LoginPage onNavigateSignUp={navigateSignUp} onSignIn={handleSignIn} onAppleSignIn={handleAppleSignIn} onMicrosoftSignIn={handleMicrosoftSignIn} onGoogleSignIn={handleGoogleSignIn} t={t} />
         )
       ) : isAcademyPage ? (
         isAcademyCatalogPage ? (
@@ -7021,379 +6430,318 @@ function App() {
         ) : isAcademyProgressPage ? (
           <AcademyProgressPage user={authUser} navigateTo={navigateTo} t={t} languageCode={language} />
         ) : isAcademyCertificatesPage ? (
-          <AcademyCertificatesPage
-            user={authUser}
-            navigateTo={navigateTo}
-            certificateId={academyCertificateId}
-            t={t}
-            languageCode={language}
-          />
+          <AcademyCertificatesPage user={authUser} navigateTo={navigateTo} certificateId={academyCertificateId} t={t} languageCode={language} />
         ) : academyTrackSlug ? (
-          <AcademyTrackPage
-            user={authUser}
-            navigateTo={navigateTo}
-            trackSlug={academyTrackSlug}
-            t={t}
-            languageCode={language}
-          />
+          <AcademyTrackPage user={authUser} navigateTo={navigateTo} trackSlug={academyTrackSlug} t={t} languageCode={language} />
         ) : academyCourseSlug && academyActivityId ? (
-          <AcademyActivityPage
-            user={authUser}
-            navigateTo={navigateTo}
-            courseSlug={academyCourseSlug}
-            activityId={academyActivityId}
-            t={t}
-            languageCode={language}
-            onUserProfileRefresh={refreshAuthProfile}
-          />
+          <AcademyActivityPage user={authUser} navigateTo={navigateTo} courseSlug={academyCourseSlug} activityId={academyActivityId} t={t} languageCode={language} onUserProfileRefresh={refreshAuthProfile} />
         ) : academyCourseSlug && (academyLessonSlug || academyLiveSessionSlug) ? (
-          <AcademyLessonPage
-            user={authUser}
-            navigateTo={navigateTo}
-            courseSlug={academyCourseSlug}
-            lessonSlug={academyLessonSlug ?? academyLiveSessionSlug ?? ''}
-            liveSession={Boolean(academyLiveSessionSlug)}
-            t={t}
-            languageCode={language}
-          />
+          <AcademyLessonPage user={authUser} navigateTo={navigateTo} courseSlug={academyCourseSlug} lessonSlug={academyLessonSlug ?? academyLiveSessionSlug ?? ''} liveSession={Boolean(academyLiveSessionSlug)} t={t} languageCode={language} />
         ) : academyCourseSlug ? (
-          <AcademyCoursePage
-            user={authUser}
-            navigateTo={navigateTo}
-            courseSlug={academyCourseSlug}
-            t={t}
-            languageCode={language}
-            onUserProfileRefresh={refreshAuthProfile}
-          />
+          <AcademyCoursePage user={authUser} navigateTo={navigateTo} courseSlug={academyCourseSlug} t={t} languageCode={language} onUserProfileRefresh={refreshAuthProfile} />
         ) : (
           <AcademyHomePage user={authUser} navigateTo={navigateTo} t={t} languageCode={language} />
         )
       ) : selectedBusinessLine ? (
-        <BusinessLinePage
-          line={selectedBusinessLine}
-          onNavigateHome={navigateHome}
-          t={t}
-        />
+        <BusinessLinePage line={selectedBusinessLine} onNavigateHome={navigateHome} t={t} />
       ) : (
-      <main>
-        <section className="hero-section" id="home">
-          <div className="hero-visual" aria-hidden="true">
-            <div className="grid-layer" />
-            <div className="signal-line line-a" />
-            <div className="signal-line line-b" />
-            <div className="signal-line line-c" />
-            <img
-              className="industrial-robot-layer robot-layer-left"
-              src="/assets/hero/robot-left.png"
-              alt=""
-              aria-hidden="true"
-            />
-            <img
-              className="industrial-robot-layer robot-layer-right"
-              src="/assets/hero/robot-right.png"
-              alt=""
-              aria-hidden="true"
-            />
-            <div className="hero-console">
-              <div className="console-header">
-                <span className="status-dot" />
-                <span>YVIMO Operations Fabric</span>
-                <strong>LIVE</strong>
-              </div>
-              <div className="console-body">
-                <div className="metric-panel">
-                  <Gauge size={22} />
-                  <span>Gateway Health</span>
-                  <strong>98.7%</strong>
+        <main>
+          <section className="hero-section" id="home">
+            <div className="hero-visual" aria-hidden="true">
+              <div className="grid-layer" />
+              <div className="signal-line line-a" />
+              <div className="signal-line line-b" />
+              <div className="signal-line line-c" />
+              <img className="industrial-robot-layer robot-layer-left" src="/assets/hero/robot-left.png" alt="" aria-hidden="true" />
+              <img className="industrial-robot-layer robot-layer-right" src="/assets/hero/robot-right.png" alt="" aria-hidden="true" />
+              <div className="hero-console">
+                <div className="console-header">
+                  <span className="status-dot" />
+                  <span>YVIMO Operations Fabric</span>
+                  <strong>LIVE</strong>
                 </div>
-                <div className="metric-panel">
-                  <RadioTower size={22} />
-                  <span>PLC Routes</span>
-                  <strong>24</strong>
-                </div>
-                <div className="route-map">
-                  <span className="node source"><Cpu size={18} /> PLC</span>
-                  <span className="route-connector" />
-                  <span className="node core"><ServerCog size={18} /> Gateway</span>
-                  <span className="route-connector" />
-                  <span className="node output"><Database size={18} /> API</span>
+                <div className="console-body">
+                  <div className="metric-panel">
+                    <Gauge size={22} />
+                    <span>Gateway Health</span>
+                    <strong>98.7%</strong>
+                  </div>
+                  <div className="metric-panel">
+                    <RadioTower size={22} />
+                    <span>PLC Routes</span>
+                    <strong>24</strong>
+                  </div>
+                  <div className="route-map">
+                    <span className="node source">
+                      <Cpu size={18} /> PLC
+                    </span>
+                    <span className="route-connector" />
+                    <span className="node core">
+                      <ServerCog size={18} /> Gateway
+                    </span>
+                    <span className="route-connector" />
+                    <span className="node output">
+                      <Database size={18} /> API
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-          <div className="hero-copy">
-            <p className="eyebrow">{t('Industrial automation, software services, and connected products')}</p>
-            <h1>{t('Automation systems built beyond the machine.')}</h1>
-            <p className="hero-lede">
-              {t('We build control systems, industrial software, and connected products that help manufacturers modernize machines, move data reliably, and turn operations into scalable digital systems.')}
-            </p>
-            <div className="hero-actions">
-              <a className="primary-action" href="#contact">
-                {t('Start a project')} <ArrowRight size={18} />
-              </a>
-              <a className="secondary-action" href="#gateway">{t('Explore our solutions')}</a>
-            </div>
-          </div>
-        </section>
-
-        <ServicesShowcase t={t} />
-
-        <section className="section" id="lines">
-          <div className="section-heading business-heading">
-            <p className="eyebrow">{t('Business lines')}</p>
-            <h2>{t('The four divisions that move YVIMO forward.')}</h2>
-            <p>
-              {t('Industrial automation remains our core. Around it, YVIMO grows through software services, proprietary products, and YVIMO Academy: our learning space for the next generation of industrial talent.')}
-            </p>
-          </div>
-          <div className="business-grid">
-            {businessLines.map((line) => {
-              const Icon = line.icon;
-              return (
-                <a
-                  className="business-card"
-                  href={`/business/${line.slug}`}
-                  key={line.title}
-                  onClick={(event) => {
-                    event.preventDefault();
-                    navigateTo(`/business/${line.slug}`);
-                  }}
-                >
-                  <div className="card-icon"><Icon size={24} /></div>
-                  <p className="eyebrow">{t(line.eyebrow)}</p>
-                  <h3>{t(line.title)}</h3>
-                  <p>{t(line.description)}</p>
-                  <ul>
-                    {line.points.map((point) => (
-                      <li key={point}><Check size={16} /> {t(point)}</li>
-                    ))}
-                  </ul>
+            <div className="hero-copy">
+              <p className="eyebrow">{t('Industrial automation, software services, and connected products')}</p>
+              <h1>{t('Automation systems built beyond the machine.')}</h1>
+              <p className="hero-lede">{t('We build control systems, industrial software, and connected products that help manufacturers modernize machines, move data reliably, and turn operations into scalable digital systems.')}</p>
+              <div className="hero-actions">
+                <a className="primary-action" href="#contact">
+                  {t('Start a project')} <ArrowRight size={18} />
                 </a>
-              );
-            })}
-          </div>
-        </section>
+                <a className="secondary-action" href="#gateway">
+                  {t('Explore our solutions')}
+                </a>
+              </div>
+            </div>
+          </section>
 
-        <section className="product-section" id="gateway">
-          <div className="product-copy">
-            <div className="product-title">
-              <img src="/assets/logos/gateway-logo.png" alt="" />
-              <div className="product-title-copy">
-                <p className="eyebrow featured-eyebrow"><Star size={15} fill="currentColor" /> {t('Featured product')}</p>
-                <h2>YVIMO Gateway</h2>
-              </div>
+          <ServicesShowcase t={t} />
+
+          <section className="section" id="lines">
+            <div className="section-heading business-heading">
+              <p className="eyebrow">{t('Business lines')}</p>
+              <h2>{t('The four divisions that move YVIMO forward.')}</h2>
+              <p>{t('Industrial automation remains our core. Around it, YVIMO grows through software services, proprietary products, and YVIMO Academy: our learning space for the next generation of industrial talent.')}</p>
             </div>
-            <p>
-              {t('The industrial data layer for turning PLCs, edge devices, and shop-floor tags into clean routes, APIs, dashboards, and outputs.')}
-            </p>
-            <div className="feature-area">
-              <div className="feature-list">
-                {gatewayFeatures.map((feature) => {
-                  const Icon = feature.icon;
-                  return (
-                    <article className="feature-card" key={feature.title}>
-                      <Icon size={18} />
-                      <strong>{t(feature.title)}</strong>
-                      <span>{t(feature.description)}</span>
-                    </article>
-                  );
-                })}
-              </div>
-              <a className="primary-action gateway-demo-button" href="/gateway-demo">{t('Try Online Demo')} <Rocket size={17} /></a>
+            <div className="business-grid">
+              {businessLines.map((line) => {
+                const Icon = line.icon;
+                return (
+                  <a
+                    className="business-card"
+                    href={`/business/${line.slug}`}
+                    key={line.title}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      navigateTo(`/business/${line.slug}`);
+                    }}
+                  >
+                    <div className="card-icon">
+                      <Icon size={24} />
+                    </div>
+                    <p className="eyebrow">{t(line.eyebrow)}</p>
+                    <h3>{t(line.title)}</h3>
+                    <p>{t(line.description)}</p>
+                    <ul>
+                      {line.points.map((point) => (
+                        <li key={point}>
+                          <Check size={16} /> {t(point)}
+                        </li>
+                      ))}
+                    </ul>
+                  </a>
+                );
+              })}
             </div>
-          </div>
-          <div className="gateway-panel" aria-label="YVIMO Gateway preview">
-            <div className="panel-toolbar">
-              <span>{t('Gateway runtime console')}</span>
-              <strong>{t('Edge node: Line 04')}</strong>
-            </div>
-            <div className="dashboard-grid">
-              <div className="dash-card tall">
-                <Network size={22} />
-                <span>{t('Live routes')}</span>
-                <strong>{t('Sources -> Gateway core -> Destinations')}</strong>
-                <div className="mini-flow">
-                  <i />
-                  <b />
-                  <i />
-                  <b />
-                  <i />
+          </section>
+
+          <section className="product-section" id="gateway">
+            <div className="product-copy">
+              <div className="product-title">
+                <img src="/assets/logos/gateway-logo.png" alt="" />
+                <div className="product-title-copy">
+                  <p className="eyebrow featured-eyebrow">
+                    <Star size={15} fill="currentColor" /> {t('Featured product')}
+                  </p>
+                  <h2>YVIMO Gateway</h2>
                 </div>
               </div>
-              <div className="dash-card">
-                <TerminalSquare size={22} />
-                <span>{t('Runtime API')}</span>
-                <strong>/api/tags/live</strong>
-              </div>
-              <div className="dash-card">
-                <ShieldCheck size={22} />
-                <span>{t('Node status')}</span>
-                <strong>{t('Running local')}</strong>
-              </div>
-              <div className="dash-card wide">
-                <Workflow size={22} />
-                <span>{t('Output destinations')}</span>
-                <strong>{t('Database, MQTT, Webhook, Reports, PLC writeback')}</strong>
+              <p>{t('The industrial data layer for turning PLCs, edge devices, and shop-floor tags into clean routes, APIs, dashboards, and outputs.')}</p>
+              <div className="feature-area">
+                <div className="feature-list">
+                  {gatewayFeatures.map((feature) => {
+                    const Icon = feature.icon;
+                    return (
+                      <article className="feature-card" key={feature.title}>
+                        <Icon size={18} />
+                        <strong>{t(feature.title)}</strong>
+                        <span>{t(feature.description)}</span>
+                      </article>
+                    );
+                  })}
+                </div>
+                <a className="primary-action gateway-demo-button" href="/gateway-demo">
+                  {t('Try Online Demo')} <Rocket size={17} />
+                </a>
               </div>
             </div>
-          </div>
-        </section>
+            <div className="gateway-panel" aria-label="YVIMO Gateway preview">
+              <div className="panel-toolbar">
+                <span>{t('Gateway runtime console')}</span>
+                <strong>{t('Edge node: Line 04')}</strong>
+              </div>
+              <div className="dashboard-grid">
+                <div className="dash-card tall">
+                  <Network size={22} />
+                  <span>{t('Live routes')}</span>
+                  <strong>{t('Sources -> Gateway core -> Destinations')}</strong>
+                  <div className="mini-flow">
+                    <i />
+                    <b />
+                    <i />
+                    <b />
+                    <i />
+                  </div>
+                </div>
+                <div className="dash-card">
+                  <TerminalSquare size={22} />
+                  <span>{t('Runtime API')}</span>
+                  <strong>/api/tags/live</strong>
+                </div>
+                <div className="dash-card">
+                  <ShieldCheck size={22} />
+                  <span>{t('Node status')}</span>
+                  <strong>{t('Running local')}</strong>
+                </div>
+                <div className="dash-card wide">
+                  <Workflow size={22} />
+                  <span>{t('Output destinations')}</span>
+                  <strong>{t('Database, MQTT, Webhook, Reports, PLC writeback')}</strong>
+                </div>
+              </div>
+            </div>
+          </section>
 
-        <section className="section" id="solutions">
-          <div
-            className={
-              activeSolution
-                ? 'ecosystem-background has-active-solution'
-                : 'ecosystem-background'
-            }
-            aria-hidden="true"
-          >
-            {ecosystemTiles.map((tile, index) => (
-              <span
-                className={[
-                  'ecosystem-tile',
-                  tile.tileSize === 'wide' ? 'wide' : '',
-                  activeSolution && activeSolution === tile.group ? 'active' : '',
-                  activeSolution && activeSolution !== tile.group ? 'dimmed' : '',
-                ].filter(Boolean).join(' ')}
-                key={`${tile.name}-${index}`}
-                style={
-                  {
-                    '--tag-color': tile.tileColor ?? tile.color,
-                    '--tile-index': index,
-                    '--logo-width': tile.logoWidth,
-                    '--logo-max-height': tile.logoMaxHeight,
-                  } as React.CSSProperties
-                }
-              >
-                {tile.logoSrc || tile.logoSlug ? (
-                  <img
-                    src={
-                      tile.logoSrc ??
-                      `https://cdn.simpleicons.org/${tile.logoSlug}/${tile.color.replace('#', '')}`
-                    }
-                    alt=""
-                    aria-hidden="true"
-                    loading="lazy"
-                    onError={(event) => {
-                      event.currentTarget.closest('.ecosystem-tile')?.remove();
-                    }}
-                  />
-                ) : null}
-              </span>
-            ))}
-          </div>
-          <div className="section-heading compact solutions-heading">
-            <p className="eyebrow">{t('Compatible & flexible')}</p>
-            <h2>{t('Built to work with the technologies you already use.')}</h2>
-            <p>
-              {t('YVIMO integrates controls, robotics, software, and data systems across modern industrial environments.')}
-            </p>
-          </div>
-          <div className="solution-grid">
-            {solutions.map((solution) => {
-              const Icon = solution.icon;
-              return (
-                <article
-                  className="solution-card"
-                  key={solution.title}
-                  onMouseEnter={() => setActiveSolution(solution.title)}
-                  onMouseLeave={() => setActiveSolution(null)}
-                  onFocus={() => setActiveSolution(solution.title)}
-                  onBlur={() => setActiveSolution(null)}
-                  tabIndex={0}
+          <section className="section" id="solutions">
+            <div className={activeSolution ? 'ecosystem-background has-active-solution' : 'ecosystem-background'} aria-hidden="true">
+              {ecosystemTiles.map((tile, index) => (
+                <span
+                  className={['ecosystem-tile', tile.tileSize === 'wide' ? 'wide' : '', activeSolution && activeSolution === tile.group ? 'active' : '', activeSolution && activeSolution !== tile.group ? 'dimmed' : ''].filter(Boolean).join(' ')}
+                  key={`${tile.name}-${index}`}
+                  style={
+                    {
+                      '--tag-color': tile.tileColor ?? tile.color,
+                      '--tile-index': index,
+                      '--logo-width': tile.logoWidth,
+                      '--logo-max-height': tile.logoMaxHeight,
+                    } as React.CSSProperties
+                  }
                 >
-                  <div className="solution-icon">
-                    <Icon size={24} />
-                  </div>
-                  <h3>{t(solution.title)}</h3>
-                  <div className="technology-tags" aria-label={`${solution.title} technology examples`}>
-                    {solution.tags.map((tag) => (
-                      <span
-                        key={tag.name}
-                        style={{ '--tag-color': tag.color } as React.CSSProperties}
-                      >
-                        {tag.name}
-                      </span>
-                    ))}
-                  </div>
-                  <p>{t(solution.description)}</p>
-                </article>
-              );
-            })}
-          </div>
-        </section>
-
-        <section className="process-section" id="platform">
-          <div className="process-particles" aria-hidden="true">
-            {processParticles.map((particle) => (
-              <span key={particle} />
-            ))}
-          </div>
-          <div className="process-heading">
-            <p className="eyebrow">{t('How we work')}</p>
-            <h2>{t('A clear path from concept to working system.')}</h2>
-            <p>
-              {t('YVIMO combines industrial experience, software development, and commissioning discipline to move projects from technical need to real operation.')}
-            </p>
-          </div>
-          <div className="process-pipeline" aria-label="YVIMO execution pipeline">
-            {processSteps.map((step, index) => {
-              const Icon = step.icon;
-              return (
-                <article className="process-node" key={step.title}>
-                  <span className="process-port process-port-in" />
-                  <span className="process-port process-port-out" />
-                  <div className="process-node-header">
-                    <span>{String(index + 1).padStart(2, '0')}</span>
-                    <div className="process-node-icon">
-                      <Icon size={21} />
+                  {tile.logoSrc || tile.logoSlug ? (
+                    <img
+                      src={tile.logoSrc ?? `https://cdn.simpleicons.org/${tile.logoSlug}/${tile.color.replace('#', '')}`}
+                      alt=""
+                      aria-hidden="true"
+                      loading="lazy"
+                      onError={(event) => {
+                        event.currentTarget.closest('.ecosystem-tile')?.remove();
+                      }}
+                    />
+                  ) : null}
+                </span>
+              ))}
+            </div>
+            <div className="section-heading compact solutions-heading">
+              <p className="eyebrow">{t('Compatible & flexible')}</p>
+              <h2>{t('Built to work with the technologies you already use.')}</h2>
+              <p>{t('YVIMO integrates controls, robotics, software, and data systems across modern industrial environments.')}</p>
+            </div>
+            <div className="solution-grid">
+              {solutions.map((solution) => {
+                const Icon = solution.icon;
+                return (
+                  <article className="solution-card" key={solution.title} onMouseEnter={() => setActiveSolution(solution.title)} onMouseLeave={() => setActiveSolution(null)} onFocus={() => setActiveSolution(solution.title)} onBlur={() => setActiveSolution(null)} tabIndex={0}>
+                    <div className="solution-icon">
+                      <Icon size={24} />
                     </div>
-                  </div>
-                  <h3>{t(step.title)}</h3>
-                  <p>{t(step.description)}</p>
-                </article>
-              );
-            })}
-          </div>
-          <div className="process-result">
-            <span>{t('Result')}</span>
-            <strong>
-              {t('A working automation, software, or integration system ready for real operations.')}
-            </strong>
-          </div>
-        </section>
+                    <h3>{t(solution.title)}</h3>
+                    <div className="technology-tags" aria-label={`${solution.title} technology examples`}>
+                      {solution.tags.map((tag) => (
+                        <span key={tag.name} style={{ '--tag-color': tag.color } as React.CSSProperties}>
+                          {tag.name}
+                        </span>
+                      ))}
+                    </div>
+                    <p>{t(solution.description)}</p>
+                  </article>
+                );
+              })}
+            </div>
+          </section>
 
-        <section className="contact-section" id="contact">
-          <div className="contact-copy">
-            <p className="eyebrow">{t('Start here')}</p>
-            <h2>{t('Tell us what you want to connect, automate, or improve.')}</h2>
-            <p>
-              {t('Share the machine, process, data flow, or operational challenge you have in mind. YVIMO can help define the right path-from controls and software to integration, validation, and deployment.')}
-            </p>
-            <div className="contact-actions">
-              <a className="primary-action" href="mailto:info@yvimo.com">
-                {t('Start a project')} <ArrowRight size={18} />
-              </a>
-              <a className="contact-secondary-action" href="#gateway">
-                {t('Explore YVIMO Gateway')}
-              </a>
+          <section className="process-section" id="platform">
+            <div className="process-particles" aria-hidden="true">
+              {processParticles.map((particle) => (
+                <span key={particle} />
+              ))}
             </div>
-          </div>
-          <div className="project-intake-card" aria-label="Project intake preview">
-            <div className="intake-toolbar">
-              <span>{t('Project input')}</span>
-              <strong>{t('Ready')}</strong>
+            <div className="process-heading">
+              <p className="eyebrow">{t('How we work')}</p>
+              <h2>{t('A clear path from concept to working system.')}</h2>
+              <p>{t('YVIMO combines industrial experience, software development, and commissioning discipline to move projects from technical need to real operation.')}</p>
             </div>
-            <div className="intake-flow">
-              <div><Factory size={18} /><span>{t('Machine / process')}</span></div>
-              <div><Database size={18} /><span>{t('Data / automation need')}</span></div>
-              <div><Workflow size={18} /><span>{t('Expected output')}</span></div>
-              <div><Rocket size={18} /><span>{t('Working system')}</span></div>
+            <div className="process-pipeline" aria-label="YVIMO execution pipeline">
+              {processSteps.map((step, index) => {
+                const Icon = step.icon;
+                return (
+                  <article className="process-node" key={step.title}>
+                    <span className="process-port process-port-in" />
+                    <span className="process-port process-port-out" />
+                    <div className="process-node-header">
+                      <span>{String(index + 1).padStart(2, '0')}</span>
+                      <div className="process-node-icon">
+                        <Icon size={21} />
+                      </div>
+                    </div>
+                    <h3>{t(step.title)}</h3>
+                    <p>{t(step.description)}</p>
+                  </article>
+                );
+              })}
             </div>
-          </div>
-        </section>
-      </main>
+            <div className="process-result">
+              <span>{t('Result')}</span>
+              <strong>{t('A working automation, software, or integration system ready for real operations.')}</strong>
+            </div>
+          </section>
+
+          <section className="contact-section" id="contact">
+            <div className="contact-copy">
+              <p className="eyebrow">{t('Start here')}</p>
+              <h2>{t('Tell us what you want to connect, automate, or improve.')}</h2>
+              <p>{t('Share the machine, process, data flow, or operational challenge you have in mind. YVIMO can help define the right path-from controls and software to integration, validation, and deployment.')}</p>
+              <div className="contact-actions">
+                <a className="primary-action" href="mailto:info@yvimo.com">
+                  {t('Start a project')} <ArrowRight size={18} />
+                </a>
+                <a className="contact-secondary-action" href="#gateway">
+                  {t('Explore YVIMO Gateway')}
+                </a>
+              </div>
+            </div>
+            <div className="project-intake-card" aria-label="Project intake preview">
+              <div className="intake-toolbar">
+                <span>{t('Project input')}</span>
+                <strong>{t('Ready')}</strong>
+              </div>
+              <div className="intake-flow">
+                <div>
+                  <Factory size={18} />
+                  <span>{t('Machine / process')}</span>
+                </div>
+                <div>
+                  <Database size={18} />
+                  <span>{t('Data / automation need')}</span>
+                </div>
+                <div>
+                  <Workflow size={18} />
+                  <span>{t('Expected output')}</span>
+                </div>
+                <div>
+                  <Rocket size={18} />
+                  <span>{t('Working system')}</span>
+                </div>
+              </div>
+            </div>
+          </section>
+        </main>
       )}
     </div>
   );

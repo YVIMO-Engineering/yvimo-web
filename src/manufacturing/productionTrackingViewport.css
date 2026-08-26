@@ -4,33 +4,273 @@
   max-width: 100%;
   overflow-x: hidden;
 }
+.tracking-header-actions {
+  display: grid;
+  gap: 7px;
+  margin-left: auto;
+}
+.tracking-header-actions button {
+  display: flex;
+  min-width: 142px;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid #ff7a00;
+  border-radius: 8px;
+  padding: 0 12px;
+  background: #ff7a00;
+  color: #fff;
+  font: inherit;
+  font-size: 0.65rem;
+  font-weight: 900;
+}
+.tracking-header-actions button:last-child {
+  background: #fff7ed;
+  color: #c75d00;
+}
+.tracking-header-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
 
 .tracking-filters {
   grid-template-columns: minmax(220px, 1fr) minmax(150px, 190px) minmax(0, 2fr);
 }
 
-.tracking-range { min-width: 0; }
-.tracking-kpis { width: 100%; grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.tracking-kpis article { min-width: 0; }
-.tracking-kpis span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tracking-table > div { overflow-x: hidden; overflow-y: auto; }
-.tracking-table table { width: 100%; min-width: 0; table-layout: fixed; }
-.tracking-table th { padding: 11px 6px; font-size: .57rem; line-height: 1.25; white-space: normal; }
-.tracking-table td { overflow: hidden; padding: 13px 6px; font-size: .68rem; line-height: 1.3; text-overflow: ellipsis; white-space: nowrap; }
-.tracking-table td strong { font-size: .72rem; }
-.tracking-table .part-badge, .tracking-table .result { padding: 5px 8px; font-size: .62rem; font-weight: 850; }
-.tracking-table th:nth-child(15), .tracking-table td:nth-child(15) { display: none; }
-/* Shavers add one measurement column; keep Result visible and hide Status. */
-.tracking-table table:has(th:nth-child(17)) th:nth-child(15),
-.tracking-table table:has(th:nth-child(17)) td:nth-child(15) { display: table-cell; }
-.tracking-table table:has(th:nth-child(17)) th:nth-child(16),
-.tracking-table table:has(th:nth-child(17)) td:nth-child(16) { display: none; }
-/* Shapers use three measurement columns, so Status moves one place left. */
-.tracking-table table:has(th:nth-child(15)):not(:has(th:nth-child(16))) th:nth-child(14),
-.tracking-table table:has(th:nth-child(15)):not(:has(th:nth-child(16))) td:nth-child(14) { display: none; }
-.tracking-table table:has(th:nth-child(15)):not(:has(th:nth-child(16))) th:nth-child(15),
-.tracking-table table:has(th:nth-child(15)):not(:has(th:nth-child(16))) td:nth-child(15) { display: table-cell; }
+.tracking-range {
+  min-width: 0;
+}
+.tracking-kpis {
+  width: 100%;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.tracking-kpis article {
+  min-width: 0;
+}
+.tracking-kpis span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tracking-table > div {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+.tracking-table table {
+  width: 100%;
+  min-width: 0;
+  table-layout: fixed;
+}
+.tracking-table th {
+  padding: 11px 6px;
+  font-size: 0.57rem;
+  line-height: 1.25;
+  white-space: normal;
+}
+.tracking-table td {
+  overflow: hidden;
+  padding: 13px 6px;
+  font-size: 0.68rem;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tracking-table td strong {
+  font-size: 0.72rem;
+}
+.tracking-table .part-badge,
+.tracking-table .result {
+  padding: 5px 8px;
+  font-size: 0.62rem;
+  font-weight: 850;
+}
+.tracking-table .tracking-status-column {
+  display: none;
+}
+.tracking-process-data {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  white-space: normal;
+}
+.tracking-process-data span {
+  display: inline-flex;
+  gap: 4px;
+  align-items: baseline;
+}
+.tracking-process-data small {
+  color: #64748b;
+  font-size: 0.55rem;
+  font-weight: 750;
+}
+.tracking-process-data b {
+  color: #17233a;
+  font-size: 0.67rem;
+}
+.tracking-pdf-stage {
+  position: fixed;
+  z-index: -100;
+  top: 0;
+  left: -16000px;
+  width: 1500px;
+  pointer-events: none;
+}
+.tracking-pdf-document {
+  box-sizing: border-box;
+  width: 1500px;
+  min-height: 950px;
+  padding: 46px 50px 34px;
+  background: #fff;
+  color: #253244;
+  font-family: Arial, sans-serif;
+}
+.tracking-pdf-document * {
+  box-sizing: border-box;
+}
+.tracking-pdf-document > header {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  border-bottom: 4px solid #0067a0;
+  padding-bottom: 22px;
+}
+.tracking-pdf-document > header span,
+.tracking-pdf-part > header span {
+  color: #0067a0;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 1.2px;
+}
+.tracking-pdf-brand {
+  display: grid;
+  justify-items: end;
+  gap: 10px;
+}
+.tracking-pdf-logo {
+  display: grid;
+  width: 112px;
+  height: 112px;
+  place-items: center;
+  overflow: hidden;
+  border: 3px solid #17233a;
+  border-radius: 8px;
+  background: #fff;
+}
+.tracking-pdf-logo img {
+  display: block;
+  width: 88%;
+  height: 88%;
+  object-fit: contain;
+}
+.tracking-pdf-logo-fallback {
+  color: #0067a0;
+  font-size: 42px;
+  font-weight: 900;
+}
+.tracking-pdf-document h1 {
+  margin: 7px 0 5px;
+  color: #111827;
+  font-size: 34px;
+}
+.tracking-pdf-document > header p {
+  margin: 0;
+  color: #64748b;
+  font-size: 17px;
+}
+.tracking-pdf-document > header aside {
+  display: grid;
+  align-content: start;
+  justify-items: end;
+  gap: 7px;
+  color: #64748b;
+  font-size: 13px;
+}
+.tracking-pdf-summary {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin: 22px 0;
+}
+.tracking-pdf-summary span {
+  display: grid;
+  gap: 5px;
+  border: 1px solid #c8ddea;
+  border-top: 3px solid #0067a0;
+  border-radius: 9px;
+  padding: 13px;
+}
+.tracking-pdf-summary small {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.tracking-pdf-summary b {
+  color: #17233a;
+  font-size: 24px;
+}
+.tracking-pdf-part {
+  margin-top: 24px;
+  break-inside: avoid;
+}
+.tracking-pdf-part > header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  border-bottom: 2px solid #0067a0;
+  padding: 0 4px 8px;
+}
+.tracking-pdf-part h2 {
+  margin: 3px 0 0;
+  font-size: 21px;
+  text-transform: capitalize;
+}
+.tracking-pdf-part > header strong {
+  color: #0067a0;
+  font-size: 12px;
+}
+.tracking-pdf-part table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+.tracking-pdf-part th {
+  padding: 9px 6px;
+  background: #eef7fc;
+  color: #64748b;
+  font-size: 9px;
+  text-align: left;
+  text-transform: uppercase;
+}
+.tracking-pdf-part td {
+  border-bottom: 1px solid #e2e8f0;
+  padding: 9px 6px;
+  color: #334155;
+  font-size: 10px;
+  vertical-align: top;
+}
+.tracking-pdf-part th:nth-child(6),
+.tracking-pdf-part td:nth-child(6) {
+  width: 25%;
+}
+.tracking-pdf-part .tracking-process-data small {
+  font-size: 8px;
+}
+.tracking-pdf-part .tracking-process-data b {
+  font-size: 9px;
+}
+.tracking-pdf-document > footer {
+  margin-top: 28px;
+  border-top: 1px solid #ddd6fe;
+  padding-top: 14px;
+  color: #64748b;
+  font-size: 10px;
+  text-align: center;
+}
 
 @media (max-width: 1250px) {
-  .tracking-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .tracking-kpis {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
 }
