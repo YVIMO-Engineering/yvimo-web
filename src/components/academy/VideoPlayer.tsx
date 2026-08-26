@@ -68,6 +68,12 @@ export function VideoPlayer({
   const [r2Playback, setR2Playback] = React.useState<{ url: string; expiresAt: string } | null>(null);
   const [r2PlaybackState, setR2PlaybackState] = React.useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [r2PlaybackMessage, setR2PlaybackMessage] = React.useState('');
+  const r2PlaybackRef = React.useRef(r2Playback);
+  const r2RequestRef = React.useRef(0);
+
+  React.useEffect(() => {
+    r2PlaybackRef.current = r2Playback;
+  }, [r2Playback]);
 
   React.useEffect(() => {
     return () => {
@@ -83,14 +89,21 @@ export function VideoPlayer({
 
   const loadR2Playback = React.useCallback(async () => {
     if (provider !== 'cloudflare_r2' || !recordingId) return;
-    setR2PlaybackState('loading');
+    const requestId = ++r2RequestRef.current;
+    // Keep the current video mounted while its signed URL is renewed. Replacing
+    // it with the loading placeholder interrupts playback and looks like a flash.
+    if (!r2PlaybackRef.current) setR2PlaybackState('loading');
     setR2PlaybackMessage('');
     try {
       const playback = await fetchR2Playback(recordingId);
+      if (requestId !== r2RequestRef.current) return;
       setR2Playback({ url: playback.playbackUrl, expiresAt: playback.expiresAt });
       setR2PlaybackState('ready');
     } catch (caught) {
-      setR2Playback(null);
+      if (requestId !== r2RequestRef.current) return;
+      // A failed proactive renewal must not tear down a URL that is still
+      // playing. The media error handler will surface a failure if it expires.
+      if (r2PlaybackRef.current) return;
       setR2PlaybackState('error');
       setR2PlaybackMessage(caught instanceof Error ? caught.message : 'Private video playback is unavailable.');
     }
@@ -99,11 +112,17 @@ export function VideoPlayer({
   React.useEffect(() => {
     if (provider !== 'cloudflare_r2' || !recordingId) return;
     void loadR2Playback();
+    return () => {
+      r2RequestRef.current += 1;
+    };
   }, [loadR2Playback, provider, recordingId]);
 
   React.useEffect(() => {
     if (!r2Playback) return;
-    const refreshIn = Math.max(new Date(r2Playback.expiresAt).getTime() - Date.now() - 5 * 60 * 1000, 30_000);
+    const expiresAt = Date.parse(r2Playback.expiresAt);
+    const refreshIn = Number.isFinite(expiresAt)
+      ? Math.max(expiresAt - Date.now() - 5 * 60 * 1000, 30_000)
+      : 60 * 60 * 1000;
     const timer = window.setTimeout(() => void loadR2Playback(), refreshIn);
     return () => window.clearTimeout(timer);
   }, [loadR2Playback, r2Playback]);
@@ -454,10 +473,11 @@ function YvimoVideoPlayer({
         onProgress={(event) => updateBuffered(event.currentTarget)}
         onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
         onPlay={(event) => {
+          const video = event.currentTarget;
           setIsPlaying(true);
           revealControls();
           if (progressTimer.current) window.clearInterval(progressTimer.current);
-          progressTimer.current = window.setInterval(() => onProgress(event.currentTarget), 10000);
+          progressTimer.current = window.setInterval(() => onProgress(video), 10000);
         }}
         onPause={(event) => {
           setIsPlaying(false);

@@ -5096,7 +5096,7 @@ export function AcademyLessonPage({
           <div className="academy-player-column">
             <VideoPlayer
               provider={lesson.video_provider}
-              recordingId={liveSession ? lesson.id : undefined}
+              recordingId={lesson.video_provider === 'cloudflare_r2' ? lesson.id : undefined}
               videoId={lesson.video_id}
               videoUrl={lesson.video_url}
               title={lesson.title}
