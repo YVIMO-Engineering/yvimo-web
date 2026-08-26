@@ -370,6 +370,7 @@ function YvimoVideoPlayer({
   const [duration, setDuration] = React.useState(0);
   const [buffered, setBuffered] = React.useState(0);
   const [showControls, setShowControls] = React.useState(true);
+  const [playbackMessage, setPlaybackMessage] = React.useState('');
 
   const revealControls = React.useCallback(() => {
     setShowControls(true);
@@ -384,12 +385,46 @@ function YvimoVideoPlayer({
     if (controlsTimer.current) window.clearTimeout(controlsTimer.current);
   }, []);
 
+  const startPlayback = React.useCallback(async () => {
+    const video = videoRef.current;
+    if (!video) return;
+    setPlaybackMessage('');
+    try {
+      await video.play();
+    } catch (caught) {
+      // Chromium can abort play() while the signed media response is still
+      // switching from metadata to a ranged request. Wait for playable data
+      // and retry once while retaining the original user interaction.
+      if (caught instanceof DOMException && caught.name === 'AbortError') {
+        try {
+          await new Promise<void>((resolve, reject) => {
+            const timeout = window.setTimeout(() => reject(new Error('timeout')), 8000);
+            video.addEventListener('canplay', () => {
+              window.clearTimeout(timeout);
+              resolve();
+            }, { once: true });
+            video.load();
+          });
+          await video.play();
+          return;
+        } catch {
+          // Fall through to the actionable player message below.
+        }
+      }
+      setPlaybackMessage(
+        caught instanceof DOMException && caught.name === 'NotAllowedError'
+          ? 'Your browser blocked playback. Allow media playback for www.yvimo.com and try again.'
+          : 'The browser could not start this video. Reload the page and try again.',
+      );
+    }
+  }, []);
+
   const togglePlayback = React.useCallback(() => {
     const video = videoRef.current;
     if (!video) return;
-    if (video.paused) void video.play();
+    if (video.paused) void startPlayback();
     else video.pause();
-  }, []);
+  }, [startPlayback]);
 
   const skip = React.useCallback((seconds: number) => {
     const video = videoRef.current;
@@ -466,6 +501,7 @@ function YvimoVideoPlayer({
         onClick={togglePlayback}
         onError={onError}
         onLoadedMetadata={(event) => {
+          setPlaybackMessage('');
           setDuration(event.currentTarget.duration);
           updateBuffered(event.currentTarget);
         }}
@@ -479,6 +515,7 @@ function YvimoVideoPlayer({
           if (progressTimer.current) window.clearInterval(progressTimer.current);
           progressTimer.current = window.setInterval(() => onProgress(video), 10000);
         }}
+        onCanPlay={() => setPlaybackMessage('')}
         onPause={(event) => {
           setIsPlaying(false);
           setShowControls(true);
@@ -492,6 +529,8 @@ function YvimoVideoPlayer({
           onComplete?.();
         }}
       />
+
+      {playbackMessage ? <div className="academy-video-playback-message" role="alert">{playbackMessage}</div> : null}
 
       {!isPlaying && (
         <button className="academy-video-center-play" type="button" onClick={togglePlayback} aria-label="Play video">

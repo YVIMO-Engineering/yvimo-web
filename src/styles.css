@@ -29769,6 +29769,21 @@ body.work-center-map-expanded .logged-workspace {
   transform: translate(-50%, -50%) scale(1.06);
 }
 
+.academy-video-playback-message {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  left: 18px;
+  z-index: 5;
+  border: 1px solid rgba(255, 138, 31, 0.5);
+  border-radius: 10px;
+  padding: 11px 14px;
+  background: rgba(9, 13, 18, 0.92);
+  color: #fff;
+  font-size: 14px;
+  text-align: center;
+}
+
 .academy-video-controls {
   position: absolute;
   right: 20px;
