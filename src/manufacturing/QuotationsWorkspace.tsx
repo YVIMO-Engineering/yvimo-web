@@ -27,6 +27,7 @@ import {
   type ServiceHistory,
 } from "./quotationV1";
 import "./quotations.css";
+import { coatingProviderOptions, type CoatingProvider } from "./coatingProviders";
 
 type Props = {
   onNavigate: (path: string) => void;
@@ -36,7 +37,6 @@ type Props = {
 };
 type QuotationStatus = "draft" | "sent" | "approved" | "declined";
 type PartType = "Hob" | "Shaper" | "Shaper with shank" | "Shaver" | "Other";
-type CoatingProvider = "Balzers" | "Voestalpine";
 type Customer = { id: string; customer_name: string };
 type LegacyPrice = { id: string; client_name: string; tool_id: string; serial_number: string; price: number; currency: string; usage_count: number; last_used_at: string | null; is_active: boolean; updated_at: string };
 type Quotation = {
@@ -2104,10 +2104,7 @@ export function QuotationsWorkspace({
                     <QuotationDropdown
                       value={form.coatingProvider}
                       placeholder="Select coating provider"
-                      options={[
-                        { value: "Balzers", label: "Balzers" },
-                        { value: "Voestalpine", label: "Voestalpine" },
-                      ]}
+                      options={coatingProviderOptions}
                       onChange={(value) =>
                         setForm({
                           ...form,

@@ -2314,7 +2314,7 @@ function LoggedDashboardPage({ user, onSignOut, onNavigate, onUpdateAvatar, acti
   const [manufacturingSwitchAction, setManufacturingSwitchAction] = React.useState<'leave' | 'transfer' | 'disband'>('leave');
   const [manufacturingNewOwnerUserId, setManufacturingNewOwnerUserId] = React.useState('');
   const [manufacturingSwitchBusy, setManufacturingSwitchBusy] = React.useState(false);
-  const [supplierContextTab, setSupplierContextTab] = React.useState<SupplierContextTab>('dashboard');
+  const [supplierContextTab, setSupplierContextTab] = React.useState<SupplierContextTab>('suppliers');
   const [workspaceAccessMode, setWorkspaceAccessMode] = React.useState<WorkspaceAccessMode>(() => loadWorkspaceAccessMode());
   const [supplierSelectedCustomer, setSupplierSelectedCustomer] = React.useState('Gleason Corp');
   const [supplierCustomerPickerOpen, setSupplierCustomerPickerOpen] = React.useState(false);
@@ -3617,11 +3617,12 @@ function LoggedDashboardPage({ user, onSignOut, onNavigate, onUpdateAvatar, acti
     icon: React.ComponentType<{ size?: number }>;
     disabled?: boolean;
   }> = [
-    { value: 'dashboard', label: 'Dashboard', icon: ClipboardCheck },
-    { value: 'transfers', label: 'Transfers', icon: PackageCheck },
     { value: 'suppliers', label: 'Suppliers', icon: Building2 },
-    { value: 'vouchers-docs', label: 'Vouchers and Docs', icon: FileUp },
-    { value: 'check-in-out', label: 'Check in/out', icon: Truck },
+    { value: 'external-manufacturing', label: 'External Manufacturing Suppliers', icon: Factory },
+    { value: 'dashboard', label: 'Dashboard', icon: ClipboardCheck, disabled: true },
+    { value: 'transfers', label: 'Transfers', icon: PackageCheck, disabled: true },
+    { value: 'vouchers-docs', label: 'Vouchers and Docs', icon: FileUp, disabled: true },
+    { value: 'check-in-out', label: 'Check in/out', icon: Truck, disabled: true },
   ];
   const qualityContextTabs: Array<{
     value: QualityContextTab;
@@ -4460,7 +4461,14 @@ function LoggedDashboardPage({ user, onSignOut, onNavigate, onUpdateAvatar, acti
             {supplierContextTabs.map((tab) => {
               const Icon = tab.icon;
               return (
-                <button type="button" key={tab.value} className={supplierContextTab === tab.value ? 'active' : ''} onClick={() => setSupplierContextTab(tab.value)}>
+                <button
+                  type="button"
+                  key={tab.value}
+                  className={[supplierContextTab === tab.value ? 'active' : '', tab.disabled ? 'disabled' : ''].filter(Boolean).join(' ')}
+                  disabled={tab.disabled}
+                  aria-disabled={tab.disabled}
+                  onClick={() => { if (!tab.disabled) setSupplierContextTab(tab.value); }}
+                >
                   <Icon size={18} />
                   <span>{tab.label}</span>
                 </button>

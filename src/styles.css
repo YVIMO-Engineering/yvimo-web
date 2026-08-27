@@ -1691,6 +1691,20 @@ body.work-center-map-expanded .logged-workspace {
   flex: 0 0 auto;
 }
 
+.supplier-shell-context-menu button.disabled,
+.supplier-shell-context-menu button:disabled {
+  border-color: transparent;
+  background: transparent;
+  color: #697481;
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
+.supplier-shell-context-menu button.disabled svg,
+.supplier-shell-context-menu button:disabled svg {
+  color: #697481;
+}
+
 .logged-shell.supplier-context-shell .logged-workspace {
   grid-column: 3;
   padding-left: clamp(16px, 2.2vw, 28px);
@@ -5293,6 +5307,84 @@ body.work-center-map-expanded .logged-workspace {
   gap: 16px;
   min-width: 0;
 }
+
+.external-manufacturing-suppliers {
+  display: grid;
+  gap: 14px;
+}
+
+.external-manufacturing-tabs {
+  display: flex;
+  width: fit-content;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid #dbe4ed;
+  border-radius: 9px;
+  padding: 3px;
+  background: #f8fafc;
+}
+
+.external-manufacturing-tabs button {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  padding: 0 12px;
+  background: transparent;
+  color: #5b6d82;
+  font: inherit;
+  font-size: 0.68rem;
+  font-weight: 950;
+  cursor: pointer;
+}
+
+.external-manufacturing-tabs button.active {
+  border-color: #60a5fa;
+  background: #eff6ff;
+  color: #1d4ed8;
+  box-shadow: 0 4px 12px #2563eb18;
+}
+
+.external-manufacturing-tab-panel {
+  min-height: 1px;
+}
+
+.coating-supplier-dashboard { display: grid; gap: 14px; }
+.coating-dashboard-filters { display: flex; align-items: end; justify-content: space-between; gap: 18px; border: 1px solid #dbe4ed; border-left: 5px solid #2563eb; border-radius: 11px; padding: 12px 14px; background: #fff; box-shadow: 0 6px 18px #0f172a08; }
+.coating-primary-filters { display: flex; align-items: end; gap: 10px; }
+.coating-dashboard-filters label { display: grid; min-width: 220px; gap: 6px; }
+.coating-dashboard-filters label > span { color: #56697e; font-size: .62rem; font-weight: 950; letter-spacing: .06em; text-transform: uppercase; }
+.coating-dashboard-filters select, .coating-dashboard-filters input { min-height: 40px; border: 1px solid #ccd8e4; border-radius: 8px; padding: 0 11px; background: #f8fafc; color: #21354c; font: inherit; font-size: .75rem; font-weight: 850; }
+.coating-dashboard-filters select:focus { border-color: #60a5fa; outline: 3px solid #2563eb1c; }
+.coating-date-range .mes-order-date-picker { width: 100%; }
+.coating-date-range .mes-order-date-picker > button { min-height: 40px; border-color: #ccd8e4; background: #f8fafc; font-size: .75rem; font-weight: 850; }
+.coating-date-range .mes-order-date-picker.open > button, .coating-date-range .mes-order-date-picker > button:focus-visible { border-color: #60a5fa; outline: 3px solid #2563eb1c; }
+.coating-date-range .mes-order-date-picker > button svg { color: #2563eb; }
+.coating-date-range { display: flex; align-items: end; gap: 8px; }
+.coating-date-range label { min-width: 155px; }
+.coating-date-arrow { min-height: 40px; align-content: center; color: #94a3b8; font-weight: 900; }
+.coating-date-range button { display: inline-flex; min-height: 40px; align-items: center; gap: 7px; border: 1px solid #fdba74; border-radius: 8px; padding: 0 12px; background: #fff7ed; color: #c55700; font: inherit; font-size: .7rem; font-weight: 900; cursor: pointer; }
+.coating-kpi-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 11px; }
+.coating-kpi-grid article { display: flex; min-height: 88px; align-items: center; gap: 12px; border: 1px solid #dbe4ed; border-left: 5px solid #2563eb; border-radius: 11px; padding: 11px 13px; background: linear-gradient(135deg, #eff6ff, #fff); box-shadow: 0 6px 18px #0f172a08; }
+.coating-kpi-grid article > svg { flex: 0 0 auto; color: #2563eb; }
+.coating-kpi-grid article.returned { border-left-color: #2563eb; background: #f7faff; }.coating-kpi-grid article.returned > svg { color: #2563eb; }
+.coating-kpi-grid article.spend { border-left-color: #059669; background: #f6fdf9; }.coating-kpi-grid article.spend > svg { color: #059669; }
+.coating-kpi-grid article.lead-time { border-left-color: #f97316; background: #fffaf5; }.coating-kpi-grid article.lead-time > svg { color: #f97316; }
+.coating-kpi-grid article span { display: grid; min-width: 0; }.coating-kpi-grid small { color: #65768a; font-size: .65rem; font-weight: 950; letter-spacing: .045em; text-transform: uppercase; }.coating-kpi-grid strong { margin-top: 2px; color: #0b1726; font-size: 1.45rem; line-height: 1.05; }.coating-kpi-grid em { margin-top: 5px; color: #65768a; font-size: .65rem; font-style: normal; font-weight: 800; }
+.coating-volume-panel { display: grid; gap: 14px; border: 1px solid #dbe4ed; border-radius: 12px; padding: 16px; background: #fff; box-shadow: 0 8px 24px #0f172a0a; }
+.coating-volume-panel > header { display: flex; align-items: end; justify-content: space-between; gap: 16px; }.coating-volume-panel > header small { color: #2563eb; font-size: .62rem; font-weight: 950; letter-spacing: .06em; text-transform: uppercase; }.coating-volume-panel h3 { margin: 3px 0 0; color: #13243a; font-size: 1rem; }.coating-volume-panel > header > span { color: #65768a; font-size: .7rem; font-weight: 800; }
+.coating-volume-chart { display: grid; width: 100%; min-width: 0; min-height: 250px; align-items: end; gap: clamp(2px, .35vw, 6px); overflow: hidden; border-bottom: 1px solid #dce5ee; padding: 14px 4px 0; background: repeating-linear-gradient(to bottom, transparent 0, transparent 49px, #e8eef4 50px); }
+.coating-volume-day { display: grid; min-width: 0; height: 220px; grid-template-rows: 28px 165px 22px; align-items: end; text-align: center; }.coating-volume-value { align-self: center; color: #1d4ed8; font-size: clamp(.5rem, .6vw, .65rem); font-weight: 950; }.coating-volume-track { display: flex; height: 160px; align-items: end; justify-content: center; }.coating-volume-track i { display: block; width: min(70%, 34px); min-height: 0; border-radius: 5px 5px 1px 1px; background: linear-gradient(180deg, #60a5fa, #2563eb); box-shadow: 0 4px 10px #2563eb28; }.coating-volume-day > span { align-self: center; overflow: hidden; min-width: 0; min-height: 20px; color: #52657c; font-size: clamp(.46rem, .54vw, .58rem); font-weight: 850; line-height: 1.05; text-overflow: ellipsis; white-space: nowrap; }
+.coating-volume-chart.granularity-month .coating-volume-track i { width: min(58%, 52px); }
+.coating-volume-chart.granularity-week .coating-volume-track i { width: min(62%, 40px); }
+.coating-dashboard-status { padding: 28px; color: #65768a; text-align: center; font-size: .78rem; font-weight: 800; }.coating-dashboard-status.error { border: 1px solid #fecaca; border-radius: 9px; padding: 10px 12px; background: #fff7f7; color: #b91c1c; text-align: left; }
+.external-coating-divider { margin-top: 4px; }
+.external-coating-tracking .order-risk-card-grid { grid-template-columns: repeat(2, minmax(420px, 1fr)); }
+@media (max-width: 1050px) { .coating-dashboard-filters { align-items: stretch; flex-direction: column; }.coating-primary-filters, .coating-date-range { flex-wrap: wrap; }.coating-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 620px) { .coating-primary-filters label, .coating-date-range label, .coating-dashboard-filters label { min-width: 0; flex: 1 1 140px; }.coating-date-range button { width: 100%; justify-content: center; }.coating-kpi-grid { grid-template-columns: 1fr; } }
 
 .supplier-header-actions {
   display: flex;

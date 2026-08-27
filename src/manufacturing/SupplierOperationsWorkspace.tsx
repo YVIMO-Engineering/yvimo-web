@@ -4,12 +4,21 @@ import {
   ArrowLeft,
   Building2,
   Check,
+  CheckCircle2,
   ChevronDown,
+  ChevronUp,
   ClipboardCheck,
   Clock,
+  CalendarDays,
+  CircleDollarSign,
   Pencil,
   Eye,
+  Factory,
   FileText,
+  Clock3,
+  PaintBucket,
+  Send,
+  Timer,
   PackageCheck,
   Plus,
   Trash2,
@@ -29,6 +38,9 @@ import type {
   SupplierTransferStatus,
   SupplierVoucher,
 } from './mesTypes';
+import { coatingProviderOptions, type CoatingProvider } from './coatingProviders';
+import { MesOrderDatePicker, ProductionOrdersWorkspace } from './MesWorkspaces';
+import './orderRisks.css';
 
 type SupplierOperationsWorkspaceProps = {
   onNavigate: (path: string) => void;
@@ -38,7 +50,7 @@ type SupplierOperationsWorkspaceProps = {
 };
 
 type SupplierModalMode = 'create' | 'edit-transfer' | 'supplier' | 'delete-supplier' | 'checkout' | 'checkin' | 'document' | 'document-preview' | 'supplier-pdf-preview' | 'voucher' | null;
-export type SupplierContextTab = 'dashboard' | 'transfers' | 'suppliers' | 'vouchers-docs' | 'check-in-out';
+export type SupplierContextTab = 'dashboard' | 'transfers' | 'suppliers' | 'external-manufacturing' | 'vouchers-docs' | 'check-in-out';
 
 type SupplierPdfDocument = {
   label: string;
@@ -503,6 +515,157 @@ function SupplierVoucherView({ voucher }: { voucher: SupplierVoucher }) {
       </aside>
     </div>
   );
+}
+
+type CoatingActivity = { id: string; receptionItemId: string; serialId: string; provider: CoatingProvider; workCenter: string; sentAt: string; returnedAt: string; cost: number };
+type ExternalCoatingSerial = { id: string; serialNumber: string; toolId: string; sentAt: string; returnedAt: string; provider: CoatingProvider };
+type ExternalCoatingTracking = { id: string; orderNumber: string; customerName: string; quantity: number; coatingSentAt: string; workCenter: string; stationCodes: string[]; serials: ExternalCoatingSerial[] };
+
+const localDateValue = (date: Date) => {
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 10);
+};
+
+function CoatingSupplierDashboard({ organizationId, onNavigate }: { organizationId: string; onNavigate: (path: string) => void }) {
+  const today = React.useMemo(() => new Date(), []);
+  const [provider, setProvider] = React.useState<'all' | CoatingProvider>('all');
+  const [workCenter, setWorkCenter] = React.useState('all');
+  const [workCenters, setWorkCenters] = React.useState<Array<{ code: string; name: string }>>([]);
+  const [dateFrom, setDateFrom] = React.useState(() => localDateValue(new Date(today.getFullYear(), today.getMonth(), 1)));
+  const [dateTo, setDateTo] = React.useState(() => localDateValue(today));
+  const [activity, setActivity] = React.useState<CoatingActivity[]>([]);
+  const [trackings, setTrackings] = React.useState<ExternalCoatingTracking[]>([]);
+  const [stationNames, setStationNames] = React.useState<Map<string, string>>(new Map());
+  const [trackingExpanded, setTrackingExpanded] = React.useState(true);
+  const [detailOrderNumber, setDetailOrderNumber] = React.useState('');
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState('');
+
+  React.useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      setLoading(true);
+      setError('');
+      const progressResult = await supabase.from('mes_customer_reception_serial_progress').select('id, reception_item_id, production_serial_id, coating_sent_at, coating_returned_at').eq('organization_id', organizationId).not('coating_sent_at', 'is', null);
+      if (progressResult.error) { if (!cancelled) { setError(progressResult.error.message); setLoading(false); } return; }
+      const progressRows = progressResult.data ?? [];
+      const serialIds = [...new Set(progressRows.map((row) => row.production_serial_id).filter(Boolean))];
+      const serialResult = serialIds.length ? await supabase.from('mes_production_serials').select('id, production_order_id, quotation_id, serial_number, tool_id, assigned_station').in('id', serialIds) : { data: [], error: null };
+      if (serialResult.error) { if (!cancelled) { setError(serialResult.error.message); setLoading(false); } return; }
+      const quotationIds = [...new Set((serialResult.data ?? []).map((row) => row.quotation_id).filter((id): id is string => Boolean(id)))];
+      const quotationResult = quotationIds.length ? await supabase.from('mes_quotations').select('id, coating_provider, coating_price').in('id', quotationIds) : { data: [], error: null };
+      if (quotationResult.error) { if (!cancelled) { setError(quotationResult.error.message); setLoading(false); } return; }
+      const receptionItemIds = [...new Set(progressRows.map((row) => row.reception_item_id).filter(Boolean))];
+      const [itemResult, stationResult, workCenterResult] = await Promise.all([
+        receptionItemIds.length ? supabase.from('mes_customer_reception_items').select('id, production_order_id, production_order_number, quantity, mes_customers(customer_name), mes_production_orders!production_order_id(assigned_station, assigned_work_center)').in('id', receptionItemIds) : Promise.resolve({ data: [], error: null }),
+        supabase.from('mes_work_center_stations').select('code, name').eq('organization_id', organizationId),
+        supabase.from('mes_work_centers').select('code, name').eq('organization_id', organizationId).order('name'),
+      ]);
+      if (itemResult.error || stationResult.error || workCenterResult.error) { if (!cancelled) { setError(itemResult.error?.message ?? stationResult.error?.message ?? workCenterResult.error?.message ?? 'Unable to load coating sub-trackings.'); setLoading(false); } return; }
+      const quotationById = new Map((quotationResult.data ?? []).map((row) => [row.id, row]));
+      const serialById = new Map((serialResult.data ?? []).map((row) => [row.id, row]));
+      const receptionItemById = new Map((itemResult.data ?? []).map((item) => [item.id, item]));
+      if (!cancelled) {
+        const nextActivity: CoatingActivity[] = progressRows.map((row) => {
+          const quotation = quotationById.get(serialById.get(row.production_serial_id)?.quotation_id ?? '');
+          const item = receptionItemById.get(row.reception_item_id);
+          const productionOrder = Array.isArray(item?.mes_production_orders) ? item.mes_production_orders[0] : item?.mes_production_orders;
+          return { id: row.id, receptionItemId: row.reception_item_id, serialId: row.production_serial_id, provider: quotation?.coating_provider === 'Voestalpine' ? 'Voestalpine' : 'Balzers', workCenter: productionOrder?.assigned_work_center ?? '', sentAt: row.coating_sent_at ?? '', returnedAt: row.coating_returned_at ?? '', cost: Number(quotation?.coating_price) || 0 };
+        });
+        setActivity(nextActivity);
+        setTrackings((itemResult.data ?? []).map((item) => {
+          const customer = Array.isArray(item.mes_customers) ? item.mes_customers[0] : item.mes_customers;
+          const productionOrder = Array.isArray(item.mes_production_orders) ? item.mes_production_orders[0] : item.mes_production_orders;
+          const itemActivity = nextActivity.filter((row) => row.receptionItemId === item.id);
+          const serials = itemActivity.map((row) => { const serial = serialById.get(row.serialId); return { id: row.serialId, serialNumber: serial?.serial_number ?? 'Unknown', toolId: serial?.tool_id ?? '', sentAt: row.sentAt, returnedAt: row.returnedAt, provider: row.provider }; });
+          const sentTimes = serials.map((serial) => serial.sentAt).filter(Boolean).sort();
+          return { id: item.id, orderNumber: item.production_order_number ?? '', customerName: customer?.customer_name ?? 'Customer not assigned', quantity: Number(item.quantity) || 0, coatingSentAt: sentTimes[0] ?? '', workCenter: productionOrder?.assigned_work_center ?? '', stationCodes: [...new Set([productionOrder?.assigned_station, ...serials.map((serial) => serialById.get(serial.id)?.assigned_station)].filter((code): code is string => Boolean(code)))], serials };
+        }).filter((tracking) => tracking.coatingSentAt && tracking.serials.some((serial) => !serial.returnedAt)));
+        setStationNames(new Map((stationResult.data ?? []).map((station) => [station.code, station.name])));
+        setWorkCenters((workCenterResult.data ?? []).map((center) => ({ code: center.code, name: center.name })));
+        setLoading(false);
+      }
+    };
+    void load();
+    return () => { cancelled = true; };
+  }, [organizationId]);
+
+  const rangeStart = new Date(`${dateFrom}T00:00:00`), rangeEnd = new Date(`${dateTo}T23:59:59.999`);
+  const providerActivity = activity.filter((row) => (provider === 'all' || row.provider === provider) && (workCenter === 'all' || row.workCenter === workCenter));
+  const sent = providerActivity.filter((row) => { const date = new Date(row.sentAt); return date >= rangeStart && date <= rangeEnd; });
+  const returned = providerActivity.filter((row) => { const date = new Date(row.returnedAt); return row.returnedAt !== '' && date >= rangeStart && date <= rangeEnd; });
+  const coatingSpend = returned.reduce((total, row) => total + row.cost, 0);
+  const durations = returned.map((row) => new Date(row.returnedAt).getTime() - new Date(row.sentAt).getTime()).filter((duration) => duration >= 0);
+  const averageDays = durations.length ? durations.reduce((total, duration) => total + duration, 0) / durations.length / 86_400_000 : 0;
+  const dayCount = Math.max(1, Math.round((new Date(`${dateTo}T00:00:00`).getTime() - new Date(`${dateFrom}T00:00:00`).getTime()) / 86_400_000) + 1);
+  const chartGranularity: 'day' | 'week' | 'month' = dayCount <= 45 ? 'day' : dayCount <= 180 ? 'week' : 'month';
+  const chartPoints = (() => {
+    const start = new Date(`${dateFrom}T00:00:00`), end = new Date(`${dateTo}T23:59:59.999`);
+    if (chartGranularity === 'day') return Array.from({ length: dayCount }, (_, index) => { const pointStart = new Date(start); pointStart.setDate(pointStart.getDate() + index); const pointEnd = new Date(pointStart); pointEnd.setHours(23, 59, 59, 999); return { key: localDateValue(pointStart), label: new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(pointStart), value: sent.filter((row) => { const date = new Date(row.sentAt); return date >= pointStart && date <= pointEnd; }).length }; });
+    if (chartGranularity === 'week') {
+      const points: Array<{ key: string; label: string; value: number }> = [];
+      for (let pointStart = new Date(start); pointStart <= end; pointStart.setDate(pointStart.getDate() + 7)) {
+        const bucketStart = new Date(pointStart), bucketEnd = new Date(Math.min(end.getTime(), new Date(pointStart.getFullYear(), pointStart.getMonth(), pointStart.getDate() + 6, 23, 59, 59, 999).getTime()));
+        const startLabel = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(bucketStart), endLabel = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(bucketEnd);
+        points.push({ key: localDateValue(bucketStart), label: `${startLabel}–${endLabel}`, value: sent.filter((row) => { const date = new Date(row.sentAt); return date >= bucketStart && date <= bucketEnd; }).length });
+      }
+      return points;
+    }
+    const points: Array<{ key: string; label: string; value: number }> = [];
+    for (let pointStart = new Date(start.getFullYear(), start.getMonth(), 1); pointStart <= end; pointStart.setMonth(pointStart.getMonth() + 1)) {
+      const bucketStart = new Date(Math.max(start.getTime(), pointStart.getTime())), monthEnd = new Date(pointStart.getFullYear(), pointStart.getMonth() + 1, 0, 23, 59, 59, 999), bucketEnd = new Date(Math.min(end.getTime(), monthEnd.getTime()));
+      points.push({ key: localDateValue(pointStart), label: new Intl.DateTimeFormat('en-US', { month: 'short', year: '2-digit' }).format(pointStart), value: sent.filter((row) => { const date = new Date(row.sentAt); return date >= bucketStart && date <= bucketEnd; }).length });
+    }
+    return points;
+  })();
+  const maxVolume = Math.max(1, ...chartPoints.map((point) => point.value));
+  const visibleTrackings = trackings.map((tracking) => {
+    const serials = tracking.serials.filter((serial) => provider === 'all' || serial.provider === provider);
+    const sentTimes = serials.map((serial) => serial.sentAt).filter(Boolean).sort();
+    return { ...tracking, serials, coatingSentAt: sentTimes[0] ?? '' };
+  }).filter((tracking) => (workCenter === 'all' || tracking.workCenter === workCenter) && tracking.coatingSentAt && tracking.serials.some((serial) => !serial.returnedAt));
+  const elapsedLabel = (sentAt: string, returnedAt = '') => {
+    const start = new Date(sentAt), end = returnedAt ? new Date(returnedAt) : new Date();
+    const hours = Math.max(0, (end.getTime() - start.getTime()) / 3_600_000);
+    return hours < 24 ? `${Math.floor(hours)}h ${Math.floor((hours % 1) * 60)}m` : `${Math.floor(hours / 24)}d ${Math.floor(hours % 24)}h`;
+  };
+
+  return <div className="coating-supplier-dashboard">
+    <section className="coating-dashboard-filters">
+      <div className="coating-primary-filters"><label><span>Coating supplier</span><select value={provider} onChange={(event) => setProvider(event.target.value as 'all' | CoatingProvider)}><option value="all">All coating suppliers</option>{coatingProviderOptions.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}</select></label><label><span>Work center</span><select value={workCenter} onChange={(event) => setWorkCenter(event.target.value)}><option value="all">All work centers</option>{workCenters.map((center) => <option value={center.code} key={center.code}>{center.name} · {center.code}</option>)}</select></label></div>
+      <div className="coating-date-range">
+        <label><span>From</span><MesOrderDatePicker id="coating-date-from" value={dateFrom} onChange={(value) => { setDateFrom(value); if (value > dateTo) setDateTo(value); }} onQuickRange={(range) => { setDateFrom(range.from); setDateTo(range.to); }} /></label>
+        <span className="coating-date-arrow">→</span>
+        <label><span>To</span><MesOrderDatePicker id="coating-date-to" value={dateTo} onChange={(value) => { setDateTo(value); if (value < dateFrom) setDateFrom(value); }} onQuickRange={(range) => { setDateFrom(range.from); setDateTo(range.to); }} /></label>
+        <button type="button" onClick={() => { setDateFrom(localDateValue(new Date(today.getFullYear(), today.getMonth(), 1))); setDateTo(localDateValue(today)); }}><CalendarDays size={15} /> This Month</button>
+      </div>
+    </section>
+    {error ? <div className="coating-dashboard-status error">Unable to load coating activity: {error}</div> : null}
+    <section className="coating-kpi-grid" aria-label="Coating KPIs">
+      <article><Send size={23} /><span><small>Tools sent</small><strong>{loading ? '—' : sent.length.toLocaleString()}</strong><em>sent for coating</em></span></article>
+      <article className="returned"><PackageCheck size={23} /><span><small>Tools returned</small><strong>{loading ? '—' : returned.length.toLocaleString()}</strong><em>received from coating</em></span></article>
+      <article className="spend"><CircleDollarSign size={23} /><span><small>Coating spend</small><strong>{loading ? '—' : coatingSpend.toLocaleString('en-US', { style: 'currency', currency: 'USD' })}</strong><em>returned tools in period</em></span></article>
+      <article className="lead-time"><Timer size={23} /><span><small>Average lead time</small><strong>{loading ? '—' : durations.length ? `${averageDays.toFixed(1)} days` : '—'}</strong><em>dispatch to return</em></span></article>
+    </section>
+    <section className="coating-volume-panel"><header><div><small>{chartGranularity === 'day' ? 'Daily' : chartGranularity === 'week' ? 'Weekly' : 'Monthly'} coating activity</small><h3>Tools sent by {chartGranularity}</h3></div><span>{sent.length.toLocaleString()} tools · {dateFrom} to {dateTo}</span></header>{loading ? <div className="coating-dashboard-status">Loading coating activity...</div> : <div className={`coating-volume-chart granularity-${chartGranularity}`} style={{ gridTemplateColumns: `repeat(${chartPoints.length}, minmax(0, 1fr))` }}>{chartPoints.map((point) => <div className="coating-volume-day" key={point.key} title={`${point.label}: ${point.value} tools sent`}><span>{point.label}</span><div className="coating-volume-track"><i style={{ height: `${(point.value / maxVolume) * 100}%` }} /></div><div className="coating-volume-value">{point.value}</div></div>)}</div>}</section>
+    <div className="order-risk-subtracking-divider external-coating-divider"><span>Sub-trackings</span><p>Active coating processes for {provider === 'all' ? 'all coating suppliers' : provider}</p></div>
+    <section className="order-risk-section coating external-coating-tracking">
+      <div className="order-risk-section-heading"><span className="order-risk-section-icon"><PaintBucket size={22} /></span><span><h2>Coating</h2><p>Time at the selected external coating supplier</p></span><strong>{loading ? '—' : visibleTrackings.length} {visibleTrackings.length === 1 ? 'sub-reception' : 'sub-receptions'}</strong><button className="order-risk-section-toggle" type="button" aria-expanded={trackingExpanded} onClick={() => setTrackingExpanded((expanded) => !expanded)}>{trackingExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}<span>{trackingExpanded ? 'Collapse' : 'Expand'}</span></button></div>
+      {trackingExpanded ? <div className="order-risk-card-grid">
+        {loading ? [1, 2].map((item) => <div className="order-risk-card skeleton" key={item} />) : null}
+        {!loading && !visibleTrackings.length ? <div className="order-risk-empty"><CheckCircle2 size={22} /><span>No active sub-receptions for {provider === 'all' ? 'the coating suppliers' : provider}.</span></div> : null}
+        {!loading && visibleTrackings.map((tracking) => <article className={`order-risk-card coating-card${tracking.orderNumber ? ' clickable' : ''}`} key={tracking.id} role={tracking.orderNumber ? 'button' : undefined} tabIndex={tracking.orderNumber ? 0 : undefined} onClick={() => tracking.orderNumber && setDetailOrderNumber(tracking.orderNumber)} onKeyDown={(event) => { if (tracking.orderNumber && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); setDetailOrderNumber(tracking.orderNumber); } }}>
+          <div className="order-risk-card-top"><span><small>Production order</small><strong>{tracking.orderNumber ? `#${tracking.orderNumber}` : 'Not assigned'}</strong></span><div className="order-risk-card-badges"><span className="order-risk-coating-status">At supplier</span><span className="order-risk-coating-time"><small>Elapsed Time</small><strong>{elapsedLabel(tracking.coatingSentAt)}</strong></span></div></div>
+          <p className="order-risk-client">{tracking.customerName}</p>
+          <div className="order-risk-machines"><span><Factory size={14} /> Machines</span><div>{tracking.stationCodes.length ? tracking.stationCodes.map((code) => <em key={code}>{stationNames.get(code) ? `${stationNames.get(code)} · ${code}` : code}</em>) : <small>Not assigned</small>}</div></div>
+          <div className="order-risk-coating-timeline"><span className="done"><Check size={14} /><b>Order coating started</b><time>{new Date(tracking.coatingSentAt).toLocaleString()}</time></span><i /><span><Clock3 size={14} /><b>Order still in process</b><small>{tracking.serials.filter((serial) => Boolean(serial.returnedAt)).length} of {tracking.serials.length} serials returned</small></span></div>
+          <div className="order-risk-coating-serials"><header><strong>Serial coating tracking</strong><span>{tracking.serials.length} serials for {provider === 'all' ? 'selected suppliers' : provider}</span></header><div>{tracking.serials.map((serial) => <section className={!serial.sentAt ? 'pending' : serial.returnedAt ? 'returned' : 'active'} key={serial.id}><span><small>Serial number</small><strong>{serial.serialNumber}</strong>{serial.toolId ? <em>{serial.toolId}</em> : null}</span><span><small>Sent to coating</small>{serial.sentAt ? <time>{new Date(serial.sentAt).toLocaleString()}</time> : <b>Not sent yet</b>}</span><span><small>Coating return</small>{serial.returnedAt ? <time>{new Date(serial.returnedAt).toLocaleString()}</time> : serial.sentAt ? <b>In process</b> : <b>Waiting for dispatch</b>}</span><span><small>Serial coating time</small><strong>{serial.sentAt ? elapsedLabel(serial.sentAt, serial.returnedAt) : '—'}</strong></span></section>)}</div></div>
+          <div className="order-risk-quantities"><span><small>Sub-reception Qty.</small><strong>{tracking.quantity.toLocaleString()}</strong></span><span><small>Filtered serials</small><strong>{tracking.serials.length}</strong></span><span><small>Order elapsed</small><strong>{elapsedLabel(tracking.coatingSentAt)}</strong></span></div>
+        </article>)}
+      </div> : null}
+    </section>
+    {detailOrderNumber ? <ProductionOrdersWorkspace organizationId={organizationId} onNavigate={onNavigate} modalOnly onModalClose={() => setDetailOrderNumber('')} /> : null}
+  </div>;
 }
 
 export function SupplierOperationsWorkspace({ onNavigate, organizationId, activeTab, onActiveTabChange }: SupplierOperationsWorkspaceProps) {
@@ -2438,6 +2601,11 @@ export function SupplierOperationsWorkspace({ onNavigate, organizationId, active
       title: 'Supplier Management',
       description: 'Manage external suppliers, capabilities, contacts, fiscal files, and banking documents.',
     },
+    'external-manufacturing': {
+      eyebrow: 'MES / External Manufacturing Suppliers',
+      title: 'External Manufacturing Suppliers',
+      description: 'Coordinate external manufacturing processes and supplier activity by specialized service.',
+    },
     'vouchers-docs': {
       eyebrow: 'MES / Supplier Documents',
       title: 'Vouchers and Docs',
@@ -2985,9 +3153,9 @@ export function SupplierOperationsWorkspace({ onNavigate, organizationId, active
               <Plus size={16} /> Add New Supplier
             </button>
           ) : null}
-          <button type="button" onClick={openCreateTransfer}>
+          {activeTab !== 'suppliers' && activeTab !== 'external-manufacturing' ? <button type="button" onClick={openCreateTransfer}>
             <Plus size={16} /> Add New Transfer
-          </button>
+          </button> : null}
         </div>
       </div>
 
@@ -3013,6 +3181,19 @@ export function SupplierOperationsWorkspace({ onNavigate, organizationId, active
           ) : null}
 
           {activeTab === 'suppliers' ? supplierManagementSection : null}
+
+          {activeTab === 'external-manufacturing' ? (
+            <section className="external-manufacturing-suppliers" aria-labelledby="external-manufacturing-coating-tab">
+              <nav className="external-manufacturing-tabs" aria-label="External manufacturing supplier processes">
+                <button id="external-manufacturing-coating-tab" type="button" className="active" aria-selected="true" role="tab">
+                  <Factory size={16} /> Coating
+                </button>
+              </nav>
+              <div className="external-manufacturing-tab-panel" role="tabpanel" aria-labelledby="external-manufacturing-coating-tab">
+                <CoatingSupplierDashboard organizationId={organizationId} onNavigate={onNavigate} />
+              </div>
+            </section>
+          ) : null}
 
           {activeTab === 'vouchers-docs' ? vouchersAndDocsSection : null}
 
