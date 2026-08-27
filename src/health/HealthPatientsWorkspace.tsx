@@ -25,7 +25,7 @@ type Props = {
 
 const emptyForm = { fullName: '', curp: '', medicalRecordNumber: '', sex: '' as '' | PatientRow['sex'] };
 const medicalRecordCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
-const patientsPerPage = 50;
+const patientsPerPage = 100;
 const maximumAvailableRecordNumber = 200;
 
 function getBirthDateFromCurp(curp: string): string | null {
