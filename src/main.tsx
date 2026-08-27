@@ -16,6 +16,7 @@ import { translateClientsText } from './manufacturing/clientsI18n';
 import { OrderRisksWorkspace } from './manufacturing/OrderRisksWorkspace';
 import { ImportCostingWorkspace } from './manufacturing/ImportCostingWorkspace';
 import { ProductionScheduleWorkspace } from './manufacturing/ProductionScheduleWorkspace';
+import { StaffWorkspace } from './manufacturing/StaffWorkspace';
 import { RevenueOpportunityWorkspace } from './manufacturing/RevenueOpportunityWorkspace';
 import { AnalysisToolWorkspace } from './manufacturing/AnalysisToolWorkspace';
 import { InvoiceTargetWorkspace } from './manufacturing/InvoiceTargetWorkspace';
@@ -3449,10 +3450,12 @@ function LoggedDashboardPage({ user, onSignOut, onNavigate, onUpdateAvatar, acti
       tone: 'orange',
     },
     {
-      label: 'Capacity Planning',
-      description: 'Compare demand against available machine, labor, and shift capacity.',
-      icon: Gauge,
-      path: '/workspace/manufacturing-ops/aps/capacity',
+      label: 'Staff',
+      description: 'Assign organization personnel to work centers and maintain shared labor ownership.',
+      icon: Users,
+      path: '/workspace/manufacturing-ops/aps/staff',
+      implemented: true,
+      tone: 'blue',
     },
     {
       label: 'Work Center Loading',
@@ -3607,6 +3610,7 @@ function LoggedDashboardPage({ user, onSignOut, onNavigate, onUpdateAvatar, acti
   const isOrderRisksPage = activePath === '/workspace/manufacturing-ops/intelligence/order-risks';
   const isImportCostingPage = activePath === '/workspace/manufacturing-ops/intelligence/import-costing';
   const isProductionSchedulePage = activePath === '/workspace/manufacturing-ops/aps/schedule';
+  const isStaffPage = activePath === '/workspace/manufacturing-ops/aps/staff';
   const isRevenueOpportunitySection = activePath.startsWith('/workspace/manufacturing-ops/intelligence/revenue-opportunity');
   const isAnalysisToolSection = activePath === '/workspace/manufacturing-ops/intelligence/analysis-tool' || activePath.startsWith('/workspace/manufacturing-ops/intelligence/analysis-tool/');
   const activeAnalysisToolSection = activePath.endsWith('/production-tracking') ? 'production-tracking' : 'performance-check';
@@ -3756,6 +3760,9 @@ function LoggedDashboardPage({ user, onSignOut, onNavigate, onUpdateAvatar, acti
     }
     if (isProductionSchedulePage) {
       return <ProductionScheduleWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} />;
+    }
+    if (activePath === '/workspace/manufacturing-ops/aps/staff') {
+      return <StaffWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} />;
     }
     if (isRevenueOpportunitySection) {
       if (activeRevenueSection === 'invoice-target') {
@@ -4270,7 +4277,7 @@ function LoggedDashboardPage({ user, onSignOut, onNavigate, onUpdateAvatar, acti
   ) : null;
 
   return (
-    <main className={['logged-shell', !isSupplierAccessOverview ? 'primary-navigation-compact-shell' : '', isOperatorTerminalPage ? 'operator-terminal-shell' : '', isCompactMesApplicationPage || isOrderRisksPage || isImportCostingPage || isProductionSchedulePage || isRevenueOpportunitySection || isAnalysisToolSection ? 'compact-mes-application-shell' : '', isSupplierOperationsPage || isQualityOperationsPage || isClientsOperationsPage || isRevenueOpportunitySection || isAnalysisToolSection ? 'supplier-context-shell' : '', isSupplierAccessOverview ? 'supplier-access-shell' : '', isSupplierAccessOverview && supplierCustomerPickerOpen ? 'supplier-customer-picker-open' : '', standaloneHealth ? 'standalone-health-shell' : '', isManufacturingOpsPage ? 'manufacturing-focus-shell' : '', publicHealth ? 'public-health-shell' : ''].filter(Boolean).join(' ')}>
+    <main className={['logged-shell', !isSupplierAccessOverview ? 'primary-navigation-compact-shell' : '', isOperatorTerminalPage ? 'operator-terminal-shell' : '', isCompactMesApplicationPage || isOrderRisksPage || isImportCostingPage || isProductionSchedulePage || isRevenueOpportunitySection || isAnalysisToolSection ? 'compact-mes-application-shell' : '', isSupplierOperationsPage || isQualityOperationsPage || isClientsOperationsPage || isStaffPage || isRevenueOpportunitySection || isAnalysisToolSection ? 'supplier-context-shell' : '', isSupplierAccessOverview ? 'supplier-access-shell' : '', isSupplierAccessOverview && supplierCustomerPickerOpen ? 'supplier-customer-picker-open' : '', standaloneHealth ? 'standalone-health-shell' : '', isManufacturingOpsPage ? 'manufacturing-focus-shell' : '', publicHealth ? 'public-health-shell' : ''].filter(Boolean).join(' ')}>
       {standaloneHealth ? (
         <header className="health-clinical-topbar">
           <button className="health-clinical-brand" type="button" onClick={() => onNavigate(publicHealth ? '/health' : '/workspace/health-apps')}>
@@ -4475,6 +4482,13 @@ function LoggedDashboardPage({ user, onSignOut, onNavigate, onUpdateAvatar, acti
               );
             })}
           </nav>
+        </aside>
+      ) : null}
+
+      {isStaffPage ? (
+        <aside className="supplier-shell-context-menu staff-shell-context-menu" aria-label="Staff sections">
+          <div><span>APS</span><strong>Staff</strong></div>
+          <nav><button type="button" className="active"><Users size={18} /><span>Personnel</span></button></nav>
         </aside>
       ) : null}
 
