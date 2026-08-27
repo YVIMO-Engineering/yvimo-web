@@ -3610,7 +3610,7 @@ function LoggedDashboardPage({ user, onSignOut, onNavigate, onUpdateAvatar, acti
   const isOrderRisksPage = activePath === '/workspace/manufacturing-ops/intelligence/order-risks';
   const isImportCostingPage = activePath === '/workspace/manufacturing-ops/intelligence/import-costing';
   const isProductionSchedulePage = activePath === '/workspace/manufacturing-ops/aps/schedule';
-  const isStaffPage = activePath === '/workspace/manufacturing-ops/aps/staff';
+  const isStaffPage = activePath === '/workspace/manufacturing-ops/aps/staff' || activePath.startsWith('/workspace/manufacturing-ops/aps/staff/');
   const isRevenueOpportunitySection = activePath.startsWith('/workspace/manufacturing-ops/intelligence/revenue-opportunity');
   const isAnalysisToolSection = activePath === '/workspace/manufacturing-ops/intelligence/analysis-tool' || activePath.startsWith('/workspace/manufacturing-ops/intelligence/analysis-tool/');
   const activeAnalysisToolSection = activePath.endsWith('/production-tracking') ? 'production-tracking' : 'performance-check';
@@ -3761,8 +3761,8 @@ function LoggedDashboardPage({ user, onSignOut, onNavigate, onUpdateAvatar, acti
     if (isProductionSchedulePage) {
       return <ProductionScheduleWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} />;
     }
-    if (activePath === '/workspace/manufacturing-ops/aps/staff') {
-      return <StaffWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} />;
+    if (isStaffPage) {
+      return <StaffWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} activeSection={activePath.endsWith('/shifts') ? 'shifts' : 'personnel'} />;
     }
     if (isRevenueOpportunitySection) {
       if (activeRevenueSection === 'invoice-target') {
@@ -4488,7 +4488,7 @@ function LoggedDashboardPage({ user, onSignOut, onNavigate, onUpdateAvatar, acti
       {isStaffPage ? (
         <aside className="supplier-shell-context-menu staff-shell-context-menu" aria-label="Staff sections">
           <div><span>APS</span><strong>Staff</strong></div>
-          <nav><button type="button" className="active"><Users size={18} /><span>Personnel</span></button></nav>
+          <nav><button type="button" className={!activePath.endsWith('/shifts') ? 'active' : ''} onClick={() => onNavigate('/workspace/manufacturing-ops/aps/staff')}><Users size={18} /><span>Personnel</span></button><button type="button" className={activePath.endsWith('/shifts') ? 'active' : ''} onClick={() => onNavigate('/workspace/manufacturing-ops/aps/staff/shifts')}><CalendarClock size={18} /><span>Shifts</span></button></nav>
         </aside>
       ) : null}
 
