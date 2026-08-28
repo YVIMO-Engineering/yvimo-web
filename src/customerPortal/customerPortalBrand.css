@@ -1,0 +1,28 @@
+.cp-public-brand {
+  border: 0;
+  border-bottom: 1px solid #dce5ed;
+  background: #fff;
+}
+
+.cp-public-shell > aside {
+  border-top: 0;
+  border-right-color: #dce5ed;
+}
+
+.cp-public-brand strong {
+  color: #102a43;
+}
+
+.cp-public-brand small {
+  color: #1570ef;
+}
+
+.cp-public-main > header {
+  border-bottom-color: #bad5e8;
+  background: #d9ebf7;
+}
+
+.cp-public-header-actions > button {
+  border-color: #c7dceb;
+  background: #f7fbfe;
+}

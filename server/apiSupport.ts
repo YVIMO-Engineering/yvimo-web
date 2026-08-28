@@ -28,6 +28,14 @@ function supabaseEnvironment() {
   return { url, key };
 }
 
+export function createServiceRoleSupabaseClient() {
+  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url) throw new Error('Missing server environment variable: VITE_SUPABASE_URL');
+  if (!key) throw new Error('Missing server environment variable: SUPABASE_SERVICE_ROLE_KEY');
+  return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
+}
+
 export async function authenticateRequest(request: ApiRequest) {
   const token = bearerToken(request);
   if (!token) return null;

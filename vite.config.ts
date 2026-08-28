@@ -6,6 +6,7 @@ import cleanupUploadHandler from './api/admin/recordings/video/cleanup';
 import cleanupQueuedHandler from './api/admin/recordings/video/cleanup-queued';
 import deleteRecordingHandler from './api/admin/recordings/[recordingId]';
 import playbackHandler from './api/recordings/[recordingId]/video';
+import createCustomerPortalAccessHandler from './api/manufacturing/customer-portal/accesses';
 import type { ApiRequest, ApiResponse } from './server/apiSupport';
 
 function r2LocalApi() {
@@ -19,6 +20,7 @@ function r2LocalApi() {
           ['/api/admin/recordings/video/complete', completeUploadHandler],
           ['/api/admin/recordings/video/cleanup', cleanupUploadHandler],
           ['/api/admin/recordings/video/cleanup-queued', cleanupQueuedHandler],
+          ['/api/manufacturing/customer-portal/accesses', createCustomerPortalAccessHandler],
         ]);
         const playbackMatch = url.pathname.match(/^\/api\/recordings\/([0-9a-f-]{36})\/video$/i);
         const deleteMatch = url.pathname.match(/^\/api\/admin\/recordings\/([0-9a-f-]{36})$/i);

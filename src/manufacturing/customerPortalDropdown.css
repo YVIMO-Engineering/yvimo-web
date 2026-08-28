@@ -1,0 +1,220 @@
+.cp-customer-dropdown {
+  position: relative;
+  min-width: 0;
+}
+
+.cp-modal label .cp-customer-dropdown > button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid var(--cp-line);
+  border-radius: 9px;
+  padding: 0 11px;
+  background: #fff;
+  color: var(--cp-navy);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cp-customer-dropdown.open > button {
+  border-color: #1570ef;
+  box-shadow: 0 0 0 3px rgba(21, 112, 239, .11);
+}
+
+.cp-customer-dropdown > button span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cp-customer-menu {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + 6px);
+  right: 0;
+  left: 0;
+  overflow: hidden;
+  border: 1px solid #cbd8e4;
+  border-radius: 11px;
+  background: #fff;
+  box-shadow: 0 16px 38px rgba(16, 42, 67, .18);
+}
+
+.cp-customer-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px;
+  border: 1px solid #d8e2eb;
+  border-radius: 8px;
+  padding: 0 9px;
+  background: #f7fafc;
+  color: #74889a;
+}
+
+.cp-modal .cp-customer-search input {
+  height: 36px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  outline: 0;
+}
+
+.cp-customer-options {
+  max-height: 210px;
+  overflow-y: auto;
+  border-top: 1px solid #edf1f5;
+  padding: 5px;
+}
+
+.cp-customer-options > button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-height: 46px;
+  border: 0;
+  border-radius: 7px;
+  padding: 7px 9px;
+  background: transparent;
+  color: #31495d;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cp-customer-options > button:hover,
+.cp-customer-options > button.selected {
+  background: #eaf3ff;
+  color: #135fae;
+}
+
+.cp-customer-options > button > span {
+  display: grid;
+  gap: 2px;
+}
+
+.cp-customer-options strong {
+  font-size: 12px;
+}
+
+.cp-customer-options small {
+  color: #7b8c9b;
+  font-size: 9px;
+}
+
+.cp-customer-options > p {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin: 0;
+  padding: 18px 10px;
+  color: #718394;
+  font-size: 11px;
+  text-align: center;
+}
+
+.cp-spin {
+  animation: cp-spin .8s linear infinite;
+}
+
+@keyframes cp-spin {
+  to { transform: rotate(360deg); }
+}
+
+.cp-access-menu .cp-customer-options {
+  max-height: none;
+}
+
+.customer-portal-admin-shell > .logged-workspace.manufacturing-workspace-active.mes-application-screen-active {
+  min-height: calc(100vh - 64px);
+  padding: 0;
+  background: #f4f7fa;
+}
+
+.customer-portal-admin-shell .manufacturing-ops-page {
+  min-height: calc(100vh - 64px);
+  gap: 0;
+}
+
+.customer-portal-admin-shell .cp-admin {
+  box-sizing: border-box;
+  min-height: calc(100vh - 64px);
+}
+
+.cp-admin .cp-back {
+  min-height: 38px;
+  border: 1px solid #e66f0b;
+  border-radius: 9px;
+  padding: 0 13px;
+  background: linear-gradient(135deg, #ff7614, #ff922f);
+  color: #fff;
+  box-shadow: 0 8px 18px rgba(255, 118, 20, .22);
+}
+
+.cp-admin .cp-back:hover,
+.cp-admin .cp-back:focus-visible {
+  background: linear-gradient(135deg, #e96508, #f9821d);
+}
+
+@media (max-width: 760px) {
+  .customer-portal-admin-shell > .logged-workspace.manufacturing-workspace-active.mes-application-screen-active,
+  .customer-portal-admin-shell .manufacturing-ops-page,
+  .customer-portal-admin-shell .cp-admin {
+    min-height: calc(100vh - 64px);
+  }
+}
+
+.cp-credentials-backdrop {
+  position: fixed;
+  z-index: 1700;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(16, 42, 67, .62);
+  backdrop-filter: blur(7px);
+}
+
+.cp-credentials-card {
+  display: grid;
+  gap: 13px;
+  box-sizing: border-box;
+  width: min(520px, 100%);
+  border-radius: 19px;
+  padding: 28px;
+  background: #fff;
+  box-shadow: 0 30px 90px rgba(6, 25, 42, .35);
+}
+
+.cp-credentials-card > small { color: #1570ef; font-size: 10px; font-weight: 900; letter-spacing: .1em; }
+.cp-credentials-card h2 { margin: -4px 0 0; color: #102a43; }
+.cp-credentials-card > p { margin: 0 0 4px; color: #64788a; font-size: 12px; }
+.cp-credentials-card > div { display: grid; grid-template-columns: 1fr auto; gap: 5px 10px; border: 1px solid #d8e3ec; border-radius: 10px; padding: 11px 12px; background: #f6f9fc; }
+.cp-credentials-card > div label { grid-column: 1 / -1; color: #718394; font-size: 9px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+.cp-credentials-card > div strong,.cp-credentials-card > div code { align-self: center; overflow-wrap: anywhere; color: #102a43; font-size: 13px; }
+.cp-credentials-card > div code { color: #125eae; font-size: 16px; font-weight: 850; letter-spacing: .04em; }
+.cp-credentials-card > div button { border: 1px solid #bed3e5; border-radius: 7px; padding: 6px 9px; background: #fff; color: #1567c9; font-size: 10px; font-weight: 850; cursor: pointer; }
+.cp-credential-customer { display: flex; align-items: center; gap: 6px; color: #64788a; font-size: 11px; }
+.cp-credential-customer strong { color: #102a43; }
+
+.cp-portal-access-state {
+  display: grid;
+  min-height: 100vh;
+  place-content: center;
+  justify-items: center;
+  gap: 10px;
+  padding: 24px;
+  background: #e7f1f8;
+  color: #102a43;
+  text-align: center;
+}
+
+.cp-portal-access-state p { max-width: 480px; margin: 0; color: #617789; }
+.cp-portal-access-state button { margin-top: 8px; border: 0; border-radius: 8px; padding: 9px 14px; background: #1570ef; color: #fff; font-weight: 800; cursor: pointer; }

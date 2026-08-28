@@ -21,6 +21,8 @@ import { RevenueOpportunityWorkspace } from './manufacturing/RevenueOpportunityW
 import { AnalysisToolWorkspace } from './manufacturing/AnalysisToolWorkspace';
 import { InvoiceTargetWorkspace } from './manufacturing/InvoiceTargetWorkspace';
 import { ProductionTrackingWorkspace } from './manufacturing/ProductionTrackingWorkspace';
+import { CustomerPortalAdminWorkspace } from './manufacturing/CustomerPortalAdminWorkspace';
+import { CustomerPortalLogin, CustomerPortalPublic } from './customerPortal/CustomerPortalPublic';
 import { HealthPatientsWorkspace } from './health/HealthPatientsWorkspace';
 import './manufacturing/customerOperations.css';
 import './manufacturing/clientBalances.css';
@@ -3458,6 +3460,14 @@ function LoggedDashboardPage({ user, onSignOut, onNavigate, onUpdateAvatar, acti
       tone: 'blue',
     },
     {
+      label: 'Customer Portal',
+      description: 'Manage secure external access for customer users, visibility, permissions, and portal settings.',
+      icon: UserPlus,
+      path: '/workspace/manufacturing-ops/aps/customer-portal',
+      implemented: true,
+      tone: 'purple',
+    },
+    {
       label: 'Work Center Loading',
       description: 'Visualize assigned workload by work center and planning horizon.',
       icon: Factory,
@@ -3585,7 +3595,7 @@ function LoggedDashboardPage({ user, onSignOut, onNavigate, onUpdateAvatar, acti
   const getManufacturingAppPosition = (moduleLabel: string, index: number) => {
     const positionsByModule: Record<string, number[]> = {
       MES: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
-      APS: [1, 4, 5, 6, 8],
+      APS: [1, 4, 2, 5, 6, 8],
       'Operations Intelligence': [1, 2, 3, 4, 5, 6, 7, 8],
     };
     return positionsByModule[moduleLabel]?.[index] ?? index + 1;
@@ -3611,6 +3621,7 @@ function LoggedDashboardPage({ user, onSignOut, onNavigate, onUpdateAvatar, acti
   const isImportCostingPage = activePath === '/workspace/manufacturing-ops/intelligence/import-costing';
   const isProductionSchedulePage = activePath === '/workspace/manufacturing-ops/aps/schedule';
   const isStaffPage = activePath === '/workspace/manufacturing-ops/aps/staff' || activePath.startsWith('/workspace/manufacturing-ops/aps/staff/');
+  const isCustomerPortalAdminPage = activePath === '/workspace/manufacturing-ops/aps/customer-portal';
   const isRevenueOpportunitySection = activePath.startsWith('/workspace/manufacturing-ops/intelligence/revenue-opportunity');
   const isAnalysisToolSection = activePath === '/workspace/manufacturing-ops/intelligence/analysis-tool' || activePath.startsWith('/workspace/manufacturing-ops/intelligence/analysis-tool/');
   const activeAnalysisToolSection = activePath.endsWith('/production-tracking') ? 'production-tracking' : 'performance-check';
@@ -3763,6 +3774,9 @@ function LoggedDashboardPage({ user, onSignOut, onNavigate, onUpdateAvatar, acti
     }
     if (isStaffPage) {
       return <StaffWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} activeSection={activePath.endsWith('/shifts') ? 'shifts' : 'personnel'} />;
+    }
+    if (isCustomerPortalAdminPage) {
+      return <CustomerPortalAdminWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} organizationName={manufacturingOrganization?.name ?? 'Manufacturing Organization'} />;
     }
     if (isRevenueOpportunitySection) {
       if (activeRevenueSection === 'invoice-target') {
@@ -4277,7 +4291,7 @@ function LoggedDashboardPage({ user, onSignOut, onNavigate, onUpdateAvatar, acti
   ) : null;
 
   return (
-    <main className={['logged-shell', !isSupplierAccessOverview ? 'primary-navigation-compact-shell' : '', isOperatorTerminalPage ? 'operator-terminal-shell' : '', isCompactMesApplicationPage || isOrderRisksPage || isImportCostingPage || isProductionSchedulePage || isRevenueOpportunitySection || isAnalysisToolSection ? 'compact-mes-application-shell' : '', isSupplierOperationsPage || isQualityOperationsPage || isClientsOperationsPage || isStaffPage || isRevenueOpportunitySection || isAnalysisToolSection ? 'supplier-context-shell' : '', isSupplierAccessOverview ? 'supplier-access-shell' : '', isSupplierAccessOverview && supplierCustomerPickerOpen ? 'supplier-customer-picker-open' : '', standaloneHealth ? 'standalone-health-shell' : '', isManufacturingOpsPage ? 'manufacturing-focus-shell' : '', publicHealth ? 'public-health-shell' : ''].filter(Boolean).join(' ')}>
+    <main className={['logged-shell', !isSupplierAccessOverview ? 'primary-navigation-compact-shell' : '', isOperatorTerminalPage ? 'operator-terminal-shell' : '', isCompactMesApplicationPage || isOrderRisksPage || isImportCostingPage || isProductionSchedulePage || isRevenueOpportunitySection || isAnalysisToolSection || isCustomerPortalAdminPage ? 'compact-mes-application-shell' : '', isSupplierOperationsPage || isQualityOperationsPage || isClientsOperationsPage || isStaffPage || isRevenueOpportunitySection || isAnalysisToolSection ? 'supplier-context-shell' : '', isCustomerPortalAdminPage ? 'customer-portal-admin-shell' : '', isSupplierAccessOverview ? 'supplier-access-shell' : '', isSupplierAccessOverview && supplierCustomerPickerOpen ? 'supplier-customer-picker-open' : '', standaloneHealth ? 'standalone-health-shell' : '', isManufacturingOpsPage ? 'manufacturing-focus-shell' : '', publicHealth ? 'public-health-shell' : ''].filter(Boolean).join(' ')}>
       {standaloneHealth ? (
         <header className="health-clinical-topbar">
           <button className="health-clinical-brand" type="button" onClick={() => onNavigate(publicHealth ? '/health' : '/workspace/health-apps')}>
@@ -5535,8 +5549,10 @@ function App() {
   const isSignUpPage = currentPath === '/signup';
   const isStandaloneHealthPage = currentPath === '/health' || currentPath.startsWith('/health/');
   const isDirectHealthAppsPage = isStandaloneHealthPage || currentPath === '/workspace/health-apps' || currentPath.startsWith('/workspace/health-apps/');
+  const isDirectCustomerPortalPage = currentPath === '/customer-portal' || currentPath.startsWith('/customer-portal/');
+  const isCustomerPortalAccount = authSession?.user.app_metadata?.account_type === 'customer_portal';
   const healthWorkspacePath = isStandaloneHealthPage ? (currentPath === '/health' ? '/workspace/health-apps' : currentPath.replace(/^\/health/, '/workspace/health-apps')) : currentPath;
-  const isDashboardPage = currentPath === '/dashboard' || currentPath.startsWith('/dashboard/') || currentPath === '/portal/gateway-online' || currentPath.startsWith('/portal/gateway-online/') || currentPath === '/portal/engineering-tools' || currentPath.startsWith('/portal/engineering-tools/') || currentPath === '/workspace/health-apps' || currentPath.startsWith('/workspace/health-apps/') || isStandaloneHealthPage || currentPath === '/workspace/manufacturing-ops' || currentPath.startsWith('/workspace/manufacturing-ops/');
+  const isDashboardPage = currentPath === '/dashboard' || currentPath.startsWith('/dashboard/') || currentPath === '/portal/gateway-online' || currentPath.startsWith('/portal/gateway-online/') || currentPath === '/portal/engineering-tools' || currentPath.startsWith('/portal/engineering-tools/') || currentPath === '/workspace/health-apps' || currentPath.startsWith('/workspace/health-apps/') || isStandaloneHealthPage || isDirectCustomerPortalPage || currentPath === '/workspace/manufacturing-ops' || currentPath.startsWith('/workspace/manufacturing-ops/');
   const isMesApplicationScreen = currentPath === '/workspace/manufacturing-ops/mes/orders' || currentPath === '/workspace/manufacturing-ops/mes/work-centers' || currentPath === '/workspace/manufacturing-ops/mes/operator-terminal' || currentPath === '/workspace/manufacturing-ops/mes/traceability' || currentPath === '/workspace/manufacturing-ops/mes/suppliers' || currentPath === '/workspace/manufacturing-ops/mes/quality' || currentPath.startsWith('/workspace/manufacturing-ops/mes/quality/') || currentPath === '/workspace/manufacturing-ops/mes/clients' || currentPath.startsWith('/workspace/manufacturing-ops/mes/clients/');
   const isWorkspacePage = currentPath === '/dashboard';
   const isAcademyPage = currentPath === '/academy' || currentPath.startsWith('/academy/');
@@ -5821,10 +5837,14 @@ function App() {
   }, [syncSessionUser]);
 
   React.useEffect(() => {
-    if (!authLoading && isDashboardPage && !isDirectHealthAppsPage && !authSession?.user) {
+    if (!authLoading && isDashboardPage && !isDirectHealthAppsPage && !isDirectCustomerPortalPage && !authSession?.user) {
       navigateLogin();
     }
-  }, [authLoading, authSession, isDashboardPage, isDirectHealthAppsPage]);
+  }, [authLoading, authSession, isDashboardPage, isDirectHealthAppsPage, isDirectCustomerPortalPage]);
+
+  React.useEffect(() => {
+    if (!authLoading && authSession?.user && isCustomerPortalAccount && !isDirectCustomerPortalPage) navigateTo('/customer-portal');
+  }, [authLoading, authSession, isCustomerPortalAccount, isDirectCustomerPortalPage]);
 
   React.useEffect(() => {
     if (authLoading || !authSession?.user || !isDashboardPage || profileLoadState !== 'idle') return;
@@ -5873,7 +5893,7 @@ function App() {
   };
 
   const navigateSignUp = () => {
-    if (isDirectHealthAppsPage) window.sessionStorage.setItem('yvimo-auth-return-path', currentPath);
+    if (isDirectHealthAppsPage || isDirectCustomerPortalPage) window.sessionStorage.setItem('yvimo-auth-return-path', currentPath);
     window.history.pushState({}, '', '/signup');
     setCurrentPath('/signup');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -5893,7 +5913,8 @@ function App() {
   const completeAuth = async (session: Session | null, message: string) => {
     if (session) {
       const savedReturnPath = window.sessionStorage.getItem('yvimo-auth-return-path');
-      const returnPath = isDirectHealthAppsPage ? currentPath : savedReturnPath?.startsWith('/workspace/health-apps') || savedReturnPath?.startsWith('/health') ? savedReturnPath : '';
+      const customerPortalAccount = session.user.app_metadata?.account_type === 'customer_portal';
+      const returnPath = customerPortalAccount ? '/customer-portal' : isDirectHealthAppsPage || isDirectCustomerPortalPage ? currentPath : savedReturnPath?.startsWith('/workspace/health-apps') || savedReturnPath?.startsWith('/health') || savedReturnPath?.startsWith('/customer-portal') ? savedReturnPath : '';
       explicitSignOutRef.current = false;
       await supabase.auth.setSession({
         access_token: session.access_token,
@@ -5989,7 +6010,7 @@ function App() {
       return 'Signed in, but no session was returned.';
     }
 
-    return completeAuth(data.session, isDirectHealthAppsPage ? 'Signed in. Opening Health Apps.' : 'Signed in. Redirecting to dashboard.');
+    return completeAuth(data.session, isDirectCustomerPortalPage ? 'Signed in. Opening Customer Portal.' : isDirectHealthAppsPage ? 'Signed in. Opening Health Apps.' : 'Signed in. Redirecting to dashboard.');
   };
 
   const handleAppleSignIn = async () => {
@@ -6002,7 +6023,7 @@ function App() {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'azure',
       options: {
-        redirectTo: `${window.location.origin}${isDirectHealthAppsPage ? currentPath : '/dashboard'}`,
+        redirectTo: `${window.location.origin}${isDirectHealthAppsPage || isDirectCustomerPortalPage ? currentPath : '/dashboard'}`,
       },
     });
 
@@ -6019,7 +6040,7 @@ function App() {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: `${window.location.origin}${isDirectHealthAppsPage ? currentPath : '/dashboard'}`,
+        redirectTo: `${window.location.origin}${isDirectHealthAppsPage || isDirectCustomerPortalPage ? currentPath : '/dashboard'}`,
       },
     });
 
@@ -6099,12 +6120,13 @@ function App() {
     setProfileLoadState('idle');
     setProfileLoadError(null);
     if (isStandaloneHealthPage) navigateTo('/health');
+    else if (isDirectCustomerPortalPage) navigateTo('/customer-portal');
     else navigateLogin();
   };
 
   return (
     <div
-      className={['site-shell', authUser ? 'site-shell-authenticated' : '', isMesApplicationScreen ? 'site-shell-mes-application' : '', isDirectHealthAppsPage ? 'site-shell-health-standalone' : '', currentPath === '/workspace/manufacturing-ops' || currentPath.startsWith('/workspace/manufacturing-ops/') ? 'site-shell-manufacturing-focus' : ''].filter(Boolean).join(' ')}
+      className={['site-shell', authUser ? 'site-shell-authenticated' : '', isMesApplicationScreen ? 'site-shell-mes-application' : '', isDirectHealthAppsPage ? 'site-shell-health-standalone' : '', isDirectCustomerPortalPage ? 'site-shell-customer-portal' : '', currentPath === '/workspace/manufacturing-ops' || currentPath.startsWith('/workspace/manufacturing-ops/') ? 'site-shell-manufacturing-focus' : ''].filter(Boolean).join(' ')}
       style={
         {
           '--header-height': `${headerHeight}px`,
@@ -6418,7 +6440,17 @@ function App() {
       ) : isSignUpPage ? (
         <SignUpPage onNavigateLogin={navigateLogin} onSignUp={handleSignUp} t={t} />
       ) : isDashboardPage ? (
-        authSession?.user ? (
+        isDirectCustomerPortalPage ? (
+          authSession?.user && authUser ? (
+            <CustomerPortalPublic
+              user={{ id: authUser.id, name: authUser.name, email: authUser.email, company: authUser.company, avatarUrl: authUser.avatarUrl }}
+              supplierOrganization={loadManufacturingOrganization(authUser)}
+              onSignOut={handleSignOut}
+            />
+          ) : (
+            <CustomerPortalLogin onHome={() => navigateHome()} onSignIn={handleSignIn} onMicrosoft={handleMicrosoftSignIn} onGoogle={handleGoogleSignIn} />
+          )
+        ) : authSession?.user ? (
           authUser ? (
             <LoggedDashboardPage
               user={authUser}
