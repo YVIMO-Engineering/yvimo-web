@@ -45,6 +45,7 @@ type ReceptionSerial = {
   id: string;
   serialNumber: string;
   toolId: string;
+  result: 'good' | 'scrap' | null;
   coatingSentAt: string;
   coatingReturnedAt: string;
   sentAt: string;
@@ -401,11 +402,11 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
     const itemRows = (itemData ?? []) as Array<{ id: string; reception_voucher_id: string; customer_id: string; quantity: number; production_order_id: string | null; production_order_number: string; coating_sent_at: string | null; coating_returned_at: string | null; sent_at: string | null; mes_customers: { customer_name: string } | Array<{ customer_name: string }> | null }>;
     const productionOrderIds = itemRows.map((row) => row.production_order_id).filter((id): id is string => Boolean(id));
     const productionStatusById = new Map<string, { status: string; pieceType: string; completedQuantity: number; scrapQuantity: number }>();
-    const productionIdentifiersById = new Map<string, { serialNumbers: string[]; toolIds: string[]; serials: Array<{ id: string; serialNumber: string; toolId: string }> }>();
+    const productionIdentifiersById = new Map<string, { serialNumbers: string[]; toolIds: string[]; serials: Array<{ id: string; serialNumber: string; toolId: string; result: 'good' | 'scrap' | null }> }>();
     if (productionOrderIds.length) {
       const [{ data: productionOrders }, { data: productionSerials }] = await Promise.all([
         supabase.from('mes_production_orders').select('id, status, piece_type, completed_quantity, scrap_quantity').in('id', productionOrderIds),
-        supabase.from('mes_production_serials').select('id, production_order_id, serial_number, tool_id, result, piece_sequence').in('production_order_id', productionOrderIds).eq('result', 'good').order('piece_sequence'),
+        supabase.from('mes_production_serials').select('id, production_order_id, serial_number, tool_id, result, piece_sequence').in('production_order_id', productionOrderIds).order('piece_sequence'),
       ]);
       (productionOrders ?? []).forEach((order) => productionStatusById.set(order.id, {
         status: order.status,
@@ -419,7 +420,7 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
         const toolId = String(serial.tool_id ?? '').trim();
         if (serialNumber && !identifiers.serialNumbers.includes(serialNumber)) identifiers.serialNumbers.push(serialNumber);
         if (toolId && !identifiers.toolIds.includes(toolId)) identifiers.toolIds.push(toolId);
-        identifiers.serials.push({ id: serial.id, serialNumber, toolId });
+        identifiers.serials.push({ id: serial.id, serialNumber, toolId, result: serial.result as 'good' | 'scrap' | null });
         productionIdentifiersById.set(serial.production_order_id, identifiers);
       });
     }
@@ -796,8 +797,8 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
   };
 
   const openCoatingEvidence = async (item: ReceptionItem, action: CoatingEvidenceAction, serialId?: string) => {
-    const serials = serialId ? item.serials.filter((serial) => serial.id === serialId) : item.serials.filter((serial) => (
-      action === 'coating-sent' ? !serial.coatingSentAt : serial.coatingSentAt && !serial.coatingReturnedAt
+    const serials = serialId ? item.serials.filter((serial) => serial.id === serialId && serial.result === 'good') : item.serials.filter((serial) => (
+      serial.result === 'good' && (action === 'coating-sent' ? !serial.coatingSentAt : serial.coatingSentAt && !serial.coatingReturnedAt)
     ));
     if (!serials.length) return;
     setCoatingEvidenceTarget({ item, action, serials });
@@ -1170,15 +1171,15 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
                           {item.sentAt ? <span className="all-complete"><Check size={14} /> All Sent</span> : selected.status === 'waiting-delivery' ? <button className="deliver" type="button" onClick={() => void (item.serials.length ? updateSerialProgress(item, 'sent') : markReceptionItemSent(item))} disabled={Boolean(updatingSerialKey || sendingItemId)}><Truck size={15} /> Send All</button> : !item.coatingSentAt ? <button type="button" onClick={() => void (item.serials.length ? openCoatingEvidence(item, 'coating-sent') : updateReceptionItemCoating(item, 'sent'))} disabled={Boolean(updatingSerialKey || updatingCoatingItemId) || item.productionStatus !== 'completed'}><Send size={15} /> Send All to Coating</button> : !item.coatingReturnedAt ? <button className="return" type="button" onClick={() => void (item.serials.length ? openCoatingEvidence(item, 'coating-returned') : updateReceptionItemCoating(item, 'returned'))} disabled={Boolean(updatingSerialKey || updatingCoatingItemId)}><RotateCcw size={15} /> Receive Coating All</button> : <button className="deliver" type="button" onClick={() => void (item.serials.length ? updateSerialProgress(item, 'sent') : markReceptionItemSent(item))} disabled={Boolean(updatingSerialKey || sendingItemId)}><Truck size={15} /> Send All</button>}
                         </div>
                       </div>
-                      {item.serials.length ? <div className="client-reception-serials"><header><strong>Serial numbers in this order</strong><span>{item.serials.length} pieces</span></header><div className="client-reception-serial-list">
-                        {item.serials.map((serial) => <div className="client-reception-serial-row" key={serial.id}>
-                          <span><small>Serial Number</small><strong>{serial.serialNumber}</strong></span>
+                      {item.serials.length ? <div className="client-reception-serials"><header><strong>Serial numbers in this order</strong><span>{translateClientsText(languageCode, `${item.serials.filter((serial) => serial.result === 'good').length} produced · ${item.serials.length} total pieces`)}</span></header><div className="client-reception-serial-list">
+                        {item.serials.map((serial) => { const isProduced = serial.result === 'good'; return <div className={`client-reception-serial-row ${isProduced ? 'produced' : serial.result === 'scrap' ? 'scrap' : 'pending-production'}`} key={serial.id}>
+                          <span><small>Serial Number</small><strong>{serial.serialNumber}</strong><em className={`client-reception-serial-result ${isProduced ? 'produced' : serial.result === 'scrap' ? 'scrap' : 'pending'}`}>{isProduced ? <><Check size={12} /> Produced</> : serial.result === 'scrap' ? <><X size={12} /> Scrap</> : <><Clock3 size={12} /> Pending production</>}</em></span>
                           <span><small>Tool ID</small><strong>{serial.toolId || 'Not specified'}</strong></span>
-                          <span className={`piece-stage ${serial.coatingSentAt ? 'done' : ''}`}><small>Coating dispatch</small><button type="button" onClick={() => openCoatingEvidence(item, 'coating-sent', serial.id)} disabled={Boolean(updatingSerialKey) || Boolean(serial.coatingSentAt) || selected.status === 'waiting-delivery'}>{item.pieceType.toLowerCase() === 'shavers' ? <><Check size={14} /><span><b>Not required</b></span></> : serial.coatingSentAt ? <><Check size={14} /><span><b>Sent</b><time>{formatReceptionTimestamp(serial.coatingSentAt, languageCode)}</time></span></> : <><Send size={14} /> Send to Coating</>}</button></span>
-                          <span className={`piece-stage ${serial.coatingReturnedAt ? 'done' : ''}`}><small>Coating return</small><button type="button" onClick={() => openCoatingEvidence(item, 'coating-returned', serial.id)} disabled={Boolean(updatingSerialKey) || !serial.coatingSentAt || Boolean(serial.coatingReturnedAt) || selected.status === 'waiting-delivery'}>{item.pieceType.toLowerCase() === 'shavers' ? <><Check size={14} /><span><b>Not required</b></span></> : serial.coatingReturnedAt ? <><Check size={14} /><span><b>Received</b><time>{formatReceptionTimestamp(serial.coatingReturnedAt, languageCode)}</time></span></> : <><RotateCcw size={14} /> Receive Coating</>}</button></span>
-                          <span className={`piece-stage delivery ${serial.sentAt ? 'done' : ''}`}><small>Delivery</small><button type="button" onClick={() => void updateSerialProgress(item, 'sent', serial.id)} disabled={Boolean(updatingSerialKey) || (!serial.coatingReturnedAt && selected.status !== 'waiting-delivery') || Boolean(serial.sentAt)}>{serial.sentAt ? <><Check size={14} /><span><b>Sent</b><time>{formatReceptionTimestamp(serial.sentAt, languageCode)}</time></span></> : <><Truck size={14} /> Send</>}</button></span>
-                        </div>)}
-                      </div></div> : item.productionOrderId ? <div className="client-reception-serials-empty">Serial numbers will appear when completed pieces are reported for this order.</div> : null}
+                          <span className={`piece-stage ${serial.coatingSentAt ? 'done' : ''}`}><small>Coating dispatch</small><button type="button" onClick={() => openCoatingEvidence(item, 'coating-sent', serial.id)} disabled={!isProduced || Boolean(updatingSerialKey) || Boolean(serial.coatingSentAt) || selected.status === 'waiting-delivery'}>{!isProduced ? <><Clock3 size={14} /> Awaiting production</> : item.pieceType.toLowerCase() === 'shavers' ? <><Check size={14} /><span><b>Not required</b></span></> : serial.coatingSentAt ? <><Check size={14} /><span><b>Sent</b><time>{formatReceptionTimestamp(serial.coatingSentAt, languageCode)}</time></span></> : <><Send size={14} /> Send to Coating</>}</button></span>
+                          <span className={`piece-stage ${serial.coatingReturnedAt ? 'done' : ''}`}><small>Coating return</small><button type="button" onClick={() => openCoatingEvidence(item, 'coating-returned', serial.id)} disabled={!isProduced || Boolean(updatingSerialKey) || !serial.coatingSentAt || Boolean(serial.coatingReturnedAt) || selected.status === 'waiting-delivery'}>{!isProduced ? <><Clock3 size={14} /> Awaiting production</> : item.pieceType.toLowerCase() === 'shavers' ? <><Check size={14} /><span><b>Not required</b></span></> : serial.coatingReturnedAt ? <><Check size={14} /><span><b>Received</b><time>{formatReceptionTimestamp(serial.coatingReturnedAt, languageCode)}</time></span></> : <><RotateCcw size={14} /> Receive Coating</>}</button></span>
+                          <span className={`piece-stage delivery ${serial.sentAt ? 'done' : ''}`}><small>Delivery</small><button type="button" onClick={() => void updateSerialProgress(item, 'sent', serial.id)} disabled={!isProduced || Boolean(updatingSerialKey) || (!serial.coatingReturnedAt && selected.status !== 'waiting-delivery') || Boolean(serial.sentAt)}>{!isProduced ? <><Clock3 size={14} /> Awaiting production</> : serial.sentAt ? <><Check size={14} /><span><b>Sent</b><time>{formatReceptionTimestamp(serial.sentAt, languageCode)}</time></span></> : <><Truck size={14} /> Send</>}</button></span>
+                        </div>; })}
+                      </div></div> : item.productionOrderId ? <div className="client-reception-serials-empty">No serial numbers have been assigned to this production order.</div> : null}
                     </article>
                   ))}
                 </div>

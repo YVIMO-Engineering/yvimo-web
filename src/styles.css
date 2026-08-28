@@ -8974,6 +8974,13 @@ body.work-center-map-expanded .logged-workspace {
 .client-reception-serial-row { display: grid; grid-template-columns: minmax(130px, 1fr) minmax(110px, .8fr) repeat(3, minmax(145px, .75fr)); align-items: center; gap: 9px; border: 1px solid #dbe3ed; border-radius: 8px; padding: 8px 10px; background: #fff; }
 .client-reception-serial-row > span { display: grid; gap: 3px; min-width: 0; }
 .client-reception-serial-row > span > strong { overflow: hidden; color: #1e293b; font-size: .76rem; text-overflow: ellipsis; white-space: nowrap; }
+.client-reception-serial-row.pending-production { border-style: dashed; background: #f8fafc; }
+.client-reception-serial-row.scrap { border-color: #fecaca; background: #fff7f7; }
+.client-reception-serial-result { display: inline-flex; align-items: center; justify-self: start; gap: 4px; border-radius: 999px; padding: 3px 7px; font-size: .57rem; font-style: normal; font-weight: 900; line-height: 1; }
+.client-reception-serial-result.produced { background: #dcfce7; color: #047857; }
+.client-reception-serial-result.pending { background: #e2e8f0; color: #64748b; }
+.client-reception-serial-result.scrap { background: #fee2e2; color: #b91c1c; }
+.client-reception-serial-row.pending-production .piece-stage button, .client-reception-serial-row.scrap .piece-stage button { border-color: #cbd5e1; background: #e2e8f0; color: #64748b; opacity: 1; }
 .client-reception-serial-row .piece-stage.done button { border-color: #a7f3d0; background: #ecfdf5; color: #047857; }
 .client-reception-serial-row .piece-stage.delivery:not(.done) button { border-color: #10b981; background: #10b981; }
 .client-reception-serials-empty { margin: 12px 0 0 50px; border-top: 1px solid #dbe3ed; padding-top: 10px; color: #64748b; font-size: .72rem; font-weight: 700; }

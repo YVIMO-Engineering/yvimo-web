@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 import { exportElementScreenshotToSinglePagePdf } from "../lib/screenshotPdfExport";
+import { MesOrderDatePicker } from "./MesWorkspaces";
 import "./productionTrackingWorkspace.css";
 import "./productionTrackingViewport.css";
 
@@ -36,6 +37,7 @@ type Order = {
   created_at: string;
 };
 type Serial = {
+  id: string;
   production_order_id: string;
   piece_sequence: number;
   tool_id: string | null;
@@ -59,6 +61,8 @@ type Row = {
   order: Order;
   serial: Serial | null;
   traceability: Traceability | null;
+  receptionStatus: string;
+  receptionReceivedAt: string;
 };
 type Preset =
   | "this-month"
@@ -128,6 +132,9 @@ const damageValue = (traceability: Traceability | null) =>
     : traceability?.payload?.shaver_damage === false
       ? "No"
       : "—";
+const receptionStatusLabel = (status: string) => status === "not-linked"
+  ? "Not linked"
+  : status.split("-").map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
 
 function CustomerSearch({
   items,
@@ -206,8 +213,8 @@ export function ProductionTrackingWorkspace({
       {},
     ),
     [range, setRange] = React.useState(initial),
-    [preset, setPreset] = React.useState<Preset>("this-month"),
     [part, setPart] = React.useState("all"),
+    [trackingSearch, setTrackingSearch] = React.useState(""),
     [rows, setRows] = React.useState<Row[]>([]),
     [loading, setLoading] = React.useState(false),
     [error, setError] = React.useState("");
@@ -280,7 +287,7 @@ export function ProductionTrackingWorkspace({
     const { data: serialData, error: se } = await supabase
       .from("mes_production_serials")
       .select(
-        "production_order_id, piece_sequence, tool_id, serial_number, assigned_station, before_height, before_notch, before_tooth_length, stock_to_remove, result, reported_at, traceability_id",
+        "id, production_order_id, piece_sequence, tool_id, serial_number, assigned_station, before_height, before_notch, before_tooth_length, stock_to_remove, result, reported_at, traceability_id",
       )
       .eq("organization_id", organizationId)
       .in(
@@ -318,6 +325,38 @@ export function ProductionTrackingWorkspace({
         ]),
       );
     }
+    const { data: receptionItemData } = await supabase
+      .from("mes_customer_reception_items")
+      .select("id, production_order_id, reception_voucher_id, coating_sent_at, coating_returned_at, sent_at")
+      .in("production_order_id", orders.map((order) => order.id));
+    const receptionItems = (receptionItemData ?? []) as Array<{ id: string; production_order_id: string; reception_voucher_id: string; coating_sent_at: string | null; coating_returned_at: string | null; sent_at: string | null }>;
+    const receptionItemByOrder = new Map(receptionItems.map((item) => [item.production_order_id, item]));
+    const voucherIds = [...new Set(receptionItems.map((item) => item.reception_voucher_id))];
+    const [{ data: serialProgressData }, { data: receptionVoucherData }] = await Promise.all([
+      serials.length
+        ? supabase.from("mes_customer_reception_serial_progress").select("reception_item_id, production_serial_id, coating_sent_at, coating_returned_at, sent_at").in("production_serial_id", serials.map((serial) => serial.id))
+        : Promise.resolve({ data: [] }),
+      voucherIds.length
+        ? supabase.from("mes_customer_reception_vouchers").select("id, received_at, created_at").in("id", voucherIds)
+        : Promise.resolve({ data: [] }),
+    ]);
+    const serialProgressByKey = new Map((serialProgressData ?? []).map((progress) => [`${progress.reception_item_id}:${progress.production_serial_id}`, progress]));
+    const receptionReceivedAtByVoucher = new Map((receptionVoucherData ?? []).map((voucher) => [voucher.id, String(voucher.received_at ?? voucher.created_at ?? "")]));
+    const getReceptionReceivedAt = (orderId: string) => {
+      const item = receptionItemByOrder.get(orderId);
+      return item ? receptionReceivedAtByVoucher.get(item.reception_voucher_id) ?? "" : "";
+    };
+    const getReceptionStatus = (order: Order, serial: Serial | null) => {
+      const item = receptionItemByOrder.get(order.id);
+      if (!item) return "not-linked";
+      if (!serial) return "manufacturing";
+      const progress = serialProgressByKey.get(`${item.id}:${serial.id}`);
+      if (progress?.sent_at) return "sent";
+      if (progress?.coating_returned_at) return "waiting-delivery";
+      if (progress?.coating_sent_at) return "coating";
+      if (serial.result === "good") return "quality-inspection";
+      return "manufacturing";
+    };
     const grouped = new Map<string, Serial[]>();
     serials.forEach((serial) => {
       const named = {
@@ -348,6 +387,8 @@ export function ProductionTrackingWorkspace({
               traceability: serial.traceability_id
                 ? (traceabilityById.get(serial.traceability_id) ?? null)
                 : null,
+              receptionStatus: getReceptionStatus(namedOrder, serial),
+              receptionReceivedAt: getReceptionReceivedAt(order.id),
             }))
           : [
               {
@@ -355,6 +396,8 @@ export function ProductionTrackingWorkspace({
                 order: namedOrder,
                 serial: null,
                 traceability: null,
+                receptionStatus: getReceptionStatus(namedOrder, null),
+                receptionReceivedAt: getReceptionReceivedAt(order.id),
               },
             ];
       }),
@@ -364,13 +407,15 @@ export function ProductionTrackingWorkspace({
   React.useEffect(() => {
     void load();
   }, [load]);
-  const quick = (next: Exclude<Preset, "custom">) => {
-    setPreset(next);
-    setRange(getRange(next));
-  };
-  const orderCount = new Set(rows.map((row) => row.order.id)).size,
-    good = rows.filter((row) => row.serial?.result === "good").length,
-    scrap = rows.filter((row) => row.serial?.result === "scrap").length,
+  const visibleRows = React.useMemo(() => {
+    const query = trackingSearch.trim().toLocaleLowerCase();
+    if (!query) return rows;
+    return rows.filter((row) => [row.order.order_number, row.serial?.serial_number, row.serial?.tool_id]
+      .some((value) => String(value ?? "").toLocaleLowerCase().includes(query)));
+  }, [rows, trackingSearch]);
+  const orderCount = new Set(visibleRows.map((row) => row.order.id)).size,
+    good = visibleRows.filter((row) => row.serial?.result === "good").length,
+    scrap = visibleRows.filter((row) => row.serial?.result === "scrap").length,
     isShaver = part === "shavers",
     isShaper = part === "shaper",
     isAllParts = part === "all";
@@ -452,14 +497,14 @@ export function ProductionTrackingWorkspace({
     customers.find((customer) => customer.id === customerId)?.customer_name ??
     "Client";
   const groupedPdfRows = [
-    ...rows.reduce((groups, row) => {
+    ...visibleRows.reduce((groups, row) => {
       const key = row.order.piece_type || "other";
       groups.set(key, [...(groups.get(key) ?? []), row]);
       return groups;
     }, new Map<string, Row[]>()),
   ].sort(([left], [right]) => left.localeCompare(right));
   const generatePdf = async () => {
-    if (!pdfRef.current || pdfStatus === "generating" || !rows.length) return;
+    if (!pdfRef.current || pdfStatus === "generating" || !visibleRows.length) return;
     setPdfStatus("generating");
     try {
       const safeClient = selectedCustomer.replace(
@@ -501,7 +546,7 @@ export function ProductionTrackingWorkspace({
           <button
             type="button"
             onClick={() => void generatePdf()}
-            disabled={loading || !rows.length || pdfStatus === "generating"}
+            disabled={loading || !visibleRows.length || pdfStatus === "generating"}
           >
             <FileText size={16} />
             {pdfStatus === "generating"
@@ -539,53 +584,30 @@ export function ProductionTrackingWorkspace({
             ))}
           </select>
         </label>
+        <label className="tracking-record-search">
+          <span>Search production tracking</span>
+          <div>
+            <Search size={16} />
+            <input type="search" value={trackingSearch} onChange={(event) => setTrackingSearch(event.target.value)} placeholder="Order, serial number or Tool ID" />
+          </div>
+        </label>
         <div className="tracking-range">
-          <nav>
-            {(
-              [
-                "this-month",
-                "last-month",
-                "this-week",
-                "last-week",
-                "this-year",
-              ] as const
-            ).map((item) => (
-              <button
-                type="button"
-                className={preset === item ? "active" : ""}
-                onClick={() => quick(item)}
-                key={item}
-              >
-                {item
-                  .split("-")
-                  .map((word) => word[0].toUpperCase() + word.slice(1))
-                  .join(" ")}
-              </button>
-            ))}
-          </nav>
           <label>
             <span>From</span>
-            <input
-              type="date"
+            <MesOrderDatePicker
+              id="production-tracking-date-from"
               value={range.from}
-              onChange={(event) => {
-                setPreset("custom");
-                setRange((current) => ({
-                  ...current,
-                  from: event.target.value,
-                }));
-              }}
+              onChange={(from) => setRange((current) => ({ ...current, from, to: from > current.to ? from : current.to }))}
+              onQuickRange={setRange}
             />
           </label>
           <label>
             <span>To</span>
-            <input
-              type="date"
+            <MesOrderDatePicker
+              id="production-tracking-date-to"
               value={range.to}
-              onChange={(event) => {
-                setPreset("custom");
-                setRange((current) => ({ ...current, to: event.target.value }));
-              }}
+              onChange={(to) => setRange((current) => ({ ...current, to, from: to < current.from ? to : current.from }))}
+              onQuickRange={setRange}
             />
           </label>
         </div>
@@ -598,7 +620,7 @@ export function ProductionTrackingWorkspace({
         </article>
         <article>
           <span>Tracked pieces</span>
-          <strong>{rows.filter((row) => row.serial).length}</strong>
+          <strong>{visibleRows.filter((row) => row.serial).length}</strong>
         </article>
         <article className="good">
           <span>Completed good</span>
@@ -621,7 +643,7 @@ export function ProductionTrackingWorkspace({
           </div>
           <strong>
             <ClipboardList size={16} />
-            {rows.length} records
+            {visibleRows.length} records
           </strong>
         </header>
         <div>
@@ -662,18 +684,19 @@ export function ProductionTrackingWorkspace({
                 <th>Machine</th>
                 <th>Reported</th>
                 <th>Result</th>
-                <th>Status</th>
+                <th>Manufacturing status</th>
+                <th>Reception status</th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => {
+              {visibleRows.map((row) => {
                 const { key, order, serial, traceability } = row;
                 return (
                   <tr key={key}>
                     <td>
                       <strong>#{order.order_number}</strong>
                     </td>
-                    <td>{date(order.created_at)}</td>
+                    <td>{date(row.receptionReceivedAt)}</td>
                     <td>{order.client_name || "—"}</td>
                     <td>
                       <span className="part-badge">
@@ -729,15 +752,20 @@ export function ProductionTrackingWorkspace({
                         {order.status}
                       </span>
                     </td>
+                    <td>
+                      <span className={`tracking-reception-status ${row.receptionStatus}`}>
+                        {receptionStatusLabel(row.receptionStatus)}
+                      </span>
+                    </td>
                   </tr>
                 );
               })}
-              {!rows.length ? (
+              {!visibleRows.length ? (
                 <tr>
                   <td
                     className="empty"
                     colSpan={
-                      isAllParts ? 12 : isShaver ? 16 : isShaper ? 14 : 15
+                      isAllParts ? 13 : isShaver ? 17 : isShaper ? 15 : 16
                     }
                   >
                     {loading
@@ -787,7 +815,7 @@ export function ProductionTrackingWorkspace({
             </span>
             <span className="pieces">
               <small>Tracked pieces</small>
-              <b>{rows.filter((row) => row.serial).length}</b>
+              <b>{visibleRows.filter((row) => row.serial).length}</b>
             </span>
             <span className="good">
               <small>Completed good</small>
@@ -828,14 +856,15 @@ export function ProductionTrackingWorkspace({
                     <th>Machine</th>
                     <th>Reported</th>
                     <th>Result</th>
-                    <th>Status</th>
+                    <th>Manufacturing status</th>
+                    <th>Reception status</th>
                   </tr>
                 </thead>
                 <tbody>
                   {partRows.map((row) => (
                     <tr key={`pdf:${row.key}`}>
                       <td>#{row.order.order_number}</td>
-                      <td>{date(row.order.created_at)}</td>
+                      <td>{date(row.receptionReceivedAt)}</td>
                       <td>{row.order.client_name || "—"}</td>
                       <td>
                         <span className="part-badge">
@@ -869,6 +898,11 @@ export function ProductionTrackingWorkspace({
                           className={`tracking-order-status ${row.order.status}`}
                         >
                           {row.order.status}
+                        </span>
+                      </td>
+                      <td>
+                        <span className={`tracking-reception-status ${row.receptionStatus}`}>
+                          {receptionStatusLabel(row.receptionStatus)}
                         </span>
                       </td>
                     </tr>

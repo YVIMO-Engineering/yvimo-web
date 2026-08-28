@@ -213,6 +213,8 @@ const spanish: Record<string, string> = {
   'total pieces': 'piezas totales',
   Quantity: 'Cantidad',
   Produced: 'Producido',
+  'Pending production': 'Producción pendiente',
+  'Awaiting production': 'Esperando producción',
   Scrap: 'Desecho',
   'Production Order': 'Orden de producción',
   'Assign New Order': 'Asignar nueva orden',
@@ -234,7 +236,7 @@ const spanish: Record<string, string> = {
   'Receive Coating': 'Recibir de recubrimiento',
   Received: 'Recibido',
   'Not required': 'No requerido',
-  'Serial numbers will appear when completed pieces are reported for this order.': 'Los números de serie aparecerán cuando se reporten piezas terminadas para esta orden.',
+  'No serial numbers have been assigned to this production order.': 'No se han asignado números de serie a esta orden de producción.',
   'Pending completion': 'Pendiente de completar',
   'Description & Notes': 'Descripción y notas',
   'General receiving information': 'Información general de recepción',
@@ -391,6 +393,7 @@ function translateSpanishText(text: string) {
     .replace(/^Delete (.+)\?$/, '¿Eliminar $1?')
     .replace(/^(\d+) of (\d+)$/, '$1 de $2')
     .replace(/^(\d+) active reception vouchers$/, '$1 vales de recepción activos')
+    .replace(/^(\d+) produced · (\d+) total pieces$/, '$1 producidas · $2 piezas totales')
     .replace(/^(\d+) shown$/, '$1 mostrados');
   return translated === normalized ? text : `${leadingWhitespace}${translated}${trailingWhitespace}`;
 }
