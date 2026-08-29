@@ -9,6 +9,16 @@ if (!supabaseUrl || !supabasePublishableKey) {
 
 export const supabase = createClient(supabaseUrl, supabasePublishableKey);
 
+// Keep Customer Portal authentication independent from the workspace session.
+export const customerPortalSupabase = createClient(supabaseUrl, supabasePublishableKey, {
+  auth: {
+    storageKey: 'yvimo-customer-portal-auth',
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+  },
+});
+
 const sessionClients = new Map<string, ReturnType<typeof createClient>>();
 
 export function createSessionSupabaseClient(accessToken: string) {

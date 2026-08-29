@@ -62,6 +62,7 @@ export default async function handler(request: ApiRequest, response: ApiResponse
       created_by: auth.user.id,
     }).select('id, user_id, email, access_profile, status, created_at').single();
     if (accessError) {
+      console.error('[customer-portal] access insert failed', { code: accessError.code, message: accessError.message, details: accessError.details, hint: accessError.hint });
       await admin.auth.admin.deleteUser(created.user.id);
       return response.status(400).json({ error: 'The login was rolled back because its Customer Portal access could not be saved.' });
     }

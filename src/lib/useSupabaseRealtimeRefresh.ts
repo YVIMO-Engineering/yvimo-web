@@ -1,4 +1,5 @@
 import React from 'react';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { supabase } from './supabaseClient';
 
 type RealtimeRefreshTable = {
@@ -13,6 +14,7 @@ type RealtimeRefreshOptions = {
   onRefresh: () => void | Promise<void>;
   enabled?: boolean;
   debounceMs?: number;
+  client?: SupabaseClient;
 };
 
 export function useSupabaseRealtimeRefresh({
@@ -21,6 +23,7 @@ export function useSupabaseRealtimeRefresh({
   onRefresh,
   enabled = true,
   debounceMs = 250,
+  client = supabase,
 }: RealtimeRefreshOptions) {
   const refreshRef = React.useRef(onRefresh);
 
@@ -46,13 +49,13 @@ export function useSupabaseRealtimeRefresh({
         table: tableConfig.table,
         ...(tableConfig.filter ? { filter: tableConfig.filter } : {}),
       }, scheduleRefresh)
-    ), supabase.channel(channelName));
+    ), client.channel(channelName));
 
     channel.subscribe();
 
     return () => {
       if (refreshTimer) window.clearTimeout(refreshTimer);
-      void supabase.removeChannel(channel);
+      void client.removeChannel(channel);
     };
-  }, [channelName, debounceMs, enabled, tables]);
+  }, [channelName, client, debounceMs, enabled, tables]);
 }

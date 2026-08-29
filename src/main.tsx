@@ -2,7 +2,7 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { Activity, AlertTriangle, ArrowRight, ArrowLeft, BarChart3, Blocks, Building2, Cable, Calculator, CalendarClock, ChevronDown, ChevronLeft, ChevronRight, Check, CircuitBoard, CircleDollarSign, ClipboardCheck, Cloud, Code2, Container, Cpu, Database, Factory, FileText, FileUp, FolderCheck, GitBranch, Gauge, GraduationCap, Hospital, Languages, LockKeyhole, LogIn, Mail, Menu, Network, PackageCheck, Pencil, Plus, RadioTower, ReceiptText, Rocket, ServerCog, ShieldCheck, Star, TerminalSquare, Truck, TrendingUp, Target, UserPlus, Users, Workflow, Wrench, ShieldAlert, X } from 'lucide-react';
 import type { Session, User } from '@supabase/supabase-js';
-import { createSessionSupabaseClient, supabase } from './lib/supabaseClient';
+import { createSessionSupabaseClient, customerPortalSupabase, supabase } from './lib/supabaseClient';
 import { AcademyActivityPage, AcademyCatalogPage, AcademyCertificatesPage, AcademyCoursePage, AcademyHomePage, AcademyLessonPage, AcademyProgressPage, AcademyTrackPage } from './pages/AcademyPages';
 import { ProductionOrdersWorkspace, TraceabilityWorkspace, WorkCentersWorkspace } from './manufacturing/MesWorkspaces';
 import { QuotationsWorkspace } from './manufacturing/QuotationsWorkspace';
@@ -5526,6 +5526,8 @@ function App() {
   const [authSession, setAuthSession] = React.useState<Session | null>(null);
   const [authUser, setAuthUser] = React.useState<AppUser | null>(null);
   const [authLoading, setAuthLoading] = React.useState(true);
+  const [customerPortalSession, setCustomerPortalSession] = React.useState<Session | null>(null);
+  const [customerPortalAuthLoading, setCustomerPortalAuthLoading] = React.useState(true);
   const [profileLoadState, setProfileLoadState] = React.useState<ProfileLoadState>('idle');
   const [profileLoadError, setProfileLoadError] = React.useState<string | null>(null);
   const [dashboardTransition, setDashboardTransition] = React.useState(false);
@@ -5550,6 +5552,7 @@ function App() {
   const isStandaloneHealthPage = currentPath === '/health' || currentPath.startsWith('/health/');
   const isDirectHealthAppsPage = isStandaloneHealthPage || currentPath === '/workspace/health-apps' || currentPath.startsWith('/workspace/health-apps/');
   const isDirectCustomerPortalPage = currentPath === '/customer-portal' || currentPath.startsWith('/customer-portal/');
+  const customerPortalUser = customerPortalSession?.user ? profileToAppUser(customerPortalSession.user, null) : null;
   const isCustomerPortalAccount = authSession?.user.app_metadata?.account_type === 'customer_portal';
   const healthWorkspacePath = isStandaloneHealthPage ? (currentPath === '/health' ? '/workspace/health-apps' : currentPath.replace(/^\/health/, '/workspace/health-apps')) : currentPath;
   const isDashboardPage = currentPath === '/dashboard' || currentPath.startsWith('/dashboard/') || currentPath === '/portal/gateway-online' || currentPath.startsWith('/portal/gateway-online/') || currentPath === '/portal/engineering-tools' || currentPath.startsWith('/portal/engineering-tools/') || currentPath === '/workspace/health-apps' || currentPath.startsWith('/workspace/health-apps/') || isStandaloneHealthPage || isDirectCustomerPortalPage || currentPath === '/workspace/manufacturing-ops' || currentPath.startsWith('/workspace/manufacturing-ops/');
@@ -5837,14 +5840,54 @@ function App() {
   }, [syncSessionUser]);
 
   React.useEffect(() => {
-    if (!authLoading && isDashboardPage && !isDirectHealthAppsPage && !isDirectCustomerPortalPage && !authSession?.user) {
-      navigateLogin();
-    }
-  }, [authLoading, authSession, isDashboardPage, isDirectHealthAppsPage, isDirectCustomerPortalPage]);
+    let active = true;
+
+    void customerPortalSupabase.auth.getSession().then(({ data, error }) => {
+      if (!active) return;
+      if (error) console.error('[customer-portal-auth] getSession error', error);
+      setCustomerPortalSession(error ? null : data.session);
+      setCustomerPortalAuthLoading(false);
+    });
+
+    const { data: listener } = customerPortalSupabase.auth.onAuthStateChange((_event, session) => {
+      if (active) setCustomerPortalSession(session);
+    });
+
+    return () => {
+      active = false;
+      listener.subscription.unsubscribe();
+    };
+  }, []);
 
   React.useEffect(() => {
-    if (!authLoading && authSession?.user && isCustomerPortalAccount && !isDirectCustomerPortalPage) navigateTo('/customer-portal');
-  }, [authLoading, authSession, isCustomerPortalAccount, isDirectCustomerPortalPage]);
+    if (!authLoading && isDashboardPage && !isDirectHealthAppsPage && !isDirectCustomerPortalPage && (!authSession?.user || isCustomerPortalAccount)) {
+      navigateLogin();
+    }
+  }, [authLoading, authSession, isCustomerPortalAccount, isDashboardPage, isDirectHealthAppsPage, isDirectCustomerPortalPage]);
+
+  React.useEffect(() => {
+    if (authLoading || !authSession || !isCustomerPortalAccount) return;
+
+    let active = true;
+    void customerPortalSupabase.auth.setSession({
+      access_token: authSession.access_token,
+      refresh_token: authSession.refresh_token,
+    }).then(async ({ data, error }) => {
+      if (!active) return;
+      if (error) console.error('[customer-portal-auth] legacy session migration failed', error);
+      else setCustomerPortalSession(data.session);
+
+      explicitSignOutRef.current = true;
+      await supabase.auth.signOut({ scope: 'local' });
+      if (!active) return;
+      setAuthSession(null);
+      setAuthUser(null);
+      setProfileLoadState('idle');
+      setProfileLoadError(null);
+    });
+
+    return () => { active = false; };
+  }, [authLoading, authSession, isCustomerPortalAccount]);
 
   React.useEffect(() => {
     if (authLoading || !authSession?.user || !isDashboardPage || profileLoadState !== 'idle') return;
@@ -6016,6 +6059,35 @@ function App() {
   const handleAppleSignIn = async () => {
     console.log('[auth] apple signIn temporarily disabled');
     return 'Apple login is temporarily disabled.';
+  };
+
+  const handleCustomerPortalSignIn = async (email: string, password: string) => {
+    const { data, error } = await customerPortalSupabase.auth.signInWithPassword({
+      email: email.trim().toLowerCase(),
+      password,
+    });
+    if (error) return formatAuthError(error.message);
+    if (!data.session) return 'Signed in, but no session was returned.';
+    if (data.session.user.app_metadata?.account_type !== 'customer_portal') {
+      await customerPortalSupabase.auth.signOut();
+      return 'This account does not have Customer Portal access.';
+    }
+    setCustomerPortalSession(data.session);
+    return null;
+  };
+
+  const handleCustomerPortalOAuth = async (provider: 'azure' | 'google') => {
+    const { error } = await customerPortalSupabase.auth.signInWithOAuth({
+      provider,
+      options: { redirectTo: `${window.location.origin}/customer-portal` },
+    });
+    return error ? formatAuthError(error.message) : null;
+  };
+
+  const handleCustomerPortalSignOut = async () => {
+    await customerPortalSupabase.auth.signOut();
+    setCustomerPortalSession(null);
+    navigateTo('/customer-portal');
   };
 
   const handleMicrosoftSignIn = async () => {
@@ -6426,7 +6498,7 @@ function App() {
         </div>
       </header>
 
-      {authLoading ? (
+      {(isDirectCustomerPortalPage ? customerPortalAuthLoading : authLoading) ? (
         <main className="auth-loading-page">
           <div className="auth-loading-card">
             <span className="status-dot" />
@@ -6441,14 +6513,14 @@ function App() {
         <SignUpPage onNavigateLogin={navigateLogin} onSignUp={handleSignUp} t={t} />
       ) : isDashboardPage ? (
         isDirectCustomerPortalPage ? (
-          authSession?.user && authUser ? (
+          customerPortalSession?.user && customerPortalUser ? (
             <CustomerPortalPublic
-              user={{ id: authUser.id, name: authUser.name, email: authUser.email, company: authUser.company, avatarUrl: authUser.avatarUrl }}
-              supplierOrganization={loadManufacturingOrganization(authUser)}
-              onSignOut={handleSignOut}
+              user={{ id: customerPortalUser.id, name: customerPortalUser.name, email: customerPortalUser.email, company: customerPortalUser.company, avatarUrl: customerPortalUser.avatarUrl }}
+              supplierOrganization={loadManufacturingOrganization(customerPortalUser)}
+              onSignOut={handleCustomerPortalSignOut}
             />
           ) : (
-            <CustomerPortalLogin onHome={() => navigateHome()} onSignIn={handleSignIn} onMicrosoft={handleMicrosoftSignIn} onGoogle={handleGoogleSignIn} />
+            <CustomerPortalLogin onHome={() => navigateHome()} onSignIn={handleCustomerPortalSignIn} onMicrosoft={() => handleCustomerPortalOAuth('azure')} onGoogle={() => handleCustomerPortalOAuth('google')} />
           )
         ) : authSession?.user ? (
           authUser ? (
