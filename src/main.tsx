@@ -6198,7 +6198,7 @@ function App() {
 
   return (
     <div
-      className={['site-shell', authUser ? 'site-shell-authenticated' : '', isMesApplicationScreen ? 'site-shell-mes-application' : '', isDirectHealthAppsPage ? 'site-shell-health-standalone' : '', isDirectCustomerPortalPage ? 'site-shell-customer-portal' : '', currentPath === '/workspace/manufacturing-ops' || currentPath.startsWith('/workspace/manufacturing-ops/') ? 'site-shell-manufacturing-focus' : ''].filter(Boolean).join(' ')}
+      className={['site-shell', authUser ? 'site-shell-authenticated' : '', isMesApplicationScreen ? 'site-shell-mes-application' : '', isDirectHealthAppsPage ? 'site-shell-health-standalone' : '', isDirectCustomerPortalPage ? 'site-shell-customer-portal' : '', isAcademyPage ? 'site-shell-academy-focus' : '', currentPath === '/workspace/manufacturing-ops' || currentPath.startsWith('/workspace/manufacturing-ops/') ? 'site-shell-manufacturing-focus' : ''].filter(Boolean).join(' ')}
       style={
         {
           '--header-height': `${headerHeight}px`,
@@ -6221,6 +6221,7 @@ function App() {
         } as React.CSSProperties
       }
     >
+      {!isAcademyPage ? (
       <header className={authUser ? 'topbar topbar-authenticated' : 'topbar'}>
         <a
           className="brand"
@@ -6497,6 +6498,7 @@ function App() {
           </svg>
         </div>
       </header>
+      ) : null}
 
       {(isDirectCustomerPortalPage ? customerPortalAuthLoading : authLoading) ? (
         <main className="auth-loading-page">

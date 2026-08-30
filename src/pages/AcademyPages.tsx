@@ -135,6 +135,8 @@ type AcademyUser = {
   email: string;
   avatarUrl?: string;
   subscription?: string;
+  profileLevel?: number;
+  yvimoPoints?: number;
 };
 
 type AcademyTranslator = (text: string) => string;
@@ -467,6 +469,36 @@ const academyNavItems = [
   { label: 'News', icon: Newspaper, path: '/academy', section: 'news' },
   { label: 'Resources', icon: FileText, path: '/academy', section: 'resources' },
 ];
+
+const academyHubTabs = [
+  {
+    id: 'learning',
+    label: 'Learning',
+    description: 'Build skills through courses, guided paths, and progress tracking.',
+    apps: [
+      { label: 'Courses', description: 'Browse courses and structured learning paths.', icon: BookOpen, path: '#academy-core-tracks', tone: 'violet' },
+      { label: 'Continue Watching', description: 'Resume your most recent Academy lesson.', icon: PlayCircle, path: '/academy', tone: 'blue' },
+      { label: 'My Progress', description: 'Review completed lessons, tracks, and next steps.', icon: CheckCircle2, path: '/academy/progress', tone: 'green' },
+    ],
+  },
+  {
+    id: 'certifications',
+    label: 'Certifications',
+    description: 'Access credentials earned through your Academy learning.',
+    apps: [
+      { label: 'My Certificates', description: 'View and share your earned certificates.', icon: Trophy, path: '/academy/certificates', tone: 'gold' },
+    ],
+  },
+  {
+    id: 'resources',
+    label: 'Resources',
+    description: 'Stay current with Academy news and technical resources.',
+    apps: [
+      { label: 'News', description: 'Read Academy announcements and learning updates.', icon: Newspaper, path: '/academy', tone: 'pink' },
+      { label: 'Resources', description: 'Open supporting industrial learning materials.', icon: FileText, path: '/academy', tone: 'indigo' },
+    ],
+  },
+] as const;
 
 const academyHowSteps = [
   {
@@ -1239,32 +1271,15 @@ function AcademyShell({
 }) {
   return (
     <main className={compact ? 'academy-shell theater' : 'academy-shell'}>
-      <aside className="academy-sidebar">
-        <button className="academy-sidebar-back" type="button" onClick={() => navigateTo('/dashboard')}>
-          <ArrowRight size={16} />
-          <span>{t('Dashboard')}</span>
+      <header className="academy-workspace-header">
+        <button className="academy-workspace-brand" type="button" onClick={() => navigateTo('/academy')}>
+          <img src="/assets/workspace/yvimo-academy-logo.png" alt="" aria-hidden="true" />
+          <span><small>YVIMO</small><strong>{t('Academy')}</strong></span>
         </button>
-        <div className="academy-sidebar-title">
-          <span>YVIMO</span>
-          <strong>Academy</strong>
-        </div>
-        <nav aria-label="Academy navigation">
-          {academyNavItems.map((item) => {
-            const Icon = item.icon;
-            return (
-              <button
-                className={item.section === activeSection ? 'active' : ''}
-                type="button"
-                key={item.label}
-                onClick={() => navigateTo(item.path)}
-              >
-                <Icon size={18} />
-                <span>{t(item.label)}</span>
-              </button>
-            );
-          })}
-        </nav>
-      </aside>
+        <button className="academy-workspace-dashboard" type="button" onClick={() => navigateTo('/dashboard')}>
+          <ArrowLeft size={16} /> {t('Workspace overview')}
+        </button>
+      </header>
       <div className="academy-main">{children}</div>
     </main>
   );
@@ -1859,9 +1874,10 @@ export function AcademyTrackPage({
   const returnSection = typeof window === 'undefined'
     ? null
     : new URLSearchParams(window.location.search).get('from');
-  const academyBackPath = returnSection && ['core', 'skill', 'advanced', 'paths'].includes(returnSection)
-    ? `/academy?section=${returnSection}`
-    : '/academy';
+  const backSection = returnSection && ['core', 'skill', 'advanced', 'paths'].includes(returnSection)
+    ? returnSection
+    : track.category;
+  const academyBackPath = `/academy?section=${backSection}`;
 
   const selectCourse = (course: AcademyTrackCourse) => {
     setSelectedSlug(course.slug);
@@ -2114,6 +2130,8 @@ export function AcademyTrackPage({
             activities={liveActivities}
             activityAttempts={liveActivityAttempts}
             getCourseSlug={(session) => liveSessionCourse(session)?.slug ?? visibleTrackCourses[0]?.slug ?? ''}
+            trackSlug={track.slug}
+            specializationSlug={selectedSpecialization?.slug ?? null}
             navigateTo={navigateTo}
             onAdd={() => setEditingLiveSession(null)}
             onEdit={(session) => setEditingLiveSession(session)}
@@ -2501,7 +2519,9 @@ function SelectedTrackCoursePanel({
   );
 }
 
-export function AcademyHomePage({ navigateTo, t = defaultT }: AcademyPageProps) {
+export function AcademyHomePage({ user, navigateTo, t = defaultT }: AcademyPageProps) {
+  const [activeHubTab, setActiveHubTab] = React.useState<(typeof academyHubTabs)[number]['id']>('learning');
+  const activeHub = academyHubTabs.find((tab) => tab.id === activeHubTab) ?? academyHubTabs[0];
   React.useEffect(() => {
     if (typeof window === 'undefined') return;
 
@@ -2562,6 +2582,65 @@ export function AcademyHomePage({ navigateTo, t = defaultT }: AcademyPageProps) 
           <button className="academy-view-all-button secondary" type="button" onClick={() => navigateTo('/academy/courses')}>
             {t('Browse courses')}
           </button>
+        </div>
+        <article className="academy-hero-user-card">
+          <span className="academy-hero-user-avatar">
+            {user?.avatarUrl ? <img src={user.avatarUrl} alt="" /> : getProfileInitials(user?.name ?? 'YVIMO')}
+          </span>
+          <span>
+            <small>{t('Your Academy profile')}</small>
+            <strong>{user?.name ?? t('Academy learner')}</strong>
+            <em>{user?.subscription ?? t('Explorer')} · LV {user?.profileLevel ?? 1}</em>
+          </span>
+          <span className="academy-hero-user-points"><Star size={14} fill="currentColor" /> {(user?.yvimoPoints ?? 0).toLocaleString()}</span>
+        </article>
+      </section>
+
+      <section className="academy-hub" aria-label={t('Academy modules')}>
+        <div className="academy-hub-tabs" role="tablist" aria-label={t('Academy module categories')}>
+          {academyHubTabs.map((tab) => (
+            <button
+              className={tab.id === activeHub.id ? 'active' : ''}
+              type="button"
+              role="tab"
+              aria-selected={tab.id === activeHub.id}
+              key={tab.id}
+              onClick={() => setActiveHubTab(tab.id)}
+            >
+              {t(tab.label)}
+            </button>
+          ))}
+        </div>
+        <div className="academy-hub-directory">
+          <div className="academy-hub-heading">
+            <span>{t('Applications')}</span>
+            <h2>{t(activeHub.label)}</h2>
+            <p>{t(activeHub.description)}</p>
+          </div>
+          <div className="academy-hub-app-grid">
+            {activeHub.apps.map((app) => {
+              const Icon = app.icon;
+              return (
+                <button
+                  className={`academy-hub-app tone-${app.tone}`}
+                  type="button"
+                  key={app.label}
+                  onClick={() => {
+                    if (app.path.startsWith('#')) {
+                      const target = document.getElementById(app.path.slice(1));
+                      if (target) scrollToElementBelowHeader(target);
+                      return;
+                    }
+                    navigateTo(app.path);
+                  }}
+                >
+                  <span className="academy-hub-app-icon"><Icon size={25} /></span>
+                  <span><strong>{t(app.label)}</strong><small>{t(app.description)}</small></span>
+                  <ArrowRight size={17} />
+                </button>
+              );
+            })}
+          </div>
         </div>
       </section>
 
@@ -3203,7 +3282,7 @@ export function AcademyCoursePage({ user, navigateTo, courseSlug, t = defaultT, 
 }
 
 export function LiveSessionsSection({
-  sessions, canManage, canManageActivities, activities, activityAttempts, getCourseSlug, navigateTo,
+  sessions, canManage, canManageActivities, activities, activityAttempts, getCourseSlug, trackSlug, specializationSlug, navigateTo,
   onAdd, onEdit, onDelete, onAddActivity, onEditActivity, onDeleteActivity, t = defaultT,
 }: {
   sessions: AcademyLesson[];
@@ -3212,6 +3291,8 @@ export function LiveSessionsSection({
   activities: AcademyActivity[];
   activityAttempts: AcademyActivityAttempt[];
   getCourseSlug: (session: AcademyLesson) => string;
+  trackSlug: string;
+  specializationSlug?: string | null;
   navigateTo: (path: string) => void;
   onAdd: () => void;
   onEdit: (session: AcademyLesson) => void;
@@ -3258,12 +3339,17 @@ export function LiveSessionsSection({
       <div className="academy-lesson-list" id={contentId} hidden={!expanded}>
         {sessions.map((session) => {
           const sessionActivities = activities.filter((activityItem) => activityItem.lesson_id === session.id);
+          const returnParams = new URLSearchParams({
+            fromTrack: trackSlug,
+            returnY: String(Math.round(window.scrollY)),
+          });
+          if (specializationSlug) returnParams.set('fromSpecialization', specializationSlug);
           return (
           <div className="academy-live-session-item" key={session.id}>
             <button
               className="academy-lesson-row"
               type="button"
-              onClick={() => navigateTo(`/academy/${getCourseSlug(session)}/live-sessions/${session.slug}`)}
+              onClick={() => navigateTo(`/academy/${getCourseSlug(session)}/live-sessions/${session.slug}?${returnParams.toString()}`)}
             >
               <span className="academy-lesson-icon"><PlayCircle size={18} /></span>
               <span>
@@ -5197,6 +5283,10 @@ export function AcademyLessonPage({
     { format: 'numbered' as const, icon: ListOrdered, label: 'Numbered list' },
     { format: 'quote' as const, icon: Quote, label: 'Quote' },
   ];
+  const lessonReturnContext = getCourseReturnContext();
+  const lessonBackPath = liveSession && lessonReturnContext
+    ? getCourseReturnPath(lessonReturnContext)
+    : `/academy/${bundle.course.slug}`;
 
   return (
     <AcademyShell navigateTo={navigateTo} t={t} compact={theaterMode}>
@@ -5206,7 +5296,7 @@ export function AcademyLessonPage({
           <button
             className="academy-back-button"
             type="button"
-            onClick={() => navigateTo(`/academy/${bundle.course.slug}`)}
+            onClick={() => navigateTo(lessonBackPath)}
           >
             <ArrowLeft size={19} strokeWidth={3} />
             {t('Go Back')}
@@ -5559,12 +5649,34 @@ function buildCertificatePackages(
 
 function scrollToElementBelowHeader(target: HTMLElement) {
   const shell = target.closest('.site-shell') ?? document.documentElement;
-  const headerHeight = parseFloat(getComputedStyle(shell).getPropertyValue('--header-height')) || 128;
+  const academyHeader = document.querySelector<HTMLElement>('.academy-workspace-header');
+  const headerHeight = academyHeader?.getBoundingClientRect().height
+    ?? (parseFloat(getComputedStyle(shell).getPropertyValue('--header-height')) || 128);
   const targetTop = target.getBoundingClientRect().top + window.scrollY;
-  window.scrollTo({
-    top: Math.max(targetTop - headerHeight - 24, 0),
-    behavior: 'smooth',
-  });
+  const destination = Math.max(targetTop - headerHeight - 24, 0);
+  const start = window.scrollY;
+  const distance = destination - start;
+
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    window.scrollTo({ top: destination });
+    return;
+  }
+
+  const duration = Math.min(1400, Math.max(800, Math.abs(distance) * 0.45));
+  const startedAt = performance.now();
+  const easeInOutCubic = (progress: number) => (
+    progress < 0.5
+      ? 4 * progress * progress * progress
+      : 1 - Math.pow(-2 * progress + 2, 3) / 2
+  );
+
+  const animateScroll = (now: number) => {
+    const progress = Math.min((now - startedAt) / duration, 1);
+    window.scrollTo({ top: start + distance * easeInOutCubic(progress) });
+    if (progress < 1) window.requestAnimationFrame(animateScroll);
+  };
+
+  window.requestAnimationFrame(animateScroll);
 }
 
 export function AcademyProgressPage({ user, navigateTo, t = defaultT, languageCode = 'en' }: AcademyPageProps) {
