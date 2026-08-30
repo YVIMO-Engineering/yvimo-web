@@ -141,6 +141,7 @@ export type AcademyLesson = {
   is_preview: boolean;
   status: AcademyLessonStatus;
   content_group: AcademyLessonContentGroup;
+  specialization_slug: string | null;
   created_at: string;
   updated_at: string;
 };

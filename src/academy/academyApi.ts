@@ -92,6 +92,7 @@ export type AcademyLiveSessionInput = {
   orderIndex?: number;
   status: AcademyLesson['status'];
   verifiedUploadId?: string | null;
+  specializationSlug?: string | null;
 };
 
 function shouldTranslate(languageCode?: string | null) {
@@ -217,6 +218,7 @@ function normalizeSharePointEmbed(value?: string | null) {
 export async function fetchLiveSessionsForCourse(
   courseId: string,
   includeDrafts = false,
+  specializationSlug?: string | null,
   client: AcademyClient = supabase,
 ) {
   let query = client
@@ -225,6 +227,7 @@ export async function fetchLiveSessionsForCourse(
     .eq('course_id', courseId)
     .eq('content_group', 'live_session')
     .order('order_index', { ascending: true });
+  if (specializationSlug) query = query.eq('specialization_slug', specializationSlug);
   if (!includeDrafts) query = query.eq('status', 'published');
   const { data, error } = await query.returns<AcademyLesson[]>();
   if (error) throw error;
@@ -262,6 +265,7 @@ export async function saveAcademyLiveSession(input: AcademyLiveSessionInput, cli
     is_preview: false,
     status: input.status,
     content_group: 'live_session' as AcademyLessonContentGroup,
+    specialization_slug: input.specializationSlug ?? null,
   };
   if (input.videoProvider === 'cloudflare_r2') {
     if (!input.verifiedUploadId && !input.id) throw new Error('Upload and verify the R2 video before saving.');
@@ -276,6 +280,16 @@ export async function saveAcademyLiveSession(input: AcademyLiveSessionInput, cli
       target_order_index: input.orderIndex ?? 0,
     }).single<AcademyLesson>();
     if (error) throw error;
+    if (data && input.specializationSlug) {
+      const { data: specializedData, error: specializationError } = await client
+        .from('academy_lessons')
+        .update({ specialization_slug: input.specializationSlug })
+        .eq('id', data.id)
+        .select('*')
+        .single<AcademyLesson>();
+      if (specializationError) throw specializationError;
+      return specializedData;
+    }
     return data;
   }
   const query = input.id

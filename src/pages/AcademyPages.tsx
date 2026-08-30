@@ -10,6 +10,7 @@ import {
   BookOpen,
   BriefcaseBusiness,
   CheckCircle2,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clock3,
@@ -1519,6 +1520,33 @@ function getTrackRequestedSpecializationSlug() {
   return new URLSearchParams(window.location.search).get('specialization');
 }
 
+const academyTrackSpecializationStoragePrefix = 'yvimo-academy-track-specialization:';
+
+function getPersistedTrackSpecializationSlug(trackSlug: string) {
+  if (typeof window === 'undefined') return null;
+  try {
+    return window.localStorage.getItem(`${academyTrackSpecializationStoragePrefix}${trackSlug}`);
+  } catch {
+    return null;
+  }
+}
+
+function persistTrackSpecializationSlug(trackSlug: string, specializationSlug: string) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(`${academyTrackSpecializationStoragePrefix}${trackSlug}`, specializationSlug);
+  } catch {
+    // Storage can be unavailable in private or restricted browser contexts.
+  }
+}
+
+function getInitialTrackSpecialization(track?: AcademyTrack) {
+  const requestedSlug = getTrackRequestedSpecializationSlug();
+  const persistedSlug = track ? getPersistedTrackSpecializationSlug(track.slug) : null;
+  return track?.specializations?.find((item) => item.slug === (requestedSlug ?? persistedSlug))
+    ?? getDefaultSpecialization(track);
+}
+
 function getCourseReturnContext() {
   if (typeof window === 'undefined') return null;
   const params = new URLSearchParams(window.location.search);
@@ -1669,7 +1697,7 @@ export function AcademyTrackPage({
   const [trackCertificate, setTrackCertificate] = React.useState<AcademyTrackCertificate | null>(null);
   const [trackCourseProgress, setTrackCourseProgress] = React.useState<Record<string, number>>({});
   const [selectedSpecializationSlug, setSelectedSpecializationSlug] = React.useState(
-    getDefaultSpecialization(track)?.slug ?? null,
+    getInitialTrackSpecialization(track)?.slug ?? null,
   );
   const selectedSpecialization = track?.specializations?.find((item) => item.slug === selectedSpecializationSlug)
     ?? getDefaultSpecialization(track);
@@ -1683,15 +1711,29 @@ export function AcademyTrackPage({
   const [error, setError] = React.useState<string | null>(null);
   const [pdfGenerating, setPdfGenerating] = React.useState(false);
   const [pdfError, setPdfError] = React.useState<string | null>(null);
+  const [liveSessions, setLiveSessions] = React.useState<AcademyLesson[]>([]);
+  const [liveActivities, setLiveActivities] = React.useState<AcademyActivity[]>([]);
+  const [liveActivityAttempts, setLiveActivityAttempts] = React.useState<AcademyActivityAttempt[]>([]);
+  const [canAccessLiveSessions, setCanAccessLiveSessions] = React.useState(false);
+  const [canManageLiveSessions, setCanManageLiveSessions] = React.useState(false);
+  const [canManageLiveActivities, setCanManageLiveActivities] = React.useState(false);
+  const [editingLiveSession, setEditingLiveSession] = React.useState<AcademyLesson | null | undefined>(undefined);
+  const [editingLiveActivity, setEditingLiveActivity] = React.useState<{ lesson: AcademyLesson; activity: AcademyActivity | null } | null>(null);
+  const [liveRevision, setLiveRevision] = React.useState(0);
+  const [coursesExpanded, setCoursesExpanded] = React.useState(false);
+  const coursesContentId = React.useId();
   const curriculumRef = React.useRef<HTMLElement | null>(null);
 
   React.useEffect(() => {
-    const requestedSpecializationSlug = getTrackRequestedSpecializationSlug();
-    const defaultSpecialization = track?.specializations?.find((item) => item.slug === requestedSpecializationSlug)
-      ?? getDefaultSpecialization(track);
-    setSelectedSpecializationSlug(defaultSpecialization?.slug ?? null);
-    setSelectedSlug(track ? getVisibleTrackCourses(track, defaultSpecialization)[0]?.slug ?? '' : '');
+    const initialSpecialization = getInitialTrackSpecialization(track);
+    setSelectedSpecializationSlug(initialSpecialization?.slug ?? null);
+    setSelectedSlug(track ? getVisibleTrackCourses(track, initialSpecialization)[0]?.slug ?? '' : '');
   }, [track?.slug]);
+
+  React.useEffect(() => {
+    if (!track || !selectedSpecialization?.slug) return;
+    persistTrackSpecializationSlug(track.slug, selectedSpecialization.slug);
+  }, [selectedSpecialization?.slug, track?.slug]);
 
   React.useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -1718,10 +1760,29 @@ export function AcademyTrackPage({
 
     fetchPublishedCourses(languageCode)
       .then(async (items) => {
-        const [nextCompletion, trackCertificates] = await Promise.all([
+        const [nextCompletion, trackCertificates, nextLiveAccess, nextLiveManager, nextActivityManager] = await Promise.all([
           fetchCourseCertificateMap(user?.id ?? null, items),
           user ? fetchTrackCertificatesForUser(user.id).catch(() => [] as AcademyTrackCertificate[]) : Promise.resolve([]),
+          canAccessAcademyLiveSessions(user?.id ?? null),
+          canManageAcademyLiveSessions(user?.id ?? null),
+          canManageAcademyActivities(user?.id ?? null),
         ]);
+        const trackPublishedCourses = visibleTrackCourses.flatMap((trackCourse) => {
+          const course = items.find((item) => item.slug === trackCourse.slug);
+          return course ? [course] : [];
+        });
+        const nextLiveSessions = nextLiveAccess
+          ? (await Promise.all(trackPublishedCourses.map((course) => (
+              fetchLiveSessionsForCourse(course.id, nextLiveManager, selectedSpecialization?.slug ?? null)
+            )))).flat()
+          : [];
+        const nextActivities = nextLiveAccess
+          ? (await Promise.all(trackPublishedCourses.map((course) => fetchActivitiesForCourse(course.id)))).flat()
+              .filter((activityItem) => nextLiveSessions.some((session) => session.id === activityItem.lesson_id))
+          : [];
+        const nextAttempts = user && nextActivities.length > 0
+          ? await fetchActivityAttemptsForCourse(user.id, nextActivities.map((activityItem) => activityItem.id))
+          : [];
         const progressEntries = await Promise.all(
           (visibleTrackCourses ?? []).map(async (trackCourse) => {
             const publishedCourse = items.find((item) => item.slug === trackCourse.slug);
@@ -1749,6 +1810,12 @@ export function AcademyTrackPage({
             && (certificate.specialization_slug ?? null) === (selectedSpecialization?.slug ?? null)
           )) ?? null);
           setTrackCourseProgress(Object.fromEntries(progressEntries));
+          setCanAccessLiveSessions(nextLiveAccess);
+          setCanManageLiveSessions(nextLiveManager);
+          setCanManageLiveActivities(nextActivityManager);
+          setLiveSessions(nextLiveSessions);
+          setLiveActivities(nextActivities);
+          setLiveActivityAttempts(nextAttempts);
         }
       })
       .catch(() => {
@@ -1761,7 +1828,7 @@ export function AcademyTrackPage({
     return () => {
       active = false;
     };
-  }, [languageCode, selectedSpecialization?.slug, track, trackSlug, user, visibleTrackCourses]);
+  }, [languageCode, liveRevision, selectedSpecialization?.slug, track, trackSlug, user, visibleTrackCourses]);
 
   if (!track) {
     return (
@@ -1801,7 +1868,10 @@ export function AcademyTrackPage({
   };
 
   const scrollToCurriculum = () => {
-    curriculumRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setCoursesExpanded(true);
+    window.requestAnimationFrame(() => {
+      curriculumRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
   };
 
   const downloadTrackPdf = async () => {
@@ -1831,6 +1901,69 @@ export function AcademyTrackPage({
 
     const progressSlug = selectedSpecialization?.slug ?? track.slug;
     navigateTo(`/academy/progress?track=${progressSlug}#academy-track-${progressSlug}`);
+  };
+
+  const liveSessionCourse = (session: AcademyLesson) => publishedCourses.find((course) => course.id === session.course_id);
+
+  const handleSaveTrackLiveSession = async (input: {
+    title: string; slug: string; description: string;
+    videoProvider: AcademyLesson['video_provider']; videoId: string; videoUrl: string;
+    durationSeconds: number | null; status: AcademyLessonStatus; verifiedUploadId?: string | null;
+  }) => {
+    const destinationCourse = editingLiveSession
+      ? liveSessionCourse(editingLiveSession)
+      : publishedCourses.find((course) => visibleTrackCourses.some((item) => item.slug === course.slug));
+    if (!destinationCourse) return;
+    await saveAcademyLiveSession({
+      id: editingLiveSession?.id,
+      courseId: destinationCourse.id,
+      ...input,
+      specializationSlug: selectedSpecialization?.slug ?? null,
+      orderIndex: editingLiveSession?.order_index ?? liveSessions.length,
+    });
+    if (input.videoProvider === 'cloudflare_r2' && input.verifiedUploadId && editingLiveSession?.id) {
+      void cleanupQueuedR2Objects(editingLiveSession.id);
+    }
+    setEditingLiveSession(undefined);
+    setLiveRevision((revision) => revision + 1);
+  };
+
+  const handleDeleteTrackLiveSession = async (session: AcademyLesson) => {
+    if (!window.confirm(t(`Delete "${session.title}"?`))) return;
+    if (session.video_provider === 'cloudflare_r2') await deleteR2Recording(session.id);
+    else await deleteAcademyLiveSession(session.id);
+    setLiveRevision((revision) => revision + 1);
+  };
+
+  const handleSaveTrackLiveActivity = async (input: {
+    activity: AcademyActivity | null; lesson: AcademyLesson; type: AcademyActivityType;
+    title: string; instructions: string; difficulty: string; pointsReward: number;
+    isRequired: boolean; isPublished: boolean; configJson: AcademyActivityConfig;
+  }) => {
+    const course = liveSessionCourse(input.lesson);
+    if (!course) return;
+    const destinationActivities = liveActivities.filter((activityItem) => activityItem.lesson_id === input.lesson.id);
+    await saveAcademyActivity({
+      id: input.activity?.id,
+      courseId: course.id,
+      lessonId: input.lesson.id,
+      type: input.type,
+      title: input.title,
+      instructions: input.instructions,
+      difficulty: input.difficulty,
+      pointsReward: input.pointsReward,
+      isRequired: input.isRequired,
+      isPublished: input.isPublished,
+      orderIndex: input.activity?.order_index ?? destinationActivities.length,
+      configJson: input.configJson,
+    });
+    setEditingLiveActivity(null);
+    setLiveRevision((revision) => revision + 1);
+  };
+
+  const handleDeleteTrackLiveActivity = async (activity: AcademyActivity) => {
+    await deleteAcademyActivity(activity.id);
+    setLiveRevision((revision) => revision + 1);
   };
 
   return (
@@ -1965,7 +2098,54 @@ export function AcademyTrackPage({
           </section>
         ) : null}
 
-        <section className="academy-curriculum-section" ref={curriculumRef}>
+        <div className="academy-learning-options-heading">
+          <p className="eyebrow">{t('CHOOSE YOUR LEARNING PLAN')}</p>
+          <h2>{t('Two parallel ways to learn')}</h2>
+          <p>
+            {t('Choose the structured course curriculum or learn through recorded live sessions. Both paths complement your selected PLC specialization, and you can use either one at your own pace.')}
+          </p>
+        </div>
+
+        {canAccessLiveSessions ? (
+          <LiveSessionsSection
+            sessions={liveSessions}
+            canManage={canManageLiveSessions}
+            canManageActivities={canManageLiveActivities}
+            activities={liveActivities}
+            activityAttempts={liveActivityAttempts}
+            getCourseSlug={(session) => liveSessionCourse(session)?.slug ?? visibleTrackCourses[0]?.slug ?? ''}
+            navigateTo={navigateTo}
+            onAdd={() => setEditingLiveSession(null)}
+            onEdit={(session) => setEditingLiveSession(session)}
+            onDelete={handleDeleteTrackLiveSession}
+            onAddActivity={(session) => setEditingLiveActivity({ lesson: session, activity: null })}
+            onEditActivity={(session, activity) => setEditingLiveActivity({ lesson: session, activity })}
+            onDeleteActivity={handleDeleteTrackLiveActivity}
+            t={t}
+          />
+        ) : null}
+
+        <section className={`academy-module academy-track-course-list-section academy-track-option-section${coursesExpanded ? ' expanded' : ''}`}>
+          <div className="academy-module-header">
+            <BookOpen size={20} />
+            <div>
+              <h2>{t('Courses and lessons')}</h2>
+              <p>{t('Explore the complete course curriculum, lessons, quizzes, and learning activities.')}</p>
+            </div>
+            <span className="academy-live-count">{visibleTrackCourses.length} {t(visibleTrackCourses.length === 1 ? 'course' : 'courses')}</span>
+            <button
+              className="academy-live-toggle"
+              type="button"
+              aria-expanded={coursesExpanded}
+              aria-controls={coursesContentId}
+              aria-label={t(coursesExpanded ? 'Collapse courses and lessons' : 'Expand courses and lessons')}
+              onClick={() => setCoursesExpanded((current) => !current)}
+            >
+              <ChevronDown size={20} />
+            </button>
+          </div>
+          <div className="academy-track-courses-content" id={coursesContentId} hidden={!coursesExpanded}>
+          <section className="academy-curriculum-section" ref={curriculumRef}>
           <div className="academy-featured-heading academy-curriculum-heading">
             <p className="eyebrow">CURRICULUM MAP</p>
             <h2>{t('Explore the complete study plan')}</h2>
@@ -2134,14 +2314,6 @@ export function AcademyTrackPage({
           </div>
         </section>
 
-        <section className="academy-track-course-list-section">
-          <div className="academy-featured-heading academy-curriculum-heading">
-            <p className="eyebrow">{t('COURSE LIST')}</p>
-            <h2>{t('Courses and lessons')}</h2>
-            <span>
-              {t('Each course is prepared for future lesson content, video, quizzes, completion tracking, and membership access rules.')}
-            </span>
-          </div>
           <div className="academy-track-course-list-grid">
             {visibleTrackCourses.map((course) => {
               const status = getTrackCourseStatus(course, trackCompletion);
@@ -2168,7 +2340,28 @@ export function AcademyTrackPage({
               );
             })}
           </div>
+          </div>
         </section>
+
+        {editingLiveActivity ? (
+          <ActivityEditor
+            activity={editingLiveActivity.activity}
+            lesson={editingLiveActivity.lesson}
+            destinationLessons={liveSessions}
+            onCancel={() => setEditingLiveActivity(null)}
+            onSave={handleSaveTrackLiveActivity}
+            t={t}
+          />
+        ) : null}
+        {editingLiveSession !== undefined ? (
+          <LiveSessionEditor
+            session={editingLiveSession}
+            courseId={(editingLiveSession ? liveSessionCourse(editingLiveSession)?.id : publishedCourses.find((course) => visibleTrackCourses.some((item) => item.slug === course.slug))?.id) ?? ''}
+            onCancel={() => setEditingLiveSession(undefined)}
+            onSave={handleSaveTrackLiveSession}
+            t={t}
+          />
+        ) : null}
 
         <section className="academy-track-progress-section">
           <div className="academy-track-progress-card">
@@ -2724,10 +2917,6 @@ export function AcademyCoursePage({ user, navigateTo, courseSlug, t = defaultT, 
   const [loading, setLoading] = React.useState(true);
   const [message, setMessage] = React.useState<string | null>(null);
   const [editingActivity, setEditingActivity] = React.useState<{ lesson: AcademyLesson; activity: AcademyActivity | null } | null>(null);
-  const [liveSessions, setLiveSessions] = React.useState<AcademyLesson[]>([]);
-  const [canAccessLiveSessions, setCanAccessLiveSessions] = React.useState(false);
-  const [canManageLiveSessions, setCanManageLiveSessions] = React.useState(false);
-  const [editingLiveSession, setEditingLiveSession] = React.useState<AcademyLesson | null | undefined>(undefined);
 
   const loadCourse = React.useCallback(async () => {
     setLoading(true);
@@ -2738,20 +2927,15 @@ export function AcademyCoursePage({ user, navigateTo, courseSlug, t = defaultT, 
       setBundle(nextBundle);
 
       if (nextBundle && user) {
-        const [nextEnrollment, nextProgress, nextSummary, nextAdmin, nextStaff, nextLiveAccess, nextLiveManager, nextCertificate, nextActivities] = await Promise.all([
+        const [nextEnrollment, nextProgress, nextSummary, nextAdmin, nextStaff, nextCertificate, nextActivities] = await Promise.all([
           getEnrollmentStatus(user.id, nextBundle.course.id),
           fetchLessonProgressForCourse(user.id, nextBundle.course.id),
           getCourseProgressSummary(user.id, nextBundle.course.id),
           isAdminUser(user.id),
           canManageAcademyActivities(user.id),
-          canAccessAcademyLiveSessions(user.id),
-          canManageAcademyLiveSessions(user.id),
           fetchCertificateForCourse(user.id, nextBundle.course.id),
           fetchActivitiesForCourse(nextBundle.course.id),
         ]);
-        const nextLiveSessions = nextLiveAccess
-          ? await fetchLiveSessionsForCourse(nextBundle.course.id, nextLiveManager)
-          : [];
         const nextActivityAttempts = await fetchActivityAttemptsForCourse(
           user.id,
           nextActivities.map((activityItem) => activityItem.id),
@@ -2764,9 +2948,6 @@ export function AcademyCoursePage({ user, navigateTo, courseSlug, t = defaultT, 
         setAdmin(nextAdmin);
         setCanManageActivities(nextStaff);
         setCertificate(nextCertificate);
-        setCanAccessLiveSessions(nextLiveAccess);
-        setCanManageLiveSessions(nextLiveManager);
-        setLiveSessions(nextLiveSessions);
       } else {
         setEnrollment(null);
         setProgress([]);
@@ -2776,9 +2957,6 @@ export function AcademyCoursePage({ user, navigateTo, courseSlug, t = defaultT, 
         setCourseProgress(0);
         setAdmin(false);
         setCanManageActivities(false);
-        setCanAccessLiveSessions(false);
-        setCanManageLiveSessions(false);
-        setLiveSessions([]);
       }
     } catch (caught) {
       setMessage(getAcademyDatabaseErrorMessage());
@@ -2859,48 +3037,6 @@ export function AcademyCoursePage({ user, navigateTo, courseSlug, t = defaultT, 
       await loadCourse();
     } catch (caught) {
       setMessage(getReadableErrorMessage(caught, 'Activity could not be deleted.'));
-    }
-  };
-
-  const handleSaveLiveSession = async (input: {
-    title: string;
-    slug: string;
-    description: string;
-    videoProvider: AcademyLesson['video_provider'];
-    videoId: string;
-    videoUrl: string;
-    durationSeconds: number | null;
-    status: AcademyLessonStatus;
-    verifiedUploadId?: string | null;
-  }) => {
-    if (!bundle) return;
-    try {
-      await saveAcademyLiveSession({
-        id: editingLiveSession?.id,
-        courseId: bundle.course.id,
-        ...input,
-        orderIndex: editingLiveSession?.order_index ?? liveSessions.length,
-      });
-      if (input.videoProvider === 'cloudflare_r2' && input.verifiedUploadId && editingLiveSession?.id) {
-        void cleanupQueuedR2Objects(editingLiveSession.id);
-      }
-      setEditingLiveSession(undefined);
-      await loadCourse();
-    } catch (caught) {
-      const errorMessage = getReadableErrorMessage(caught, 'Live session could not be saved.');
-      setMessage(errorMessage);
-      throw caught instanceof Error ? caught : new Error(errorMessage);
-    }
-  };
-
-  const handleDeleteLiveSession = async (session: AcademyLesson) => {
-    if (!window.confirm(t(`Delete "${session.title}"?`))) return;
-    try {
-      if (session.video_provider === 'cloudflare_r2') await deleteR2Recording(session.id);
-      else await deleteAcademyLiveSession(session.id);
-      await loadCourse();
-    } catch (caught) {
-      setMessage(getReadableErrorMessage(caught, 'Live session could not be deleted.'));
     }
   };
 
@@ -3035,41 +3171,14 @@ export function AcademyCoursePage({ user, navigateTo, courseSlug, t = defaultT, 
             />
           ) : null}
         </div>
-        {canAccessLiveSessions ? (
-          <LiveSessionsBlock
-            sessions={liveSessions}
-            canManage={canManageLiveSessions}
-            canManageActivities={canManageActivities}
-            activities={activities}
-            activityAttempts={activityAttempts}
-            courseSlug={bundle.course.slug}
-            navigateTo={navigateTo}
-            onAdd={() => setEditingLiveSession(null)}
-            onEdit={(session) => setEditingLiveSession(session)}
-            onDelete={handleDeleteLiveSession}
-            onAddActivity={(session) => setEditingActivity({ lesson: session, activity: null })}
-            onEditActivity={(session, activity) => setEditingActivity({ lesson: session, activity })}
-            onDeleteActivity={handleDeleteActivity}
-            t={t}
-          />
-        ) : null}
       </section>
       {editingActivity ? (
         <ActivityEditor
           activity={editingActivity.activity}
           lesson={editingActivity.lesson}
-          destinationLessons={[...allLessons, ...liveSessions]}
+          destinationLessons={allLessons}
           onCancel={() => setEditingActivity(null)}
           onSave={handleSaveActivity}
-          t={t}
-        />
-      ) : null}
-      {editingLiveSession !== undefined ? (
-        <LiveSessionEditor
-          session={editingLiveSession}
-          courseId={bundle.course.id}
-          onCancel={() => setEditingLiveSession(undefined)}
-          onSave={handleSaveLiveSession}
           t={t}
         />
       ) : null}
@@ -3077,8 +3186,8 @@ export function AcademyCoursePage({ user, navigateTo, courseSlug, t = defaultT, 
   );
 }
 
-function LiveSessionsBlock({
-  sessions, canManage, canManageActivities, activities, activityAttempts, courseSlug, navigateTo,
+export function LiveSessionsSection({
+  sessions, canManage, canManageActivities, activities, activityAttempts, getCourseSlug, navigateTo,
   onAdd, onEdit, onDelete, onAddActivity, onEditActivity, onDeleteActivity, t = defaultT,
 }: {
   sessions: AcademyLesson[];
@@ -3086,7 +3195,7 @@ function LiveSessionsBlock({
   canManageActivities: boolean;
   activities: AcademyActivity[];
   activityAttempts: AcademyActivityAttempt[];
-  courseSlug: string;
+  getCourseSlug: (session: AcademyLesson) => string;
   navigateTo: (path: string) => void;
   onAdd: () => void;
   onEdit: (session: AcademyLesson) => void;
@@ -3096,29 +3205,34 @@ function LiveSessionsBlock({
   onDeleteActivity: (activity: AcademyActivity) => void;
   t?: AcademyTranslator;
 }) {
+  const [expanded, setExpanded] = React.useState(false);
+  const contentId = React.useId();
   return (
-    <article className="academy-module academy-live-sessions">
-      <div className="academy-exclusive-label">
-        <img src="/assets/academy/badges/license-enterprise.png" alt="" />
-        <div>
-          <strong>{t('Enterprise')}</strong>
-          <span>{t('Rank Exclusive Access')}</span>
-          <em>{t('Premium Academy benefit')}</em>
-        </div>
-      </div>
+    <section className={`academy-module academy-live-sessions academy-track-live-sessions${expanded ? ' expanded' : ''}`}>
       <div className="academy-module-header">
         <Radar size={20} />
         <div>
           <h2>{t('Live Sessions Recordings')}</h2>
           <p>{t('Rewatch exclusive live classes, workshops, and mentor sessions.')}</p>
         </div>
+        <span className="academy-live-count">{sessions.length} {t(sessions.length === 1 ? 'session' : 'sessions')}</span>
         {canManage ? (
-          <button className="academy-live-add" type="button" onClick={onAdd}>
+          <button className="academy-live-add" type="button" onClick={(event) => { event.stopPropagation(); onAdd(); }}>
             <Plus size={15} />{t('Add recording')}
           </button>
         ) : null}
+        <button
+          className="academy-live-toggle"
+          type="button"
+          aria-expanded={expanded}
+          aria-controls={contentId}
+          aria-label={t(expanded ? 'Collapse live session recordings' : 'Expand live session recordings')}
+          onClick={() => setExpanded((current) => !current)}
+        >
+          <ChevronDown size={20} />
+        </button>
       </div>
-      <div className="academy-lesson-list">
+      <div className="academy-lesson-list" id={contentId} hidden={!expanded}>
         {sessions.map((session) => {
           const sessionActivities = activities.filter((activityItem) => activityItem.lesson_id === session.id);
           return (
@@ -3126,7 +3240,7 @@ function LiveSessionsBlock({
             <button
               className="academy-lesson-row"
               type="button"
-              onClick={() => navigateTo(`/academy/${courseSlug}/live-sessions/${session.slug}`)}
+              onClick={() => navigateTo(`/academy/${getCourseSlug(session)}/live-sessions/${session.slug}`)}
             >
               <span className="academy-lesson-icon"><PlayCircle size={18} /></span>
               <span>
@@ -3147,7 +3261,7 @@ function LiveSessionsBlock({
                 attempt={activityAttempts.find((attempt) => attempt.activity_id === activityItem.id)}
                 locked={false}
                 canManage={canManageActivities}
-                courseSlug={courseSlug}
+                courseSlug={getCourseSlug(session)}
                 navigateTo={navigateTo}
                 onEdit={() => onEditActivity(session, activityItem)}
                 onDelete={() => onDeleteActivity(activityItem)}
@@ -3169,7 +3283,7 @@ function LiveSessionsBlock({
         })}
         {sessions.length === 0 ? <p className="academy-live-empty">{t('No live session recordings have been published yet.')}</p> : null}
       </div>
-    </article>
+    </section>
   );
 }
 
