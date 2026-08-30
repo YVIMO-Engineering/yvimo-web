@@ -27948,6 +27948,62 @@ body.work-center-map-expanded .logged-workspace {
   white-space: nowrap;
 }
 
+.academy-live-enterprise-badge {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+  min-height: 38px;
+  border: 1px solid rgba(93, 72, 176, 0.28);
+  border-radius: 10px;
+  padding: 4px 9px 4px 5px;
+  background: #f5f2ff;
+  color: var(--ink);
+}
+
+.academy-live-enterprise-badge > img {
+  width: 30px;
+  height: 30px;
+  object-fit: contain;
+}
+
+.academy-live-enterprise-badge > span {
+  display: grid;
+  gap: 1px;
+}
+
+.academy-live-enterprise-badge strong {
+  font-size: 11px;
+  line-height: 1;
+}
+
+.academy-live-enterprise-badge em {
+  color: #5d48b0;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.academy-live-enterprise-badge.professional {
+  border-color: rgba(0, 153, 153, 0.24);
+  background: #f0fbfb;
+}
+
+.academy-live-enterprise-badge.professional em {
+  color: #007f7f;
+}
+
+.academy-course-access-badges {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+}
+
 .academy-live-toggle {
   display: inline-grid;
   flex: 0 0 auto;
@@ -28253,6 +28309,10 @@ body.work-center-map-expanded .logged-workspace {
     margin-left: 32px;
   }
 
+  .academy-track-live-sessions .academy-live-enterprise-badge {
+    margin-left: 32px;
+  }
+
   .academy-track-option-section .academy-module-header {
     align-items: flex-start;
     flex-wrap: wrap;
@@ -28263,6 +28323,11 @@ body.work-center-map-expanded .logged-workspace {
   }
 
   .academy-track-option-section .academy-live-count {
+    margin-left: 32px;
+  }
+
+  .academy-track-option-section .academy-course-access-badges {
+    flex-wrap: wrap;
     margin-left: 32px;
   }
 }

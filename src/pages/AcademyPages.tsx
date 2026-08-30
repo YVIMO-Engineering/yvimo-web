@@ -2132,6 +2132,22 @@ export function AcademyTrackPage({
               <h2>{t('Courses and lessons')}</h2>
               <p>{t('Explore the complete course curriculum, lessons, quizzes, and learning activities.')}</p>
             </div>
+            <span className="academy-course-access-badges" aria-label={t('Available with Professional or Enterprise rank')}>
+              <span className="academy-live-enterprise-badge professional" title={t('Available with Professional rank')}>
+                <img src="/assets/academy/badges/license-professional.png" alt="" aria-hidden="true" />
+                <span>
+                  <strong>{t('Professional')}</strong>
+                  <em>{t('Full access')}</em>
+                </span>
+              </span>
+              <span className="academy-live-enterprise-badge" title={t('Available with Enterprise rank')}>
+                <img src="/assets/academy/badges/license-enterprise.png" alt="" aria-hidden="true" />
+                <span>
+                  <strong>{t('Enterprise')}</strong>
+                  <em>{t('Full access')}</em>
+                </span>
+              </span>
+            </span>
             <span className="academy-live-count">{visibleTrackCourses.length} {t(visibleTrackCourses.length === 1 ? 'course' : 'courses')}</span>
             <button
               className="academy-live-toggle"
@@ -3215,6 +3231,13 @@ export function LiveSessionsSection({
           <h2>{t('Live Sessions Recordings')}</h2>
           <p>{t('Rewatch exclusive live classes, workshops, and mentor sessions.')}</p>
         </div>
+        <span className="academy-live-enterprise-badge" title={t('Available with Enterprise rank')}>
+          <img src="/assets/academy/badges/license-enterprise.png" alt="" aria-hidden="true" />
+          <span>
+            <strong>{t('Enterprise')}</strong>
+            <em>{t('Exclusive access')}</em>
+          </span>
+        </span>
         <span className="academy-live-count">{sessions.length} {t(sessions.length === 1 ? 'session' : 'sessions')}</span>
         {canManage ? (
           <button className="academy-live-add" type="button" onClick={(event) => { event.stopPropagation(); onAdd(); }}>
