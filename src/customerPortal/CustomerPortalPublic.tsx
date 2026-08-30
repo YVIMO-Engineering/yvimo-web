@@ -3,6 +3,8 @@ import { Bell, Building2, ChevronRight, ClipboardList, FileText, HelpCircle, Lay
 import { customerPortalSupabase as supabase } from '../lib/supabaseClient';
 import { useSupabaseRealtimeRefresh } from '../lib/useSupabaseRealtimeRefresh';
 import { CustomerPortalDashboard } from './CustomerPortalDashboard';
+import { CustomerPortalTools } from './CustomerPortalTools';
+import { CustomerPortalProductionTracking } from './CustomerPortalProductionTracking';
 import '../manufacturing/customerPortal.css';
 import './customerPortalBrand.css';
 
@@ -11,7 +13,7 @@ type SupplierOrganization = { name: string; logoUrl?: string } | null;
 type Props = { user: User; supplierOrganization: SupplierOrganization; onSignOut: () => void };
 
 const navigation = [
-  { label: 'Dashboard', icon: LayoutDashboard }, { label: 'My Active Orders', icon: ClipboardList }, { label: 'Tools', icon: Wrench },
+  { label: 'Dashboard', icon: LayoutDashboard }, { label: 'My Active Orders', icon: ClipboardList }, { label: 'Tools', icon: Wrench }, { label: 'Production Tracking', icon: FileText },
   { label: 'Documents', icon: FileText }, { label: 'Shipments', icon: Truck }, { label: 'Notifications', icon: Bell }, { label: 'Profile', icon: UserRound },
 ];
 
@@ -58,7 +60,7 @@ export function CustomerPortalPublic({ user, supplierOrganization, onSignOut }: 
     </aside>
     <section className="cp-public-main">
       <header><button className="cp-mobile-menu" onClick={() => setMobileOpen(true)}><Menu size={20} /></button><div><small>{new Intl.DateTimeFormat('en', { weekday: 'long', month: 'long', day: '2-digit' }).format(new Date()).toUpperCase()}</small><strong>Good morning, {user.name.split(' ')[0]}</strong></div><div className="cp-public-header-actions"><button><Search size={19} /></button><button><Bell size={19} /></button><button onClick={onSignOut} title="Sign out"><LogOut size={18} /></button></div></header>
-      {active === 'Dashboard' ? <CustomerPortalDashboard organizationId={portalContext.organizationId} customerId={portalContext.customerId} supplierName={supplierName} onOpenOrders={() => setActive('My Active Orders')} /> : active === 'My Active Orders' ? <CustomerPortalDashboard view="orders" organizationId={portalContext.organizationId} customerId={portalContext.customerId} supplierName={supplierName} onOpenOrders={() => undefined} /> : <div className="cp-section-placeholder"><span><Settings size={28} /></span><small>CUSTOMER PORTAL</small><h1>{active}</h1><p>This section is ready in the portal navigation. Its operational content and permissions will be connected in the next phase.</p><button onClick={() => setActive('Dashboard')}>Return to dashboard</button></div>}
+      {active === 'Dashboard' ? <CustomerPortalDashboard organizationId={portalContext.organizationId} customerId={portalContext.customerId} supplierName={supplierName} onOpenOrders={() => setActive('My Active Orders')} /> : active === 'My Active Orders' ? <CustomerPortalDashboard view="orders" organizationId={portalContext.organizationId} customerId={portalContext.customerId} supplierName={supplierName} onOpenOrders={() => undefined} /> : active === 'Tools' ? <CustomerPortalTools organizationId={portalContext.organizationId} customerId={portalContext.customerId} /> : active === 'Production Tracking' ? <CustomerPortalProductionTracking organizationId={portalContext.organizationId} customerId={portalContext.customerId} /> : <div className="cp-section-placeholder"><span><Settings size={28} /></span><small>CUSTOMER PORTAL</small><h1>{active}</h1><p>This section is ready in the portal navigation. Its operational content and permissions will be connected in the next phase.</p><button onClick={() => setActive('Dashboard')}>Return to dashboard</button></div>}
     </section>
   </main>;
 }
