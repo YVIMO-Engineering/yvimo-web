@@ -28627,6 +28627,7 @@ body.work-center-map-expanded .logged-workspace {
   margin: 0;
   max-width: 760px;
 }
+.academy-capstone-description { white-space: pre-wrap; }
 
 .academy-capstone-admin-actions button,
 .academy-capstone-editor-actions button {
@@ -28658,12 +28659,13 @@ body.work-center-map-expanded .logged-workspace {
 
 .academy-capstone-editor > label { display: grid; font-weight: 800; gap: 0.35rem; }
 .academy-capstone-editor input,
-.academy-capstone-editor textarea { border: 1px solid #d5dce5; border-radius: 8px; font: inherit; padding: 0.7rem; }
+.academy-capstone-editor textarea { border: 1px solid #d5dce5; border-radius: 8px; font: inherit; font-weight: 400; padding: 0.7rem; }
 .academy-capstone-editor textarea { min-height: 105px; resize: vertical; }
 .academy-capstone-file-picker { align-items: center; border: 1px dashed #bda1fb; border-radius: 9px; color: #6630ce; cursor: pointer; display: flex !important; grid-template-columns: auto 1fr; padding: 0.8rem; }
 .academy-capstone-file-picker input { display: none; }
 
 .academy-capstone-content {
+  align-items: start;
   display: grid;
   gap: 1rem;
   grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.65fr);
@@ -28672,7 +28674,25 @@ body.work-center-map-expanded .logged-workspace {
 
 .academy-capstone-brief,
 .academy-capstone-submission { background: #fff; border: 1px solid #e1d9ef; border-radius: 12px; display: grid; gap: 0.7rem; padding: 0.9rem; }
-.academy-capstone-brief iframe { border: 1px solid #dce1e8; border-radius: 8px; height: 440px; width: 100%; }
+.academy-project-brief-file { align-items: center; background: #f7f5fb; border: 1px solid #ddd3ef; border-radius: 10px; display: grid; gap: 10px; grid-template-columns: 44px minmax(0, 1fr) auto; padding: 11px; }
+.academy-project-brief-file > span { background: #eee7ff; border-radius: 9px; color: #7340df; display: grid; height: 44px; place-items: center; width: 44px; }
+.academy-project-brief-file > div { display: grid; min-width: 0; }
+.academy-project-brief-file > div > strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.academy-project-brief-file em { color: var(--muted); font-size: 11px; font-style: normal; }
+.academy-project-brief-file button { align-items: center; background: #fff; border: 1px solid #c7b1f6; border-radius: 8px; color: #6833cf; cursor: pointer; display: inline-flex; font-weight: 850; gap: 5px; padding: 8px 10px; }
+.academy-project-brief-file button:disabled { cursor: wait; opacity: 0.55; }
+.academy-project-upload-message { align-items: center; background: #f3effd; border: 1px solid #cfbdf4; border-radius: 9px; color: #6630ce; display: flex; gap: 9px; padding: 9px 11px; }
+.academy-project-upload-message.success { background: #edf9f3; border-color: #a9dcc4; color: #19714e; }
+.academy-project-upload-message > span:last-child { display: grid; }
+.academy-project-upload-message em { font-size: 11px; font-style: normal; opacity: 0.78; }
+.academy-project-upload-spinner { animation: academy-project-spin 0.8s linear infinite; border: 2px solid rgba(102, 48, 206, 0.22); border-radius: 999px; border-top-color: #6630ce; height: 17px; width: 17px; }
+@keyframes academy-project-spin { to { transform: rotate(360deg); } }
+.academy-project-pdf-modal { background: #fff; border: 1px solid #d1bdfb; border-radius: 16px; box-shadow: 0 28px 90px rgba(30, 20, 50, 0.34); display: grid; grid-template-rows: auto minmax(0, 1fr); height: 90vh; max-width: 1100px; overflow: hidden; padding: 16px; width: 94vw; }
+.academy-project-pdf-modal > header { align-items: flex-start; display: flex; gap: 14px; justify-content: space-between; padding-bottom: 11px; }
+.academy-project-pdf-modal h2 { margin: 3px 0; }
+.academy-project-pdf-modal header p { color: var(--muted); margin: 0; }
+.academy-project-pdf-modal header button { background: #fff; border: 1px solid #d8dce3; border-radius: 9px; cursor: pointer; display: grid; padding: 8px; place-items: center; }
+.academy-project-pdf-modal iframe { border: 1px solid #dce1e8; border-radius: 9px; height: 100%; width: 100%; }
 .academy-capstone-empty { align-items: center; background: #f7f5fa; border-radius: 8px; color: var(--muted); display: flex; gap: 0.5rem; justify-content: center; min-height: 180px; }
 .academy-capstone-submission > p,
 .academy-capstone-message,

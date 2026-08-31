@@ -17,6 +17,7 @@ import {
   ClipboardCheck,
   Cpu,
   Download,
+  Eye,
   FileUp,
   FileText,
   GraduationCap,
@@ -1546,6 +1547,26 @@ function getTrackRequestedSpecializationSlug() {
 }
 
 const academyTrackSpecializationStoragePrefix = 'yvimo-academy-track-specialization:';
+const academyTrackPanelStoragePrefix = 'yvimo-academy-track-panel:';
+type AcademyTrackPanel = 'live-sessions' | 'courses' | 'project-details';
+
+function getPersistedTrackPanelState(trackSlug: string, specializationSlug: string | null | undefined, panel: AcademyTrackPanel) {
+  if (typeof window === 'undefined') return false;
+  try {
+    return window.localStorage.getItem(`${academyTrackPanelStoragePrefix}${trackSlug}:${specializationSlug ?? 'default'}:${panel}`) === 'open';
+  } catch {
+    return false;
+  }
+}
+
+function persistTrackPanelState(trackSlug: string, specializationSlug: string | null | undefined, panel: AcademyTrackPanel, open: boolean) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(`${academyTrackPanelStoragePrefix}${trackSlug}:${specializationSlug ?? 'default'}:${panel}`, open ? 'open' : 'closed');
+  } catch {
+    // Storage can be unavailable in private or restricted browser contexts.
+  }
+}
 
 function getPersistedTrackSpecializationSlug(trackSlug: string) {
   if (typeof window === 'undefined') return null;
@@ -1757,7 +1778,11 @@ export function AcademyTrackPage({
   const [editingLiveSession, setEditingLiveSession] = React.useState<AcademyLesson | null | undefined>(undefined);
   const [editingLiveActivity, setEditingLiveActivity] = React.useState<{ lesson: AcademyLesson; activity: AcademyActivity | null } | null>(null);
   const [liveRevision, setLiveRevision] = React.useState(0);
-  const [coursesExpanded, setCoursesExpanded] = React.useState(false);
+  const [coursesExpanded, setCoursesExpanded] = React.useState(() => getPersistedTrackPanelState(
+    trackSlug,
+    selectedSpecialization?.slug ?? null,
+    'courses',
+  ));
   const coursesContentId = React.useId();
   const curriculumRef = React.useRef<HTMLElement | null>(null);
 
@@ -1771,6 +1796,10 @@ export function AcademyTrackPage({
     if (!track || !selectedSpecialization?.slug) return;
     persistTrackSpecializationSlug(track.slug, selectedSpecialization.slug);
   }, [selectedSpecialization?.slug, track?.slug]);
+
+  React.useEffect(() => {
+    setCoursesExpanded(getPersistedTrackPanelState(trackSlug, selectedSpecialization?.slug ?? null, 'courses'));
+  }, [selectedSpecialization?.slug, trackSlug]);
 
   React.useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -1941,6 +1970,7 @@ export function AcademyTrackPage({
 
   const scrollToCurriculum = () => {
     setCoursesExpanded(true);
+    persistTrackPanelState(trackSlug, selectedSpecialization?.slug ?? null, 'courses', true);
     window.requestAnimationFrame(() => {
       curriculumRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
@@ -2297,7 +2327,11 @@ export function AcademyTrackPage({
               aria-expanded={coursesExpanded}
               aria-controls={coursesContentId}
               aria-label={t(coursesExpanded ? 'Collapse courses and lessons' : 'Expand courses and lessons')}
-              onClick={() => setCoursesExpanded((current) => !current)}
+              onClick={() => setCoursesExpanded((current) => {
+                const next = !current;
+                persistTrackPanelState(trackSlug, selectedSpecialization?.slug ?? null, 'courses', next);
+                return next;
+              })}
             >
               <ChevronDown size={20} />
             </button>
@@ -3554,8 +3588,8 @@ export function LiveSessionsSection({
   onReviewSubmission: (submission: AcademyLessonSubmission, status: AcademyLessonSubmission['status'], feedback?: string | null) => Promise<void>;
   t?: AcademyTranslator;
 }) {
-  const [expanded, setExpanded] = React.useState(initiallyExpanded);
-  const [projectExpanded, setProjectExpanded] = React.useState(false);
+  const [expanded, setExpanded] = React.useState(() => initiallyExpanded || getPersistedTrackPanelState(trackSlug, specializationSlug, 'live-sessions'));
+  const [projectExpanded, setProjectExpanded] = React.useState(() => getPersistedTrackPanelState(trackSlug, specializationSlug, 'project-details'));
   const [editingProject, setEditingProject] = React.useState(false);
   const [projectTitle, setProjectTitle] = React.useState('');
   const [projectDescription, setProjectDescription] = React.useState('');
@@ -3564,6 +3598,7 @@ export function LiveSessionsSection({
   const [projectBusy, setProjectBusy] = React.useState(false);
   const [projectMessage, setProjectMessage] = React.useState<string | null>(null);
   const [projectBriefUrl, setProjectBriefUrl] = React.useState<string | null>(null);
+  const [projectPreviewOpen, setProjectPreviewOpen] = React.useState(false);
   const [reviewedActivity, setReviewedActivity] = React.useState<{ activity: AcademyActivity; attempt?: AcademyActivityAttempt } | null>(null);
   const contentId = React.useId();
   const completedActivityCount = activities.filter((activityItem) => (
@@ -3596,6 +3631,10 @@ export function LiveSessionsSection({
     },
   ] as const;
   React.useEffect(() => {
+    setExpanded(initiallyExpanded || getPersistedTrackPanelState(trackSlug, specializationSlug, 'live-sessions'));
+    setProjectExpanded(getPersistedTrackPanelState(trackSlug, specializationSlug, 'project-details'));
+  }, [initiallyExpanded, specializationSlug, trackSlug]);
+  React.useEffect(() => {
     if (!projectExpanded || !projectResource) return;
     void getLessonResourceDownloadUrl(projectResource)
       .then(setProjectBriefUrl)
@@ -3609,14 +3648,16 @@ export function LiveSessionsSection({
     setProjectMessage(null);
     setEditingProject(true);
     setProjectExpanded(true);
+    persistTrackPanelState(trackSlug, specializationSlug, 'project-details', true);
   };
 
   const submitProjectEditor = async () => {
     if (!projectTitle.trim() || projectBusy) return;
     setProjectBusy(true);
-    setProjectMessage('Saving project...');
+    setProjectMessage(projectBrief ? 'Uploading project PDF...' : 'Saving project...');
     try {
       await onSaveProject({ title: projectTitle, description: projectDescription, briefFile: projectBrief });
+      setProjectBrief(null);
       setEditingProject(false);
       setProjectMessage('Project saved');
     } catch (caught) {
@@ -3672,7 +3713,11 @@ export function LiveSessionsSection({
           aria-expanded={expanded}
           aria-controls={contentId}
           aria-label={t(expanded ? 'Collapse live session recordings' : 'Expand live session recordings')}
-          onClick={() => setExpanded((current) => !current)}
+          onClick={() => setExpanded((current) => {
+            const next = !current;
+            persistTrackPanelState(trackSlug, specializationSlug, 'live-sessions', next);
+            return next;
+          })}
         >
           <ChevronDown size={20} />
         </button>
@@ -3703,7 +3748,11 @@ export function LiveSessionsSection({
                       className={`academy-project-details-button${projectExpanded ? ' expanded' : ''}`}
                       type="button"
                       aria-expanded={projectExpanded}
-                      onClick={() => setProjectExpanded((current) => !current)}
+                      onClick={() => setProjectExpanded((current) => {
+                        const next = !current;
+                        persistTrackPanelState(trackSlug, specializationSlug, 'project-details', next);
+                        return next;
+                      })}
                     >
                       {t('Details')} <ChevronDown size={15} />
                     </button>
@@ -3738,7 +3787,7 @@ export function LiveSessionsSection({
               <div>
                 <span className="eyebrow">{t('Capstone project')}</span>
                 <h3>{t(project?.title ?? 'Project details')}</h3>
-                <p>{t(project?.description ?? 'The project brief has not been published yet.')}</p>
+                <p className="academy-capstone-description">{t(project?.description ?? 'The project brief has not been published yet.')}</p>
               </div>
               {canManage ? (
                 <div className="academy-capstone-admin-actions">
@@ -3757,7 +3806,8 @@ export function LiveSessionsSection({
               <div className="academy-capstone-editor">
                 <label>{t('Project title')}<input value={projectTitle} onChange={(event) => setProjectTitle(event.target.value)} /></label>
                 <label>{t('Description')}<textarea value={projectDescription} onChange={(event) => setProjectDescription(event.target.value)} /></label>
-                <label className="academy-capstone-file-picker"><FileText size={18} />{projectBrief ? projectBrief.name : t('Attach project PDF')}<input type="file" accept="application/pdf" onChange={(event) => setProjectBrief(event.target.files?.[0] ?? null)} /></label>
+                <label className="academy-capstone-file-picker"><FileText size={18} />{projectBrief ? projectBrief.name : t('Attach project PDF')}<input type="file" accept="application/pdf" onChange={(event) => { const file = event.target.files?.[0] ?? null; setProjectBrief(file); setProjectMessage(file ? `PDF ready to upload: ${file.name}` : null); }} /></label>
+                {projectMessage ? <div className={`academy-project-upload-message${projectBusy ? ' busy' : projectMessage === 'Project saved' ? ' success' : ''}`}>{projectBusy ? <span className="academy-project-upload-spinner" /> : <FileText size={17} />}<span><strong>{t(projectMessage)}</strong>{projectBrief && !projectBusy ? <em>{formatFileSize(projectBrief.size)}</em> : null}</span></div> : null}
                 <div className="academy-capstone-editor-actions">
                   <button type="button" onClick={() => setEditingProject(false)}>{t('Cancel')}</button>
                   <button className="primary" type="button" onClick={() => void submitProjectEditor()} disabled={projectBusy || !projectTitle.trim()}><Save size={15} />{t('Save project')}</button>
@@ -3768,7 +3818,13 @@ export function LiveSessionsSection({
               <div className="academy-capstone-content">
                 <div className="academy-capstone-brief">
                   <strong>{t('Project brief')}</strong>
-                  {projectBriefUrl ? <iframe src={projectBriefUrl} title={t(`${project.title} PDF`)} /> : <div className="academy-capstone-empty"><FileText size={25} />{t('No PDF attached')}</div>}
+                  {projectResource ? (
+                    <div className="academy-project-brief-file">
+                      <span><FileText size={24} /></span>
+                      <div><strong>{projectResource.file_name}</strong><em>{formatFileSize(projectResource.file_size)} · PDF</em></div>
+                      <button type="button" onClick={() => setProjectPreviewOpen(true)} disabled={!projectBriefUrl}><Eye size={17} />{t('Preview')}</button>
+                    </div>
+                  ) : <div className="academy-capstone-empty"><FileText size={25} />{t('No PDF attached')}</div>}
                 </div>
                 <div className="academy-capstone-submission">
                   <strong>{t('Submit your project')}</strong>
@@ -3779,7 +3835,7 @@ export function LiveSessionsSection({
                     <strong>{projectFiles.length ? `${projectFiles.length} ${t('files selected')}` : t('Choose project files')}</strong>
                   </label> : null}
                   {!reviewStudent ? <button className="academy-complete-button" type="button" onClick={() => void submitProjectFiles()} disabled={projectBusy || projectFiles.length === 0}><FileUp size={16} />{projectBusy ? t('Uploading...') : t('Submit project')}</button> : null}
-                  {projectMessage ? <p className="academy-capstone-message">{t(projectMessage)}</p> : null}
+                  {projectMessage ? <div className={`academy-project-upload-message${projectBusy ? ' busy' : projectMessage === 'Project submitted' || projectMessage === 'Project saved' ? ' success' : ''}`}>{projectBusy ? <span className="academy-project-upload-spinner" /> : <CheckCircle2 size={17} />}<span><strong>{t(projectMessage)}</strong></span></div> : null}
                   {projectSubmissions.length ? <div className="academy-submission-history"><strong>{t('Submitted files')}</strong>{projectSubmissions.map((submission) => <SubmissionReviewRow submission={submission} onReview={onReviewSubmission} canReview={Boolean(reviewStudent)} t={t} key={submission.id} />)}</div> : null}
                 </div>
               </div>
@@ -3855,6 +3911,14 @@ export function LiveSessionsSection({
           onClose={() => setReviewedActivity(null)}
           t={t}
         />
+      ) : null}
+      {projectPreviewOpen && projectBriefUrl && project ? (
+        <div className="academy-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setProjectPreviewOpen(false); }}>
+          <section className="academy-project-pdf-modal" role="dialog" aria-modal="true" aria-labelledby="academy-project-pdf-title">
+            <header><div><span className="eyebrow">{t('PROJECT BRIEF')}</span><h2 id="academy-project-pdf-title">{project.title}</h2><p>{projectResource?.file_name}</p></div><button type="button" onClick={() => setProjectPreviewOpen(false)} aria-label={t('Close')}><X size={18} /></button></header>
+            <iframe src={projectBriefUrl} title={t(`${project.title} PDF`)} />
+          </section>
+        </div>
       ) : null}
     </section>
   );
