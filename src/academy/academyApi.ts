@@ -17,6 +17,7 @@ import type {
   AcademyLessonProgress,
   AcademyLessonResource,
   AcademyLessonSubmission,
+  AcademyTrackProject,
   AcademyModule,
   AcademyModuleTranslation,
   AcademyModuleWithLessons,
@@ -193,6 +194,20 @@ export async function canAccessAcademyLiveSessions(userId: string | null, client
 }
 
 export const canManageAcademyLiveSessions = canManageAcademyActivities;
+
+export type AcademyStudentSummary = {
+  id: string;
+  name: string | null;
+  email: string | null;
+  avatar_url: string | null;
+  subscription_tier: string | null;
+};
+
+export async function fetchAcademyStudents(client: AcademyClient = supabase) {
+  const { data, error } = await client.rpc('list_academy_students');
+  if (error) throw error;
+  return (data ?? []) as AcademyStudentSummary[];
+}
 
 function normalizeSharePointEmbed(value?: string | null) {
   const raw = value?.trim() ?? '';
@@ -1113,6 +1128,94 @@ export async function getLessonResourceDownloadUrl(
   return data.signedUrl;
 }
 
+export async function fetchTrackProject(
+  trackSlug: string,
+  specializationSlug: string | null,
+  client: AcademyClient = supabase,
+) {
+  let query = client
+    .from('academy_track_projects')
+    .select('*')
+    .eq('track_slug', trackSlug);
+  query = specializationSlug
+    ? query.eq('specialization_slug', specializationSlug)
+    : query.is('specialization_slug', null);
+  const { data, error } = await query.maybeSingle<AcademyTrackProject>();
+  if (error?.code === '42P01') return null;
+  if (error) throw error;
+  return data;
+}
+
+export async function fetchLessonResourceById(
+  resourceId: string | null,
+  client: AcademyClient = supabase,
+) {
+  if (!resourceId) return null;
+  const { data, error } = await client
+    .from('academy_lesson_resources')
+    .select('*')
+    .eq('id', resourceId)
+    .maybeSingle<AcademyLessonResource>();
+  if (error) throw error;
+  return data;
+}
+
+export async function saveTrackProject(
+  input: {
+    id?: string;
+    trackSlug: string;
+    specializationSlug?: string | null;
+    courseId: string;
+    lessonId: string;
+    title: string;
+    description: string;
+    resourceId?: string | null;
+    briefFile?: File | null;
+  },
+  client: AcademyClient = supabase,
+) {
+  const { data: sessionData } = await client.auth.getSession();
+  if (!await canManageAcademyLiveSessions(sessionData.session?.user.id ?? null, client)) {
+    throw new Error('Only Admin, Owner, or Instructor users can manage capstone projects.');
+  }
+  let resourceId = input.resourceId ?? null;
+  if (input.briefFile) {
+    const resource = await publishLessonResource({
+      courseId: input.courseId,
+      lessonId: input.lessonId,
+      title: `${input.title.trim()} brief`,
+      description: 'Capstone project PDF brief',
+      file: input.briefFile,
+      orderIndex: 0,
+    }, client);
+    resourceId = resource.id;
+  }
+  const payload = {
+    track_slug: input.trackSlug,
+    specialization_slug: input.specializationSlug ?? null,
+    course_id: input.courseId,
+    lesson_id: input.lessonId,
+    title: input.title.trim(),
+    description: input.description.trim(),
+    resource_id: resourceId,
+  };
+  const query = input.id
+    ? client.from('academy_track_projects').update(payload).eq('id', input.id)
+    : client.from('academy_track_projects').insert(payload);
+  const { data, error } = await query.select('*').single<AcademyTrackProject>();
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteTrackProject(id: string, client: AcademyClient = supabase) {
+  const { data: sessionData } = await client.auth.getSession();
+  if (!await canManageAcademyLiveSessions(sessionData.session?.user.id ?? null, client)) {
+    throw new Error('Only Admin, Owner, or Instructor users can manage capstone projects.');
+  }
+  const { error } = await client.from('academy_track_projects').delete().eq('id', id);
+  if (error) throw error;
+}
+
 export async function fetchLessonSubmissions(
   userId: string | null,
   lessonId: string,
@@ -1131,6 +1234,55 @@ export async function fetchLessonSubmissions(
   if (isMissingAcademyFilesTable(error)) return [];
   if (error) throw error;
   return data ?? [];
+}
+
+export async function fetchLessonSubmissionsForLessons(
+  userId: string,
+  lessonIds: string[],
+  client: AcademyClient = supabase,
+) {
+  if (lessonIds.length === 0) return [] as AcademyLessonSubmission[];
+  const { data, error } = await client
+    .from('academy_lesson_submissions')
+    .select('*')
+    .eq('user_id', userId)
+    .in('lesson_id', lessonIds)
+    .order('submitted_at', { ascending: false })
+    .returns<AcademyLessonSubmission[]>();
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function updateLessonSubmissionStatus(
+  submissionId: string,
+  status: AcademyLessonSubmission['status'],
+  feedback: string | null = null,
+  client: AcademyClient = supabase,
+) {
+  const { data, error } = await client
+    .from('academy_lesson_submissions')
+    .update({
+      status,
+      reviewer_feedback: feedback?.trim() || null,
+      reviewed_at: new Date().toISOString(),
+      reviewed_by: (await client.auth.getSession()).data.session?.user.id ?? null,
+    })
+    .eq('id', submissionId)
+    .select('*')
+    .single<AcademyLessonSubmission>();
+  if (error) throw error;
+  return data;
+}
+
+export async function getLessonSubmissionDownloadUrl(
+  submission: AcademyLessonSubmission,
+  client: AcademyClient = supabase,
+) {
+  const { data, error } = await client.storage
+    .from('academy-lesson-submissions')
+    .createSignedUrl(submission.storage_path, 60 * 5);
+  if (error) throw error;
+  return data.signedUrl;
 }
 
 export async function uploadLessonSubmission(

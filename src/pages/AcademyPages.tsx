@@ -59,8 +59,10 @@ import {
   createCertificateForTrack,
   deleteAcademyActivity,
   deleteAcademyLiveSession,
+  deleteTrackProject,
   enrollInFreeCourse,
   fetchActivitiesForCourse,
+  fetchAcademyStudents,
   fetchActivityAttempt,
   fetchActivityAttemptsForCourse,
   fetchActivityById,
@@ -74,13 +76,17 @@ import {
   fetchLessonProgressForLesson,
   fetchLessonProgressForCourse,
   fetchLessonResources,
+  fetchLessonResourceById,
   fetchLessonSubmissions,
+  fetchLessonSubmissionsForLessons,
   fetchPlayableLessonBySlug,
   fetchPublishedCourses,
   fetchPublishedTrackBundles,
+  fetchTrackProject,
   fetchTrackCertificatesForUser,
   fetchTrackProgressSummaries,
   getLessonResourceDownloadUrl,
+  getLessonSubmissionDownloadUrl,
   getCourseProgressSummary,
   getEnrollmentStatus,
   isAdminUser,
@@ -90,10 +96,13 @@ import {
   saveLessonNote,
   saveAcademyActivity,
   saveAcademyLiveSession,
+  saveTrackProject,
   updateLessonProgress,
+  updateLessonSubmissionStatus,
   uploadLessonSubmission,
   type AcademyCourseBundle,
   type AcademyTrackBundle,
+  type AcademyStudentSummary,
 } from '../academy/academyApi';
 import type {
   AcademyCertificate,
@@ -110,6 +119,7 @@ import type {
   AcademyLessonProgressState,
   AcademyLessonResource,
   AcademyLessonSubmission,
+  AcademyTrackProject,
   AcademyModuleWithLessons,
   AcademyTrackCertificate,
   AcademyTrackProgressSummary,
@@ -1572,6 +1582,7 @@ function getCourseReturnContext() {
   return {
     fromTrack,
     fromSpecialization: params.get('fromSpecialization'),
+    openSection: params.get('open'),
     returnY: Number.isFinite(returnY) ? Math.max(0, Math.round(returnY)) : 0,
   };
 }
@@ -1585,6 +1596,9 @@ function getCourseReturnPath(returnContext: ReturnType<typeof getCourseReturnCon
   }
   if (returnContext.returnY > 0) {
     params.set('returnY', String(returnContext.returnY));
+  }
+  if (returnContext.openSection) {
+    params.set('open', returnContext.openSection);
   }
 
   const query = params.toString();
@@ -1729,6 +1743,14 @@ export function AcademyTrackPage({
   const [liveSessions, setLiveSessions] = React.useState<AcademyLesson[]>([]);
   const [liveActivities, setLiveActivities] = React.useState<AcademyActivity[]>([]);
   const [liveActivityAttempts, setLiveActivityAttempts] = React.useState<AcademyActivityAttempt[]>([]);
+  const [liveSubmissions, setLiveSubmissions] = React.useState<AcademyLessonSubmission[]>([]);
+  const [projectSubmitted, setProjectSubmitted] = React.useState(false);
+  const [trackProject, setTrackProject] = React.useState<AcademyTrackProject | null>(null);
+  const [trackProjectResource, setTrackProjectResource] = React.useState<AcademyLessonResource | null>(null);
+  const [trackProjectSubmissions, setTrackProjectSubmissions] = React.useState<AcademyLessonSubmission[]>([]);
+  const [capstoneTarget, setCapstoneTarget] = React.useState<{ courseId: string; lessonId: string } | null>(null);
+  const [reviewStudent, setReviewStudent] = React.useState<AcademyStudentSummary | null>(null);
+  const [studentPickerOpen, setStudentPickerOpen] = React.useState(false);
   const [canAccessLiveSessions, setCanAccessLiveSessions] = React.useState(false);
   const [canManageLiveSessions, setCanManageLiveSessions] = React.useState(false);
   const [canManageLiveActivities, setCanManageLiveActivities] = React.useState(false);
@@ -1795,9 +1817,35 @@ export function AcademyTrackPage({
           ? (await Promise.all(trackPublishedCourses.map((course) => fetchActivitiesForCourse(course.id)))).flat()
               .filter((activityItem) => nextLiveSessions.some((session) => session.id === activityItem.lesson_id))
           : [];
-        const nextAttempts = user && nextActivities.length > 0
-          ? await fetchActivityAttemptsForCourse(user.id, nextActivities.map((activityItem) => activityItem.id))
+        const progressUserId = reviewStudent?.id ?? user?.id ?? null;
+        const nextAttempts = progressUserId && nextActivities.length > 0
+          ? await fetchActivityAttemptsForCourse(progressUserId, nextActivities.map((activityItem) => activityItem.id))
           : [];
+        const nextLiveSubmissions = progressUserId && nextLiveSessions.length > 0
+          ? await fetchLessonSubmissionsForLessons(progressUserId, nextLiveSessions.map((session) => session.id))
+          : [];
+        const capstoneTrackCourse = visibleTrackCourses.find((course) => course.slug.includes('capstone'));
+        const capstoneCourse = capstoneTrackCourse
+          ? items.find((course) => course.slug === capstoneTrackCourse.slug)
+          : null;
+        let nextProjectSubmitted = false;
+        let nextProject: AcademyTrackProject | null = null;
+        let nextProjectResource: AcademyLessonResource | null = null;
+        let nextProjectSubmissions: AcademyLessonSubmission[] = [];
+        let nextCapstoneTarget: { courseId: string; lessonId: string } | null = null;
+        if (capstoneCourse) {
+          const capstoneBundle = await fetchCourseBundle(capstoneCourse.slug, languageCode);
+          const capstoneLessons = capstoneBundle
+            ? [...capstoneBundle.modules.flatMap((module) => module.lessons), ...capstoneBundle.ungroupedLessons]
+            : [];
+          if (capstoneLessons[0]) nextCapstoneTarget = { courseId: capstoneCourse.id, lessonId: capstoneLessons[0].id };
+          nextProject = await fetchTrackProject(trackSlug, selectedSpecialization?.slug ?? null);
+          nextProjectResource = await fetchLessonResourceById(nextProject?.resource_id ?? null);
+          if (progressUserId && nextProject) {
+            nextProjectSubmissions = await fetchLessonSubmissions(progressUserId, nextProject.lesson_id);
+            nextProjectSubmitted = nextProjectSubmissions.length > 0;
+          }
+        }
         const progressEntries = await Promise.all(
           (visibleTrackCourses ?? []).map(async (trackCourse) => {
             const publishedCourse = items.find((item) => item.slug === trackCourse.slug);
@@ -1831,6 +1879,12 @@ export function AcademyTrackPage({
           setLiveSessions(nextLiveSessions);
           setLiveActivities(nextActivities);
           setLiveActivityAttempts(nextAttempts);
+          setLiveSubmissions(nextLiveSubmissions);
+          setProjectSubmitted(nextProjectSubmitted);
+          setTrackProject(nextProject);
+          setTrackProjectResource(nextProjectResource);
+          setTrackProjectSubmissions(nextProjectSubmissions);
+          setCapstoneTarget(nextCapstoneTarget);
         }
       })
       .catch(() => {
@@ -1843,7 +1897,7 @@ export function AcademyTrackPage({
     return () => {
       active = false;
     };
-  }, [languageCode, liveRevision, selectedSpecialization?.slug, track, trackSlug, user, visibleTrackCourses]);
+  }, [languageCode, liveRevision, reviewStudent?.id, selectedSpecialization?.slug, track, trackSlug, user, visibleTrackCourses]);
 
   if (!track) {
     return (
@@ -1878,6 +1932,8 @@ export function AcademyTrackPage({
     ? returnSection
     : track.category;
   const academyBackPath = `/academy?section=${backSection}`;
+  const reopenLiveSessions = typeof window !== 'undefined'
+    && new URLSearchParams(window.location.search).get('open') === 'live-sessions';
 
   const selectCourse = (course: AcademyTrackCourse) => {
     setSelectedSlug(course.slug);
@@ -1980,6 +2036,52 @@ export function AcademyTrackPage({
   const handleDeleteTrackLiveActivity = async (activity: AcademyActivity) => {
     await deleteAcademyActivity(activity.id);
     setLiveRevision((revision) => revision + 1);
+  };
+
+  const handleSaveTrackProject = async (input: { title: string; description: string; briefFile: File | null }) => {
+    if (!capstoneTarget) throw new Error('Publish the capstone course and at least one lesson before adding its project.');
+    const saved = await saveTrackProject({
+      id: trackProject?.id,
+      trackSlug,
+      specializationSlug: selectedSpecialization?.slug ?? null,
+      courseId: capstoneTarget.courseId,
+      lessonId: capstoneTarget.lessonId,
+      title: input.title,
+      description: input.description,
+      resourceId: trackProject?.resource_id,
+      briefFile: input.briefFile,
+    });
+    setTrackProject(saved);
+    setTrackProjectResource(await fetchLessonResourceById(saved.resource_id));
+  };
+
+  const handleDeleteTrackProject = async () => {
+    if (!trackProject || !window.confirm(t(`Delete project "${trackProject.title}"? Student submissions will be preserved.`))) return;
+    await deleteTrackProject(trackProject.id);
+    setTrackProject(null);
+    setTrackProjectResource(null);
+  };
+
+  const handleSubmitTrackProject = async (files: File[]) => {
+    if (!user || !trackProject || reviewStudent) return;
+    const uploaded: AcademyLessonSubmission[] = [];
+    for (const file of files) {
+      uploaded.push(await uploadLessonSubmission({
+        userId: user.id,
+        courseId: trackProject.course_id,
+        lessonId: trackProject.lesson_id,
+        file,
+      }));
+    }
+    setTrackProjectSubmissions((current) => [...uploaded, ...current]);
+    setProjectSubmitted(true);
+  };
+
+  const handleReviewSubmission = async (submission: AcademyLessonSubmission, status: AcademyLessonSubmission['status'], feedback?: string | null) => {
+    const updated = await updateLessonSubmissionStatus(submission.id, status, feedback ?? null);
+    const replace = (current: AcademyLessonSubmission[]) => current.map((item) => item.id === updated.id ? updated : item);
+    setLiveSubmissions(replace);
+    setTrackProjectSubmissions(replace);
   };
 
   return (
@@ -2129,9 +2231,17 @@ export function AcademyTrackPage({
             canManageActivities={canManageLiveActivities}
             activities={liveActivities}
             activityAttempts={liveActivityAttempts}
+            submissions={liveSubmissions}
+            projectSubmitted={projectSubmitted}
+            project={trackProject}
+            projectResource={trackProjectResource}
+            projectSubmissions={trackProjectSubmissions}
+            canAddProject={Boolean(capstoneTarget)}
+            reviewStudent={reviewStudent}
             getCourseSlug={(session) => liveSessionCourse(session)?.slug ?? visibleTrackCourses[0]?.slug ?? ''}
             trackSlug={track.slug}
             specializationSlug={selectedSpecialization?.slug ?? null}
+            initiallyExpanded={reopenLiveSessions}
             navigateTo={navigateTo}
             onAdd={() => setEditingLiveSession(null)}
             onEdit={(session) => setEditingLiveSession(session)}
@@ -2139,6 +2249,20 @@ export function AcademyTrackPage({
             onAddActivity={(session) => setEditingLiveActivity({ lesson: session, activity: null })}
             onEditActivity={(session, activity) => setEditingLiveActivity({ lesson: session, activity })}
             onDeleteActivity={handleDeleteTrackLiveActivity}
+            onSaveProject={handleSaveTrackProject}
+            onDeleteProject={handleDeleteTrackProject}
+            onSubmitProject={handleSubmitTrackProject}
+            onOpenStudentReview={() => setStudentPickerOpen(true)}
+            onClearStudentReview={() => setReviewStudent(null)}
+            onReviewSubmission={handleReviewSubmission}
+            t={t}
+          />
+        ) : null}
+
+        {studentPickerOpen ? (
+          <AcademyStudentPicker
+            onClose={() => setStudentPickerOpen(false)}
+            onSelect={(student) => { setReviewStudent(student); setStudentPickerOpen(false); }}
             t={t}
           />
         ) : null}
@@ -3281,18 +3405,140 @@ export function AcademyCoursePage({ user, navigateTo, courseSlug, t = defaultT, 
   );
 }
 
+function AcademyStudentPicker({ onClose, onSelect, t = defaultT }: {
+  onClose: () => void;
+  onSelect: (student: AcademyStudentSummary) => void;
+  t?: AcademyTranslator;
+}) {
+  const [students, setStudents] = React.useState<AcademyStudentSummary[]>([]);
+  const [query, setQuery] = React.useState('');
+  const [message, setMessage] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    void fetchAcademyStudents().then(setStudents).catch((caught) => setMessage(getReadableErrorMessage(caught, 'Students could not be loaded.')));
+  }, []);
+  const normalized = query.trim().toLowerCase();
+  const filtered = students.filter((student) => `${student.name ?? ''} ${student.email ?? ''}`.toLowerCase().includes(normalized));
+  return (
+    <div className="academy-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="academy-student-picker" role="dialog" aria-modal="true" aria-labelledby="academy-student-picker-title">
+        <div className="academy-student-picker-heading">
+          <div><span className="eyebrow">{t('STUDENT REVIEW')}</span><h2 id="academy-student-picker-title">{t('Check Student Progress')}</h2><p>{t('Select a YVIMO user to review their live-learning progress and submissions.')}</p></div>
+          <button type="button" onClick={onClose} aria-label={t('Close')}><X size={18} /></button>
+        </div>
+        <label className="academy-student-search"><Search size={18} /><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t('Search by name or email')} /></label>
+        <div className="academy-student-results">
+          {filtered.map((student) => (
+            <button type="button" onClick={() => onSelect(student)} key={student.id}>
+              <span>{student.avatar_url ? <img src={student.avatar_url} alt="" /> : <UserRound size={19} />}</span>
+              <span><strong>{student.name || t('Unnamed user')}</strong><em>{student.email}</em></span>
+              <small>{student.subscription_tier ?? t('No plan')}</small>
+              <ChevronRight size={17} />
+            </button>
+          ))}
+          {!message && filtered.length === 0 ? <p>{t(students.length ? 'No users match your search.' : 'Loading users...')}</p> : null}
+          {message ? <p>{t(message)}</p> : null}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function SubmissionReviewRow({ submission, contextTitle, showSubmittedAt = false, onReview, canReview = true, t = defaultT }: {
+  submission: AcademyLessonSubmission;
+  contextTitle?: string;
+  showSubmittedAt?: boolean;
+  onReview: (submission: AcademyLessonSubmission, status: AcademyLessonSubmission['status'], feedback?: string | null) => Promise<void>;
+  canReview?: boolean;
+  t?: AcademyTranslator;
+}) {
+  const [busy, setBusy] = React.useState(false);
+  const [approveOpen, setApproveOpen] = React.useState(false);
+  const [returnOpen, setReturnOpen] = React.useState(false);
+  const [feedback, setFeedback] = React.useState('');
+  const download = async () => {
+    setBusy(true);
+    try { window.open(await getLessonSubmissionDownloadUrl(submission), '_blank', 'noopener,noreferrer'); } finally { setBusy(false); }
+  };
+  const review = async (status: AcademyLessonSubmission['status'], comment?: string | null) => {
+    setBusy(true);
+    try {
+      await onReview(submission, status, comment);
+      setApproveOpen(false);
+      setReturnOpen(false);
+      setFeedback('');
+    } finally { setBusy(false); }
+  };
+  return (
+    <>
+    <div className={`academy-submission-review-row${contextTitle ? ' has-context' : ''}`}>
+      <FileText size={17} />
+      <span>
+        <strong>{submission.file_name}</strong>
+        <em>{formatFileSize(submission.file_size)} · {t(submission.status === 'reviewed' ? 'Approved' : submission.status === 'returned' ? 'Corrections requested' : 'Submitted')}</em>
+        {submission.reviewer_feedback ? <small>{t('Teacher feedback')}: {submission.reviewer_feedback}</small> : null}
+        {submission.reviewed_at ? <small>{new Date(submission.reviewed_at).toLocaleDateString()}</small> : null}
+      </span>
+      {contextTitle ? (
+        <span className="academy-submission-context">
+          <strong>{contextTitle}</strong>
+          {showSubmittedAt ? <em>{new Date(submission.submitted_at).toLocaleString()}</em> : null}
+        </span>
+      ) : null}
+      <button type="button" disabled={busy} onClick={() => void download()}><Download size={14} />{t('Open')}</button>
+      {canReview ? <button type="button" disabled={busy} onClick={() => setApproveOpen(true)}><CheckCircle2 size={14} />{t('Approve')}</button> : null}
+      {canReview ? <button className="return" type="button" disabled={busy} onClick={() => { setFeedback(submission.reviewer_feedback ?? ''); setReturnOpen(true); }}><RotateCcw size={14} />{t('Return')}</button> : null}
+    </div>
+    {approveOpen ? (
+      <div className="academy-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setApproveOpen(false); }}>
+        <section className="academy-submission-decision-modal approve" role="dialog" aria-modal="true" aria-labelledby={`approve-${submission.id}`}>
+          <div className="academy-submission-decision-icon"><CheckCircle2 size={24} /></div>
+          <div className="academy-submission-decision-copy">
+            <span className="eyebrow">{t('SUBMISSION REVIEW')}</span>
+            <h3 id={`approve-${submission.id}`}>{t('Approve submission')}</h3>
+            <p>{t('Confirm that this file meets the requirements and should be marked as approved.')}</p>
+            <strong>{submission.file_name}</strong>
+          </div>
+          <div className="academy-return-feedback-actions">
+            <button type="button" onClick={() => setApproveOpen(false)}>{t('Cancel')}</button>
+            <button className="approve" type="button" disabled={busy} onClick={() => void review('reviewed')}><CheckCircle2 size={15} />{busy ? t('Saving...') : t('Approve submission')}</button>
+          </div>
+        </section>
+      </div>
+    ) : null}
+    {returnOpen ? (
+      <div className="academy-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setReturnOpen(false); }}>
+        <section className="academy-submission-decision-modal return" role="dialog" aria-modal="true" aria-labelledby={`return-${submission.id}`}>
+          <div className="academy-submission-decision-icon"><RotateCcw size={24} /></div>
+          <div className="academy-submission-decision-copy"><span className="eyebrow">{t('CORRECTIONS REQUESTED')}</span><h3 id={`return-${submission.id}`}>{t('Return submission')}</h3><p>{t('Explain what the student must correct before submitting again.')}</p><strong>{submission.file_name}</strong></div>
+          <label>{t('Teacher feedback')}<textarea autoFocus value={feedback} onChange={(event) => setFeedback(event.target.value)} placeholder={t('Required feedback for the student')} /></label>
+          <div className="academy-return-feedback-actions"><button type="button" onClick={() => setReturnOpen(false)}>{t('Cancel')}</button><button className="return" type="button" disabled={busy || !feedback.trim()} onClick={() => void review('returned', feedback)}><RotateCcw size={15} />{t('Return with feedback')}</button></div>
+        </section>
+      </div>
+    ) : null}
+    </>
+  );
+}
+
 export function LiveSessionsSection({
-  sessions, canManage, canManageActivities, activities, activityAttempts, getCourseSlug, trackSlug, specializationSlug, navigateTo,
-  onAdd, onEdit, onDelete, onAddActivity, onEditActivity, onDeleteActivity, t = defaultT,
+  sessions, canManage, canManageActivities, activities, activityAttempts, submissions, projectSubmitted, project, projectResource, projectSubmissions, canAddProject, reviewStudent, getCourseSlug, trackSlug, specializationSlug, initiallyExpanded = false, navigateTo,
+  onAdd, onEdit, onDelete, onAddActivity, onEditActivity, onDeleteActivity, onSaveProject, onDeleteProject, onSubmitProject, onOpenStudentReview, onClearStudentReview, onReviewSubmission, t = defaultT,
 }: {
   sessions: AcademyLesson[];
   canManage: boolean;
   canManageActivities: boolean;
   activities: AcademyActivity[];
   activityAttempts: AcademyActivityAttempt[];
+  submissions: AcademyLessonSubmission[];
+  projectSubmitted: boolean;
+  project: AcademyTrackProject | null;
+  projectResource: AcademyLessonResource | null;
+  projectSubmissions: AcademyLessonSubmission[];
+  canAddProject: boolean;
+  reviewStudent: AcademyStudentSummary | null;
   getCourseSlug: (session: AcademyLesson) => string;
   trackSlug: string;
   specializationSlug?: string | null;
+  initiallyExpanded?: boolean;
   navigateTo: (path: string) => void;
   onAdd: () => void;
   onEdit: (session: AcademyLesson) => void;
@@ -3300,10 +3546,100 @@ export function LiveSessionsSection({
   onAddActivity: (session: AcademyLesson) => void;
   onEditActivity: (session: AcademyLesson, activity: AcademyActivity) => void;
   onDeleteActivity: (activity: AcademyActivity) => void;
+  onSaveProject: (input: { title: string; description: string; briefFile: File | null }) => Promise<void>;
+  onDeleteProject: () => Promise<void>;
+  onSubmitProject: (files: File[]) => Promise<void>;
+  onOpenStudentReview: () => void;
+  onClearStudentReview: () => void;
+  onReviewSubmission: (submission: AcademyLessonSubmission, status: AcademyLessonSubmission['status'], feedback?: string | null) => Promise<void>;
   t?: AcademyTranslator;
 }) {
-  const [expanded, setExpanded] = React.useState(false);
+  const [expanded, setExpanded] = React.useState(initiallyExpanded);
+  const [projectExpanded, setProjectExpanded] = React.useState(false);
+  const [editingProject, setEditingProject] = React.useState(false);
+  const [projectTitle, setProjectTitle] = React.useState('');
+  const [projectDescription, setProjectDescription] = React.useState('');
+  const [projectBrief, setProjectBrief] = React.useState<File | null>(null);
+  const [projectFiles, setProjectFiles] = React.useState<File[]>([]);
+  const [projectBusy, setProjectBusy] = React.useState(false);
+  const [projectMessage, setProjectMessage] = React.useState<string | null>(null);
+  const [projectBriefUrl, setProjectBriefUrl] = React.useState<string | null>(null);
+  const [reviewedActivity, setReviewedActivity] = React.useState<{ activity: AcademyActivity; attempt?: AcademyActivityAttempt } | null>(null);
   const contentId = React.useId();
+  const completedActivityCount = activities.filter((activityItem) => (
+    activityAttempts.some((attempt) => attempt.activity_id === activityItem.id && attempt.status === 'completed')
+  )).length;
+  const activityProgress = activities.length > 0 ? Math.round((completedActivityCount / activities.length) * 100) : 0;
+  const submittedSessionCount = new Set(submissions.map((submission) => submission.lesson_id)).size;
+  const submissionProgress = sessions.length > 0 ? Math.round((submittedSessionCount / sessions.length) * 100) : 0;
+  const progressCards = [
+    {
+      label: 'Activities & quizzes',
+      detail: activities.length > 0 ? `${completedActivityCount} / ${activities.length} completed` : 'No activities yet',
+      percent: activityProgress,
+      icon: ClipboardCheck,
+      tone: 'activities',
+    },
+    {
+      label: 'File submissions',
+      detail: sessions.length > 0 ? `${submittedSessionCount} / ${sessions.length} delivered` : 'No submissions required',
+      percent: submissionProgress,
+      icon: FileUp,
+      tone: 'submissions',
+    },
+    {
+      label: 'Project delivery',
+      detail: projectSubmitted ? 'Project submitted' : 'Not submitted',
+      percent: projectSubmitted ? 100 : 0,
+      icon: Award,
+      tone: 'project',
+    },
+  ] as const;
+  React.useEffect(() => {
+    if (!projectExpanded || !projectResource) return;
+    void getLessonResourceDownloadUrl(projectResource)
+      .then(setProjectBriefUrl)
+      .catch(() => setProjectBriefUrl(null));
+  }, [projectExpanded, projectResource]);
+
+  const openProjectEditor = () => {
+    setProjectTitle(project?.title ?? 'Capstone project');
+    setProjectDescription(project?.description ?? '');
+    setProjectBrief(null);
+    setProjectMessage(null);
+    setEditingProject(true);
+    setProjectExpanded(true);
+  };
+
+  const submitProjectEditor = async () => {
+    if (!projectTitle.trim() || projectBusy) return;
+    setProjectBusy(true);
+    setProjectMessage('Saving project...');
+    try {
+      await onSaveProject({ title: projectTitle, description: projectDescription, briefFile: projectBrief });
+      setEditingProject(false);
+      setProjectMessage('Project saved');
+    } catch (caught) {
+      setProjectMessage(getReadableErrorMessage(caught, 'Project could not be saved.'));
+    } finally {
+      setProjectBusy(false);
+    }
+  };
+
+  const submitProjectFiles = async () => {
+    if (projectFiles.length === 0 || projectBusy) return;
+    setProjectBusy(true);
+    setProjectMessage('Uploading project...');
+    try {
+      await onSubmitProject(projectFiles);
+      setProjectFiles([]);
+      setProjectMessage('Project submitted');
+    } catch (caught) {
+      setProjectMessage(getReadableErrorMessage(caught, 'Project files could not be uploaded.'));
+    } finally {
+      setProjectBusy(false);
+    }
+  };
   return (
     <section className={`academy-module academy-live-sessions academy-track-live-sessions${expanded ? ' expanded' : ''}`}>
       <div className="academy-module-header">
@@ -3325,6 +3661,11 @@ export function LiveSessionsSection({
             <Plus size={15} />{t('Add recording')}
           </button>
         ) : null}
+        {canManage ? (
+          <button className="academy-student-progress-button" type="button" onClick={(event) => { event.stopPropagation(); onOpenStudentReview(); }}>
+            <UserRound size={15} />{t('Check Student Progress')}
+          </button>
+        ) : null}
         <button
           className="academy-live-toggle"
           type="button"
@@ -3337,11 +3678,121 @@ export function LiveSessionsSection({
         </button>
       </div>
       <div className="academy-lesson-list" id={contentId} hidden={!expanded}>
+        {reviewStudent ? (
+          <div className="academy-student-review-banner">
+            <UserRound size={18} />
+            <span><strong>{t('Reviewing student')}</strong>{reviewStudent.name || reviewStudent.email}</span>
+            <button type="button" onClick={onOpenStudentReview}>{t('Change student')}</button>
+            <button type="button" onClick={onClearStudentReview}><X size={15} />{t('Exit review')}</button>
+          </div>
+        ) : null}
+        <div className="academy-live-progress-grid" aria-label={t('Live learning progress')}>
+          {progressCards.map((card) => {
+            const Icon = card.icon;
+            return (
+              <article className={`academy-live-progress-card tone-${card.tone}`} key={card.label}>
+                <div className="academy-live-progress-value"><strong>{card.percent}%</strong><Icon size={19} /></div>
+                <div className="academy-live-progress-copy">
+                  <strong>{t(card.label)}</strong>
+                  <span>{t(card.detail)}</span>
+                  <div className="academy-live-progress-bar" aria-label={`${t(card.label)}: ${card.percent}%`}>
+                    <i style={{ width: `${card.percent}%` }} />
+                  </div>
+                  {card.tone === 'project' ? (
+                    <button
+                      className={`academy-project-details-button${projectExpanded ? ' expanded' : ''}`}
+                      type="button"
+                      aria-expanded={projectExpanded}
+                      onClick={() => setProjectExpanded((current) => !current)}
+                    >
+                      {t('Details')} <ChevronDown size={15} />
+                    </button>
+                  ) : null}
+                </div>
+              </article>
+            );
+          })}
+        </div>
+        {submissions.length > 0 ? (
+          <div className="academy-student-files-review">
+            <strong>{t(reviewStudent ? 'Live session file submissions' : 'Your live session submissions')}</strong>
+            {submissions.map((submission) => {
+              const submittedInSession = sessions.find((session) => session.id === submission.lesson_id);
+              return (
+                <SubmissionReviewRow
+                  submission={submission}
+                  contextTitle={submittedInSession?.title ?? t('Unknown session')}
+                  showSubmittedAt
+                  onReview={onReviewSubmission}
+                  canReview={Boolean(reviewStudent)}
+                  t={t}
+                  key={submission.id}
+                />
+              );
+            })}
+          </div>
+        ) : null}
+        {projectExpanded ? (
+          <section className="academy-capstone-panel">
+            <div className="academy-capstone-heading">
+              <div>
+                <span className="eyebrow">{t('Capstone project')}</span>
+                <h3>{t(project?.title ?? 'Project details')}</h3>
+                <p>{t(project?.description ?? 'The project brief has not been published yet.')}</p>
+              </div>
+              {canManage ? (
+                <div className="academy-capstone-admin-actions">
+                  {!project ? (
+                    <button type="button" onClick={openProjectEditor} disabled={!canAddProject}><Plus size={15} />{t('Add project')}</button>
+                  ) : (
+                    <>
+                      <button type="button" onClick={openProjectEditor}><Pencil size={15} />{t('Edit project')}</button>
+                      <button className="danger" type="button" onClick={() => void onDeleteProject()}><Trash2 size={15} />{t('Delete project')}</button>
+                    </>
+                  )}
+                </div>
+              ) : null}
+            </div>
+            {editingProject ? (
+              <div className="academy-capstone-editor">
+                <label>{t('Project title')}<input value={projectTitle} onChange={(event) => setProjectTitle(event.target.value)} /></label>
+                <label>{t('Description')}<textarea value={projectDescription} onChange={(event) => setProjectDescription(event.target.value)} /></label>
+                <label className="academy-capstone-file-picker"><FileText size={18} />{projectBrief ? projectBrief.name : t('Attach project PDF')}<input type="file" accept="application/pdf" onChange={(event) => setProjectBrief(event.target.files?.[0] ?? null)} /></label>
+                <div className="academy-capstone-editor-actions">
+                  <button type="button" onClick={() => setEditingProject(false)}>{t('Cancel')}</button>
+                  <button className="primary" type="button" onClick={() => void submitProjectEditor()} disabled={projectBusy || !projectTitle.trim()}><Save size={15} />{t('Save project')}</button>
+                </div>
+              </div>
+            ) : null}
+            {project ? (
+              <div className="academy-capstone-content">
+                <div className="academy-capstone-brief">
+                  <strong>{t('Project brief')}</strong>
+                  {projectBriefUrl ? <iframe src={projectBriefUrl} title={t(`${project.title} PDF`)} /> : <div className="academy-capstone-empty"><FileText size={25} />{t('No PDF attached')}</div>}
+                </div>
+                <div className="academy-capstone-submission">
+                  <strong>{t('Submit your project')}</strong>
+                  <p>{t('Upload your project files when your work is ready for review.')}</p>
+                  {!reviewStudent ? <label className="academy-submission-dropzone">
+                    <input type="file" multiple onChange={(event) => setProjectFiles(Array.from(event.target.files ?? []))} />
+                    <FileUp size={22} />
+                    <strong>{projectFiles.length ? `${projectFiles.length} ${t('files selected')}` : t('Choose project files')}</strong>
+                  </label> : null}
+                  {!reviewStudent ? <button className="academy-complete-button" type="button" onClick={() => void submitProjectFiles()} disabled={projectBusy || projectFiles.length === 0}><FileUp size={16} />{projectBusy ? t('Uploading...') : t('Submit project')}</button> : null}
+                  {projectMessage ? <p className="academy-capstone-message">{t(projectMessage)}</p> : null}
+                  {projectSubmissions.length ? <div className="academy-submission-history"><strong>{t('Submitted files')}</strong>{projectSubmissions.map((submission) => <SubmissionReviewRow submission={submission} onReview={onReviewSubmission} canReview={Boolean(reviewStudent)} t={t} key={submission.id} />)}</div> : null}
+                </div>
+              </div>
+            ) : null}
+            {!project && !editingProject && canManage && !canAddProject ? <p className="academy-capstone-warning">{t('Publish the capstone course and at least one lesson before adding its project.')}</p> : null}
+          </section>
+        ) : null}
         {sessions.map((session) => {
           const sessionActivities = activities.filter((activityItem) => activityItem.lesson_id === session.id);
           const returnParams = new URLSearchParams({
             fromTrack: trackSlug,
             returnY: String(Math.round(window.scrollY)),
+            open: 'live-sessions',
           });
           if (specializationSlug) returnParams.set('fromSpecialization', specializationSlug);
           return (
@@ -3374,6 +3825,10 @@ export function LiveSessionsSection({
                 navigateTo={navigateTo}
                 onEdit={() => onEditActivity(session, activityItem)}
                 onDelete={() => onDeleteActivity(activityItem)}
+                onOpen={reviewStudent ? () => setReviewedActivity({
+                  activity: activityItem,
+                  attempt: activityAttempts.find((attempt) => attempt.activity_id === activityItem.id),
+                }) : undefined}
                 t={t}
                 key={activityItem.id}
               />
@@ -3392,6 +3847,15 @@ export function LiveSessionsSection({
         })}
         {sessions.length === 0 ? <p className="academy-live-empty">{t('No live session recordings have been published yet.')}</p> : null}
       </div>
+      {reviewedActivity && reviewStudent ? (
+        <StudentQuizReviewModal
+          student={reviewStudent}
+          activity={reviewedActivity.activity}
+          attempt={reviewedActivity.attempt}
+          onClose={() => setReviewedActivity(null)}
+          t={t}
+        />
+      ) : null}
     </section>
   );
 }
@@ -3821,6 +4285,54 @@ function ActivityScoreBadge({ correct, total, large = false, t = defaultT }: { c
   );
 }
 
+function getQuickCheckAnswerLabel(question: QuickCheckQuestion, value?: string) {
+  if (!value) return 'No answer';
+  if (question.type === 'true_false') return value === 'true' ? 'True' : value === 'false' ? 'False' : value;
+  if (question.type === 'multiple_choice') return question.options?.find((option) => option.id === value)?.text ?? value;
+  return value;
+}
+
+function getQuickCheckCorrectAnswerLabel(question: QuickCheckQuestion) {
+  if (question.type === 'true_false') return question.correctValue ? 'True' : 'False';
+  if (question.type === 'multiple_choice') return question.options?.find((option) => option.id === question.correctOptionId)?.text ?? 'Not configured';
+  if (question.type === 'sequence_order') return (question.correctOrder ?? []).join(' → ');
+  return question.pairs?.map((pair) => `${pair.left} = ${pair.right}`).join(', ') ?? 'Configured matching answer';
+}
+
+function StudentQuizReviewModal({ student, activity, attempt, onClose, t = defaultT }: {
+  student: AcademyStudentSummary;
+  activity: AcademyActivity;
+  attempt?: AcademyActivityAttempt;
+  onClose: () => void;
+  t?: AcademyTranslator;
+}) {
+  const config = activity.config_json as QuickCheckConfig;
+  const questions = activity.type === 'quick_check' ? config.questions ?? [] : [];
+  const answers = (attempt?.attempt_data_json?.answers ?? {}) as Record<string, string>;
+  const scoreSummary = getActivityAttemptScoreSummary(activity, attempt);
+  return (
+    <div className="academy-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="academy-quiz-review-modal" role="dialog" aria-modal="true" aria-labelledby={`quiz-review-${activity.id}`}>
+        <header><div><span className="eyebrow">{t('STUDENT QUIZ REVIEW')}</span><h2 id={`quiz-review-${activity.id}`}>{activity.title}</h2><p>{student.name || student.email}</p></div><button type="button" onClick={onClose} aria-label={t('Close')}><X size={18} /></button></header>
+        <div className="academy-quiz-review-summary">
+          <span><strong>{attempt?.score ?? 0}%</strong><em>{t('Final score')}</em></span>
+          <span><strong>{scoreSummary ? `${scoreSummary.correctCount} / ${scoreSummary.totalQuestions}` : '—'}</strong><em>{t('Correct answers')}</em></span>
+          <span><strong>{t(attempt?.status === 'completed' ? 'Completed' : 'Not completed')}</strong><em>{attempt?.completed_at ? new Date(attempt.completed_at).toLocaleString() : t('No completion date')}</em></span>
+        </div>
+        <div className="academy-quiz-review-questions">
+          {questions.map((question, index) => {
+            const answer = answers[question.id];
+            const correct = isQuickCheckAnswerCorrect(question, answer);
+            return <article className={correct ? 'correct' : 'incorrect'} key={question.id}><div className="academy-quiz-review-question-title"><span>{index + 1}</span><strong>{question.question}</strong>{correct ? <CheckCircle2 size={19} /> : <X size={19} />}</div><div className="academy-quiz-review-answer"><span className={`student-answer ${correct ? 'correct' : 'incorrect'}`}><em>{t('Student answer')}</em><strong>{t(getQuickCheckAnswerLabel(question, answer))}</strong></span><span><em>{t('Correct answer')}</em><strong>{t(getQuickCheckCorrectAnswerLabel(question))}</strong></span></div>{question.explanation ? <p>{question.explanation}</p> : null}</article>;
+          })}
+          {activity.type !== 'quick_check' ? <p>{t('Detailed answer review is currently available for Quick Check quizzes.')}</p> : null}
+          {activity.type === 'quick_check' && questions.length === 0 ? <p>{t('This quiz has no configured questions.')}</p> : null}
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function ActivityCard({
   activity,
   attempt,
@@ -3830,6 +4342,7 @@ function ActivityCard({
   navigateTo,
   onEdit,
   onDelete,
+  onOpen,
   t = defaultT,
 }: {
   activity: AcademyActivity;
@@ -3840,6 +4353,7 @@ function ActivityCard({
   navigateTo: (path: string) => void;
   onEdit: () => void;
   onDelete: () => void;
+  onOpen?: () => void;
   t?: AcademyTranslator;
 }) {
   const status = getActivityStatus(attempt);
@@ -3849,7 +4363,7 @@ function ActivityCard({
     <div className={['academy-activity-card', status === 'completed' ? 'completed' : '', locked ? 'locked' : '', unpublished ? 'draft' : ''].filter(Boolean).join(' ')}>
       <button
         type="button"
-        onClick={() => navigateTo(`/academy/${courseSlug}/activities/${activity.id}`)}
+        onClick={() => onOpen ? onOpen() : navigateTo(`/academy/${courseSlug}/activities/${activity.id}`)}
         disabled={locked && !canManage}
       >
         <span className="academy-activity-connector" aria-hidden="true">└</span>

@@ -218,7 +218,23 @@ export type AcademyLessonSubmission = {
   mime_type: string | null;
   storage_path: string;
   status: 'submitted' | 'reviewed' | 'returned';
+  reviewer_feedback: string | null;
+  reviewed_at: string | null;
+  reviewed_by: string | null;
   submitted_at: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AcademyTrackProject = {
+  id: string;
+  track_slug: string;
+  specialization_slug: string | null;
+  course_id: string;
+  lesson_id: string;
+  title: string;
+  description: string;
+  resource_id: string | null;
   created_at: string;
   updated_at: string;
 };
