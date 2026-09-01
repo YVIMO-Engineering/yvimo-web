@@ -677,7 +677,8 @@ type MesOrderDateRange = {
   from: string;
   to: string;
 };
-type MesOrderQuickRangeValue = 'today' | 'week' | 'month' | 'last-month' | 'year';
+type MesOrderQuickRangeValue = 'today' | 'week' | 'month' | 'last-month' | 'year' | 'last-year';
+type MesOrderQuickRangeOption = { value: MesOrderQuickRangeValue; label: string };
 
 const formatLabel = (value: string) => value.replace(/-/g, ' ');
 const formatTitleLabel = (value: string) => {
@@ -775,6 +776,11 @@ function getMesOrderQuickRange(range: MesOrderQuickRangeValue): MesOrderDateRang
     endDate.setFullYear(today.getFullYear(), 11, 31);
   }
 
+  if (range === 'last-year') {
+    startDate.setFullYear(today.getFullYear() - 1, 0, 1);
+    endDate.setFullYear(today.getFullYear() - 1, 11, 31);
+  }
+
   return {
     from: toIsoDate(startDate),
     to: toIsoDate(endDate),
@@ -800,12 +806,14 @@ export function MesOrderDatePicker({
   placeholder = 'Select date',
   onChange,
   onQuickRange,
+  quickRanges,
 }: {
   id: string;
   value: string;
   placeholder?: string;
   onChange: (value: string) => void;
   onQuickRange?: (range: MesOrderDateRange) => void;
+  quickRanges?: MesOrderQuickRangeOption[];
 }) {
   const selectedDate = React.useMemo(() => value ? new Date(`${value}T12:00:00`) : new Date(), [value]);
   const [open, setOpen] = React.useState(false);
@@ -915,7 +923,7 @@ export function MesOrderDatePicker({
           })}
         </div>
         <div className="mes-order-calendar-shortcuts">
-          {([
+          {(quickRanges ?? ([
             { value: 'today', label: 'Today' },
             ...(onQuickRange ? [
               { value: 'week', label: 'This week' },
@@ -923,7 +931,7 @@ export function MesOrderDatePicker({
               { value: 'last-month', label: 'Last month' },
               { value: 'year', label: 'This year' },
             ] as const : []),
-          ] as Array<{ value: MesOrderQuickRangeValue; label: string }>).map((shortcut) => (
+          ] as MesOrderQuickRangeOption[])).map((shortcut) => (
             <button
               type="button"
               key={shortcut.value}
