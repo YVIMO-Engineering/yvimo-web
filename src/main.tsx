@@ -5552,6 +5552,50 @@ function App() {
   const isStandaloneHealthPage = currentPath === '/health' || currentPath.startsWith('/health/');
   const isDirectHealthAppsPage = isStandaloneHealthPage || currentPath === '/workspace/health-apps' || currentPath.startsWith('/workspace/health-apps/');
   const isDirectCustomerPortalPage = currentPath === '/customer-portal' || currentPath.startsWith('/customer-portal/');
+  React.useEffect(() => {
+    const defaultTitle = 'YVIMO | Controls, Automation, and Software';
+    const defaultFavicon = '/assets/logos/yvimo-square-logo-2024.png';
+    const tabIdentity = currentPath === '/customer-portal' || currentPath.startsWith('/customer-portal/')
+      ? { title: 'YVIMO Customer Portal', favicon: '/assets/workspace/manufacturing-ops-logo.png', crop: true }
+      : currentPath === '/workspace/manufacturing-ops' || currentPath.startsWith('/workspace/manufacturing-ops/')
+        ? { title: 'YVIMO Manufacturing Ops', favicon: '/assets/workspace/manufacturing-ops-logo.png', crop: true }
+        : currentPath === '/academy' || currentPath.startsWith('/academy/')
+          ? { title: 'YVIMO Academy', favicon: '/assets/workspace/yvimo-academy-logo.png', crop: true }
+          : currentPath === '/health' || currentPath.startsWith('/health/') || currentPath === '/workspace/health-apps' || currentPath.startsWith('/workspace/health-apps/')
+            ? { title: 'YVIMO Health Apps', favicon: '/assets/health/yvimo-health-logo.png', crop: true }
+            : currentPath === '/portal/gateway-online' || currentPath.startsWith('/portal/gateway-online/') || currentPath.startsWith('/dashboard/gateway')
+              ? { title: 'YVIMO Gateway', favicon: '/assets/logos/gateway-logo.png', crop: false }
+              : currentPath === '/portal/engineering-tools' || currentPath.startsWith('/portal/engineering-tools/') || currentPath.startsWith('/dashboard/engineering-tools')
+                ? { title: 'YVIMO Engineering Tools', favicon: defaultFavicon, crop: false }
+                : currentPath === '/dashboard' || currentPath.startsWith('/dashboard/')
+                  ? { title: 'YVIMO Workspace', favicon: defaultFavicon, crop: false }
+                  : { title: defaultTitle, favicon: defaultFavicon, crop: false };
+    const favicon = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+    let active = true;
+    document.title = tabIdentity.title;
+    if (favicon && tabIdentity.crop) {
+      const logo = new Image();
+      logo.onload = () => {
+        if (!active) return;
+        const canvas = document.createElement('canvas');
+        canvas.width = 64;
+        canvas.height = 64;
+        const context = canvas.getContext('2d');
+        if (!context) return;
+        const cropSize = Math.min(logo.naturalWidth, logo.naturalHeight) * .78;
+        const cropX = (logo.naturalWidth - cropSize) / 2;
+        const cropY = (logo.naturalHeight - cropSize) / 2;
+        context.drawImage(logo, cropX, cropY, cropSize, cropSize, 0, 0, 64, 64);
+        favicon.href = canvas.toDataURL('image/png');
+      };
+      logo.src = tabIdentity.favicon;
+    } else if (favicon) favicon.href = tabIdentity.favicon;
+    return () => {
+      active = false;
+      document.title = defaultTitle;
+      if (favicon) favicon.href = defaultFavicon;
+    };
+  }, [currentPath]);
   const customerPortalUser = customerPortalSession?.user ? profileToAppUser(customerPortalSession.user, null) : null;
   const isCustomerPortalAccount = authSession?.user.app_metadata?.account_type === 'customer_portal';
   const healthWorkspacePath = isStandaloneHealthPage ? (currentPath === '/health' ? '/workspace/health-apps' : currentPath.replace(/^\/health/, '/workspace/health-apps')) : currentPath;
