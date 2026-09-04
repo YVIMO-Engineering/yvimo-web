@@ -1,4 +1,5 @@
 import React from "react";
+import { getWorkCenterHourlyRate } from './workCenterRates';
 import {
   ArrowLeft,
   Calculator,
@@ -627,7 +628,7 @@ export function QuotationsWorkspace({
     form.measurementUnit === "in" ? enteredDiameter * 25.4 : enteredDiameter;
   const damage =
     form.measurementUnit === "mm" ? enteredDamage / 25.4 : enteredDamage;
-  const hourlyRate = form.workCenter === "Gleason Queretaro" ? 75 : 65;
+  const hourlyRate = getWorkCenterHourlyRate(form.workCenter);
   const machinePrice = calculateQuotationTotals(
     quotationItems,
     0,
@@ -792,8 +793,7 @@ export function QuotationsWorkspace({
         Number(selectedQuotation.diameter_mm),
       )
     : null;
-  const selectedHourlyRate =
-    selectedQuotation?.work_center === "Gleason Queretaro" ? 75 : 65;
+  const selectedHourlyRate = getWorkCenterHourlyRate(selectedQuotation?.work_center ?? '');
   const selectedDamageSteps =
     selectedQuotation && Number(selectedQuotation.damage_inches) > 0.02
       ? Math.ceil((Number(selectedQuotation.damage_inches) - 0.02) / 0.01)

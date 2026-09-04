@@ -1,0 +1,197 @@
+/* Keep the scrap classification beside the headline total on wide cards. */
+.profit-leak-kpis .scrap-card {
+  align-items: stretch;
+}
+
+.scrap-card > .scrap-total {
+  align-content: start;
+  flex: 0 0 112px;
+}
+
+.scrap-card > .scrap-breakdown {
+  display: grid !important;
+  min-width: 0;
+  flex: 1;
+  grid-template-columns: 1fr;
+  align-content: center;
+  gap: 6px !important;
+  margin-top: 0;
+  border-left: 1px solid #fecaca;
+  padding-left: 10px;
+}
+
+.scrap-card > .scrap-breakdown b {
+  grid-template-columns: 7px minmax(0, 1fr) auto;
+  padding: 9px;
+  font-size: .64rem;
+}
+
+.scrap-card > .scrap-breakdown b > strong {
+  font-size: .9rem;
+}
+
+.profit-leak-kpis > article:not(.scrap-card) {
+  min-height: 88px;
+  align-self: center;
+  align-items: center;
+  justify-content: flex-start;
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+.profit-leak-kpis > article:not(.scrap-card) > svg {
+  margin-top: 0;
+}
+
+.profit-leak-kpis > article:not(.scrap-card) > span:not(.profit-leak-spend) {
+  flex: 1 1 auto;
+}
+
+.profit-leak-kpis .profit-leak-spend {
+  display: grid;
+  min-width: 82px;
+  max-width: 104px;
+  flex: 0 0 92px !important;
+  align-content: center;
+  align-self: center;
+  gap: 4px;
+  margin-left: 2px;
+  border: 1px solid currentColor;
+  border-radius: 9px;
+  min-height: 58px;
+  padding: 7px 8px;
+  background: #ffffffb8;
+  color: inherit;
+  text-align: center;
+}
+
+.profit-leak-kpis article > .profit-leak-spend > small { color: currentColor; font-size: .48rem; }
+.profit-leak-kpis article > .profit-leak-spend > strong { font-size: .62rem; line-height: 1.15; white-space: normal; }
+.profit-leak-kpis > article:nth-child(1) .profit-leak-spend { color: #b91c1c; }
+.profit-leak-kpis > article:nth-child(2) .profit-leak-spend { color: #c2410c; }
+.profit-leak-kpis > article:nth-child(3) .profit-leak-spend { color: #a16207; }
+.profit-leak-kpis > article:nth-child(4) .profit-leak-spend { color: #be123c; }
+.profit-leak-kpis > article:nth-child(5) .profit-leak-spend { color: #6d28d9; }
+.scrap-card > .profit-leak-spend { border-left-width: 1px; }
+
+@media (min-width: 1251px) {
+  .profit-leak-kpis { grid-template-columns: 1.8fr repeat(4, minmax(0, 1fr)); }
+  .scrap-card > .scrap-total { flex-basis: 96px; }
+  .scrap-card > .scrap-breakdown { padding-left: 8px; }
+}
+
+@media (max-width: 430px) {
+  .profit-leak-kpis .scrap-card { flex-wrap: wrap; }
+  .scrap-card > .scrap-total { flex: 1; }
+  .scrap-card > .scrap-breakdown {
+    flex-basis: 100%;
+    border-top: 1px solid #fecaca;
+    border-left: 0;
+    padding-top: 8px;
+    padding-left: 0;
+  }
+}
+
+.profit-leak-events {
+  margin-top: 10px;
+  overflow: hidden;
+  border: 1px solid #dbe4ed;
+  border-top: 1px solid #dbe4ed;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 8px 20px #0f172a08;
+}
+
+.profit-leak-events > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 11px 15px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.profit-leak-events header small { color: #64748b; font-size: .56rem; font-weight: 950; text-transform: uppercase; }
+.profit-leak-events header h2 { margin: 2px 0 0; font-size: .95rem; }
+.profit-leak-events header > strong { color: #64748b; font-size: .66rem; }
+.profit-leak-table-wrap { overflow: auto; }
+.profit-leak-events table { width: 100%; min-width: 960px; border-collapse: collapse; }
+.profit-leak-events th { padding: 10px 13px; background: #f8fafc; color: #526175; font-size: .58rem; letter-spacing: .04em; text-align: left; text-transform: uppercase; }
+.profit-leak-events td { border-top: 1px solid #e2e8f0; padding: 11px 13px; color: #334155; font-size: .67rem; }
+.profit-leak-events th:nth-child(6), .profit-leak-events td:nth-child(6), .profit-leak-events th:nth-child(7), .profit-leak-events td:nth-child(7), .profit-leak-events th:last-child, .profit-leak-events td:last-child { text-align: right; }
+.profit-leak-category { display: inline-flex; border: 1px solid transparent; border-radius: 999px; padding: 5px 8px; font-size: .56rem; font-weight: 900; white-space: nowrap; }
+.profit-leak-category.scrap { border-color: #fecaca; background: #fff1f2; color: #b91c1c; }
+.profit-leak-category.transfer { border-color: #fed7aa; background: #fff7ed; color: #c2410c; }
+.profit-leak-category.supplies { border-color: #fde68a; background: #fffbeb; color: #a16207; }
+.profit-leak-category.warranty { border-color: #a5f3fc; background: #ecfeff; color: #0e7490; }
+.profit-leak-category.downtime { border-color: #ddd6fe; background: #f5f3ff; color: #6d28d9; }
+.cost-value { color: #b91c1c; font-size: .72rem; }
+.cost-missing { color: #94a3b8; font-size: .6rem; font-style: normal; }
+.profit-leak-empty { padding: 34px !important; color: #64748b !important; text-align: center !important; }
+.profit-leak-location { display: flex; align-items: center; gap: 7px; white-space: nowrap; }
+.workcenter-pill { display: inline-flex; border: 1px solid; border-radius: 999px; padding: 5px 8px; font-size: .56rem; font-weight: 900; }
+.profit-leak-location > em { color: #475569; font-size: .64rem; font-style: normal; font-weight: 800; }
+
+/* KPI cards: heading spans the card, metrics form a balanced second row. */
+.profit-leak-kpis > article,
+.profit-leak-kpis > article:not(.scrap-card),
+.profit-leak-kpis .scrap-card {
+  display: grid;
+  min-height: 104px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  grid-template-rows: auto 1fr;
+  align-items: center;
+  gap: 7px 12px;
+  padding: 12px 13px;
+}
+
+.profit-leak-kpis .scrap-card {
+  grid-template-columns: minmax(62px, .75fr) minmax(120px, 1.15fr) minmax(112px, 1.1fr);
+}
+
+.profit-kpi-title {
+  grid-column: 1 / -1;
+  color: #526175 !important;
+  font-size: .61rem !important;
+  line-height: 1.15;
+  text-align: center;
+}
+
+.profit-kpi-count {
+  display: flex !important;
+  min-width: 0;
+  flex: initial !important;
+  align-items: center;
+  justify-content: center;
+  gap: 9px !important;
+}
+
+.profit-kpi-count > svg { flex: 0 0 auto; width: 22px; height: 22px; color: #dc2626; }
+.profit-kpi-count > strong { font-size: 1.55rem !important; line-height: 1; }
+.profit-leak-kpis > article:nth-child(2) .profit-kpi-count > svg { color: #ea580c; }
+.profit-leak-kpis > article:nth-child(3) .profit-kpi-count > svg { color: #ca8a04; }
+.profit-leak-kpis > article:nth-child(4) .profit-kpi-count > svg { color: #0891b2; }
+.profit-leak-kpis > article:nth-child(5) .profit-kpi-count > svg { color: #7c3aed; }
+.profit-leak-kpis > article:nth-child(4) { border-left-color: #06b6d4; background: #f2fdff; }
+.profit-leak-kpis > article:nth-child(4) .profit-leak-spend { color: #0e7490; }
+
+.profit-leak-kpis .profit-leak-spend {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  min-height: 62px;
+  margin: 0;
+  padding: 8px 7px;
+}
+
+.profit-leak-kpis article > .profit-leak-spend > strong {
+  font-size: 1rem;
+  font-weight: 950;
+}
+
+.profit-leak-kpis article > .profit-leak-spend > small { font-size: .5rem; }
+.scrap-card > .scrap-breakdown { align-self: stretch; }
+
+@media (max-width: 1250px) {
+  .profit-leak-kpis > article:not(.scrap-card) { grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); }
+}
