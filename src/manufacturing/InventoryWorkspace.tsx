@@ -28,8 +28,17 @@ type InventoryItem = {
   description: string;
   quantity: number;
   minimum_quantity: number;
+  unit_price: number;
+  currency: string;
   image_url: string | null;
 };
+
+const ITEM_CURRENCIES = ['USD', 'MXN', 'EUR'] as const;
+const itemMoney = (value: number, currency: string) => new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: currency || 'USD',
+  maximumFractionDigits: 4,
+}).format(value);
 
 type WorkCenter = { id: string; code: string; name: string };
 type Station = { id: string; code: string; name: string; workCenterId: string; workCenterName: string };
@@ -44,6 +53,8 @@ const emptyItemForm = {
   description: '',
   quantity: '0',
   minimumQuantity: '0',
+  unitPrice: '0',
+  currency: 'USD',
   sectionId: '',
   workCenterId: '',
   stationIds: [] as string[],
@@ -76,7 +87,7 @@ export function InventoryWorkspace({ onNavigate, organizationId, organizationNam
     setLoading(true);
     const [sectionsResponse, itemsResponse, itemStationsResponse, workCentersResponse, stationsResponse] = await Promise.all([
       supabase.from('mes_inventory_sections').select('id, name, description, position').eq('organization_id', organizationId).order('position'),
-      supabase.from('mes_inventory_items').select('id, section_id, work_center_id, title, item_key, supplier_key, application_alias, supplier, description, quantity, minimum_quantity, image_url').eq('organization_id', organizationId).order('created_at'),
+      supabase.from('mes_inventory_items').select('id, section_id, work_center_id, title, item_key, supplier_key, application_alias, supplier, description, quantity, minimum_quantity, unit_price, currency, image_url').eq('organization_id', organizationId).order('created_at'),
       supabase.from('mes_inventory_item_stations').select('inventory_item_id, station_id').eq('organization_id', organizationId),
       supabase.from('mes_work_centers').select('id, code, name').eq('organization_id', organizationId).order('name'),
       supabase.from('mes_work_center_stations').select('id, work_center_id, code, name').eq('organization_id', organizationId).order('name'),
@@ -130,6 +141,8 @@ export function InventoryWorkspace({ onNavigate, organizationId, organizationNam
       description: item.description,
       quantity: String(item.quantity),
       minimumQuantity: String(item.minimum_quantity),
+      unitPrice: String(item.unit_price ?? 0),
+      currency: item.currency || 'USD',
       sectionId: item.section_id,
       workCenterId: item.work_center_id,
       stationIds: itemStations.filter((link) => link.inventory_item_id === item.id).map((link) => link.station_id),
@@ -186,6 +199,8 @@ export function InventoryWorkspace({ onNavigate, organizationId, organizationNam
       description: itemForm.description.trim(),
       quantity: Math.max(0, Number(itemForm.quantity) || 0),
       minimum_quantity: Math.max(0, Number(itemForm.minimumQuantity) || 0),
+      unit_price: Math.max(0, Number(itemForm.unitPrice) || 0),
+      currency: itemForm.currency || 'USD',
       ...(imageUrl ? { image_url: imageUrl } : {}),
     };
     const itemRequest = editingItem
@@ -391,7 +406,11 @@ export function InventoryWorkspace({ onNavigate, organizationId, organizationNam
           const supplierKeyLines = pdf.splitTextToSize(item.supplier_key || 'Unknown', 62) as string[];
           const applicationLines = pdf.splitTextToSize(item.application_alias || 'Unknown', 72) as string[];
           const supplierLines = pdf.splitTextToSize(item.supplier, 82) as string[];
-          const descriptionLines = pdf.splitTextToSize(item.description || 'No description provided.', contentWidth - 91) as string[];
+          const unitPrice = Number(item.unit_price) || 0;
+          const priceSummary = unitPrice > 0
+            ? `UNIT PRICE ${itemMoney(unitPrice, item.currency)} · STOCK VALUE ${itemMoney(unitPrice * Number(item.quantity), item.currency)} ${item.currency || 'USD'}`
+            : 'UNIT PRICE NOT SET';
+          const descriptionLines = pdf.splitTextToSize(item.description || 'No description provided.', contentWidth - 91 - 190) as string[];
           pdf.setFont('helvetica', 'bold');
           pdf.setFontSize(6.5);
           const stationPills: Array<{ label: string; x: number; y: number; width: number }> = [];
@@ -465,6 +484,10 @@ export function InventoryWorkspace({ onNavigate, organizationId, organizationNam
           pdf.setFontSize(7.5);
           pdf.setTextColor(71, 85, 105);
           pdf.text(descriptionLines, margin + 79, descriptionY + 14);
+          pdf.setFont('helvetica', 'bold');
+          pdf.setFontSize(6.5);
+          pdf.setTextColor(unitPrice > 0 ? 194 : 148, unitPrice > 0 ? 65 : 163, unitPrice > 0 ? 12 : 184);
+          pdf.text(priceSummary, pageWidth - margin - 8, descriptionY + 14, { align: 'right' });
           pdf.setDrawColor(244, 181, 120);
           pdf.setLineWidth(0.45);
           pdf.line(margin, cursorY + itemBlockHeight - 0.75, pageWidth - margin, cursorY + itemBlockHeight - 0.75);
@@ -513,7 +536,7 @@ export function InventoryWorkspace({ onNavigate, organizationId, organizationNam
         .filter(Boolean)
         .map((station) => `${station!.code} ${station!.name}`)
         .join(' ');
-      return `${item.title} ${item.item_key} ${item.supplier_key} ${item.application_alias} ${item.supplier} ${item.description} ${item.quantity} ${item.minimum_quantity} ${stationText}`
+      return `${item.title} ${item.item_key} ${item.supplier_key} ${item.application_alias} ${item.supplier} ${item.description} ${item.quantity} ${item.minimum_quantity} ${item.unit_price} ${item.currency} ${stationText}`
         .toLowerCase().includes(normalizedSearch);
     });
   };
@@ -615,6 +638,7 @@ export function InventoryWorkspace({ onNavigate, organizationId, organizationNam
                             <div><dt>Supplier key</dt><dd>{item.supplier_key || 'Unknown'}</dd></div>
                             <div><dt>Application / alias</dt><dd>{item.application_alias || 'Unknown'}</dd></div>
                             <div><dt>Supplier</dt><dd>{item.supplier}</dd></div>
+                            <div><dt>Unit price</dt><dd>{Number(item.unit_price) > 0 ? `${itemMoney(Number(item.unit_price), item.currency)} ${item.currency || 'USD'}` : 'Not set'}</dd></div>
                           </dl>
                           <p>{item.description || 'No description provided.'}</p>
                           <div className="inventory-quick-adjust">
@@ -681,6 +705,10 @@ export function InventoryWorkspace({ onNavigate, organizationId, organizationNam
                     <div className="inventory-quantity-fields">
                       <label>Quantity<input type="number" min="0" value={itemForm.quantity} onChange={(event) => setItemForm((current) => ({ ...current, quantity: event.target.value }))} required /></label>
                       <label>Minimum quantity<input type="number" min="0" value={itemForm.minimumQuantity} onChange={(event) => setItemForm((current) => ({ ...current, minimumQuantity: event.target.value }))} required /></label>
+                    </div>
+                    <div className="inventory-identity-fields">
+                      <label>Unit price<input type="number" min="0" step="0.0001" value={itemForm.unitPrice} onChange={(event) => setItemForm((current) => ({ ...current, unitPrice: event.target.value }))} placeholder="0.00" /></label>
+                      <label>Currency<select value={itemForm.currency} onChange={(event) => setItemForm((current) => ({ ...current, currency: event.target.value }))}>{ITEM_CURRENCIES.map((currency) => <option value={currency} key={currency}>{currency}</option>)}</select></label>
                     </div>
                   </div>
                 </div>
