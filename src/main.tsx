@@ -21,6 +21,7 @@ import { RevenueOpportunityWorkspace } from './manufacturing/RevenueOpportunityW
 import { AnalysisToolWorkspace } from './manufacturing/AnalysisToolWorkspace';
 import { InvoiceTargetWorkspace } from './manufacturing/InvoiceTargetWorkspace';
 import { ProductionTrackingWorkspace } from './manufacturing/ProductionTrackingWorkspace';
+import { ProfitLeakWorkspace } from './manufacturing/ProfitLeakWorkspace';
 import { CustomerPortalAdminWorkspace } from './manufacturing/CustomerPortalAdminWorkspace';
 import { CustomerPortalLogin, CustomerPortalPublic } from './customerPortal/CustomerPortalPublic';
 import { HealthPatientsWorkspace } from './health/HealthPatientsWorkspace';
@@ -760,7 +761,7 @@ const translations: Record<Exclude<LanguageCode, 'en'>, Record<string, string>> 
     'Find available records': 'Buscar expedientes libres',
     'Hide available records': 'Ocultar expedientes libres',
     'Available records:': 'Expedientes disponibles:',
-    'No records are available from 0 to 200.': 'No hay expedientes disponibles del 0 al 200.',
+    'No records are available from 0 to 400.': 'No hay expedientes disponibles del 0 al 400.',
     'Search patients': 'Buscar pacientes',
     'Name, CURP, or medical record number': 'Nombre, CURP o número de expediente',
     'Patient register': 'Registro de pacientes',
@@ -3625,7 +3626,7 @@ function LoggedDashboardPage({ user, onSignOut, onNavigate, onUpdateAvatar, acti
   const isRevenueOpportunitySection = activePath.startsWith('/workspace/manufacturing-ops/intelligence/revenue-opportunity');
   const isAnalysisToolSection = activePath === '/workspace/manufacturing-ops/intelligence/analysis-tool' || activePath.startsWith('/workspace/manufacturing-ops/intelligence/analysis-tool/');
   const activeAnalysisToolSection = activePath.endsWith('/production-tracking') ? 'production-tracking' : 'performance-check';
-  const activeRevenueSection = activePath.endsWith('/income-flow') ? 'income-flow' : activePath.endsWith('/balances') ? 'balances' : activePath.endsWith('/invoice-target') ? 'invoice-target' : 'price-misalignment';
+  const activeRevenueSection = activePath.endsWith('/income-flow') ? 'income-flow' : activePath.endsWith('/balances') ? 'balances' : activePath.endsWith('/invoice-target') ? 'invoice-target' : activePath.endsWith('/profit-leak') ? 'profit-leak' : 'price-misalignment';
   const supplierContextTabs: Array<{
     value: SupplierContextTab;
     label: string;
@@ -3779,6 +3780,9 @@ function LoggedDashboardPage({ user, onSignOut, onNavigate, onUpdateAvatar, acti
       return <CustomerPortalAdminWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} organizationName={manufacturingOrganization?.name ?? 'Manufacturing Organization'} />;
     }
     if (isRevenueOpportunitySection) {
+      if (activeRevenueSection === 'profit-leak') {
+        return <ProfitLeakWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} />;
+      }
       if (activeRevenueSection === 'invoice-target') {
         return <InvoiceTargetWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} />;
       }
@@ -4590,6 +4594,10 @@ function LoggedDashboardPage({ user, onSignOut, onNavigate, onUpdateAvatar, acti
             <button type="button" className={activeRevenueSection === 'invoice-target' ? 'active' : ''} onClick={() => onNavigate('/workspace/manufacturing-ops/intelligence/revenue-opportunity/invoice-target')}>
               <Target size={18} />
               <span>Invoice Target</span>
+            </button>
+            <button type="button" className={activeRevenueSection === 'profit-leak' ? 'active' : ''} onClick={() => onNavigate('/workspace/manufacturing-ops/intelligence/revenue-opportunity/profit-leak')}>
+              <TrendingUp size={18} />
+              <span>Profit Leak</span>
             </button>
           </nav>
         </aside>
