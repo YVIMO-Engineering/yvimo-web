@@ -7,9 +7,9 @@ type Props = { organizationId: string; customerId: string; supplierName: string;
 type OrderRow = { id: string; order_number: string; part_number: string; part_name: string; piece_type: string; planned_quantity: number; completed_quantity: number; scrap_quantity: number; status: string; priority: string; due_date: string; created_at: string; updated_at: string };
 type ReceptionRow = { id: string; voucher_number: string; customer_reference: string; status: string; updated_at: string };
 type ReceptionItemRow = { id: string; production_order_id: string | null; quantity: number; coating_sent_at: string | null; coating_returned_at: string | null; sent_at: string | null };
-type SerialProgressRow = { id: string; reception_item_id: string; coating_sent_at: string | null; coating_returned_at: string | null; sent_at: string | null; updated_at: string };
+type SerialProgressRow = { id: string; reception_item_id: string; coating_sent_at: string | null; coating_returned_at: string | null; sent_at: string | null; reworked_at: string | null; updated_at: string };
 type OrderSerialSummaryRow = { production_order_id: string; serial_count: number; tool_ids: string[] | null; serial_numbers: string[] | null };
-type OrderSerialDetailRow = { production_order_id: string; production_serial_id: string; piece_sequence: number; serial_number: string; tool_id: string; result: string | null; reported_at: string | null; voucher_number: string | null; coating_sent_at: string | null; coating_returned_at: string | null; delivered_at: string | null; scrap_reason: string | null; scrap_notes: string | null };
+type OrderSerialDetailRow = { production_order_id: string; production_serial_id: string; piece_sequence: number; serial_number: string; tool_id: string; result: string | null; reported_at: string | null; voucher_number: string | null; coating_sent_at: string | null; coating_returned_at: string | null; delivered_at: string | null; scrap_reason: string | null; scrap_notes: string | null; reworked_at: string | null; rework_order_number: string | null };
 type DeliveryDelayRow = { id: string; production_order_id: string; original_due_date: string; new_due_date: string; reason: string; created_at: string };
 type DocumentRow = { id: string; production_order_id: string; file_name: string; uploaded_at: string };
 type EvidenceRow = { id: string; production_serial_id: string; stage: string; file_name: string; file_path: string; file_type: string; uploaded_at: string };
@@ -51,33 +51,36 @@ function orderJourney(order: OrderRow, items: ReceptionItemRow[], serialProgress
   const pieces = serialProgress.filter((piece) => itemIds.has(piece.reception_item_id));
   const expectedPieces = Math.max(order.planned_quantity || 0, ...orderItems.map((item) => item.quantity || 0), pieces.length);
   const counts = pieces.reduce((result, piece) => {
-    if (piece.sent_at) result.delivered += 1;
+    if (piece.reworked_at) result.reworked += 1;
+    else if (piece.sent_at) result.delivered += 1;
     else if (piece.coating_returned_at) result.ready += 1;
     else if (piece.coating_sent_at) result.coating += 1;
     else result.quality += 1;
     return result;
-  }, { delivered: 0, ready: 0, coating: 0, quality: 0 });
+  }, { delivered: 0, ready: 0, coating: 0, quality: 0, reworked: 0 });
   const representedPieces = pieces.length;
   const scrapCount = Math.max(0, order.scrap_quantity || 0);
   const resolvedPieces = Math.min(expectedPieces, representedPieces + scrapCount);
   const manufacturingPieces = Math.max(0, expectedPieces - resolvedPieces);
   const productionRatio = order.planned_quantity ? Math.min(1, ((order.completed_quantity || 0) + scrapCount) / order.planned_quantity) : 0;
-  const weightedProgress = counts.delivered * 100 + counts.ready * 85 + counts.coating * 70 + counts.quality * 55 + scrapCount * 100 + manufacturingPieces * productionRatio * 45;
+  const weightedProgress = counts.delivered * 100 + counts.ready * 85 + counts.coating * 70 + counts.quality * 55 + counts.reworked * 100 + scrapCount * 100 + manufacturingPieces * productionRatio * 45;
   const progress = expectedPieces ? Math.min(100, Math.round(weightedProgress / expectedPieces)) : Math.round(productionRatio * 45);
   const stages = [
     counts.delivered ? `${counts.delivered} delivered` : '',
     counts.ready ? `${counts.ready} ready to deliver` : '',
     counts.coating ? `${counts.coating} in coating` : '',
     counts.quality ? `${counts.quality} in quality check` : '',
+    counts.reworked ? `${counts.reworked} in rework` : '',
     manufacturingPieces ? `${manufacturingPieces} in production` : '',
   ].filter(Boolean);
-  const fullyDelivered = expectedPieces > 0 && counts.delivered > 0 && counts.delivered + scrapCount >= expectedPieces;
+  const fullyDelivered = expectedPieces > 0 && counts.delivered > 0 && counts.delivered + counts.reworked + scrapCount >= expectedPieces;
   const legacy = orderItems.length === 0 && order.due_date < deliveryTrackingStart;
   const produciblePieces = Math.max(0, expectedPieces - scrapCount);
   const producedPieces = Math.min(produciblePieces, Math.max(0, order.completed_quantity || representedPieces));
   let label = statusLabels[order.status] ?? order.status;
-  let badges: Array<{ text: string; tone: 'production' | 'quality' | 'coating' | 'ready' | 'delivered' | 'scrap' }> = [];
+  let badges: Array<{ text: string; tone: 'production' | 'quality' | 'coating' | 'ready' | 'delivered' | 'scrap' | 'rework' }> = [];
   if (scrapCount) badges.push({ text: `${scrapCount} scrap`, tone: 'scrap' });
+  if (counts.reworked) badges.push({ text: `${counts.reworked} in rework`, tone: 'rework' });
   if (counts.delivered) badges.push({ text: `${counts.delivered} delivered`, tone: 'delivered' });
   if (counts.ready) badges.push({ text: `${counts.ready} ready to deliver`, tone: 'ready' });
   if (counts.coating) badges.push({ text: `${counts.coating} in coating`, tone: 'coating' });
@@ -134,7 +137,7 @@ export function CustomerPortalDashboard({ organizationId, customerId, supplierNa
       supabase.from('mes_production_orders').select('id, order_number, part_number, part_name, piece_type, planned_quantity, completed_quantity, scrap_quantity, status, priority, due_date, created_at, updated_at').eq('organization_id', organizationId).eq('customer_id', customerId).order('updated_at', { ascending: false }),
       supabase.from('mes_customer_reception_vouchers').select('id, voucher_number, customer_reference, status, updated_at').eq('organization_id', organizationId).eq('customer_id', customerId).order('updated_at', { ascending: false }).limit(20),
       supabase.from('mes_customer_reception_items').select('id, production_order_id, quantity, coating_sent_at, coating_returned_at, sent_at').eq('organization_id', organizationId).eq('customer_id', customerId),
-      supabase.from('mes_customer_reception_serial_progress').select('id, reception_item_id, coating_sent_at, coating_returned_at, sent_at, updated_at').eq('organization_id', organizationId),
+      supabase.from('mes_customer_reception_serial_progress').select('id, reception_item_id, coating_sent_at, coating_returned_at, sent_at, reworked_at, updated_at').eq('organization_id', organizationId),
       supabase.rpc('get_customer_portal_order_serial_summary', { p_organization_id: organizationId, p_customer_id: customerId }),
       supabase.rpc('get_customer_portal_order_serial_details', { p_organization_id: organizationId, p_customer_id: customerId }),
       supabase.from('mes_quality_inspection_documents').select('id, production_order_id, file_name, uploaded_at').eq('organization_id', organizationId).order('uploaded_at', { ascending: false }).limit(20),
@@ -276,12 +279,13 @@ export function CustomerPortalDashboard({ organizationId, customerId, supplierNa
       {expanded ? <div className="cp-order-detail"><header><div><strong>Serial progress for order {order.order_number}</strong><small>{serialDetails.length} serial{serialDetails.length === 1 ? '' : 's'} · Read-only customer view</small></div><span>{journey.progress}% overall progress</span></header>{serialDetails.length ? <div className="cp-order-detail-list">{serialDetails.map((serial) => {
         const produced = serial.result === 'good';
         const scrapped = serial.result === 'scrap';
+        const reworked = !scrapped && Boolean(serial.reworked_at);
         const evidenceByStage = new Map(evidence.filter((row) => row.production_serial_id === serial.production_serial_id).map((row) => [row.stage, row]));
         const renderStage = (timestamp: string | null, stage: string, title: string, completeLabel: string, waitingLabel: string) => {
           const row = evidenceByStage.get(stage);
           return <span className={timestamp ? 'done' : 'waiting'}><small>{title}</small><strong>{timestamp ? completeLabel : journey.legacy ? 'Not tracked' : waitingLabel}</strong><em>{detailDate(timestamp)}</em>{timestamp ? row ? <button className="cp-order-evidence-button" type="button" onClick={() => void openEvidence(row, serial.serial_number || `Piece ${serial.piece_sequence}`, title)}>{row.file_type === 'application/pdf' ? <FileText size={14} /> : <ImagePlus size={14} />} View inspection</button> : <span className="cp-order-no-evidence">No Evidence</span> : null}</span>;
         };
-        return <article className={scrapped ? 'scrapped' : ''} key={serial.production_serial_id}><span><small>SERIAL NUMBER</small><strong>{serial.serial_number || `Piece ${serial.piece_sequence}`}</strong><em className={scrapped ? 'scrap' : produced ? 'complete' : 'pending'}>{scrapped ? 'Scrap' : produced ? 'Produced' : 'Pending production'}</em></span><span><small>TOOL ID</small><strong>{serial.tool_id || 'Not assigned'}</strong>{serial.voucher_number ? <em>Reception {serial.voucher_number}</em> : null}</span>{scrapped ? <span className="cp-serial-scrap-state"><span className="cp-serial-scrap-summary"><small>FINAL PIECE STATUS</small><strong>Scrap</strong><em>{detailDate(serial.reported_at)}</em></span><span className="cp-serial-scrap-reason"><small>SCRAP REASON</small><strong>{serial.scrap_reason || 'Reason not registered'}</strong>{serial.scrap_notes ? <em>{serial.scrap_notes}</em> : null}</span></span> : <>{renderStage(serial.coating_sent_at, 'after-sharpening', 'COATING DISPATCH', 'Sent', produced ? 'Awaiting dispatch' : 'Awaiting production')}{renderStage(serial.coating_returned_at, 'after-coating', 'COATING RETURN', 'Received', serial.coating_sent_at ? 'Awaiting return' : 'Not started')}{renderStage(serial.delivered_at, 'after-delivery', 'DELIVERY', 'Delivered', serial.coating_returned_at ? 'Ready to deliver' : 'Not ready')}</>}</article>;
+        return <article className={scrapped ? 'scrapped' : reworked ? 'reworked' : ''} key={serial.production_serial_id}><span><small>SERIAL NUMBER</small><strong>{serial.serial_number || `Piece ${serial.piece_sequence}`}</strong><em className={scrapped ? 'scrap' : reworked ? 'rework' : produced ? 'complete' : 'pending'}>{scrapped ? 'Scrap' : reworked ? 'In rework' : produced ? 'Produced' : 'Pending production'}</em></span><span><small>TOOL ID</small><strong>{serial.tool_id || 'Not assigned'}</strong>{serial.voucher_number ? <em>Reception {serial.voucher_number}</em> : null}</span>{scrapped ? <span className="cp-serial-scrap-state"><span className="cp-serial-scrap-summary"><small>FINAL PIECE STATUS</small><strong>Scrap</strong><em>{detailDate(serial.reported_at)}</em></span><span className="cp-serial-scrap-reason"><small>SCRAP REASON</small><strong>{serial.scrap_reason || 'Reason not registered'}</strong>{serial.scrap_notes ? <em>{serial.scrap_notes}</em> : null}</span></span> : reworked ? <span className="cp-serial-rework-state"><span className="cp-serial-rework-summary"><small>PIECE STATUS</small><strong>Sent to rework</strong><em>{detailDate(serial.reworked_at)}</em></span><span className="cp-serial-rework-order"><small>CONTINUES IN</small><strong>{serial.rework_order_number || 'A new order'}</strong><em>This piece is being reworked and is tracked in that order.</em></span></span> : <>{renderStage(serial.coating_sent_at, 'after-sharpening', 'COATING DISPATCH', 'Sent', produced ? 'Awaiting dispatch' : 'Awaiting production')}{renderStage(serial.coating_returned_at, 'after-coating', 'COATING RETURN', 'Received', serial.coating_sent_at ? 'Awaiting return' : 'Not started')}{renderStage(serial.delivered_at, 'after-delivery', 'DELIVERY', 'Delivered', serial.coating_returned_at ? 'Ready to deliver' : 'Not ready')}</>}</article>;
       })}</div> : <div className="cp-card-empty">No serial details are available for this order yet.</div>}</div> : null}
     </React.Fragment>;
   };

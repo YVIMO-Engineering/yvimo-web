@@ -699,6 +699,12 @@
   color: #b72e45;
 }
 
+.cp-journey-badges .tone-rework {
+  border-color: #f0c079;
+  background: #fff3e0;
+  color: #96590b;
+}
+
 .cp-journey-progress {
   display: flex;
   align-items: center;
@@ -813,6 +819,11 @@
   background: #fff9f9;
 }
 
+.cp-order-detail-list > article.reworked {
+  border-color: #f2ceA0;
+  background: #fffaf2;
+}
+
 .cp-order-detail-list article > span {
   display: grid;
   align-content: center;
@@ -864,6 +875,7 @@
 
 .cp-order-detail-list em.complete,
 .cp-order-detail-list em.pending,
+.cp-order-detail-list em.rework,
 .cp-order-detail-list em.scrap {
   justify-self: start;
   border-radius: 99px;
@@ -884,6 +896,65 @@
 .cp-order-detail-list em.scrap {
   background: #ffe4e7;
   color: #bd3347;
+}
+
+.cp-order-detail-list em.rework {
+  background: #fdeecd;
+  color: #96590b;
+}
+
+.cp-order-detail-list article > .cp-serial-rework-state {
+  grid-column: 3 / -1;
+  grid-template-columns: minmax(135px, 0.8fr) minmax(0, 1.7fr);
+  min-height: 58px;
+  align-content: center;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid #f0c079;
+  background: #fff3e0;
+}
+
+.cp-order-detail-list article > .cp-serial-rework-state > span {
+  display: grid;
+  align-content: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+.cp-order-detail-list article > .cp-serial-rework-state small {
+  color: #a76a11;
+}
+
+.cp-order-detail-list article > .cp-serial-rework-state strong {
+  color: #92500c;
+  font-size: 14px;
+}
+
+.cp-order-detail-list article > .cp-serial-rework-state em {
+  color: #b1762a;
+  font-size: 9px;
+}
+
+.cp-order-detail-list article > .cp-serial-rework-state > .cp-serial-rework-order {
+  border: 1px solid #f3cf9c;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #fffaf2;
+}
+
+.cp-order-detail-list article > .cp-serial-rework-state > .cp-serial-rework-order strong {
+  overflow: visible;
+  font-size: 11px;
+  line-height: 1.35;
+  white-space: normal;
+}
+
+.cp-order-detail-list article > .cp-serial-rework-state > .cp-serial-rework-order em {
+  color: #97672a;
+  font-size: 9px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .cp-order-detail-list article > .cp-serial-scrap-state {
@@ -1023,7 +1094,8 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .cp-order-detail-list article > .cp-serial-scrap-state {
+  .cp-order-detail-list article > .cp-serial-scrap-state,
+  .cp-order-detail-list article > .cp-serial-rework-state {
     grid-column: 1 / -1;
     grid-template-columns: minmax(0, 1fr);
   }

@@ -1,8 +1,8 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { AlertTriangle, BarChart3, CalendarDays, Check, ChevronDown, CircleDollarSign, ClipboardCheck, Clock3, FileText, PackageCheck, PaintBucket, Pencil, Plus, RotateCcw, Search, Send, ShieldAlert, TrendingDown, TrendingUp, Trash2, Truck, Upload, Users, X } from 'lucide-react';
+import { AlertTriangle, BarChart3, CalendarDays, Check, ChevronDown, CircleDollarSign, ClipboardCheck, Clock3, FileText, PackageCheck, PaintBucket, Pencil, Plus, RotateCcw, RotateCw, Search, Send, ShieldAlert, TrendingDown, TrendingUp, Trash2, Truck, Upload, Users, X } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
-import { MesOrderDatePicker, ProductionOrderDetailsModal, type ProductionOrderDetailEvidenceRow, type ProductionOrderDetailPiece, type ProductionOrderDetailsState, type ProductionOrderDetailTraceabilityRow } from './MesWorkspaces';
+import { MesOrderDatePicker, ProductionOrderDetailsModal, ProductionOrdersWorkspace, type ProductionOrderDetailEvidenceRow, type ProductionOrderDetailPiece, type ProductionOrderDetailsState, type ProductionOrderDetailTraceabilityRow, type ProductionOrderReworkDraft } from './MesWorkspaces';
 import type { ProductionOrder } from './mesTypes';
 import { localizeClientsTree, translateClientsText, type ClientsLanguageCode } from './clientsI18n';
 import { WeeklyReceptionsChart, type DailyReceptionStat } from './statistics/WeeklyReceptionsChart';
@@ -39,6 +39,7 @@ type ReceptionItem = {
   coatingSentAt: string;
   coatingReturnedAt: string;
   sentAt: string;
+  isRework: boolean;
 };
 
 type ReceptionSerial = {
@@ -50,7 +51,20 @@ type ReceptionSerial = {
   coatingSentAt: string;
   coatingReturnedAt: string;
   sentAt: string;
+  reworkedAt: string;
+  rework: SerialRework | null;
 };
+
+type SerialRework = {
+  detectedStage: ReworkStage;
+  reason: string;
+  createdAt: string;
+  reworkOrderNumber: string;
+};
+
+type ReworkStage = 'quality-inspection' | 'coating' | 'pre-delivery' | 'customer';
+type ReworkTarget = { item: ReceptionItem; serial: ReceptionSerial };
+type ReworkAssignment = 'new-order' | 'existing-order';
 
 type CoatingEvidenceAction = 'coating-sent' | 'coating-returned' | 'sent';
 type CoatingEvidenceTarget = { item: ReceptionItem; action: CoatingEvidenceAction; serials: ReceptionSerial[] };
@@ -150,12 +164,14 @@ type ReceptionItemRow = {
   coating_sent_at: string | null;
   coating_returned_at: string | null;
   sent_at: string | null;
+  is_rework: boolean | null;
   mes_customers: { customer_name: string } | Array<{ customer_name: string }> | null;
 };
 
 type ProductionOrderRow = { id: string; status: string; piece_type: string | null; completed_quantity: number | null; scrap_quantity: number | null };
 type ProductionSerialRow = { id: string; production_order_id: string; serial_number: string | null; tool_id: string | null; result: string | null; reported_at: string | null; piece_sequence: number | null };
-type SerialProgressRow = { reception_item_id: string; production_serial_id: string; coating_sent_at: string | null; coating_returned_at: string | null; sent_at: string | null };
+type SerialProgressRow = { reception_item_id: string; production_serial_id: string; coating_sent_at: string | null; coating_returned_at: string | null; sent_at: string | null; reworked_at: string | null };
+type SerialReworkRow = { source_reception_item_id: string; source_production_serial_id: string; detected_stage: ReworkStage; reason: string; created_at: string; rework_production_order_id: string | null };
 
 type Props = {
   organizationId: string;
@@ -175,6 +191,17 @@ const statusStep: Record<ReceptionStatus, number> = {
   sent: 6,
   discrepancy: 3,
 };
+
+const reworkStages: Array<{ value: ReworkStage; label: string }> = [
+  { value: 'quality-inspection', label: 'Quality Inspection' },
+  { value: 'coating', label: 'Coating' },
+  { value: 'pre-delivery', label: 'Before Delivery' },
+  { value: 'customer', label: 'Returned by the Client' },
+];
+
+// A reworked piece can only join an order that is still producing and that has a
+// sub-reception of its own, otherwise it could never be coated or delivered.
+const reworkTargetOrderStatuses = ['planned', 'released', 'running', 'paused'];
 
 const emptyForm = {
   customerId: '',
@@ -343,6 +370,19 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
   const [existingOrderError, setExistingOrderError] = React.useState('');
   const [existingOrderCustomerMenuOpen, setExistingOrderCustomerMenuOpen] = React.useState(false);
   const [existingOrderMenuOpen, setExistingOrderMenuOpen] = React.useState(false);
+  const [reworkTarget, setReworkTarget] = React.useState<ReworkTarget | null>(null);
+  const [reworkStage, setReworkStage] = React.useState<ReworkStage>('quality-inspection');
+  const [reworkStageMenuOpen, setReworkStageMenuOpen] = React.useState(false);
+  const [reworkReason, setReworkReason] = React.useState('');
+  const [reworkAssignment, setReworkAssignment] = React.useState<ReworkAssignment>('new-order');
+  const [reworkError, setReworkError] = React.useState('');
+  const [reworkSaving, setReworkSaving] = React.useState(false);
+  const [reworkOrderDraft, setReworkOrderDraft] = React.useState<ProductionOrderReworkDraft | null>(null);
+  const [reworkOrders, setReworkOrders] = React.useState<ExistingProductionOrder[]>([]);
+  const [reworkOrdersLoading, setReworkOrdersLoading] = React.useState(false);
+  const [reworkOrderId, setReworkOrderId] = React.useState('');
+  const [reworkOrderSearch, setReworkOrderSearch] = React.useState('');
+  const [reworkOrderMenuOpen, setReworkOrderMenuOpen] = React.useState(false);
   const [coatingEvidenceTarget, setCoatingEvidenceTarget] = React.useState<CoatingEvidenceTarget | null>(null);
   const [coatingEvidenceFiles, setCoatingEvidenceFiles] = React.useState<Record<string, File>>({});
   const [coatingEvidenceSkipped, setCoatingEvidenceSkipped] = React.useState<Record<string, boolean>>({});
@@ -430,6 +470,7 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
     const productionStatusById = new Map<string, { status: string; pieceType: string; completedQuantity: number; scrapQuantity: number }>();
     const productionIdentifiersById = new Map<string, { serialNumbers: string[]; toolIds: string[]; serials: Array<{ id: string; serialNumber: string; toolId: string; result: 'good' | 'scrap' | null; reportedAt: string }> }>();
     const serialProgressByKey = new Map<string, SerialProgressRow>();
+    const reworkByKey = new Map<string, SerialRework>();
     let receptionRows: ReceptionRow[] = [];
     let itemRows: ReceptionItemRow[] = [];
     try {
@@ -441,7 +482,7 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
         .range(from, to));
       itemRows = await fetchAllRowsByIds<ReceptionItemRow>(receptionRows.map((row) => row.id), (chunk, from, to) => supabase
         .from('mes_customer_reception_items')
-        .select('id, reception_voucher_id, customer_id, quantity, production_order_id, production_order_number, coating_sent_at, coating_returned_at, sent_at, mes_customers(customer_name)')
+        .select('id, reception_voucher_id, customer_id, quantity, production_order_id, production_order_number, coating_sent_at, coating_returned_at, sent_at, is_rework, mes_customers(customer_name)')
         .in('reception_voucher_id', chunk)
         .order('created_at')
         .range(from, to));
@@ -474,12 +515,36 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
         identifiers.serials.push({ id: serial.id, serialNumber, toolId, result: serial.result as 'good' | 'scrap' | null, reportedAt: serial.reported_at ?? '' });
         productionIdentifiersById.set(serial.production_order_id, identifiers);
       });
-      const serialProgressRows = await fetchAllRowsByIds<SerialProgressRow>(productionSerials.map((serial) => serial.id), (chunk, from, to) => supabase
-        .from('mes_customer_reception_serial_progress')
-        .select('reception_item_id, production_serial_id, coating_sent_at, coating_returned_at, sent_at')
-        .in('production_serial_id', chunk)
-        .range(from, to));
+      const serialIds = productionSerials.map((serial) => serial.id);
+      const [serialProgressRows, reworkRows] = await Promise.all([
+        fetchAllRowsByIds<SerialProgressRow>(serialIds, (chunk, from, to) => supabase
+          .from('mes_customer_reception_serial_progress')
+          .select('reception_item_id, production_serial_id, coating_sent_at, coating_returned_at, sent_at, reworked_at')
+          .in('production_serial_id', chunk)
+          .range(from, to)),
+        fetchAllRowsByIds<SerialReworkRow>(serialIds, (chunk, from, to) => supabase
+          .from('mes_production_serial_reworks')
+          .select('source_reception_item_id, source_production_serial_id, detected_stage, reason, created_at, rework_production_order_id')
+          .eq('organization_id', organizationId)
+          .in('source_production_serial_id', chunk)
+          .range(from, to)),
+      ]);
       serialProgressRows.forEach((progress) => serialProgressByKey.set(`${progress.reception_item_id}:${progress.production_serial_id}`, progress));
+      const reworkOrderNumberById = new Map((await fetchAllRowsByIds<{ id: string; order_number: string }>(
+        reworkRows.flatMap((rework) => rework.rework_production_order_id ? [rework.rework_production_order_id] : []),
+        (chunk, from, to) => supabase
+          .from('mes_production_orders')
+          .select('id, order_number')
+          .eq('organization_id', organizationId)
+          .in('id', chunk)
+          .range(from, to),
+      )).map((order) => [order.id, order.order_number]));
+      reworkRows.forEach((rework) => reworkByKey.set(`${rework.source_reception_item_id}:${rework.source_production_serial_id}`, {
+        detectedStage: rework.detected_stage,
+        reason: rework.reason,
+        createdAt: rework.created_at,
+        reworkOrderNumber: rework.rework_production_order_id ? reworkOrderNumberById.get(rework.rework_production_order_id) ?? '' : '',
+      }));
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Unable to load reception vouchers.');
       setLoading(false);
@@ -493,9 +558,16 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
         const productionIdentifiers = item.production_order_id ? productionIdentifiersById.get(item.production_order_id) : null;
         const serials = (productionIdentifiers?.serials ?? []).map((serial) => {
           const progress = serialProgressByKey.get(`${item.id}:${serial.id}`);
-          return { ...serial, coatingSentAt: progress?.coating_sent_at ?? '', coatingReturnedAt: progress?.coating_returned_at ?? '', sentAt: progress?.sent_at ?? '' };
+          return {
+            ...serial,
+            coatingSentAt: progress?.coating_sent_at ?? '',
+            coatingReturnedAt: progress?.coating_returned_at ?? '',
+            sentAt: progress?.sent_at ?? '',
+            reworkedAt: progress?.reworked_at ?? '',
+            rework: reworkByKey.get(`${item.id}:${serial.id}`) ?? null,
+          };
         });
-        return { id: item.id, customerId: item.customer_id, customerName: itemCustomer?.customer_name ?? 'Unknown customer', quantity: item.quantity, productionOrderId: item.production_order_id ?? '', productionOrderNumber: item.production_order_number, productionStatus: productionOrder?.status ?? '', pieceType: productionOrder?.pieceType ?? '', completedQuantity: productionOrder?.completedQuantity ?? 0, scrapQuantity: productionOrder?.scrapQuantity ?? 0, serialNumbers: productionIdentifiers?.serialNumbers ?? [], toolIds: productionIdentifiers?.toolIds ?? [], serials, coatingSentAt: item.coating_sent_at ?? '', coatingReturnedAt: item.coating_returned_at ?? '', sentAt: item.sent_at ?? '' };
+        return { id: item.id, customerId: item.customer_id, customerName: itemCustomer?.customer_name ?? 'Unknown customer', quantity: item.quantity, productionOrderId: item.production_order_id ?? '', productionOrderNumber: item.production_order_number, productionStatus: productionOrder?.status ?? '', pieceType: productionOrder?.pieceType ?? '', completedQuantity: productionOrder?.completedQuantity ?? 0, scrapQuantity: productionOrder?.scrapQuantity ?? 0, serialNumbers: productionIdentifiers?.serialNumbers ?? [], toolIds: productionIdentifiers?.toolIds ?? [], serials, coatingSentAt: item.coating_sent_at ?? '', coatingReturnedAt: item.coating_returned_at ?? '', sentAt: item.sent_at ?? '', isRework: Boolean(item.is_rework) };
       });
       const assignedItems = receptionItems.filter((item) => item.productionOrderId);
       const productionStatuses = assignedItems.map((item) => item.productionStatus);
@@ -858,8 +930,9 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
   };
 
   const openCoatingEvidence = async (item: ReceptionItem, action: CoatingEvidenceAction, serialId?: string) => {
-    const serials = serialId ? item.serials.filter((serial) => serial.id === serialId && serial.result === 'good') : item.serials.filter((serial) => (
-      serial.result === 'good' && (action === 'coating-sent' ? !serial.coatingSentAt : action === 'coating-returned' ? serial.coatingSentAt && !serial.coatingReturnedAt : !serial.sentAt)
+    const serials = serialId ? item.serials.filter((serial) => serial.id === serialId && serial.result === 'good' && !serial.reworkedAt) : item.serials.filter((serial) => (
+      serial.result === 'good' && !serial.reworkedAt
+      && (action === 'coating-sent' ? !serial.coatingSentAt : action === 'coating-returned' ? serial.coatingSentAt && !serial.coatingReturnedAt : !serial.sentAt)
     ));
     if (!serials.length) return;
     setCoatingEvidenceTarget({ item, action, serials });
@@ -991,6 +1064,111 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
     onNavigate('/workspace/manufacturing-ops/mes/orders');
   };
 
+  const closeRework = () => {
+    setReworkTarget(null);
+    setReworkOrderDraft(null);
+    setReworkStageMenuOpen(false);
+    setReworkOrderMenuOpen(false);
+    setReworkError('');
+    setReworkSaving(false);
+  };
+
+  const openRework = (item: ReceptionItem, serial: ReceptionSerial) => {
+    setReworkTarget({ item, serial });
+    setReworkStage(item.coatingSentAt || serial.coatingSentAt ? 'coating' : 'quality-inspection');
+    setReworkReason('');
+    setReworkAssignment('new-order');
+    setReworkError('');
+    setReworkStageMenuOpen(false);
+    setReworkOrderMenuOpen(false);
+    setReworkOrderDraft(null);
+    setReworkOrderId('');
+    setReworkOrderSearch('');
+    setReworkOrders([]);
+  };
+
+  const loadReworkOrders = async (item: ReceptionItem) => {
+    setReworkOrdersLoading(true);
+    const { data, error: ordersError } = await supabase
+      .from('mes_production_orders')
+      .select('id, order_number, customer_id, client_name, part_name, status, planned_quantity')
+      .eq('organization_id', organizationId)
+      .eq('customer_id', item.customerId)
+      .in('status', reworkTargetOrderStatuses)
+      .order('created_at', { ascending: false });
+    setReworkOrdersLoading(false);
+    if (ordersError) {
+      setReworkError(ordersError.message);
+      setReworkOrders([]);
+      return;
+    }
+    setReworkOrders((data ?? [])
+      .filter((order) => order.id !== item.productionOrderId)
+      .map((order) => ({
+        id: order.id,
+        orderNumber: order.order_number,
+        customerId: order.customer_id ?? '',
+        clientName: order.client_name ?? 'Unknown client',
+        partName: order.part_name ?? '',
+        status: order.status ?? '',
+        plannedQuantity: Number(order.planned_quantity) || 0,
+      })));
+  };
+
+  const selectReworkAssignment = async (assignment: ReworkAssignment) => {
+    setReworkAssignment(assignment);
+    setReworkError('');
+    if (assignment === 'existing-order' && reworkTarget && !reworkOrders.length) await loadReworkOrders(reworkTarget.item);
+  };
+
+  const startReworkOrder = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!reworkTarget || !reworkReason.trim()) {
+      setReworkError('Describe why this piece has to be reworked.');
+      return;
+    }
+    if (reworkAssignment === 'existing-order') {
+      void assignReworkToExistingOrder();
+      return;
+    }
+    setReworkError('');
+    setReworkOrderDraft({
+      receptionItemId: reworkTarget.item.id,
+      receptionVoucherId: selected?.id ?? '',
+      productionSerialId: reworkTarget.serial.id,
+      detectedStage: reworkStage,
+      reason: reworkReason.trim(),
+      sourceOrderNumber: reworkTarget.item.productionOrderNumber,
+      serialNumber: reworkTarget.serial.serialNumber,
+      toolId: reworkTarget.serial.toolId,
+    });
+  };
+
+  const assignReworkToExistingOrder = async () => {
+    if (!reworkTarget || reworkSaving) return;
+    if (!reworkOrderId) {
+      setReworkError('Select the Production Order that will rework this piece.');
+      return;
+    }
+    setReworkSaving(true);
+    setReworkError('');
+    const { error: reworkRequestError } = await supabase.rpc('assign_production_serial_rework_to_existing_order', {
+      p_organization_id: organizationId,
+      p_reception_item_id: reworkTarget.item.id,
+      p_production_serial_id: reworkTarget.serial.id,
+      p_detected_stage: reworkStage,
+      p_reason: reworkReason.trim(),
+      p_target_production_order_id: reworkOrderId,
+    });
+    setReworkSaving(false);
+    if (reworkRequestError) {
+      setReworkError(reworkRequestError.message);
+      return;
+    }
+    closeRework();
+    await loadVouchers();
+  };
+
   const openExistingOrderModal = async (item: ReceptionItem) => {
     setExistingOrderItem(item);
     setExistingOrderSearch('');
@@ -1058,6 +1236,17 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
       return matchesCustomer && matchesSearch;
     });
   }, [existingOrderCustomerId, existingOrderSearch, existingOrders]);
+
+  const filteredReworkOrders = React.useMemo(() => {
+    const search = reworkOrderSearch.trim().toLocaleLowerCase();
+    return reworkOrders.filter((order) => {
+      // Without a sub-reception of its own the reworked piece would have no
+      // coating or delivery step to go through.
+      const hasSubReception = assignedProductionOrderIds.has(order.id);
+      const matchesSearch = !search || `${order.orderNumber} ${order.partName} ${order.status}`.toLocaleLowerCase().includes(search);
+      return hasSubReception && matchesSearch;
+    });
+  }, [assignedProductionOrderIds, reworkOrderSearch, reworkOrders]);
 
   const clearRegistryFilters = () => {
     const today = new Date().toISOString().slice(0, 10);
@@ -1220,8 +1409,8 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
                   {selected.items.map((item, index) => (
                     <article key={item.id}>
                       <div className="client-reception-item-summary">
-                        <span className="client-reception-item-number">{index + 1}</span>
-                        <div><small>Client</small><strong>{item.customerName}</strong></div>
+                        <span className={`client-reception-item-number${item.isRework ? ' rework' : ''}`}>{item.isRework ? <RotateCw size={14} /> : index + 1}</span>
+                        <div><small>Client</small><strong>{item.customerName}</strong>{item.isRework ? <em className="client-reception-item-rework-tag">Rework</em> : null}</div>
                         <div className="client-reception-item-quantity"><small>Quantity</small><strong>{item.quantity.toLocaleString()}</strong></div>
                         <div className="client-reception-item-produced"><small>Produced</small><strong>{item.completedQuantity.toLocaleString()}</strong></div>
                         <div className="client-reception-item-scrap"><small>Scrap</small><strong>{item.scrapQuantity.toLocaleString()}</strong></div>
@@ -1232,13 +1421,17 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
                         </div>
                       </div>
                       {item.serials.length ? <div className="client-reception-serials"><header><strong>Serial numbers in this order</strong><span>{translateClientsText(languageCode, `${item.serials.filter((serial) => serial.result === 'good').length} produced · ${item.serials.length} total pieces`)}</span></header><div className="client-reception-serial-list">
-                        {item.serials.map((serial) => { const isProduced = serial.result === 'good'; return <div className={`client-reception-serial-row ${isProduced ? 'produced' : serial.result === 'scrap' ? 'scrap' : 'pending-production'}`} key={serial.id}>
-                          <span><small>Serial Number</small><strong>{serial.serialNumber}</strong><em className={`client-reception-serial-result ${isProduced ? 'produced' : serial.result === 'scrap' ? 'scrap' : 'pending'}`}>{isProduced ? <><Check size={12} /> Produced</> : serial.result === 'scrap' ? <><X size={12} /> Scrap</> : <><Clock3 size={12} /> Pending production</>}</em></span>
+                        {item.serials.map((serial) => { const isProduced = serial.result === 'good'; const isReworked = Boolean(serial.reworkedAt); return <div className={`client-reception-serial-row ${isReworked ? 'reworked' : isProduced ? 'produced' : serial.result === 'scrap' ? 'scrap' : 'pending-production'}`} key={serial.id}>
+                          <span><small>Serial Number</small><strong>{serial.serialNumber}</strong><em className={`client-reception-serial-result ${isReworked ? 'reworked' : isProduced ? 'produced' : serial.result === 'scrap' ? 'scrap' : 'pending'}`}>{isReworked ? <><RotateCw size={12} /> In rework</> : isProduced ? <><Check size={12} /> Produced</> : serial.result === 'scrap' ? <><X size={12} /> Scrap</> : <><Clock3 size={12} /> Pending production</>}</em></span>
                           <span><small>Tool ID</small><strong>{serial.toolId || 'Not specified'}</strong></span>
-                          {serial.result === 'scrap' ? <span className="client-reception-serial-scrap-state"><small>Final piece status</small><strong><X size={14} /> Scrap</strong>{serial.reportedAt ? <time>{formatReceptionTimestamp(serial.reportedAt, languageCode)}</time> : null}</span> : <>
+                          {serial.result === 'scrap' ? <span className="client-reception-serial-scrap-state"><small>Final piece status</small><strong><X size={14} /> Scrap</strong>{serial.reportedAt ? <time>{formatReceptionTimestamp(serial.reportedAt, languageCode)}</time> : null}</span> : isReworked ? <span className="client-reception-serial-rework-state">
+                            <span><small>Final piece status</small><strong><RotateCw size={14} /> Sent to rework</strong><time>{formatReceptionTimestamp(serial.reworkedAt, languageCode)}</time></span>
+                            <span><small>Rework order</small><strong>{serial.rework?.reworkOrderNumber || 'Not assigned'}</strong><em>{serial.rework ? `${reworkStages.find((stage) => stage.value === serial.rework?.detectedStage)?.label ?? 'Rework'} · ${serial.rework.reason}` : 'Reason not registered'}</em></span>
+                          </span> : <>
                           <span className={`piece-stage ${serial.coatingSentAt ? 'done' : ''}`}><small>Coating dispatch</small><button type="button" onClick={() => openCoatingEvidence(item, 'coating-sent', serial.id)} disabled={!isProduced || Boolean(updatingSerialKey) || Boolean(serial.coatingSentAt) || selected.status === 'waiting-delivery'}>{!isProduced ? <><Clock3 size={14} /> Awaiting production</> : item.pieceType.toLowerCase() === 'shavers' ? <><Check size={14} /><span><b>Not required</b></span></> : serial.coatingSentAt ? <><Check size={14} /><span><b>Sent</b><time>{formatReceptionTimestamp(serial.coatingSentAt, languageCode)}</time></span></> : <><Send size={14} /> Send to Coating</>}</button></span>
                           <span className={`piece-stage ${serial.coatingReturnedAt ? 'done' : ''}`}><small>Coating return</small><button type="button" onClick={() => openCoatingEvidence(item, 'coating-returned', serial.id)} disabled={!isProduced || Boolean(updatingSerialKey) || !serial.coatingSentAt || Boolean(serial.coatingReturnedAt) || selected.status === 'waiting-delivery'}>{!isProduced ? <><Clock3 size={14} /> Awaiting production</> : item.pieceType.toLowerCase() === 'shavers' ? <><Check size={14} /><span><b>Not required</b></span></> : serial.coatingReturnedAt ? <><Check size={14} /><span><b>Received</b><time>{formatReceptionTimestamp(serial.coatingReturnedAt, languageCode)}</time></span></> : <><RotateCcw size={14} /> Receive Coating</>}</button></span>
                           <span className={`piece-stage delivery ${serial.sentAt ? 'done' : ''}`}><small>Delivery</small><button type="button" onClick={() => void openCoatingEvidence(item, 'sent', serial.id)} disabled={!isProduced || Boolean(updatingSerialKey) || (!serial.coatingReturnedAt && selected.status !== 'waiting-delivery') || Boolean(serial.sentAt)}>{!isProduced ? <><Clock3 size={14} /> Awaiting production</> : serial.sentAt ? <><Check size={14} /><span><b>Sent</b><time>{formatReceptionTimestamp(serial.sentAt, languageCode)}</time></span></> : <><Truck size={14} /> Send</>}</button></span>
+                          <span className="piece-stage rework"><small>Rework</small><button type="button" onClick={() => openRework(item, serial)} disabled={!isProduced || Boolean(updatingSerialKey) || Boolean(serial.sentAt)}>{!isProduced ? <><Clock3 size={14} /> Awaiting production</> : serial.sentAt ? <><Check size={14} /><span><b>Delivered</b></span></> : <><RotateCw size={14} /> Send to Rework</>}</button></span>
                           </>}
                         </div>; })}
                       </div></div> : item.productionOrderId ? <div className="client-reception-serials-empty">No serial numbers have been assigned to this production order.</div> : null}
@@ -1446,6 +1639,58 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
             </form>
           </section>
         </div>
+      ) : null}
+
+      {reworkTarget && !reworkOrderDraft ? createPortal((
+        <div className="mes-modal-backdrop client-reception-rework-backdrop" role="presentation">
+          <section className="mes-order-modal client-reception-rework-modal" role="dialog" aria-modal="true" aria-labelledby="client-reception-rework-title">
+            <button className="supplier-modal-close" type="button" onClick={closeRework} disabled={reworkSaving}><X size={18} /></button>
+            <form onSubmit={startReworkOrder}>
+              <span className="client-reception-rework-icon"><RotateCw size={24} /></span>
+              <p className="eyebrow">Production Order</p>
+              <h3 id="client-reception-rework-title">Send this piece to rework</h3>
+              <p>The piece closes out of <strong>{reworkTarget.item.productionOrderNumber || 'its order'}</strong> the same way a scrap does, and it has to be reassigned to the Production Order that will rework it.</p>
+              <div className="client-reception-rework-piece">
+                <span><small>Serial Number</small><strong>{reworkTarget.serial.serialNumber || 'Not specified'}</strong></span>
+                <span><small>Tool ID</small><strong>{reworkTarget.serial.toolId || 'Not specified'}</strong></span>
+                <span><small>Client</small><strong>{reworkTarget.item.customerName}</strong></span>
+              </div>
+              <label>Where was it detected?<ReceptionPortalDropdown open={reworkStageMenuOpen} onOpenChange={setReworkStageMenuOpen} label={reworkStages.find((stage) => stage.value === reworkStage)?.label ?? 'Select stage'}>{reworkStages.map((stage) => <button type="button" className={stage.value === reworkStage ? 'selected' : ''} onClick={() => { setReworkStage(stage.value); setReworkStageMenuOpen(false); }} key={stage.value}>{stage.label}{stage.value === reworkStage ? <Check size={16} /> : null}</button>)}</ReceptionPortalDropdown></label>
+              <label>Rework Reason<textarea value={reworkReason} onChange={(event) => setReworkReason(event.target.value)} placeholder="Describe what was found and why the piece has to be reworked." rows={3} required /></label>
+              <fieldset className="client-reception-rework-assignment">
+                <legend>Assign the rework to</legend>
+                <div>
+                  <button type="button" className={reworkAssignment === 'new-order' ? 'active' : ''} onClick={() => void selectReworkAssignment('new-order')}><Plus size={17} /><span>Assign New Order</span><small>Opens a new RW- Production Order already filled in with this tool.</small></button>
+                  <button type="button" className={reworkAssignment === 'existing-order' ? 'active' : ''} onClick={() => void selectReworkAssignment('existing-order')}><Search size={17} /><span>Assign Existing Order</span><small>Adds this tool as one more piece of an order still in production.</small></button>
+                </div>
+              </fieldset>
+              {reworkAssignment === 'existing-order' ? (
+                <div className="client-reception-rework-orders">
+                  <label>Search Production Orders<div className="client-reception-existing-order-search"><Search size={18} /><input value={reworkOrderSearch} onChange={(event) => setReworkOrderSearch(event.target.value)} placeholder="Order number, part, or status..." /></div></label>
+                  <label className="client-reception-existing-order-select">Production Order<ReceptionPortalDropdown open={reworkOrderMenuOpen} onOpenChange={setReworkOrderMenuOpen} disabled={reworkOrdersLoading} menuClassName="order" label={reworkOrdersLoading ? 'Loading Production Orders...' : reworkOrderId ? (() => { const order = filteredReworkOrders.find((entry) => entry.id === reworkOrderId); return order ? `${order.orderNumber} · ${order.partName || 'Part not specified'}` : 'Select a Production Order'; })() : 'Select a Production Order'}>{filteredReworkOrders.length ? filteredReworkOrders.map((order) => <button type="button" className={order.id === reworkOrderId ? 'selected' : ''} onClick={() => { setReworkOrderId(order.id); setReworkOrderMenuOpen(false); }} key={order.id}><span><strong>{order.orderNumber}</strong><small>{order.partName || 'Part not specified'} · Qty. {order.plannedQuantity} · {labelProductionStatus(order.status)}</small></span>{order.id === reworkOrderId ? <Check size={17} /> : null}</button>) : <div className="empty">{reworkOrdersLoading ? 'Loading Production Orders...' : `No order of ${reworkTarget.item.customerName} is still in production with a sub-reception of its own.`}</div>}</ReceptionPortalDropdown><small>{filteredReworkOrders.length} matching order{filteredReworkOrders.length === 1 ? '' : 's'}</small></label>
+                </div>
+              ) : null}
+              {reworkError ? <div className="clients-feedback error" role="alert">{reworkError}</div> : null}
+              <div className="client-reception-rework-actions">
+                <button type="button" className="secondary" onClick={closeRework} disabled={reworkSaving}>Cancel</button>
+                <button type="submit" disabled={reworkSaving || !reworkReason.trim() || (reworkAssignment === 'existing-order' && !reworkOrderId)}>{reworkSaving ? 'Assigning...' : reworkAssignment === 'new-order' ? 'Continue to New Order' : 'Assign Existing Order'}</button>
+              </div>
+            </form>
+          </section>
+        </div>
+      ), document.body) : null}
+
+      {reworkOrderDraft ? (
+        <ProductionOrdersWorkspace
+          organizationId={organizationId}
+          onNavigate={onNavigate}
+          languageCode={languageCode}
+          modalOnly
+          reworkDraft={reworkOrderDraft}
+          onModalClose={closeRework}
+          onReworkAssigned={() => { closeRework(); void loadVouchers(); }}
+          onReworkFailed={(message) => { setReworkOrderDraft(null); setReworkError(message); }}
+        />
       ) : null}
 
       {existingOrderItem && selected ? (

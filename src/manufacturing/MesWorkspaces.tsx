@@ -1472,6 +1472,66 @@ function createWheelOrderNumber(orders: ProductionOrder[]) {
   return '';
 }
 
+export type ProductionOrderReworkDraft = {
+  receptionItemId: string;
+  receptionVoucherId: string;
+  productionSerialId: string;
+  detectedStage: string;
+  reason: string;
+  sourceOrderNumber: string;
+  serialNumber: string;
+  toolId: string;
+};
+
+type ProductionOrderReworkPrefillRow = {
+  customer_id: string | null;
+  client_name: string;
+  part_name: string;
+  piece_type: string;
+  priority: ProductionOrderPriority;
+  assigned_work_center: string;
+  planned_shifts: string[] | null;
+  manufacturing_type: ProductionOrderManufacturingType;
+  production_flow: string;
+  order_assigned_station: string;
+  quality_checks_enabled: boolean;
+  quality_checks: string[] | null;
+  quality_check_limits: Record<string, QualityCheckLimit> | null;
+  quality_measurement_unit: QualityMeasurementUnit;
+  tool_id: string;
+  serial_number: string;
+  assigned_station: string;
+  compatible_stations: string[] | null;
+  before_notch: number | null;
+  before_tooth_length: number | null;
+  before_height: number | null;
+  stock_to_remove: number | null;
+  quotation_id: string | null;
+  legacy_price_id: string | null;
+};
+
+// Rework orders carry their own RW- identity in both the order and part number,
+// so the number has to be free on either column before the order is created.
+async function createReworkOrderNumber(organizationId: string) {
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    const digitCount = 4 + Math.floor(attempt / 4);
+    const candidate = `RW-${String(Math.floor(Math.random() * 10 ** digitCount)).padStart(digitCount, '0')}`;
+    const { data, error } = await supabase
+      .from('mes_production_orders')
+      .select('id')
+      .eq('organization_id', organizationId)
+      .or(`order_number.eq.${candidate},part_number.eq.${candidate}`)
+      .limit(1);
+    if (error) throw error;
+    if (!data?.length) return candidate;
+  }
+  return '';
+}
+
+function productionSerialMeasurementText(value: number | null | undefined) {
+  return value === null || value === undefined ? '' : String(value);
+}
+
 function getProductionOrderStationLabel(stationOptionsByWorkCenter: Record<string, MesOrderDropdownOption[]>, workCenterCode: string, stationCode: string) {
   const stationOption = stationOptionsByWorkCenter[workCenterCode]?.find((option) => option.value === stationCode);
   return stationOption?.label.replace(`${stationCode} - `, '') ?? stationCode;
@@ -4291,10 +4351,22 @@ function PendingWorkReportModal({
   return typeof document === 'undefined' ? modalContent : createPortal(modalContent, document.body);
 }
 
-export function ProductionOrdersWorkspace({ onNavigate, organizationId, languageCode = 'en', modalOnly = false, onModalClose }: WorkspaceProps & {
+export function ProductionOrdersWorkspace({
+  onNavigate,
+  organizationId,
+  languageCode = 'en',
+  modalOnly = false,
+  onModalClose,
+  reworkDraft = null,
+  onReworkAssigned,
+  onReworkFailed,
+}: WorkspaceProps & {
   languageCode?: string;
   modalOnly?: boolean;
   onModalClose?: () => void;
+  reworkDraft?: ProductionOrderReworkDraft | null;
+  onReworkAssigned?: () => void;
+  onReworkFailed?: (message: string) => void;
 }) {
   useProductionOrdersI18n(languageCode);
   const restoredViewState = React.useMemo(() => loadProductionOrdersViewState(organizationId), [organizationId]);
@@ -4327,6 +4399,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, language
   const [serialAssignmentModalOpen, setSerialAssignmentModalOpen] = React.useState(false);
   const [stationAssignmentModalOpen, setStationAssignmentModalOpen] = React.useState(false);
   const [serialStationColumnAvailable, setSerialStationColumnAvailable] = React.useState(true);
+  const [reworkNumberLocked, setReworkNumberLocked] = React.useState(false);
   const [tableMessage, setTableMessage] = React.useState<string | null>('Loading production orders...');
   const [ordersLoaded, setOrdersLoaded] = React.useState(false);
   const [savingOrder, setSavingOrder] = React.useState(false);
@@ -4377,6 +4450,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, language
   const productionOrdersLoadRequestRef = React.useRef(0);
   const receptionDraftIdRef = React.useRef('');
   const receptionItemDraftIdRef = React.useRef('');
+  const reworkDraftRef = React.useRef<ProductionOrderReworkDraft | null>(null);
 
   const selectedOrder = orders.find((order) => order.orderNumber === selectedOrderNumber) ?? null;
   const selectedWorkCenterStationOptions = stationOptionsByWorkCenter[formState.assignedWorkCenter] ?? [];
@@ -5026,6 +5100,83 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, language
     }
   }, []);
 
+  // A rework opens this same form from Client Receptions, already filled in with
+  // everything the rejected piece was built with.
+  React.useEffect(() => {
+    if (!reworkDraft || reworkDraftRef.current?.productionSerialId === reworkDraft.productionSerialId) return undefined;
+    reworkDraftRef.current = reworkDraft;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const [prefillResponse, reworkOrderNumber] = await Promise.all([
+          supabase.rpc('get_production_serial_rework_prefill', {
+            p_organization_id: organizationId,
+            p_reception_item_id: reworkDraft.receptionItemId,
+            p_production_serial_id: reworkDraft.productionSerialId,
+          }),
+          createReworkOrderNumber(organizationId),
+        ]);
+        if (prefillResponse.error) throw prefillResponse.error;
+        const prefillRows = (prefillResponse.data ?? []) as ProductionOrderReworkPrefillRow[];
+        const prefill = prefillRows[0];
+        if (!prefill) throw new Error('The piece sent to rework could not be loaded.');
+        if (!reworkOrderNumber) throw new Error('A unique RW- order number could not be generated. Try again in a moment.');
+        if (cancelled) return;
+        const isWheelRework = prefill.piece_type === 'wheel';
+        setOrderFormError('');
+        setAutomaticDueDate('');
+        setPartNameOption(getPartNameOptionValue(prefill.part_name));
+        setFormState({
+          ...toFormState(),
+          orderNumber: reworkOrderNumber,
+          partNumber: reworkOrderNumber,
+          partName: prefill.part_name,
+          clientName: prefill.client_name,
+          customerId: prefill.customer_id ?? '',
+          plannedQuantity: '1',
+          priority: prefill.priority,
+          assignedWorkCenter: prefill.assigned_work_center,
+          plannedShifts: prefill.planned_shifts ?? [],
+          manufacturingType: prefill.manufacturing_type,
+          productionFlow: prefill.production_flow,
+          assignedStation: prefill.assigned_station || prefill.order_assigned_station,
+          pieceType: (prefill.piece_type || 'hobs') as QualityPieceType,
+          qualityChecksEnabled: prefill.quality_checks_enabled,
+          qualityChecks: prefill.quality_checks ?? [],
+          qualityCheckLimits: prefill.quality_check_limits ?? {},
+          qualityMeasurementUnit: prefill.quality_measurement_unit,
+        });
+        setSerialAssignmentDrafts([{
+          pieceSequence: 1,
+          toolId: isWheelRework ? '' : prefill.tool_id,
+          serialNumber: prefill.serial_number,
+          assignedStation: prefill.assigned_station,
+          compatibleStations: prefill.compatible_stations ?? [],
+          beforeHeight: productionSerialMeasurementText(prefill.before_height),
+          beforeNotch: productionSerialMeasurementText(prefill.before_notch),
+          beforeToothLength: productionSerialMeasurementText(prefill.before_tooth_length),
+          stockToRemove: productionSerialMeasurementText(prefill.stock_to_remove),
+          receptionEvidenceFile: null,
+          receptionEvidenceName: '',
+          quotationId: prefill.quotation_id ?? '',
+          legacyPriceId: prefill.legacy_price_id ?? '',
+        }]);
+        setAssignSerialsEnabled(true);
+        setSerialAssignmentModalOpen(false);
+        setStationAssignmentModalOpen(false);
+        setSerialStationColumnAvailable(true);
+        setReworkNumberLocked(true);
+        setFormMode('create');
+      } catch (prefillError) {
+        if (cancelled) return;
+        console.error('Unable to prepare the rework production order', prefillError);
+        reworkDraftRef.current = null;
+        onReworkFailed?.((prefillError as { message?: string }).message || 'The rework production order could not be prepared.');
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [onReworkFailed, organizationId, reworkDraft]);
+
   const openEditOrderForm = async () => {
     if (!selectedOrder) return;
     setOrderFormError('');
@@ -5115,6 +5266,10 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, language
   };
 
   const closeOrderForm = () => {
+    // Leaving the form without saving abandons the rework request as well, so the
+    // receptions screen has to be told to close the modal it opened.
+    const abandonedRework = Boolean(reworkDraftRef.current);
+    reworkDraftRef.current = null;
     setFormMode(null);
     setSavingOrder(false);
     setOrderFormError('');
@@ -5124,6 +5279,8 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, language
     setSerialAssignmentModalOpen(false);
     setStationAssignmentModalOpen(false);
     setSerialStationColumnAvailable(true);
+    setReworkNumberLocked(false);
+    if (abandonedRework) onModalClose?.();
   };
 
   const setProductionOrderPartNameOption = (nextOptionValue: ProductionOrderPartNameOption) => {
@@ -5136,6 +5293,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, language
     if (selectedPartNameOption.value === 'other') {
       setFormState((current) => {
         const leavingGeneratedWheelOrder = formMode === 'create'
+          && !reworkNumberLocked
           && current.pieceType === 'wheel'
           && current.orderNumber === current.partNumber
           && /^W-\d{4}$/.test(current.orderNumber);
@@ -5149,11 +5307,12 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, language
       });
       return;
     }
-    const generatedWheelOrderNumber = selectedPartNameOption.value === 'wheel' && formMode === 'create'
+    const generatedWheelOrderNumber = selectedPartNameOption.value === 'wheel' && formMode === 'create' && !reworkNumberLocked
       ? createWheelOrderNumber(orders)
       : '';
     setFormState((current) => {
       const leavingGeneratedWheelOrder = formMode === 'create'
+        && !reworkNumberLocked
         && current.pieceType === 'wheel'
         && current.orderNumber === current.partNumber
         && /^W-\d{4}$/.test(current.orderNumber);
@@ -5521,10 +5680,24 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, language
               if (serialId) await uploadReceptionEvidence(nextOrder.id, serialId, draft);
             }));
           }
+          const pendingRework = reworkDraftRef.current;
+          if (pendingRework) {
+            const { error: reworkError } = await supabase.rpc('assign_production_serial_rework_to_new_order', {
+              p_organization_id: organizationId,
+              p_reception_item_id: pendingRework.receptionItemId,
+              p_production_serial_id: pendingRework.productionSerialId,
+              p_detected_stage: pendingRework.detectedStage,
+              p_reason: pendingRework.reason,
+              p_rework_production_order_id: nextOrder.id,
+            });
+            if (reworkError) throw reworkError;
+            reworkDraftRef.current = null;
+          }
           setTableMessage(null);
           setOrders((currentOrders) => [nextOrder, ...currentOrders]);
           setSelectedOrderNumber(nextOrder.orderNumber);
           closeOrderForm();
+          if (pendingRework) onReworkAssigned?.();
           if (returnToReceptionId) {
             window.sessionStorage.setItem('yvimo:clients:receptions:selected-id', returnToReceptionId);
             onNavigate('/workspace/manufacturing-ops/mes/clients/receptions');
@@ -5821,341 +5994,21 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, language
     };
   }, [formMode, confirmation, jobQueueSummary, pendingWorkReport, dailyProductionReport, orderDetailsOpen]);
 
-  if (modalOnly) {
-    return orderDetailsOpen && selectedOrder ? (
-      <ProductionOrderDetailsModal
-        order={selectedOrder}
-        details={orderDetails}
-        organizationId={organizationId}
-        onNavigate={onNavigate}
-        onPieceReleased={async () => {
-          await loadProductionOrders(true);
-          await openOrderDetails();
-        }}
-        onClose={() => {
-          setOrderDetailsOpen(false);
-          onModalClose?.();
-        }}
-      />
-    ) : null;
-  }
-
-  return (
-    <section className="mes-workspace-panel production-orders-workspace">
-      <div className="mes-screen-header production-orders-heading">
-        <button className="academy-back-button engineering-back-button mes-workspace-back" type="button" onClick={() => onNavigate('/workspace/manufacturing-ops/mes')}>
-          <ArrowLeft size={16} />
-          MES Applications
-        </button>
-        <div className="mes-workspace-heading">
-          <p className="eyebrow">MES / Production Orders</p>
-          <h2>Production Orders</h2>
-          <p>Create, release, execute, and close orders with live quantities and shop-floor actions.</p>
-        </div>
-        <div className="production-orders-header-controls">
-          <div className="production-orders-date-filters" aria-label="Production KPI date filters">
-            <label>
-              <span>From</span>
-              <MesOrderDatePicker id="production-orders-kpi-from" value={kpiDateRange.from} onChange={(from) => updateKpiDateRange({ ...kpiDateRange, from })} onQuickRange={updateKpiDateRange} />
-            </label>
-            <label>
-              <span>To</span>
-              <MesOrderDatePicker id="production-orders-kpi-to" value={kpiDateRange.to} onChange={(to) => updateKpiDateRange({ ...kpiDateRange, to })} onQuickRange={updateKpiDateRange} />
-            </label>
-          </div>
-          <div className="production-orders-header-actions">
-            <button className="mes-primary-action production-orders-create" type="button" onClick={openCreateOrderForm}>
-              <Plus size={16} /> Add Production Order
-            </button>
-            <button className="production-orders-pending-report-action" type="button" onClick={() => void openPendingWorkReport()}>
-              <FileText size={16} /> Pending Work Report
-            </button>
-            <button className="production-orders-daily-report-action" type="button" disabled={dailyProductionReportLoading} onClick={() => void openDailyProductionReport()}>
-              <Factory size={16} /> {dailyProductionReportLoading ? 'Loading Report' : 'Daily Production Report'}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <section className="production-orders-overview" aria-label="Production order overview">
-        <article className="production-orders-last-produced">
-          <h3><span><Factory size={15} /></span>Last produced part <em>{workCenterFilterOptions.find((option) => option.value === workCenterFilter)?.label ?? 'All work centers'} · Live shop-floor update</em></h3>
-          {lastProducedOrder && lastProductionEvent ? (
-            <div className="production-orders-last-produced-content">
-              <span><small>Part type</small><strong>{lastProducedOrder.partName || 'Not recorded'}</strong></span>
-              <span><small>Order</small><strong>{lastProducedOrder.orderNumber}</strong></span>
-              <span><small>Client</small><strong>{lastProducedOrder.clientName || 'Not specified'}</strong></span>
-              <span><small>Serial</small><strong>{lastProducedSerial}</strong></span>
-              <time dateTime={lastProductionEvent.created_at}><small>Produced</small><strong>{formatTimestamp(lastProductionEvent.created_at)}</strong></time>
-            </div>
-          ) : <p>No production recorded</p>}
-        </article>
-        <label className="production-orders-search production-orders-overview-search">
-          <span>Search orders</span>
-          <div><Search size={17} /><input type="search" value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Order, part, client, status" /></div>
-        </label>
-      </section>
-      <div className="production-orders-layout">
-        <div className="production-orders-main-panel">
-          <div className="production-orders-panel-title">
-            <div className="production-orders-panel-copy">
-              <span>Order register</span>
-              <strong>Production order queue</strong>
-            </div>
-            <div className="production-orders-scope-filters">
-              <div className="production-orders-client-filter">
-                <span>Client</span>
-                <MesOrderDropdown id="production-orders-client-filter" value={clientFilter} options={clientFilterOptions} onChange={setClientFilter} />
-              </div>
-              <div className="production-orders-client-filter production-orders-work-center-filter">
-                <span>Work center</span>
-                <MesOrderDropdown id="production-orders-work-center-filter" value={workCenterFilter} options={workCenterFilterOptions} menuClassName="production-orders-work-center-menu" onChange={setWorkCenterFilter} />
-              </div>
-            </div>
-            <div className="production-orders-view-toggle" aria-label="Production order view">
-              <button className={orderView === 'all' ? 'active' : ''} type="button" onClick={() => setOrderView('all')}>
-                All
-              </button>
-              <button className={orderView === 'in-progress' ? 'active' : ''} type="button" onClick={() => setOrderView('in-progress')}>
-                In progress
-              </button>
-              <button className={orderView === 'completed' ? 'active' : ''} type="button" onClick={() => setOrderView('completed')}>
-                Completed
-              </button>
-              <button className={sortByPriority ? 'active' : ''} type="button" onClick={() => setSortByPriority((value) => !value)}>
-                Priority
-              </button>
-            </div>
-            <span>{paginatedOrders.length} showing / {visibleOrders.length} visible / {orders.length} total</span>
-          </div>
-          <div className="mes-table-wrap production-orders-table-wrap">
-            <table className="mes-table production-orders-table">
-              <thead>
-                <tr>
-                  <th>Order</th>
-                  <th>Part</th>
-                  <th>Planned</th>
-                  <th>Completed</th>
-                  <th>Scrap</th>
-                  <th>Status</th>
-                  <th>Priority</th>
-                  <th className="production-orders-date-column-header">
-                    <button
-                      className="production-orders-date-column-toggle"
-                      type="button"
-                      aria-label={`Showing ${orderDateColumn === 'due' ? 'due date' : 'created date'}. Switch date column.`}
-                      onClick={() => setOrderDateColumn((current) => (current === 'due' ? 'created' : 'due'))}
-                    >
-                      <span>{orderDateColumn === 'due' ? 'Due' : 'Created'}</span>
-                      <CalendarDays size={13} />
-                    </button>
-                  </th>
-                  <th>Client</th>
-                </tr>
-              </thead>
-              <tbody>
-                {tableEmptyMessage ? (
-                  <tr>
-                    <td className="production-orders-table-empty" colSpan={9}>
-                      <div>
-                        <span>{tableMessage === 'Loading production orders...' ? 'Loading' : 'Production Orders'}</span>
-                        <strong>{tableEmptyMessage}</strong>
-                      </div>
-                    </td>
-                  </tr>
-                ) : paginatedOrders.map((order) => {
-                  const selected = order.orderNumber === selectedOrderNumber;
-                  return (
-                    <tr
-                      className={selected ? 'selected' : ''}
-                      key={order.id}
-                      ref={(node) => {
-                        orderRowRefs.current[order.orderNumber] = node;
-                      }}
-                      tabIndex={0}
-                      onClick={() => setSelectedOrderNumber(order.orderNumber)}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter' || event.key === ' ') {
-                          event.preventDefault();
-                          setSelectedOrderNumber(order.orderNumber);
-                        }
-                      }}
-                    >
-                      <td data-label="Order"><strong>{order.orderNumber}</strong></td>
-                      <td data-label="Part">
-                        <strong>{order.partNumber}</strong>
-                        <span>{order.partName}</span>
-                      </td>
-                      <td data-label="Planned" className="production-order-number-cell">{order.plannedQuantity.toLocaleString()}</td>
-                      <td data-label="Completed" className="production-order-number-cell">{order.completedQuantity.toLocaleString()}</td>
-                      <td data-label="Scrap" className="production-order-number-cell">{order.scrapQuantity.toLocaleString()}</td>
-                      <td data-label="Status"><MesStatusBadge value={order.status} /></td>
-                      <td data-label="Priority"><MesStatusBadge value={order.priority} tone="priority" /></td>
-                      <td data-label={orderDateColumn === 'due' ? 'Due' : 'Created'}>{orderDateColumn === 'due' ? formatDate(order.dueDate) : order.createdAt ? formatDate(toLocalIsoDate(order.createdAt)) : '-'}</td>
-                      <td data-label="Client"><strong>{order.clientName?.trim() || 'Unassigned'}</strong></td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-          {visibleOrders.length > 0 ? (
-            <div className="production-orders-pagination">
-              <span>Page {currentPage} of {pageCount}</span>
-              <div className="production-orders-pagination-desktop">
-                <button type="button" disabled={currentPage === 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>
-                  Previous
-                </button>
-                {Array.from({ length: pageCount }, (_, index) => index + 1).map((pageNumber) => (
-                  <button
-                    className={pageNumber === currentPage ? 'active' : ''}
-                    type="button"
-                    key={pageNumber}
-                    onClick={() => setPage(pageNumber)}
-                  >
-                    {pageNumber}
-                  </button>
-                ))}
-                <button type="button" disabled={currentPage === pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))}>
-                  Next
-                </button>
-              </div>
-              <div className="production-orders-pagination-mobile" aria-label="Production order pages">
-                <button type="button" aria-label="Previous page" disabled={currentPage === 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>
-                  <ChevronLeft size={17} />
-                </button>
-                {mobilePageNumbers.map((pageNumber, index) => (
-                  <React.Fragment key={pageNumber}>
-                    {index > 0 && pageNumber - mobilePageNumbers[index - 1] > 1 ? <i aria-hidden="true">…</i> : null}
-                    <button
-                      className={pageNumber === currentPage ? 'active' : ''}
-                      type="button"
-                      aria-label={`Page ${pageNumber}`}
-                      aria-current={pageNumber === currentPage ? 'page' : undefined}
-                      onClick={() => setPage(pageNumber)}
-                    >
-                      {pageNumber}
-                    </button>
-                  </React.Fragment>
-                ))}
-                <button type="button" aria-label="Next page" disabled={currentPage === pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))}>
-                  <ChevronRight size={17} />
-                </button>
-              </div>
-            </div>
-          ) : null}
-        </div>
-
-        <aside className="production-orders-side-panel" aria-label="Production order controls">
-          <div className="production-orders-side-heading"><span>Selected order</span><strong>Order controls</strong></div>
-          <div className="production-orders-manage-actions">
-            <button className="production-orders-details-action" type="button" onClick={() => void openOrderDetails()} disabled={!selectedOrder}>
-              Order Details
-            </button>
-            <button type="button" onClick={() => void openEditOrderForm()} disabled={!selectedOrder}>
-              Edit
-            </button>
-            <button type="button" onClick={deleteSelectedOrder} disabled={!selectedOrder}>
-              Delete
-            </button>
-          </div>
-          {selectedOrder ? (
-            <div className="production-orders-selection-card">
-              <div>
-                <div className="production-orders-selection-heading">
-                  <span>Selected order</span>
-                  <MesStatusBadge value={selectedOrder.priority} tone="priority" />
-                </div>
-                <strong>{selectedOrder.orderNumber}</strong>
-                <em>{selectedOrder.partNumber} / {selectedOrder.clientName?.trim() || 'Unassigned client'}</em>
-              </div>
-              <div className="production-order-work-center-card">
-                <Factory size={17} />
-                <div><span>Work center</span><strong>{selectedOrder.assignedWorkCenter || 'Not assigned'}</strong></div>
-              </div>
-              <div className="production-order-created-card">
-                <CalendarDays size={17} />
-                <div>
-                  <span>Created</span>
-                  <time>{selectedOrder.createdAt ? formatDate(toLocalIsoDate(selectedOrder.createdAt)) : 'Not available'}</time>
-                </div>
-              </div>
-              <div className="production-order-progress">
-                <p>
-                  <strong>{selectedOrder.completedQuantity.toLocaleString()}</strong>
-                  {' / '}
-                  {selectedOrder.plannedQuantity.toLocaleString()} completed
-                </p>
-                <p>{selectedOrder.scrapQuantity.toLocaleString()} scrap</p>
-                <div>
-                  <span>Progress</span>
-                  <strong>{selectedOrderProgress}%</strong>
-                </div>
-                <div className={`production-order-progress-track progress-${selectedOrderProgressTone}`} aria-hidden="true">
-                  <span style={{ width: `${selectedOrderProgress}%` }} />
-                </div>
-                <p>Due {formatDate(selectedOrder.dueDate)}</p>
-              </div>
-              <div className="mes-action-grid">
-                {selectedOrder.manufacturingType === 'single-operation' && selectedOrder.assignedStation ? (
-                  <button className="mes-action-info job-queue-action" type="button" onClick={openSelectedOrderJobQueue}>
-                    Job Queue
-                  </button>
-                ) : null}
-                {getProductionOrderActions(selectedOrder.status).map((orderAction) => (
-                  <button
-                    className={`mes-action-${orderAction.tone}`}
-                    type="button"
-                    key={orderAction.label}
-                    onClick={() => {
-                      if (orderAction.traceability) {
-                        onNavigate('/workspace/manufacturing-ops/mes/traceability');
-                        return;
-                      }
-                      if (orderAction.action) {
-                        updateOrder(selectedOrder.orderNumber, orderAction.action);
-                      }
-                    }}
-                  >
-                    {orderAction.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <div className="production-orders-empty-state">Select a production order to enable actions.</div>
-          )}
-        </aside>
-      </div>
-      {pendingWorkReport ? (
-        <PendingWorkReportModal
-          report={pendingWorkReport}
-          onClose={() => setPendingWorkReport(null)}
-          onSelectOrder={focusPendingWorkOrder}
-        />
-      ) : null}
-      {dailyProductionReport ? (
-        <DailyProductionReportModal report={dailyProductionReport} onClose={() => setDailyProductionReport(null)} />
-      ) : null}
-      {orderDetailsOpen && selectedOrder ? (
-        <ProductionOrderDetailsModal
-          order={selectedOrder}
-          details={orderDetails}
-          organizationId={organizationId}
-          onNavigate={onNavigate}
-          onPieceReleased={async () => {
-            await loadProductionOrders(true);
-            await openOrderDetails();
-          }}
-          onClose={() => setOrderDetailsOpen(false)}
-        />
-      ) : null}
+  // The create/edit form and its satellites are rendered both by the full
+  // workspace and by the modal-only mount other workspaces embed.
+  const productionOrderFormModals = (
+    <>
       {formMode ? (
         <div className="mes-modal-backdrop production-order-form-backdrop" role="presentation">
           <section className="mes-order-modal" role="dialog" aria-modal="true" aria-labelledby="production-order-form-title">
             <div>
-              <p className="eyebrow">Production Order</p>
-              <h3 id="production-order-form-title">{formMode === 'create' ? 'Add new production order' : 'Edit production order'}</h3>
+              <p className="eyebrow">{reworkDraft && reworkNumberLocked ? 'Production Order / Rework' : 'Production Order'}</p>
+              <h3 id="production-order-form-title">{reworkDraft && reworkNumberLocked ? 'Rework production order' : formMode === 'create' ? 'Add new production order' : 'Edit production order'}</h3>
+              {reworkDraft && reworkNumberLocked ? (
+                <p className="production-order-rework-source">
+                  Reworking {reworkDraft.serialNumber || 'this piece'}{reworkDraft.toolId ? ` · Tool ${reworkDraft.toolId}` : ''} from {reworkDraft.sourceOrderNumber}.
+                </p>
+              ) : null}
             </div>
             <form className="mes-order-form" onSubmit={saveOrderForm}>
               <label>
@@ -6164,7 +6017,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, language
                   value={formState.orderNumber}
                   onChange={(event) => setFormState((current) => ({ ...current, orderNumber: event.target.value }))}
                   placeholder="PO-0000"
-                  readOnly={formMode === 'create' && partNameOption === 'wheel'}
+                  readOnly={reworkNumberLocked || (formMode === 'create' && partNameOption === 'wheel')}
                   required
                 />
               </label>
@@ -6196,7 +6049,7 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, language
                 <input
                   value={formState.partNumber}
                   onChange={(event) => setFormState((current) => ({ ...current, partNumber: event.target.value }))}
-                  readOnly={formMode === 'create' && partNameOption === 'wheel'}
+                  readOnly={reworkNumberLocked || (formMode === 'create' && partNameOption === 'wheel')}
                   required
                 />
               </label>
@@ -6702,6 +6555,344 @@ export function ProductionOrdersWorkspace({ onNavigate, organizationId, language
           </section>
         </div>
       ) : null}
+    </>
+  );
+
+  if (modalOnly) {
+    return (
+      <>
+        {orderDetailsOpen && selectedOrder ? (
+          <ProductionOrderDetailsModal
+            order={selectedOrder}
+            details={orderDetails}
+            organizationId={organizationId}
+            onNavigate={onNavigate}
+            onPieceReleased={async () => {
+              await loadProductionOrders(true);
+              await openOrderDetails();
+            }}
+            onClose={() => {
+              setOrderDetailsOpen(false);
+              onModalClose?.();
+            }}
+          />
+        ) : null}
+        {productionOrderFormModals}
+      </>
+    );
+  }
+
+  return (
+    <section className="mes-workspace-panel production-orders-workspace">
+      <div className="mes-screen-header production-orders-heading">
+        <button className="academy-back-button engineering-back-button mes-workspace-back" type="button" onClick={() => onNavigate('/workspace/manufacturing-ops/mes')}>
+          <ArrowLeft size={16} />
+          MES Applications
+        </button>
+        <div className="mes-workspace-heading">
+          <p className="eyebrow">MES / Production Orders</p>
+          <h2>Production Orders</h2>
+          <p>Create, release, execute, and close orders with live quantities and shop-floor actions.</p>
+        </div>
+        <div className="production-orders-header-controls">
+          <div className="production-orders-date-filters" aria-label="Production KPI date filters">
+            <label>
+              <span>From</span>
+              <MesOrderDatePicker id="production-orders-kpi-from" value={kpiDateRange.from} onChange={(from) => updateKpiDateRange({ ...kpiDateRange, from })} onQuickRange={updateKpiDateRange} />
+            </label>
+            <label>
+              <span>To</span>
+              <MesOrderDatePicker id="production-orders-kpi-to" value={kpiDateRange.to} onChange={(to) => updateKpiDateRange({ ...kpiDateRange, to })} onQuickRange={updateKpiDateRange} />
+            </label>
+          </div>
+          <div className="production-orders-header-actions">
+            <button className="mes-primary-action production-orders-create" type="button" onClick={openCreateOrderForm}>
+              <Plus size={16} /> Add Production Order
+            </button>
+            <button className="production-orders-pending-report-action" type="button" onClick={() => void openPendingWorkReport()}>
+              <FileText size={16} /> Pending Work Report
+            </button>
+            <button className="production-orders-daily-report-action" type="button" disabled={dailyProductionReportLoading} onClick={() => void openDailyProductionReport()}>
+              <Factory size={16} /> {dailyProductionReportLoading ? 'Loading Report' : 'Daily Production Report'}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <section className="production-orders-overview" aria-label="Production order overview">
+        <article className="production-orders-last-produced">
+          <h3><span><Factory size={15} /></span>Last produced part <em>{workCenterFilterOptions.find((option) => option.value === workCenterFilter)?.label ?? 'All work centers'} · Live shop-floor update</em></h3>
+          {lastProducedOrder && lastProductionEvent ? (
+            <div className="production-orders-last-produced-content">
+              <span><small>Part type</small><strong>{lastProducedOrder.partName || 'Not recorded'}</strong></span>
+              <span><small>Order</small><strong>{lastProducedOrder.orderNumber}</strong></span>
+              <span><small>Client</small><strong>{lastProducedOrder.clientName || 'Not specified'}</strong></span>
+              <span><small>Serial</small><strong>{lastProducedSerial}</strong></span>
+              <time dateTime={lastProductionEvent.created_at}><small>Produced</small><strong>{formatTimestamp(lastProductionEvent.created_at)}</strong></time>
+            </div>
+          ) : <p>No production recorded</p>}
+        </article>
+        <label className="production-orders-search production-orders-overview-search">
+          <span>Search orders</span>
+          <div><Search size={17} /><input type="search" value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Order, part, client, status" /></div>
+        </label>
+      </section>
+      <div className="production-orders-layout">
+        <div className="production-orders-main-panel">
+          <div className="production-orders-panel-title">
+            <div className="production-orders-panel-copy">
+              <span>Order register</span>
+              <strong>Production order queue</strong>
+            </div>
+            <div className="production-orders-scope-filters">
+              <div className="production-orders-client-filter">
+                <span>Client</span>
+                <MesOrderDropdown id="production-orders-client-filter" value={clientFilter} options={clientFilterOptions} onChange={setClientFilter} />
+              </div>
+              <div className="production-orders-client-filter production-orders-work-center-filter">
+                <span>Work center</span>
+                <MesOrderDropdown id="production-orders-work-center-filter" value={workCenterFilter} options={workCenterFilterOptions} menuClassName="production-orders-work-center-menu" onChange={setWorkCenterFilter} />
+              </div>
+            </div>
+            <div className="production-orders-view-toggle" aria-label="Production order view">
+              <button className={orderView === 'all' ? 'active' : ''} type="button" onClick={() => setOrderView('all')}>
+                All
+              </button>
+              <button className={orderView === 'in-progress' ? 'active' : ''} type="button" onClick={() => setOrderView('in-progress')}>
+                In progress
+              </button>
+              <button className={orderView === 'completed' ? 'active' : ''} type="button" onClick={() => setOrderView('completed')}>
+                Completed
+              </button>
+              <button className={sortByPriority ? 'active' : ''} type="button" onClick={() => setSortByPriority((value) => !value)}>
+                Priority
+              </button>
+            </div>
+            <span>{paginatedOrders.length} showing / {visibleOrders.length} visible / {orders.length} total</span>
+          </div>
+          <div className="mes-table-wrap production-orders-table-wrap">
+            <table className="mes-table production-orders-table">
+              <thead>
+                <tr>
+                  <th>Order</th>
+                  <th>Part</th>
+                  <th>Planned</th>
+                  <th>Completed</th>
+                  <th>Scrap</th>
+                  <th>Status</th>
+                  <th>Priority</th>
+                  <th className="production-orders-date-column-header">
+                    <button
+                      className="production-orders-date-column-toggle"
+                      type="button"
+                      aria-label={`Showing ${orderDateColumn === 'due' ? 'due date' : 'created date'}. Switch date column.`}
+                      onClick={() => setOrderDateColumn((current) => (current === 'due' ? 'created' : 'due'))}
+                    >
+                      <span>{orderDateColumn === 'due' ? 'Due' : 'Created'}</span>
+                      <CalendarDays size={13} />
+                    </button>
+                  </th>
+                  <th>Client</th>
+                </tr>
+              </thead>
+              <tbody>
+                {tableEmptyMessage ? (
+                  <tr>
+                    <td className="production-orders-table-empty" colSpan={9}>
+                      <div>
+                        <span>{tableMessage === 'Loading production orders...' ? 'Loading' : 'Production Orders'}</span>
+                        <strong>{tableEmptyMessage}</strong>
+                      </div>
+                    </td>
+                  </tr>
+                ) : paginatedOrders.map((order) => {
+                  const selected = order.orderNumber === selectedOrderNumber;
+                  return (
+                    <tr
+                      className={selected ? 'selected' : ''}
+                      key={order.id}
+                      ref={(node) => {
+                        orderRowRefs.current[order.orderNumber] = node;
+                      }}
+                      tabIndex={0}
+                      onClick={() => setSelectedOrderNumber(order.orderNumber)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          setSelectedOrderNumber(order.orderNumber);
+                        }
+                      }}
+                    >
+                      <td data-label="Order"><strong>{order.orderNumber}</strong></td>
+                      <td data-label="Part">
+                        <strong>{order.partNumber}</strong>
+                        <span>{order.partName}</span>
+                      </td>
+                      <td data-label="Planned" className="production-order-number-cell">{order.plannedQuantity.toLocaleString()}</td>
+                      <td data-label="Completed" className="production-order-number-cell">{order.completedQuantity.toLocaleString()}</td>
+                      <td data-label="Scrap" className="production-order-number-cell">{order.scrapQuantity.toLocaleString()}</td>
+                      <td data-label="Status"><MesStatusBadge value={order.status} /></td>
+                      <td data-label="Priority"><MesStatusBadge value={order.priority} tone="priority" /></td>
+                      <td data-label={orderDateColumn === 'due' ? 'Due' : 'Created'}>{orderDateColumn === 'due' ? formatDate(order.dueDate) : order.createdAt ? formatDate(toLocalIsoDate(order.createdAt)) : '-'}</td>
+                      <td data-label="Client"><strong>{order.clientName?.trim() || 'Unassigned'}</strong></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          {visibleOrders.length > 0 ? (
+            <div className="production-orders-pagination">
+              <span>Page {currentPage} of {pageCount}</span>
+              <div className="production-orders-pagination-desktop">
+                <button type="button" disabled={currentPage === 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>
+                  Previous
+                </button>
+                {Array.from({ length: pageCount }, (_, index) => index + 1).map((pageNumber) => (
+                  <button
+                    className={pageNumber === currentPage ? 'active' : ''}
+                    type="button"
+                    key={pageNumber}
+                    onClick={() => setPage(pageNumber)}
+                  >
+                    {pageNumber}
+                  </button>
+                ))}
+                <button type="button" disabled={currentPage === pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))}>
+                  Next
+                </button>
+              </div>
+              <div className="production-orders-pagination-mobile" aria-label="Production order pages">
+                <button type="button" aria-label="Previous page" disabled={currentPage === 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>
+                  <ChevronLeft size={17} />
+                </button>
+                {mobilePageNumbers.map((pageNumber, index) => (
+                  <React.Fragment key={pageNumber}>
+                    {index > 0 && pageNumber - mobilePageNumbers[index - 1] > 1 ? <i aria-hidden="true">…</i> : null}
+                    <button
+                      className={pageNumber === currentPage ? 'active' : ''}
+                      type="button"
+                      aria-label={`Page ${pageNumber}`}
+                      aria-current={pageNumber === currentPage ? 'page' : undefined}
+                      onClick={() => setPage(pageNumber)}
+                    >
+                      {pageNumber}
+                    </button>
+                  </React.Fragment>
+                ))}
+                <button type="button" aria-label="Next page" disabled={currentPage === pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))}>
+                  <ChevronRight size={17} />
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </div>
+
+        <aside className="production-orders-side-panel" aria-label="Production order controls">
+          <div className="production-orders-side-heading"><span>Selected order</span><strong>Order controls</strong></div>
+          <div className="production-orders-manage-actions">
+            <button className="production-orders-details-action" type="button" onClick={() => void openOrderDetails()} disabled={!selectedOrder}>
+              Order Details
+            </button>
+            <button type="button" onClick={() => void openEditOrderForm()} disabled={!selectedOrder}>
+              Edit
+            </button>
+            <button type="button" onClick={deleteSelectedOrder} disabled={!selectedOrder}>
+              Delete
+            </button>
+          </div>
+          {selectedOrder ? (
+            <div className="production-orders-selection-card">
+              <div>
+                <div className="production-orders-selection-heading">
+                  <span>Selected order</span>
+                  <MesStatusBadge value={selectedOrder.priority} tone="priority" />
+                </div>
+                <strong>{selectedOrder.orderNumber}</strong>
+                <em>{selectedOrder.partNumber} / {selectedOrder.clientName?.trim() || 'Unassigned client'}</em>
+              </div>
+              <div className="production-order-work-center-card">
+                <Factory size={17} />
+                <div><span>Work center</span><strong>{selectedOrder.assignedWorkCenter || 'Not assigned'}</strong></div>
+              </div>
+              <div className="production-order-created-card">
+                <CalendarDays size={17} />
+                <div>
+                  <span>Created</span>
+                  <time>{selectedOrder.createdAt ? formatDate(toLocalIsoDate(selectedOrder.createdAt)) : 'Not available'}</time>
+                </div>
+              </div>
+              <div className="production-order-progress">
+                <p>
+                  <strong>{selectedOrder.completedQuantity.toLocaleString()}</strong>
+                  {' / '}
+                  {selectedOrder.plannedQuantity.toLocaleString()} completed
+                </p>
+                <p>{selectedOrder.scrapQuantity.toLocaleString()} scrap</p>
+                <div>
+                  <span>Progress</span>
+                  <strong>{selectedOrderProgress}%</strong>
+                </div>
+                <div className={`production-order-progress-track progress-${selectedOrderProgressTone}`} aria-hidden="true">
+                  <span style={{ width: `${selectedOrderProgress}%` }} />
+                </div>
+                <p>Due {formatDate(selectedOrder.dueDate)}</p>
+              </div>
+              <div className="mes-action-grid">
+                {selectedOrder.manufacturingType === 'single-operation' && selectedOrder.assignedStation ? (
+                  <button className="mes-action-info job-queue-action" type="button" onClick={openSelectedOrderJobQueue}>
+                    Job Queue
+                  </button>
+                ) : null}
+                {getProductionOrderActions(selectedOrder.status).map((orderAction) => (
+                  <button
+                    className={`mes-action-${orderAction.tone}`}
+                    type="button"
+                    key={orderAction.label}
+                    onClick={() => {
+                      if (orderAction.traceability) {
+                        onNavigate('/workspace/manufacturing-ops/mes/traceability');
+                        return;
+                      }
+                      if (orderAction.action) {
+                        updateOrder(selectedOrder.orderNumber, orderAction.action);
+                      }
+                    }}
+                  >
+                    {orderAction.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="production-orders-empty-state">Select a production order to enable actions.</div>
+          )}
+        </aside>
+      </div>
+      {pendingWorkReport ? (
+        <PendingWorkReportModal
+          report={pendingWorkReport}
+          onClose={() => setPendingWorkReport(null)}
+          onSelectOrder={focusPendingWorkOrder}
+        />
+      ) : null}
+      {dailyProductionReport ? (
+        <DailyProductionReportModal report={dailyProductionReport} onClose={() => setDailyProductionReport(null)} />
+      ) : null}
+      {orderDetailsOpen && selectedOrder ? (
+        <ProductionOrderDetailsModal
+          order={selectedOrder}
+          details={orderDetails}
+          organizationId={organizationId}
+          onNavigate={onNavigate}
+          onPieceReleased={async () => {
+            await loadProductionOrders(true);
+            await openOrderDetails();
+          }}
+          onClose={() => setOrderDetailsOpen(false)}
+        />
+      ) : null}
+      {productionOrderFormModals}
       {jobQueueSummary ? <JobQueueModal summary={jobQueueSummary} onClose={() => setJobQueueSummary(null)} /> : null}
     </section>
   );
@@ -10635,6 +10826,7 @@ type TraceabilityEventTone =
   | 'coating-dispatched'
   | 'coating-received'
   | 'reception-sent'
+  | 'piece-rework'
   | 'adjustment';
 
 function getTraceabilityEventTone(eventType: string): TraceabilityEventTone {
@@ -10655,6 +10847,7 @@ function getTraceabilityEventTone(eventType: string): TraceabilityEventTone {
   if (eventType === 'coating-dispatched') return 'coating-dispatched';
   if (eventType === 'coating-received') return 'coating-received';
   if (eventType === 'reception-sent') return 'reception-sent';
+  if (eventType === 'piece-rework-registered') return 'piece-rework';
   return 'adjustment';
 }
 
@@ -10679,6 +10872,7 @@ function renderTraceabilityEventIcon(eventType: string) {
   if (eventType === 'coating-dispatched') return <Send {...iconProps} />;
   if (eventType === 'coating-received') return <PaintBucket {...iconProps} />;
   if (eventType === 'reception-sent') return <Truck {...iconProps} />;
+  if (eventType === 'piece-rework-registered') return <RotateCcw {...iconProps} />;
   return <CircleHelp {...iconProps} />;
 }
 
@@ -10707,6 +10901,7 @@ function getTraceabilityEventLabel(event: TraceabilityOperatorEventRow) {
     'coating-dispatched': 'Coating Dispatch',
     'coating-received': 'Coating Reception',
     'reception-sent': 'Reception Sent',
+    'piece-rework-registered': 'Piece Sent to Rework',
     adjustment: 'Adjustment',
   };
   return eventLabels[eventType] ?? formatTitleLabel(eventType);
@@ -10755,6 +10950,7 @@ function getTraceabilityEventSummary(event: TraceabilityOperatorEventRow) {
   if (event.event_type === 'coating-dispatched') return 'The sub-reception was dispatched for coating';
   if (event.event_type === 'coating-received') return 'The coated sub-reception was received back';
   if (event.event_type === 'reception-sent') return 'The completed sub-reception was sent to the client';
+  if (event.event_type === 'piece-rework-registered') return 'The piece was rejected and reassigned to a rework production order';
   return 'Operator event captured';
 }
 
@@ -10950,7 +11146,7 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
           )
         `)
         .eq('organization_id', organizationId)
-        .in('event_type', ['production-scrap', 'downtime-started', 'downtime-ended', 'job-paused', 'job-started', 'job-resumed', 'manufacturing-completed', 'operation-completed', 'adjustment', 'quality-inspection-saved', 'quality-inspection-skipped', 'measurement-corrected', 'inventory-received', 'inventory-consumed', 'maintenance-started', 'maintenance-ended', 'station-offline', 'station-online', 'reception-created', 'coating-dispatched', 'coating-received', 'reception-sent'])
+        .in('event_type', ['production-scrap', 'downtime-started', 'downtime-ended', 'job-paused', 'job-started', 'job-resumed', 'manufacturing-completed', 'operation-completed', 'adjustment', 'quality-inspection-saved', 'quality-inspection-skipped', 'measurement-corrected', 'inventory-received', 'inventory-consumed', 'maintenance-started', 'maintenance-ended', 'station-offline', 'station-online', 'reception-created', 'coating-dispatched', 'coating-received', 'reception-sent', 'piece-rework-registered'])
         .order('created_at', { ascending: false })
         .limit(300),
       supabase
@@ -11047,7 +11243,7 @@ export function TraceabilityWorkspace({ onNavigate, organizationId }: WorkspaceP
         filter: `organization_id=eq.${organizationId}`,
       }, (payload) => {
         const newEvent = payload.new as Partial<{ id: string; event_type: string }>;
-        if (newEvent.event_type && !['production-scrap', 'downtime-started', 'downtime-ended', 'job-paused', 'job-started', 'job-resumed', 'manufacturing-completed', 'operation-completed', 'adjustment', 'quality-inspection-saved', 'quality-inspection-skipped', 'measurement-corrected', 'inventory-received', 'inventory-consumed', 'maintenance-started', 'maintenance-ended', 'station-offline', 'station-online', 'reception-created', 'coating-dispatched', 'coating-received', 'reception-sent'].includes(newEvent.event_type)) return;
+        if (newEvent.event_type && !['production-scrap', 'downtime-started', 'downtime-ended', 'job-paused', 'job-started', 'job-resumed', 'manufacturing-completed', 'operation-completed', 'adjustment', 'quality-inspection-saved', 'quality-inspection-skipped', 'measurement-corrected', 'inventory-received', 'inventory-consumed', 'maintenance-started', 'maintenance-ended', 'station-offline', 'station-online', 'reception-created', 'coating-dispatched', 'coating-received', 'reception-sent', 'piece-rework-registered'].includes(newEvent.event_type)) return;
         const eventId = typeof newEvent.id === 'string' ? newEvent.id : '';
         if (eventId) markCaptureAsNew(`event-${eventId}`);
         void loadTraceability(true);

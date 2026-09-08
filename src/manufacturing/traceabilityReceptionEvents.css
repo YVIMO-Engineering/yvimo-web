@@ -21,3 +21,9 @@
   --traceability-event-soft: rgba(22, 163, 74, .11);
   --traceability-event-glow: rgba(22, 163, 74, .27);
 }
+
+.traceability-event-row.event-tone-piece-rework {
+  --traceability-event-color: #d97706;
+  --traceability-event-soft: rgba(217, 119, 6, .12);
+  --traceability-event-glow: rgba(217, 119, 6, .27);
+}

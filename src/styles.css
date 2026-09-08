@@ -7141,7 +7141,7 @@ body.work-center-map-expanded .logged-workspace {
   .supplier-selected-transfer-grid { gap: 8px; padding-inline: 14px; }
   .client-reception-actions, .client-reception-items, .client-reception-detail-bottom { margin-inline: 14px; }
   .client-reception-item-summary { grid-template-columns: 34px minmax(120px, 1fr) repeat(3, 64px) minmax(160px, .8fr) minmax(110px, .5fr) minmax(170px, .7fr); gap: 8px; }
-  .client-reception-serial-row { grid-template-columns: minmax(115px, 1fr) minmax(100px, .7fr) repeat(3, minmax(128px, .8fr)); gap: 7px; }
+  .client-reception-serial-row { grid-template-columns: minmax(115px, 1fr) minmax(100px, .7fr) repeat(4, minmax(122px, .8fr)); gap: 7px; }
 
   .supplier-workspace-layout,
   .supplier-transfer-combined-panel,
@@ -7161,7 +7161,8 @@ body.work-center-map-expanded .logged-workspace {
   .client-reception-serials { padding-left: 0; }
   .client-reception-serial-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .client-reception-serial-row .piece-stage { min-height: 58px; }
-  .client-reception-serial-row > .client-reception-serial-scrap-state { grid-column: 1 / -1; }
+  .client-reception-serial-row > .client-reception-serial-scrap-state,
+  .client-reception-serial-row > .client-reception-serial-rework-state { grid-column: 1 / -1; }
 }
 
 .supplier-active-transfer-list strong,
@@ -9054,7 +9055,7 @@ body.work-center-map-expanded .logged-workspace {
 .client-reception-serials > header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
 .client-reception-serials > header strong { color: #334155; font-size: .75rem; text-transform: uppercase; letter-spacing: .04em; }
 .client-reception-serial-list { display: grid; gap: 6px; }
-.client-reception-serial-row { display: grid; grid-template-columns: minmax(130px, 1fr) minmax(110px, .8fr) repeat(3, minmax(145px, .75fr)); align-items: center; gap: 9px; border: 1px solid #dbe3ed; border-radius: 8px; padding: 8px 10px; background: #fff; }
+.client-reception-serial-row { display: grid; grid-template-columns: minmax(130px, 1fr) minmax(110px, .8fr) repeat(4, minmax(140px, .75fr)); align-items: center; gap: 9px; border: 1px solid #dbe3ed; border-radius: 8px; padding: 8px 10px; background: #fff; }
 .client-reception-serial-row > span { display: grid; gap: 3px; min-width: 0; }
 .client-reception-serial-row > span > strong { overflow: hidden; color: #1e293b; font-size: .76rem; text-overflow: ellipsis; white-space: nowrap; }
 .client-reception-serial-row.pending-production { border-style: dashed; background: #f8fafc; }
@@ -9070,6 +9071,17 @@ body.work-center-map-expanded .logged-workspace {
 .client-reception-serial-row > .client-reception-serial-scrap-state time { color: #c65a6a; font-size: .62rem; font-weight: 750; }
 .client-reception-serial-row .piece-stage.done button { border-color: #a7f3d0; background: #ecfdf5; color: #047857; }
 .client-reception-serial-row .piece-stage.delivery:not(.done) button { border-color: #10b981; background: #10b981; }
+.client-reception-serial-row.produced .piece-stage.rework button { border-color: #dc2626; background: #dc2626; }
+.client-reception-serial-row.reworked { border-color: #fcd9a4; background: #fffaf2; }
+.client-reception-serial-result.reworked { background: #fef3c7; color: #b45309; }
+.client-reception-serial-row > .client-reception-serial-rework-state { display: grid; grid-column: 3 / -1; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); align-items: center; gap: 10px; min-height: 58px; border: 1px solid #f0bf76; border-radius: 8px; padding: 7px 11px; background: #fff3e0; }
+.client-reception-serial-row > .client-reception-serial-rework-state > span { display: grid; gap: 3px; min-width: 0; }
+.client-reception-serial-row > .client-reception-serial-rework-state small { color: #a76a11; }
+.client-reception-serial-row > .client-reception-serial-rework-state strong { display: inline-flex; align-items: center; gap: 5px; overflow: hidden; color: #92500c; font-size: .78rem; text-overflow: ellipsis; white-space: nowrap; }
+.client-reception-serial-row > .client-reception-serial-rework-state time { color: #b1762a; font-size: .62rem; font-weight: 750; }
+.client-reception-serial-row > .client-reception-serial-rework-state em { overflow: hidden; color: #8a5a17; font-size: .63rem; font-style: normal; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.client-reception-item-number.rework { display: inline-flex; align-items: center; justify-content: center; border-color: #f0bf76; background: #fff3e0; color: #b45309; }
+.client-reception-item-rework-tag { display: inline-flex; align-items: center; justify-self: start; border-radius: 999px; padding: 2px 7px; background: #fef3c7; color: #b45309; font-size: .56rem; font-style: normal; font-weight: 900; letter-spacing: .04em; text-transform: uppercase; }
 .client-reception-serials-empty { margin: 12px 0 0 50px; border-top: 1px solid #dbe3ed; padding-top: 10px; color: #64748b; font-size: .72rem; font-weight: 700; }
 
 .client-reception-items article small {
@@ -9377,6 +9389,143 @@ body.work-center-map-expanded .logged-workspace {
   .client-reception-existing-order-filters {
     grid-template-columns: 1fr;
   }
+}
+
+.client-reception-rework-backdrop { z-index: 1400; }
+
+.client-reception-rework-modal {
+  position: relative;
+  width: min(760px, 100%);
+  max-height: calc(100vh - 60px);
+  overflow: auto;
+  border-top: 5px solid #dc2626;
+  padding: 28px;
+}
+
+.client-reception-rework-modal form { display: grid; gap: 16px; }
+.client-reception-rework-modal h3, .client-reception-rework-modal p { margin: 0; }
+.client-reception-rework-modal h3 { color: #07111c; font-size: 1.6rem; }
+.client-reception-rework-modal form > p:not(.eyebrow) { color: #64748b; line-height: 1.5; }
+.client-reception-rework-modal .eyebrow { color: #b91c1c; }
+
+.client-reception-rework-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  justify-self: start;
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.client-reception-rework-piece {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  border: 1px solid #ef9eaa;
+  border-radius: 12px;
+  padding: 13px 16px;
+  background: #fff5f6;
+}
+
+.client-reception-rework-piece > span { display: grid; gap: 4px; min-width: 0; }
+.client-reception-rework-piece small { color: #bd4255; font-size: .62rem; font-weight: 900; letter-spacing: .06em; text-transform: uppercase; }
+.client-reception-rework-piece strong { overflow: hidden; color: #9f1f36; font-size: .92rem; text-overflow: ellipsis; white-space: nowrap; }
+
+.client-reception-rework-modal label {
+  display: grid;
+  gap: 7px;
+  color: #475569;
+  font-size: .76rem;
+  font-weight: 900;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.client-reception-rework-modal textarea {
+  width: 100%;
+  min-height: 84px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 11px 13px;
+  background: #f8fafc;
+  color: #172033;
+  font: inherit;
+  font-size: .92rem;
+  font-weight: 650;
+  letter-spacing: normal;
+  text-transform: none;
+  resize: vertical;
+}
+
+.client-reception-rework-modal textarea:focus {
+  border-color: #ef4444;
+  outline: 0;
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, .12);
+}
+
+.client-reception-rework-assignment { border: 0; margin: 0; padding: 0; }
+.client-reception-rework-assignment legend { padding: 0 0 8px; color: #475569; font-size: .76rem; font-weight: 900; letter-spacing: .06em; text-transform: uppercase; }
+.client-reception-rework-assignment > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+
+.client-reception-rework-assignment button {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: center;
+  gap: 3px 11px;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  padding: 13px 15px;
+  background: #f8fafc;
+  color: #334155;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.client-reception-rework-assignment button svg { grid-row: span 2; color: #94a3b8; }
+.client-reception-rework-assignment button span { color: #172033; font-size: .88rem; font-weight: 900; }
+.client-reception-rework-assignment button small { grid-column: 2; color: #64748b; font-size: .7rem; font-weight: 700; line-height: 1.35; }
+.client-reception-rework-assignment button.active { border-color: #dc2626; background: #fef2f2; }
+.client-reception-rework-assignment button.active svg, .client-reception-rework-assignment button.active span { color: #b91c1c; }
+
+.client-reception-rework-orders { display: grid; gap: 14px; }
+
+.client-reception-rework-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  border-top: 1px solid #e2e8f0;
+  padding-top: 16px;
+}
+
+.client-reception-rework-actions button {
+  min-height: 46px;
+  border: 1px solid #dc2626;
+  border-radius: 9px;
+  padding: 0 18px;
+  background: #dc2626;
+  color: #fff;
+  font: inherit;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.client-reception-rework-actions button.secondary { border-color: #cbd5e1; background: #f1f5f9; color: #334155; }
+.client-reception-rework-actions button:disabled { opacity: .55; cursor: not-allowed; }
+
+.production-order-rework-source {
+  margin: 6px 0 0;
+  color: #b45309;
+  font-size: .78rem;
+  font-weight: 800;
+}
+
+@media (max-width: 760px) {
+  .client-reception-rework-piece,
+  .client-reception-rework-assignment > div { grid-template-columns: 1fr; }
 }
 
 .client-reception-item-order strong {
@@ -41284,7 +41433,7 @@ body[data-screenshot-export="academy-track"] .academy-mobile-track-step button {
   }
   .client-reception-item-order-status strong { width: 100%; min-width: 0; min-height: 54px; border-radius: 10px; padding: 8px 12px; font-size: .78rem; }
   .client-reception-item-bulk-action .all-complete { justify-content: center; width: 100%; min-height: 54px; border: 1px solid #a7f3d0; border-radius: 10px; padding: 8px 12px; background: #ecfdf5; font-size: .82rem; }
-  .client-reception-serial-row { grid-template-columns: minmax(115px, 1fr) minmax(100px, .7fr) repeat(3, minmax(128px, .8fr)); gap: 7px; }
+  .client-reception-serial-row { grid-template-columns: minmax(115px, 1fr) minmax(100px, .7fr) repeat(4, minmax(122px, .8fr)); gap: 7px; }
   .client-reception-serial-row button { width: 100%; min-height: 50px; border-radius: 10px; padding: 8px 10px; font-size: .78rem; line-height: 1.2; white-space: normal; }
   .client-reception-serial-row button > span { display: grid; gap: 2px; min-width: 0; text-align: left; }
   .client-reception-serial-row button > span b { font-size: .78rem; }
