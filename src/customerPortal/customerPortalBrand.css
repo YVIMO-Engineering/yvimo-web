@@ -1117,3 +1117,12 @@
   .cp-notification-action{justify-items:start}
   .cp-notifications-card>article>span>small:first-child{display:block}
 }
+.cp-public-shell>aside nav button em{display:grid;min-width:23px;height:23px;place-items:center;margin-left:auto;border-radius:99px;padding:0 7px;background:#ef4d61;color:#fff;font-size:12px;font-weight:900;line-height:1;box-shadow:0 2px 7px #ef4d6166}
+@keyframes cp-bell-alert{0%,49%{border-color:#ef4d61;background:#ef4d61;color:#fff}50%,100%{border-color:#f6b9c1;background:#fff;color:#ef4d61}}
+@keyframes cp-bell-alert-dot{0%,49%{background:#fff}50%,100%{background:#ef4d61}}
+@keyframes cp-bell-alert-soft{0%,100%{border-color:#ef4d61;background:#ef4d61;color:#fff}50%{border-color:#f6b9c1;background:#fff;color:#ef4d61}}
+@keyframes cp-bell-alert-dot-soft{0%,100%{background:#fff}50%{background:#ef4d61}}
+.cp-public-header-actions>button.has-alert{border-color:#ef4d61;background:#ef4d61;color:#fff;animation:cp-bell-alert 1.4s steps(1,end) infinite}
+.cp-public-header-actions>button.has-alert:after{animation:cp-bell-alert-dot 1.4s steps(1,end) infinite}
+/* Reduced motion still needs the alert: slow cross-fade instead of a blink. */
+@media(prefers-reduced-motion:reduce){.cp-public-header-actions>button.has-alert{animation:cp-bell-alert-soft 3.4s ease-in-out infinite}.cp-public-header-actions>button.has-alert:after{animation:cp-bell-alert-dot-soft 3.4s ease-in-out infinite}}

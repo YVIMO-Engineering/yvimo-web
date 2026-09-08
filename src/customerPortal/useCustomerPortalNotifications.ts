@@ -19,13 +19,44 @@ function feedDate(value: string) {
   return new Intl.DateTimeFormat('en', { month: 'short', day: '2-digit' }).format(new Date(`${value}T12:00:00`));
 }
 
+function playAlertTone() {
+  try {
+    const AudioContextClass = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioContextClass) return;
+    const context = new AudioContextClass();
+    const play = () => {
+      const startedAt = context.currentTime;
+      [880, 1174.66].forEach((frequency, index) => {
+        const oscillator = context.createOscillator();
+        const gain = context.createGain();
+        const toneStart = startedAt + (index * 0.17);
+        oscillator.type = 'sine';
+        oscillator.frequency.value = frequency;
+        gain.gain.setValueAtTime(0.0001, toneStart);
+        gain.gain.exponentialRampToValueAtTime(0.16, toneStart + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, toneStart + 0.3);
+        oscillator.connect(gain).connect(context.destination);
+        oscillator.start(toneStart);
+        oscillator.stop(toneStart + 0.32);
+      });
+      window.setTimeout(() => void context.close(), 900);
+    };
+    // Browsers keep the context suspended until the page has been interacted with.
+    if (context.state === 'suspended') void context.resume().then(play).catch(() => undefined);
+    else play();
+  } catch (audioError) {
+    console.warn('[customer-portal] unable to play the notification tone', audioError);
+  }
+}
+
 export function useCustomerPortalNotifications(organizationId: string, customerId: string, userId: string) {
   const [notifications, setNotifications] = React.useState<PortalNotification[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState('');
+  const knownKeys = React.useRef<Set<string> | null>(null);
 
   const load = React.useCallback(async (silent = false) => {
-    if (!organizationId || !customerId) { setNotifications([]); setLoading(false); return; }
+    if (!organizationId || !customerId) { knownKeys.current = null; setNotifications([]); setLoading(false); return; }
     if (!silent) setLoading(true);
     const [orderResult, delayResult, serialResult, readResult] = await Promise.all([
       supabase.from('mes_production_orders').select('id, order_number').eq('organization_id', organizationId).eq('customer_id', customerId),
@@ -33,7 +64,8 @@ export function useCustomerPortalNotifications(organizationId: string, customerI
       supabase.rpc('get_customer_portal_order_serial_details', { p_organization_id: organizationId, p_customer_id: customerId }),
       supabase.from('customer_portal_notification_reads').select('notification_key').eq('organization_id', organizationId).eq('customer_id', customerId),
     ]);
-    setError((orderResult.error ?? delayResult.error ?? serialResult.error ?? readResult.error)?.message ?? '');
+    const loadError = (orderResult.error ?? delayResult.error ?? serialResult.error ?? readResult.error)?.message ?? '';
+    setError(loadError ? `Some notifications could not be loaded: ${loadError}` : '');
     const orderNumbers = new Map((orderResult.data ?? []).map((row) => [String(row.id), String(row.order_number)]));
     const acknowledged = new Set((readResult.data ?? []).map((row) => String(row.notification_key)));
     const delayEvents: PortalNotification[] = (delayResult.data ?? []).map((row) => ({
@@ -58,7 +90,11 @@ export function useCustomerPortalNotifications(organizationId: string, customerI
         at: String(row.reported_at),
         acknowledged: acknowledged.has(`scrap:${row.production_serial_id}`),
       }));
-    setNotifications([...delayEvents, ...scrapEvents].sort((a, b) => b.at.localeCompare(a.at)).slice(0, feedLimit));
+    const feed = [...delayEvents, ...scrapEvents].sort((a, b) => b.at.localeCompare(a.at)).slice(0, feedLimit);
+    // Only alert for events that appear after the first load of this session.
+    if (knownKeys.current && feed.some((notification) => !notification.acknowledged && !knownKeys.current?.has(notification.key))) playAlertTone();
+    knownKeys.current = new Set(feed.map((notification) => notification.key));
+    setNotifications(feed);
     setLoading(false);
   }, [customerId, organizationId]);
 
@@ -83,9 +119,10 @@ export function useCustomerPortalNotifications(organizationId: string, customerI
   const acknowledge = React.useCallback(async (key: string) => {
     if (!organizationId || !customerId || !userId) return;
     setNotifications((current) => current.map((notification) => (notification.key === key ? { ...notification, acknowledged: true } : notification)));
-    const { error: acknowledgeError } = await supabase.from('customer_portal_notification_reads').upsert({ user_id: userId, organization_id: organizationId, customer_id: customerId, notification_key: key }, { onConflict: 'user_id,notification_key' });
+    const { error: acknowledgeError } = await supabase.from('customer_portal_notification_reads').upsert({ user_id: userId, organization_id: organizationId, customer_id: customerId, notification_key: key }, { onConflict: 'user_id,notification_key', ignoreDuplicates: true });
     if (!acknowledgeError) return;
-    setError(acknowledgeError.message);
+    console.error('[customer-portal] unable to acknowledge notification', acknowledgeError);
+    setError('The acknowledgement could not be saved. Please try again.');
     setNotifications((current) => current.map((notification) => (notification.key === key ? { ...notification, acknowledged: false } : notification)));
   }, [customerId, organizationId, userId]);
 

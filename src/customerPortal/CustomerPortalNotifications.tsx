@@ -25,7 +25,7 @@ export function CustomerPortalNotifications({ notifications, unread, loading, er
       <div><small>CUSTOMER PORTAL</small><h1>Notifications</h1><p>Delivery reschedules and scrapped pieces reported on your orders.</p></div>
       <div className="cp-notifications-kpis"><span className="unread"><strong>{unread}</strong><small>NEEDS ATTENTION</small></span><span><strong>{notifications.length}</strong><small>TOTAL EVENTS</small></span></div>
     </section>
-    {error ? <div className="cp-dashboard-warning">Some notifications could not be loaded: {error}</div> : null}
+    {error ? <div className="cp-dashboard-warning">{error}</div> : null}
     <section className="cp-notifications-card">
       <header>
         <div><h2>Notification history</h2><p>Highlighted rows stay marked until you acknowledge them</p></div>
