@@ -185,6 +185,8 @@ export function CustomerPortalDashboard({ organizationId, customerId, supplierNa
     tables: realtimeTables,
     onRefresh: () => loadDashboard(true),
     debounceMs: 180,
+    refreshOnFocus: true,
+    pollMs: 60_000,
   });
 
   const journeyByOrderId = new Map(orders.map((order) => [order.id, orderJourney(order, receptionItems, serialProgress)]));
