@@ -9072,6 +9072,8 @@ body.work-center-map-expanded .logged-workspace {
 .client-reception-serial-row .piece-stage.done button { border-color: #a7f3d0; background: #ecfdf5; color: #047857; }
 .client-reception-serial-row .piece-stage.delivery:not(.done) button { border-color: #10b981; background: #10b981; }
 .client-reception-serial-row.produced .piece-stage.rework button { border-color: #dc2626; background: #dc2626; }
+.client-reception-serial-row.produced .piece-stage.rework button:disabled { border-color: #cbd5e1; background: #e2e8f0; color: #64748b; opacity: 1; }
+.client-reception-serial-row .piece-stage.not-required button { border-color: #cbd5e1; background: #e2e8f0; color: #64748b; opacity: 1; }
 .client-reception-serial-row.reworked { border-color: #fcd9a4; background: #fffaf2; }
 .client-reception-serial-result.reworked { background: #fef3c7; color: #b45309; }
 .client-reception-serial-row > .client-reception-serial-rework-state { display: grid; grid-column: 3 / -1; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); align-items: center; gap: 10px; min-height: 58px; border: 1px solid #f0bf76; border-radius: 8px; padding: 7px 11px; background: #fff3e0; }
