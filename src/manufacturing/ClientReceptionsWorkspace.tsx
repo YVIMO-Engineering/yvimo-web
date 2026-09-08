@@ -46,6 +46,7 @@ type ReceptionSerial = {
   serialNumber: string;
   toolId: string;
   result: 'good' | 'scrap' | null;
+  reportedAt: string;
   coatingSentAt: string;
   coatingReturnedAt: string;
   sentAt: string;
@@ -58,6 +59,31 @@ const productionPieceEvidenceBucket = 'mes-production-piece-evidence';
 const coatingEvidenceAccept = 'application/pdf,.pdf,image/*';
 const coatingEvidenceExtensions = /\.(?:pdf|jpe?g|png|webp|heic|heif|avif)$/i;
 const coatingEvidenceMimeTypes = new Set(['application/pdf', 'image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/heic', 'image/heif', 'image/avif']);
+
+// PostgREST caps every response at 1000 rows and rejects very long URLs, so the
+// history-wide lookups below are filtered in chunks and paged to the last row.
+const rowPageSize = 1000;
+const filterChunkSize = 100;
+
+async function fetchAllRows<Row>(request: (from: number, to: number) => PromiseLike<{ data: Row[] | null; error: { message: string } | null }>) {
+  const rows: Row[] = [];
+  for (let from = 0; ; from += rowPageSize) {
+    const { data, error } = await request(from, from + rowPageSize - 1);
+    if (error) throw new Error(error.message);
+    const page = data ?? [];
+    rows.push(...page);
+    if (page.length < rowPageSize) return rows;
+  }
+}
+
+async function fetchAllRowsByIds<Row>(ids: string[], request: (chunk: string[], from: number, to: number) => PromiseLike<{ data: Row[] | null; error: { message: string } | null }>) {
+  // Repeated ids must be collapsed first: the same id in two chunks would return its rows twice.
+  const uniqueIds = Array.from(new Set(ids));
+  const chunks: string[][] = [];
+  for (let index = 0; index < uniqueIds.length; index += filterChunkSize) chunks.push(uniqueIds.slice(index, index + filterChunkSize));
+  const results = await Promise.all(chunks.map((chunk) => fetchAllRows<Row>((from, to) => request(chunk, from, to))));
+  return results.flat();
+}
 
 function getCoatingEvidenceMimeType(file: File) {
   if (file.type && file.type !== 'application/octet-stream') return file.type.toLowerCase();
@@ -113,6 +139,23 @@ type ReceptionRow = {
   created_at: string;
   mes_customers: { customer_name: string } | Array<{ customer_name: string }> | null;
 };
+
+type ReceptionItemRow = {
+  id: string;
+  reception_voucher_id: string;
+  customer_id: string;
+  quantity: number;
+  production_order_id: string | null;
+  production_order_number: string;
+  coating_sent_at: string | null;
+  coating_returned_at: string | null;
+  sent_at: string | null;
+  mes_customers: { customer_name: string } | Array<{ customer_name: string }> | null;
+};
+
+type ProductionOrderRow = { id: string; status: string; piece_type: string | null; completed_quantity: number | null; scrap_quantity: number | null };
+type ProductionSerialRow = { id: string; production_order_id: string; serial_number: string | null; tool_id: string | null; result: string | null; reported_at: string | null; piece_sequence: number | null };
+type SerialProgressRow = { reception_item_id: string; production_serial_id: string; coating_sent_at: string | null; coating_returned_at: string | null; sent_at: string | null };
 
 type Props = {
   organizationId: string;
@@ -384,51 +427,64 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
   const loadVouchers = React.useCallback(async () => {
     if (!organizationId) return;
     setLoading(true);
-    const { data, error: loadError } = await supabase
-      .from('mes_customer_reception_vouchers')
-      .select('*, mes_customers(customer_name)')
-      .eq('organization_id', organizationId)
-      .order('created_at', { ascending: false });
-    if (loadError) {
-      setError(loadError.message);
-      setLoading(false);
-      return;
-    }
-    const receptionRows = (data ?? []) as ReceptionRow[];
-    const receptionIds = receptionRows.map((row) => row.id);
-    const { data: itemData } = receptionIds.length
-      ? await supabase.from('mes_customer_reception_items').select('id, reception_voucher_id, customer_id, quantity, production_order_id, production_order_number, coating_sent_at, coating_returned_at, sent_at, mes_customers(customer_name)').in('reception_voucher_id', receptionIds).order('created_at')
-      : { data: [] };
-    const itemRows = (itemData ?? []) as Array<{ id: string; reception_voucher_id: string; customer_id: string; quantity: number; production_order_id: string | null; production_order_number: string; coating_sent_at: string | null; coating_returned_at: string | null; sent_at: string | null; mes_customers: { customer_name: string } | Array<{ customer_name: string }> | null }>;
-    const productionOrderIds = itemRows.map((row) => row.production_order_id).filter((id): id is string => Boolean(id));
     const productionStatusById = new Map<string, { status: string; pieceType: string; completedQuantity: number; scrapQuantity: number }>();
-    const productionIdentifiersById = new Map<string, { serialNumbers: string[]; toolIds: string[]; serials: Array<{ id: string; serialNumber: string; toolId: string; result: 'good' | 'scrap' | null }> }>();
-    if (productionOrderIds.length) {
-      const [{ data: productionOrders }, { data: productionSerials }] = await Promise.all([
-        supabase.from('mes_production_orders').select('id, status, piece_type, completed_quantity, scrap_quantity').in('id', productionOrderIds),
-        supabase.from('mes_production_serials').select('id, production_order_id, serial_number, tool_id, result, piece_sequence').in('production_order_id', productionOrderIds).order('piece_sequence'),
+    const productionIdentifiersById = new Map<string, { serialNumbers: string[]; toolIds: string[]; serials: Array<{ id: string; serialNumber: string; toolId: string; result: 'good' | 'scrap' | null; reportedAt: string }> }>();
+    const serialProgressByKey = new Map<string, SerialProgressRow>();
+    let receptionRows: ReceptionRow[] = [];
+    let itemRows: ReceptionItemRow[] = [];
+    try {
+      receptionRows = await fetchAllRows<ReceptionRow>((from, to) => supabase
+        .from('mes_customer_reception_vouchers')
+        .select('*, mes_customers(customer_name)')
+        .eq('organization_id', organizationId)
+        .order('created_at', { ascending: false })
+        .range(from, to));
+      itemRows = await fetchAllRowsByIds<ReceptionItemRow>(receptionRows.map((row) => row.id), (chunk, from, to) => supabase
+        .from('mes_customer_reception_items')
+        .select('id, reception_voucher_id, customer_id, quantity, production_order_id, production_order_number, coating_sent_at, coating_returned_at, sent_at, mes_customers(customer_name)')
+        .in('reception_voucher_id', chunk)
+        .order('created_at')
+        .range(from, to));
+      const productionOrderIds = itemRows.map((row) => row.production_order_id).filter((id): id is string => Boolean(id));
+      const [productionOrders, productionSerials] = await Promise.all([
+        fetchAllRowsByIds<ProductionOrderRow>(productionOrderIds, (chunk, from, to) => supabase
+          .from('mes_production_orders')
+          .select('id, status, piece_type, completed_quantity, scrap_quantity')
+          .in('id', chunk)
+          .range(from, to)),
+        fetchAllRowsByIds<ProductionSerialRow>(productionOrderIds, (chunk, from, to) => supabase
+          .from('mes_production_serials')
+          .select('id, production_order_id, serial_number, tool_id, result, reported_at, piece_sequence')
+          .in('production_order_id', chunk)
+          .order('piece_sequence')
+          .range(from, to)),
       ]);
-      (productionOrders ?? []).forEach((order) => productionStatusById.set(order.id, {
+      productionOrders.forEach((order) => productionStatusById.set(order.id, {
         status: order.status,
         pieceType: String(order.piece_type ?? ''),
         completedQuantity: Number(order.completed_quantity) || 0,
         scrapQuantity: Number(order.scrap_quantity) || 0,
       }));
-      (productionSerials ?? []).forEach((serial) => {
+      productionSerials.forEach((serial) => {
         const identifiers = productionIdentifiersById.get(serial.production_order_id) ?? { serialNumbers: [], toolIds: [], serials: [] };
         const serialNumber = String(serial.serial_number ?? '').trim();
         const toolId = String(serial.tool_id ?? '').trim();
         if (serialNumber && !identifiers.serialNumbers.includes(serialNumber)) identifiers.serialNumbers.push(serialNumber);
         if (toolId && !identifiers.toolIds.includes(toolId)) identifiers.toolIds.push(toolId);
-        identifiers.serials.push({ id: serial.id, serialNumber, toolId, result: serial.result as 'good' | 'scrap' | null });
+        identifiers.serials.push({ id: serial.id, serialNumber, toolId, result: serial.result as 'good' | 'scrap' | null, reportedAt: serial.reported_at ?? '' });
         productionIdentifiersById.set(serial.production_order_id, identifiers);
       });
+      const serialProgressRows = await fetchAllRowsByIds<SerialProgressRow>(productionSerials.map((serial) => serial.id), (chunk, from, to) => supabase
+        .from('mes_customer_reception_serial_progress')
+        .select('reception_item_id, production_serial_id, coating_sent_at, coating_returned_at, sent_at')
+        .in('production_serial_id', chunk)
+        .range(from, to));
+      serialProgressRows.forEach((progress) => serialProgressByKey.set(`${progress.reception_item_id}:${progress.production_serial_id}`, progress));
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Unable to load reception vouchers.');
+      setLoading(false);
+      return;
     }
-    const productionSerialIds = Array.from(productionIdentifiersById.values()).flatMap((entry) => entry.serials.map((serial) => serial.id));
-    const { data: serialProgressData } = productionSerialIds.length
-      ? await supabase.from('mes_customer_reception_serial_progress').select('reception_item_id, production_serial_id, coating_sent_at, coating_returned_at, sent_at').in('production_serial_id', productionSerialIds)
-      : { data: [] };
-    const serialProgressByKey = new Map((serialProgressData ?? []).map((progress) => [`${progress.reception_item_id}:${progress.production_serial_id}`, progress]));
     const mapped = receptionRows.map((row) => {
       const customerRelation = Array.isArray(row.mes_customers) ? row.mes_customers[0] : row.mes_customers;
       const receptionItems: ReceptionItem[] = itemRows.filter((item) => item.reception_voucher_id === row.id).map((item) => {
@@ -781,7 +837,7 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
     const operationKey = `${item.id}:${serialId ?? 'all'}:${action}`;
     setUpdatingSerialKey(operationKey);
     setError('');
-    const { error: progressError } = await supabase.rpc('update_customer_reception_serial_progress', {
+    const { data: updatedCount, error: progressError } = await supabase.rpc('update_customer_reception_serial_progress', {
       p_item_id: item.id,
       p_organization_id: organizationId,
       p_action: action,
@@ -790,9 +846,14 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
     setUpdatingSerialKey('');
     if (progressError) {
       setError(progressError.message);
-      return false;
+      throw new Error(progressError.message);
     }
     await loadVouchers();
+    if (!updatedCount) {
+      const message = 'This piece was already at that stage, so nothing was updated. Refresh and check its current status.';
+      setError(message);
+      throw new Error(message);
+    }
     return true;
   };
 
@@ -887,8 +948,7 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
           throw evidenceError;
         }
       }
-      const progressSaved = await updateSerialProgress(coatingEvidenceTarget.item, coatingEvidenceTarget.action, coatingEvidenceTarget.serials.length === 1 ? coatingEvidenceTarget.serials[0].id : undefined);
-      if (!progressSaved) throw new Error('The evidence was saved, but coating progress could not be updated.');
+      await updateSerialProgress(coatingEvidenceTarget.item, coatingEvidenceTarget.action, coatingEvidenceTarget.serials.length === 1 ? coatingEvidenceTarget.serials[0].id : undefined);
       setCoatingEvidenceTarget(null);
       setCoatingEvidenceFiles({});
     } catch (evidenceError) {
@@ -1175,9 +1235,11 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
                         {item.serials.map((serial) => { const isProduced = serial.result === 'good'; return <div className={`client-reception-serial-row ${isProduced ? 'produced' : serial.result === 'scrap' ? 'scrap' : 'pending-production'}`} key={serial.id}>
                           <span><small>Serial Number</small><strong>{serial.serialNumber}</strong><em className={`client-reception-serial-result ${isProduced ? 'produced' : serial.result === 'scrap' ? 'scrap' : 'pending'}`}>{isProduced ? <><Check size={12} /> Produced</> : serial.result === 'scrap' ? <><X size={12} /> Scrap</> : <><Clock3 size={12} /> Pending production</>}</em></span>
                           <span><small>Tool ID</small><strong>{serial.toolId || 'Not specified'}</strong></span>
+                          {serial.result === 'scrap' ? <span className="client-reception-serial-scrap-state"><small>Final piece status</small><strong><X size={14} /> Scrap</strong>{serial.reportedAt ? <time>{formatReceptionTimestamp(serial.reportedAt, languageCode)}</time> : null}</span> : <>
                           <span className={`piece-stage ${serial.coatingSentAt ? 'done' : ''}`}><small>Coating dispatch</small><button type="button" onClick={() => openCoatingEvidence(item, 'coating-sent', serial.id)} disabled={!isProduced || Boolean(updatingSerialKey) || Boolean(serial.coatingSentAt) || selected.status === 'waiting-delivery'}>{!isProduced ? <><Clock3 size={14} /> Awaiting production</> : item.pieceType.toLowerCase() === 'shavers' ? <><Check size={14} /><span><b>Not required</b></span></> : serial.coatingSentAt ? <><Check size={14} /><span><b>Sent</b><time>{formatReceptionTimestamp(serial.coatingSentAt, languageCode)}</time></span></> : <><Send size={14} /> Send to Coating</>}</button></span>
                           <span className={`piece-stage ${serial.coatingReturnedAt ? 'done' : ''}`}><small>Coating return</small><button type="button" onClick={() => openCoatingEvidence(item, 'coating-returned', serial.id)} disabled={!isProduced || Boolean(updatingSerialKey) || !serial.coatingSentAt || Boolean(serial.coatingReturnedAt) || selected.status === 'waiting-delivery'}>{!isProduced ? <><Clock3 size={14} /> Awaiting production</> : item.pieceType.toLowerCase() === 'shavers' ? <><Check size={14} /><span><b>Not required</b></span></> : serial.coatingReturnedAt ? <><Check size={14} /><span><b>Received</b><time>{formatReceptionTimestamp(serial.coatingReturnedAt, languageCode)}</time></span></> : <><RotateCcw size={14} /> Receive Coating</>}</button></span>
                           <span className={`piece-stage delivery ${serial.sentAt ? 'done' : ''}`}><small>Delivery</small><button type="button" onClick={() => void openCoatingEvidence(item, 'sent', serial.id)} disabled={!isProduced || Boolean(updatingSerialKey) || (!serial.coatingReturnedAt && selected.status !== 'waiting-delivery') || Boolean(serial.sentAt)}>{!isProduced ? <><Clock3 size={14} /> Awaiting production</> : serial.sentAt ? <><Check size={14} /><span><b>Sent</b><time>{formatReceptionTimestamp(serial.sentAt, languageCode)}</time></span></> : <><Truck size={14} /> Send</>}</button></span>
+                          </>}
                         </div>; })}
                       </div></div> : item.productionOrderId ? <div className="client-reception-serials-empty">No serial numbers have been assigned to this production order.</div> : null}
                     </article>

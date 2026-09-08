@@ -216,6 +216,7 @@ const spanish: Record<string, string> = {
   'Pending production': 'Producción pendiente',
   'Awaiting production': 'Esperando producción',
   Scrap: 'Desecho',
+  'Final piece status': 'Estado final de la pieza',
   'Production Order': 'Orden de producción',
   'Assign New Order': 'Asignar nueva orden',
   'Assign Existing Order': 'Asignar orden existente',
