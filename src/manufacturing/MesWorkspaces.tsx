@@ -5211,6 +5211,9 @@ export function ProductionOrdersWorkspace({
           receptionEvidenceName: '',
           quotationId: prefill.quotation_id ?? '',
           legacyPriceId: prefill.legacy_price_id ?? '',
+          endOfLife: false,
+          endOfLifeReason: '',
+          endOfLifeNotes: '',
         }]);
         setAssignSerialsEnabled(true);
         setSerialAssignmentModalOpen(false);
@@ -5693,17 +5696,38 @@ export function ProductionOrdersWorkspace({
       onConfirm: async () => {
         setSavingOrder(true);
         setOrderFormError('');
+        const pendingRework = reworkDraftRef.current;
         const controller = new AbortController();
         const timeout = window.setTimeout(() => controller.abort(), 15000);
+        // A rework order that never got linked is useless, so anything that fails
+        // after the insert takes the order down with it and leaves the form able
+        // to try again from scratch.
+        let createdReworkOrderId = '';
         try {
-          const { data, error } = await supabase
-            .from('mes_production_orders')
-            .insert(toProductionOrderPayload(orderFromForm, organizationId))
-            .select('*')
-            .single()
-            .abortSignal(controller.signal);
-          if (error) throw error;
-          const nextOrder = mapProductionOrderRow(data as ProductionOrderRow);
+          // The RW- number is generated, not typed, so losing a race for it is not
+          // something to hand back to the user: take another one and carry on.
+          let orderToCreate = orderFromForm;
+          let createdRow: ProductionOrderRow | null = null;
+          for (let attempt = 0; !createdRow; attempt += 1) {
+            const { data, error } = await supabase
+              .from('mes_production_orders')
+              .insert(toProductionOrderPayload(orderToCreate, organizationId))
+              .select('*')
+              .single()
+              .abortSignal(controller.signal);
+            if (!error) {
+              createdRow = data as ProductionOrderRow;
+              break;
+            }
+            const duplicateOrderNumber = (error as { code?: string }).code === '23505';
+            if (!pendingRework || !duplicateOrderNumber || attempt >= 4) throw error;
+            const retryOrderNumber = await createReworkOrderNumber(organizationId);
+            if (!retryOrderNumber) throw error;
+            orderToCreate = { ...orderToCreate, orderNumber: retryOrderNumber, partNumber: retryOrderNumber };
+            setFormState((current) => ({ ...current, orderNumber: retryOrderNumber, partNumber: retryOrderNumber }));
+          }
+          const nextOrder = mapProductionOrderRow(createdRow);
+          if (pendingRework) createdReworkOrderId = nextOrder.id;
           let returnToReceptionId = '';
           if (receptionDraftIdRef.current && receptionItemDraftIdRef.current) {
             returnToReceptionId = receptionDraftIdRef.current;
@@ -5769,7 +5793,6 @@ export function ProductionOrdersWorkspace({
               if (serialId) await uploadReceptionEvidence(nextOrder.id, serialId, draft);
             }));
           }
-          const pendingRework = reworkDraftRef.current;
           if (pendingRework) {
             const { error: reworkError } = await supabase.rpc('assign_production_serial_rework_to_new_order', {
               p_organization_id: organizationId,
@@ -5782,6 +5805,7 @@ export function ProductionOrdersWorkspace({
             if (reworkError) throw reworkError;
             reworkDraftRef.current = null;
           }
+          createdReworkOrderId = '';
           setTableMessage(null);
           setOrders((currentOrders) => [nextOrder, ...currentOrders]);
           setSelectedOrderNumber(nextOrder.orderNumber);
@@ -5793,6 +5817,14 @@ export function ProductionOrdersWorkspace({
           }
         } catch (error) {
           console.error('Unable to create MES production order', error);
+          if (createdReworkOrderId) {
+            const { error: rollbackError } = await supabase
+              .from('mes_production_orders')
+              .delete()
+              .eq('organization_id', organizationId)
+              .eq('id', createdReworkOrderId);
+            if (rollbackError) console.error('Unable to remove the unlinked rework production order', rollbackError);
+          }
           const message = controller.signal.aborted
             ? 'Supabase did not respond within 15 seconds. Check the connection and try again.'
             : describeSerialSaveError(error) || 'This Production Order could not be created right now.';
