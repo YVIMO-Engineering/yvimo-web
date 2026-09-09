@@ -1,6 +1,6 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { AlertTriangle, ArrowLeft, Boxes, ChevronDown, CircleX, Pencil, Plus, RefreshCw, Repeat2, ShieldCheck, Trash2, Truck, TriangleAlert } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Boxes, ChevronDown, CircleX, Pencil, Plus, RefreshCw, Repeat2, ShieldCheck, Trash2, Truck, TriangleAlert, Wrench } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { useSupabaseRealtimeRefresh } from '../lib/useSupabaseRealtimeRefresh';
 import { getWorkCenterHourlyRate } from './workCenterRates';
@@ -14,6 +14,8 @@ type TransferRow = { id: string; transfer_number: string; external_process: stri
 type DowntimeCycle = { id: string; work_center_code: string; station_code: string; started_at: string; ended_at: string | null };
 type WorkCenterRow = { id: string; code: string; name: string };
 type StationRow = { work_center_id: string; code: string; name: string };
+type StationExclusionRow = { work_center_code: string; station_code: string };
+type EndOfLifePieceRow = { id: string; serial_number: string; tool_id: string | null; end_of_life_reason: string | null; end_of_life_notes: string | null; end_of_life_at: string; mes_production_orders: { order_number: string | null; client_name: string | null } | Array<{ order_number: string | null; client_name: string | null }> | null };
 type InventoryPriceRow = { id: string; title: string; unit_price: number | null; currency: string | null };
 type LeakEntryCategory = 'external-supplier' | 'manufacturing-transfer' | 'warranty';
 type LeakEntry = { id: string; category: LeakEntryCategory; title: string; party: string; description: string; reference: string; work_center_id: string | null; quantity: number; amount: number; currency: string; incurred_at: string };
@@ -123,9 +125,6 @@ const monthRange = (offset = 0) => {
   return { from: dateInput(new Date(now.getFullYear(), now.getMonth() + offset, 1)), to: dateInput(new Date(now.getFullYear(), now.getMonth() + offset + 1, 0)) };
 };
 const emptyEntryForm = { primary: '', customPrimary: '', party: '', description: '', reference: '', workCenterId: '', quantity: '1', amount: '', currency: 'USD', incurredOn: dateInput(new Date()) };
-const eventText = (event: LeakEvent) => `${event.reason ?? ''} ${event.comment ?? ''} ${JSON.stringify(event.payload ?? {})}`.toLowerCase();
-const isEndOfLife = (event: LeakEvent) => /end[\s_-]*of[\s_-]*life|\beol\b|fin de vida/.test(eventText(event));
-const isWarranty = (event: LeakEvent) => /\bwarrant(?:y|ies)\b|garant[ií]a/.test(eventText(event));
 const payloadRecord = (payload: unknown): Record<string, unknown> => payload && typeof payload === 'object' && !Array.isArray(payload) ? payload as Record<string, unknown> : {};
 const eventSpend = (event: LeakEvent) => {
   const payload = payloadRecord(event.payload);
@@ -136,6 +135,7 @@ const eventSpend = (event: LeakEvent) => {
   const unitCost = Number(payload.unit_cost);
   return Number.isFinite(unitCost) && unitCost >= 0 ? unitCost * Math.max(1, Number(event.quantity) || 1) : null;
 };
+const stationKey = (workCenterCode: string | null, stationCode: string | null) => `${workCenterCode ?? ''}::${stationCode ?? ''}`;
 const money = (value: number, currency = 'USD') => new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 2 }).format(value);
 const categoryTone = (category: string) => category.includes('Scrap') ? 'scrap' : category === 'Manufacturing Transfer' ? 'transfer' : category === 'Supplies Used' ? 'supplies' : category === 'Warranty' ? 'warranty' : category === 'External Supplier' ? 'external' : 'downtime';
 const SpendBox = ({ value }: { value: string | null }) => <span className="profit-leak-spend"><small>Money Spent</small><strong>{value ?? 'Not recorded'}</strong></span>;
@@ -227,6 +227,13 @@ export function ProfitLeakWorkspace({ onNavigate, organizationId }: Props) {
   const [workCenters, setWorkCenters] = React.useState<WorkCenterRow[]>([]);
   const [stations, setStations] = React.useState<StationRow[]>([]);
   const [inventoryPrices, setInventoryPrices] = React.useState<InventoryPriceRow[]>([]);
+  const [endOfLifePieces, setEndOfLifePieces] = React.useState<EndOfLifePieceRow[]>([]);
+  const [excludedStations, setExcludedStations] = React.useState<Set<string>>(() => new Set());
+  const [stationConfigAvailable, setStationConfigAvailable] = React.useState(true);
+  const [stationModalOpen, setStationModalOpen] = React.useState(false);
+  const [stationDraft, setStationDraft] = React.useState<Set<string>>(() => new Set());
+  const [stationError, setStationError] = React.useState('');
+  const [savingStations, setSavingStations] = React.useState(false);
   const [entries, setEntries] = React.useState<LeakEntry[]>([]);
   const [entryCategory, setEntryCategory] = React.useState<LeakEntryCategory | null>(null);
   const [entryForm, setEntryForm] = React.useState(emptyEntryForm);
@@ -237,13 +244,14 @@ export function ProfitLeakWorkspace({ onNavigate, organizationId }: Props) {
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState('');
   const [setupNotice, setSetupNotice] = React.useState('');
+  const [entrySetupError, setEntrySetupError] = React.useState('');
   const [updatedAt, setUpdatedAt] = React.useState('');
 
   const load = React.useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     const from = `${range.from}T00:00:00`;
     const to = `${range.to}T23:59:59.999`;
-    const [eventResult, transferResult, downtimeResult, centerResult, stationResult, inventoryResult, entryResult] = await Promise.all([
+    const [eventResult, transferResult, downtimeResult, centerResult, stationResult, inventoryResult, entryResult, exclusionResult, endOfLifeResult] = await Promise.all([
       supabase.from('mes_operator_terminal_events')
         .select('id, event_type, quantity, reason, comment, payload, work_center_code, station_code, created_at, mes_production_orders(client_name)')
         .eq('organization_id', organizationId)
@@ -265,12 +273,30 @@ export function ProfitLeakWorkspace({ onNavigate, organizationId }: Props) {
         .eq('organization_id', organizationId)
         .gte('incurred_at', from).lte('incurred_at', to)
         .order('incurred_at', { ascending: false }),
+      supabase.from('mes_downtime_cost_excluded_stations')
+        .select('work_center_code, station_code')
+        .eq('organization_id', organizationId),
+      supabase.from('mes_production_serials')
+        .select('id, serial_number, tool_id, end_of_life_reason, end_of_life_notes, end_of_life_at, mes_production_orders(order_number, client_name)')
+        .eq('organization_id', organizationId)
+        .eq('end_of_life', true)
+        .gte('end_of_life_at', from).lte('end_of_life_at', to)
+        .order('end_of_life_at', { ascending: false }),
     ]);
     const loadError = eventResult.error ?? transferResult.error ?? downtimeResult.error ?? centerResult.error ?? stationResult.error;
     // Inventory pricing and manual Profit Leak entries ship with their own migrations; keep
     // the rest of the analysis usable while those tables and columns are still missing.
     const setupError = inventoryResult.error ?? entryResult.error;
-    setSetupNotice(setupError ? `External suppliers, manufacturing transfer, and warranty logging are unavailable: ${setupError.message}` : '');
+    const notices = [
+      setupError ? `External suppliers, manufacturing transfer, and warranty logging are unavailable: ${setupError.message}` : '',
+      exclusionResult.error ? `Downtime station settings are unavailable: ${exclusionResult.error.message}` : '',
+      endOfLifeResult.error ? `End of Life pieces are unavailable: ${endOfLifeResult.error.message}` : '',
+    ].filter(Boolean);
+    setSetupNotice(notices.join(' '));
+    setEntrySetupError(setupError ? setupError.message : '');
+    setStationConfigAvailable(!exclusionResult.error);
+    setExcludedStations(new Set(((exclusionResult.data ?? []) as StationExclusionRow[]).map((row) => stationKey(row.work_center_code, row.station_code))));
+    setEndOfLifePieces((endOfLifeResult.data ?? []) as EndOfLifePieceRow[]);
     if (loadError) {
       setError(loadError.message || 'Unable to load profit leak data.');
     } else {
@@ -296,6 +322,8 @@ export function ProfitLeakWorkspace({ onNavigate, organizationId }: Props) {
       { table: 'mes_station_status_cycles', filter: `organization_id=eq.${organizationId}` },
       { table: 'mes_profit_leak_entries', filter: `organization_id=eq.${organizationId}` },
       { table: 'mes_inventory_items', filter: `organization_id=eq.${organizationId}` },
+      { table: 'mes_downtime_cost_excluded_stations', filter: `organization_id=eq.${organizationId}` },
+      { table: 'mes_production_serials', filter: `organization_id=eq.${organizationId}` },
     ],
     onRefresh: () => void load(true),
   });
@@ -304,11 +332,12 @@ export function ProfitLeakWorkspace({ onNavigate, organizationId }: Props) {
     const startMs = new Date(`${range.from}T00:00:00`).getTime();
     const rangeEnd = new Date(`${range.to}T00:00:00`); rangeEnd.setDate(rangeEnd.getDate() + 1);
     const endMs = Math.min(rangeEnd.getTime(), Date.now());
-    return downtimeCycles.map((cycle) => {
+    // Stations opted out in the downtime settings never reach the KPI, the money spent, or the event table.
+    return downtimeCycles.filter((cycle) => !excludedStations.has(stationKey(cycle.work_center_code, cycle.station_code))).map((cycle) => {
       const durationMs = Math.max(0, Math.min(endMs, cycle.ended_at ? new Date(cycle.ended_at).getTime() : Date.now()) - Math.max(startMs, new Date(cycle.started_at).getTime()));
       return { cycle, hours: durationMs / 3_600_000 };
     }).filter(({ hours }) => hours >= (1 / 3600));
-  }, [downtimeCycles, range.from, range.to]);
+  }, [downtimeCycles, excludedStations, range.from, range.to]);
 
   const entriesByCategory = React.useMemo(() => {
     const groups: Record<LeakEntryCategory, LeakEntry[]> = { 'external-supplier': [], 'manufacturing-transfer': [], warranty: [] };
@@ -317,18 +346,19 @@ export function ProfitLeakWorkspace({ onNavigate, organizationId }: Props) {
   }, [entries]);
 
   const summary = React.useMemo(() => {
+    // Every scrap reported at the Operator Terminal is Generated Scrap. End of Life is
+    // declared on the piece during Production Order intake, and warranties are logged by hand.
     const scrap = events.filter((event) => event.event_type === 'production-scrap');
-    const manualWarranties = entriesByCategory.warranty.reduce((sum, entry) => sum + Math.max(1, entry.quantity), 0);
-    const warranties = scrap.filter(isWarranty).reduce((sum, event) => sum + Math.max(1, Number(event.quantity) || 1), 0) + manualWarranties;
-    const eol = scrap.filter((event) => !isWarranty(event) && isEndOfLife(event)).reduce((sum, event) => sum + Math.max(1, Number(event.quantity) || 1), 0);
-    const generated = scrap.filter((event) => !isWarranty(event) && !isEndOfLife(event)).reduce((sum, event) => sum + Math.max(1, Number(event.quantity) || 1), 0);
+    const warranties = entriesByCategory.warranty.reduce((sum, entry) => sum + Math.max(1, entry.quantity), 0);
+    const eol = endOfLifePieces.length;
+    const generated = scrap.reduce((sum, event) => sum + Math.max(1, Number(event.quantity) || 1), 0);
     const supplies = events.filter((event) => event.event_type === 'inventory-consumed').reduce((sum, event) => sum + Math.max(1, Number(event.quantity) || 1), 0);
     const downtime = validDowntimeCycles.length;
     const manualTransfers = entriesByCategory['manufacturing-transfer'].reduce((sum, entry) => sum + Math.max(1, entry.quantity), 0);
     const transfersCount = transfers.length + manualTransfers;
     const externalCount = entriesByCategory['external-supplier'].length;
     return { eol, generated, scraps: eol + generated, supplies, downtime, warranties, transfersCount, externalCount };
-  }, [entriesByCategory, events, transfers, validDowntimeCycles]);
+  }, [endOfLifePieces, entriesByCategory, events, transfers, validDowntimeCycles]);
 
   // Inventory carries the reference unit price, so supplies consumed before a price
   // existed (or logged without cost keys) can still be valued from the item card.
@@ -345,10 +375,15 @@ export function ProfitLeakWorkspace({ onNavigate, organizationId }: Props) {
     };
     const operationalRows = events.map((event) => {
       const payload = payloadRecord(event.payload);
-      const category = event.event_type === 'production-scrap' ? (isWarranty(event) ? 'Warranty' : isEndOfLife(event) ? 'End of Life Scrap' : 'Generated Scrap') : 'Supplies Used';
-      const detail = event.reason || String(payload.inventory_item_title || '') || event.comment || 'Operational event';
+      const category = event.event_type === 'production-scrap' ? 'Generated Scrap' : 'Supplies Used';
+      // The operator picks a reason and may add a note: both belong in the cost detail.
+      const detail = category === 'Generated Scrap'
+        ? [event.reason || 'Scrap reported', event.comment].filter(Boolean).join(' · ')
+        : String(payload.inventory_item_title || '') || event.comment || 'Operational event';
       const order = relation(event.mes_production_orders);
-      const item = category === 'Supplies Used' ? String(payload.inventory_item_title || 'Not identified') : category === 'Generated Scrap' ? `Tool ID: ${String(payload.tool_id || 'Not identified')} · Client: ${order?.client_name || String(payload.client_name || 'Not identified')}` : String(payload.tool_id || '—');
+      const item = category === 'Supplies Used'
+        ? String(payload.inventory_item_title || 'Not identified')
+        : `Tool ID: ${String(payload.tool_id || 'Not identified')} · Client: ${order?.client_name || String(payload.client_name || 'Not identified')}`;
       const quantity = Math.max(1, Number(event.quantity) || 1);
       const itemPrice = category === 'Supplies Used' ? priceByItem.get(String(payload.inventory_item_id ?? '')) : undefined;
       const spent = eventSpend(event) ?? (itemPrice && itemPrice.price > 0 ? itemPrice.price * quantity : null);
@@ -364,6 +399,22 @@ export function ProfitLeakWorkspace({ onNavigate, organizationId }: Props) {
       const location = locationFor(cycle.work_center_code, cycle.station_code);
       return { id: `downtime-${cycle.id}`, date: cycle.started_at, category: 'Downtime Incident', detail: `${durationLabel(hours)} × ${money(rate)}/hour`, item: '—', duration: durationLabel(hours), ...location, quantity: 1, spent: hours * rate, currency: 'USD' };
     });
+    const endOfLifeRows: LeakTableRow[] = endOfLifePieces.map((piece) => {
+      const order = relation(piece.mes_production_orders);
+      return {
+        id: `end-of-life-${piece.id}`,
+        date: piece.end_of_life_at,
+        category: 'End of Life Scrap',
+        detail: [piece.end_of_life_reason || 'End of Life', piece.end_of_life_notes].filter(Boolean).join(' · '),
+        item: `Tool ID: ${piece.tool_id || 'Not identified'} · Serial: ${piece.serial_number || 'Not identified'} · Client: ${order?.client_name || 'Not identified'}`,
+        duration: '—',
+        workCenter: 'Order intake',
+        station: order?.order_number || '—',
+        quantity: 1,
+        spent: null,
+        currency: 'USD',
+      };
+    });
     const entryRows: LeakTableRow[] = entries.map((entry) => ({
       id: `entry-${entry.id}`,
       date: entry.incurred_at,
@@ -378,8 +429,8 @@ export function ProfitLeakWorkspace({ onNavigate, organizationId }: Props) {
       currency: entry.currency || 'USD',
       entry,
     }));
-    return [...operationalRows, ...transferRows, ...downtimeRows, ...entryRows].sort((left, right) => new Date(right.date).getTime() - new Date(left.date).getTime());
-  }, [entries, events, priceByItem, stations, transfers, validDowntimeCycles, workCenters]);
+    return [...operationalRows, ...transferRows, ...downtimeRows, ...endOfLifeRows, ...entryRows].sort((left, right) => new Date(right.date).getTime() - new Date(left.date).getTime());
+  }, [endOfLifePieces, entries, events, priceByItem, stations, transfers, validDowntimeCycles, workCenters]);
   const workCenterStyle = React.useCallback((name: string) => {
     const index = Math.max(0, workCenters.findIndex((center) => center.name === name));
     return workCenterPalette[index % workCenterPalette.length];
@@ -475,6 +526,53 @@ export function ProfitLeakWorkspace({ onNavigate, organizationId }: Props) {
     await load(true);
   };
 
+  const stationGroups = React.useMemo(() => workCenters
+    .map((center) => ({ center, stations: stations.filter((station) => station.work_center_id === center.id).slice().sort((left, right) => left.name.localeCompare(right.name)) }))
+    .filter((group) => group.stations.length > 0), [stations, workCenters]);
+
+  const openStationModal = () => {
+    setStationDraft(new Set(excludedStations));
+    setStationError('');
+    setStationModalOpen(true);
+  };
+
+  const toggleStationDraft = (keys: string[], include: boolean) => {
+    setStationDraft((current) => {
+      const next = new Set(current);
+      keys.forEach((key) => { if (include) next.delete(key); else next.add(key); });
+      return next;
+    });
+  };
+
+  // The exclusion list is small and organization wide, so it is rewritten as a whole
+  // instead of diffing every station one round trip at a time.
+  const saveStationSettings = async () => {
+    setSavingStations(true);
+    setStationError('');
+    const { error: clearError } = await supabase.from('mes_downtime_cost_excluded_stations')
+      .delete().eq('organization_id', organizationId);
+    if (clearError) {
+      setSavingStations(false);
+      return setStationError(clearError.message);
+    }
+    const rows = [...stationDraft].map((key) => {
+      const [workCenterCode, stationCode] = key.split('::');
+      return { organization_id: organizationId, work_center_code: workCenterCode, station_code: stationCode };
+    });
+    if (rows.length) {
+      const { error: insertError } = await supabase.from('mes_downtime_cost_excluded_stations').insert(rows);
+      if (insertError) {
+        setSavingStations(false);
+        return setStationError(insertError.message);
+      }
+    }
+    setSavingStations(false);
+    setStationModalOpen(false);
+    await load(true);
+  };
+
+  const configurableStationKeys = stationGroups.flatMap((group) => group.stations.map((station) => stationKey(group.center.code, station.code)));
+  const excludedCount = configurableStationKeys.filter((key) => excludedStations.has(key)).length;
   const activeConfig = entryCategory ? CATEGORY_CONFIG[entryCategory] : null;
   const workCenterOptions: SelectOption[] = [{ value: '', label: 'Company wide' }, ...workCenters.map((center) => ({ value: center.id, label: `${center.code} · ${center.name}` }))];
   const currencyOptions: SelectOption[] = ENTRY_CURRENCIES.map((currency) => ({ value: currency, label: currency }));
@@ -482,7 +580,7 @@ export function ProfitLeakWorkspace({ onNavigate, organizationId }: Props) {
   return <section className="profit-leak-workspace">
     <header className="profit-leak-header">
       <button className="academy-back-button engineering-back-button mes-workspace-back profit-leak-back" type="button" onClick={() => onNavigate('/workspace/manufacturing-ops/intelligence')}><ArrowLeft size={16} /> Ops Intelligence</button>
-      <div className="profit-leak-heading"><span>OPS INTELLIGENCE / FINANCE</span><h1>Profit Leak</h1><p>Operational factors reducing company profit</p></div>
+      <div className="profit-leak-heading"><span>OPS INTELLIGENCE / FINANCE</span><h1>Operation Cost Tracker</h1><p>Operational factors reducing company profit</p></div>
       <section className="profit-leak-controls">
         <div className="profit-leak-period-tabs">{(['current', 'previous', 'custom'] as const).map((item) => <button className={preset === item ? 'active' : ''} type="button" key={item} onClick={() => setPresetRange(item)}>{item === 'current' ? 'Current month' : item === 'previous' ? 'Previous month' : 'Custom'}</button>)}</div>
         <label><span>From</span><input type="date" value={range.from} onChange={(event) => { setPreset('custom'); setRange((current) => ({ ...current, from: event.target.value })); }} /></label>
@@ -494,15 +592,15 @@ export function ProfitLeakWorkspace({ onNavigate, organizationId }: Props) {
     {error ? <div className="profit-leak-error"><AlertTriangle size={18} />{error}</div> : null}
     {setupNotice ? <div className="profit-leak-error profit-leak-setup-notice"><AlertTriangle size={18} />{setupNotice}</div> : null}
     <section className="profit-leak-kpis" aria-label="Profit leak KPIs">
-      <article className="scrap-card"><small className="profit-kpi-title">Total Scrap</small><span className="profit-kpi-count"><Trash2 /><strong>{summary.scraps.toLocaleString()}</strong></span><span className="scrap-breakdown"><b><i />End of Life <strong>{summary.eol.toLocaleString()}</strong></b><b><i />Generated Scrap <strong>{summary.generated.toLocaleString()}</strong></b></span><SpendBox value={spendTotals.scrap} /></article>
-      <article><button className="profit-leak-kpi-add" type="button" disabled={Boolean(setupNotice)} aria-label="Log manufacturing transfer" onClick={() => openEntryModal('manufacturing-transfer', null)}><Plus size={14} /></button><small className="profit-kpi-title">Manufacturing Transfers</small><span className="profit-kpi-count"><Repeat2 /><strong>{summary.transfersCount.toLocaleString()}</strong></span><SpendBox value={spendTotals.transfers} /></article>
-      <article><small className="profit-kpi-title">Supplies Used</small><span className="profit-kpi-count"><Boxes /><strong>{summary.supplies.toLocaleString()}</strong></span><SpendBox value={spendTotals.supplies} /></article>
-      <article><button className="profit-leak-kpi-add" type="button" disabled={Boolean(setupNotice)} aria-label="Log warranty" onClick={() => openEntryModal('warranty', null)}><Plus size={14} /></button><small className="profit-kpi-title">Warranties</small><span className="profit-kpi-count"><ShieldCheck /><strong>{summary.warranties.toLocaleString()}</strong></span><SpendBox value={spendTotals.warranties} /></article>
-      <article><small className="profit-kpi-title">Downtime Incidents</small><span className="profit-kpi-count"><TriangleAlert /><strong>{summary.downtime.toLocaleString()}</strong></span><SpendBox value={spendTotals.downtime} /></article>
-      <article className="external-card"><button className="profit-leak-kpi-add" type="button" disabled={Boolean(setupNotice)} aria-label="Log external supplier expense" onClick={() => openEntryModal('external-supplier', null)}><Plus size={14} /></button><small className="profit-kpi-title">External Suppliers</small><span className="profit-kpi-count"><Truck /><strong>{summary.externalCount.toLocaleString()}</strong></span><SpendBox value={spendTotals.external} /></article>
+      <article className="scrap-card"><header className="profit-kpi-head"><small className="profit-kpi-title">Total Scrap</small></header><span className="profit-kpi-count"><Trash2 /><strong>{summary.scraps.toLocaleString()}</strong></span><span className="scrap-breakdown"><b><i />End of Life <strong>{summary.eol.toLocaleString()}</strong></b><b><i />Generated Scrap <strong>{summary.generated.toLocaleString()}</strong></b></span><SpendBox value={spendTotals.scrap} /></article>
+      <article><header className="profit-kpi-head has-actions"><small className="profit-kpi-title">Manufacturing Transfers</small><span className="profit-kpi-actions"><button className="profit-kpi-action" type="button" disabled={Boolean(entrySetupError)} title="Log manufacturing transfer" aria-label="Log manufacturing transfer" onClick={() => openEntryModal('manufacturing-transfer', null)}><Plus size={13} /></button></span></header><span className="profit-kpi-count"><Repeat2 /><strong>{summary.transfersCount.toLocaleString()}</strong></span><SpendBox value={spendTotals.transfers} /></article>
+      <article><header className="profit-kpi-head"><small className="profit-kpi-title">Supplies Used</small></header><span className="profit-kpi-count"><Boxes /><strong>{summary.supplies.toLocaleString()}</strong></span><SpendBox value={spendTotals.supplies} /></article>
+      <article><header className="profit-kpi-head has-actions"><small className="profit-kpi-title">Warranties</small><span className="profit-kpi-actions"><button className="profit-kpi-action" type="button" disabled={Boolean(entrySetupError)} title="Log warranty" aria-label="Log warranty" onClick={() => openEntryModal('warranty', null)}><Plus size={13} /></button></span></header><span className="profit-kpi-count"><ShieldCheck /><strong>{summary.warranties.toLocaleString()}</strong></span><SpendBox value={spendTotals.warranties} /></article>
+      <article><header className="profit-kpi-head has-actions"><small className="profit-kpi-title">Downtime Incidents</small><span className="profit-kpi-actions"><button className={`profit-kpi-action${excludedCount ? ' active' : ''}`} type="button" disabled={!stationConfigAvailable} title={excludedCount ? `Downtime cost settings · ${excludedCount} station${excludedCount === 1 ? '' : 's'} excluded` : 'Downtime cost settings'} aria-label="Downtime cost settings" onClick={openStationModal}><Wrench size={13} /></button></span></header><span className="profit-kpi-count"><TriangleAlert /><strong>{summary.downtime.toLocaleString()}</strong></span><SpendBox value={spendTotals.downtime} /></article>
+      <article className="external-card"><header className="profit-kpi-head has-actions"><small className="profit-kpi-title">External Suppliers</small><span className="profit-kpi-actions"><button className="profit-kpi-action" type="button" disabled={Boolean(entrySetupError)} title="Log external supplier expense" aria-label="Log external supplier expense" onClick={() => openEntryModal('external-supplier', null)}><Plus size={13} /></button></span></header><span className="profit-kpi-count"><Truck /><strong>{summary.externalCount.toLocaleString()}</strong></span><SpendBox value={spendTotals.external} /></article>
     </section>
     <section className="profit-leak-events">
-      <header><span><small>Cost detail</small><h2>Profit Leak Events</h2></span><strong>{tableRows.length.toLocaleString()} events</strong></header>
+      <header><span><small>Cost detail</small><h2>Operation Cost Events</h2></span><strong>{tableRows.length.toLocaleString()} events</strong></header>
       <div className="profit-leak-table-wrap"><table><thead><tr><th>Date</th><th>KPI</th><th>Event detail</th><th>Item / Tool & Client</th><th>Workcenter / Station</th><th>Downtime</th><th>Quantity</th><th>Money Spent</th><th>Actions</th></tr></thead><tbody>
         {tableRows.map((row) => { const tone = workCenterStyle(row.workCenter); return <tr key={row.id}><td>{new Date(row.date).toLocaleString()}</td><td><span className={`profit-leak-category ${categoryTone(row.category)}`}>{row.category}</span></td><td>{row.detail}</td><td>{row.item}</td><td><span className="profit-leak-location"><b className="workcenter-pill" style={{ background: tone.background, borderColor: tone.border, color: tone.color }}>{row.workCenter}</b><em>{row.station}</em></span></td><td>{row.duration}</td><td>{row.quantity.toLocaleString()}</td><td>{row.spent === null ? <em className="cost-missing">Not recorded</em> : <strong className="cost-value">{money(row.spent, row.currency)}</strong>}</td><td>{row.entry ? <span className="profit-leak-row-actions"><button type="button" aria-label={`Edit ${row.entry.title}`} onClick={() => openEntryModal(row.entry!.category, row.entry!)}><Pencil size={14} /></button><button className="danger" type="button" aria-label={`Delete ${row.entry.title}`} onClick={() => setEntryDeleteCandidate(row.entry!)}><Trash2 size={14} /></button></span> : <em className="cost-missing">—</em>}</td></tr>; })}
         {!tableRows.length ? <tr><td className="profit-leak-empty" colSpan={9}>{loading ? 'Loading profit leak events…' : 'No profit leak events were recorded in this period.'}</td></tr> : null}
@@ -539,12 +637,49 @@ export function ProfitLeakWorkspace({ onNavigate, organizationId }: Props) {
         </form>
       </section>
     </div> : null}
+    {stationModalOpen ? <div className="mes-modal-backdrop profit-leak-modal-backdrop" role="presentation">
+      <section className="mes-order-modal profit-leak-stations-modal" role="dialog" aria-modal="true" aria-labelledby="profit-leak-stations-title">
+        <div className="profit-leak-modal-heading">
+          <div><p className="eyebrow">OPS INTELLIGENCE / DOWNTIME INCIDENTS</p><h3 id="profit-leak-stations-title">Downtime cost settings</h3></div>
+          <button type="button" aria-label="Close" onClick={() => setStationModalOpen(false)}><CircleX size={19} /></button>
+        </div>
+        <p className="profit-leak-stations-hint">Only the checked stations add their down time to the Downtime Incidents KPI and its money spent. This setting is shared by everyone in the organization.</p>
+        <div className="profit-leak-stations-list">
+          {stationGroups.map((group) => {
+            const keys = group.stations.map((station) => stationKey(group.center.code, station.code));
+            const allIncluded = keys.every((key) => !stationDraft.has(key));
+            return <section className="profit-leak-station-group" key={group.center.id}>
+              <header>
+                <span><b>{group.center.code}</b><em>{group.center.name}</em></span>
+                <button type="button" onClick={() => toggleStationDraft(keys, !allIncluded)}>{allIncluded ? 'Exclude all' : 'Include all'}</button>
+              </header>
+              <div className="profit-leak-station-options">
+                {group.stations.map((station) => {
+                  const key = stationKey(group.center.code, station.code);
+                  const included = !stationDraft.has(key);
+                  return <label className={included ? 'included' : ''} key={key}>
+                    <input type="checkbox" checked={included} onChange={() => toggleStationDraft([key], !included)} />
+                    <span><b>{station.name}</b><em>{station.code}</em></span>
+                  </label>;
+                })}
+              </div>
+            </section>;
+          })}
+          {!stationGroups.length ? <p className="profit-leak-stations-empty">No work center stations are registered yet.</p> : null}
+        </div>
+        {stationError ? <div className="profit-leak-error" role="alert"><AlertTriangle size={16} />{stationError}</div> : null}
+        <div className="profit-leak-modal-actions">
+          <button type="button" onClick={() => setStationModalOpen(false)}>Cancel</button>
+          <button className="primary" type="button" disabled={savingStations} onClick={() => { void saveStationSettings(); }}>{savingStations ? 'Saving…' : 'Save settings'}</button>
+        </div>
+      </section>
+    </div> : null}
     {entryDeleteCandidate ? <div className="mes-modal-backdrop profit-leak-modal-backdrop" role="presentation">
       <section className="mes-confirm-modal danger" role="dialog" aria-modal="true" aria-labelledby="profit-leak-delete-title">
         <span className="mes-confirm-mark"><AlertTriangle size={24} /></span>
         <div>
           <h3 id="profit-leak-delete-title">Delete {CATEGORY_LABEL[entryDeleteCandidate.category].toLowerCase()} entry?</h3>
-          <p><strong>{entryDeleteCandidate.title}</strong>{entryDeleteCandidate.party ? ` · ${entryDeleteCandidate.party}` : ''} for {money(Number(entryDeleteCandidate.amount) || 0, entryDeleteCandidate.currency)} will be removed from Profit Leak.</p>
+          <p><strong>{entryDeleteCandidate.title}</strong>{entryDeleteCandidate.party ? ` · ${entryDeleteCandidate.party}` : ''} for {money(Number(entryDeleteCandidate.amount) || 0, entryDeleteCandidate.currency)} will be removed from the Operation Cost Tracker.</p>
         </div>
         <div className="mes-confirm-actions">
           <button type="button" onClick={() => setEntryDeleteCandidate(null)}>Cancel</button>

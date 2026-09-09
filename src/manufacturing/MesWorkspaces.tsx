@@ -131,6 +131,9 @@ type ProductionSerialAssignmentDraft = {
   receptionEvidenceName: string;
   quotationId: string;
   legacyPriceId: string;
+  endOfLife: boolean;
+  endOfLifeReason: string;
+  endOfLifeNotes: string;
 };
 
 type ProductionQuotationOption = {
@@ -334,6 +337,10 @@ type ProductionSerialInsertRow = {
   verified_quotation_price: number | null;
   quotation_damage_inches: number | null;
   quotation_damage_match: boolean | null;
+  end_of_life?: boolean;
+  end_of_life_reason?: string | null;
+  end_of_life_notes?: string | null;
+  end_of_life_at?: string | null;
 };
 
 type ProductionSerialAssignmentRow = {
@@ -349,6 +356,10 @@ type ProductionSerialAssignmentRow = {
   stock_to_remove?: number | null;
   quotation_id?: string | null;
   legacy_price_id?: string | null;
+  end_of_life?: boolean | null;
+  end_of_life_reason?: string | null;
+  end_of_life_notes?: string | null;
+  end_of_life_at?: string | null;
 };
 
 type TraceabilityCaptureRow = {
@@ -1425,8 +1436,34 @@ function createSerialAssignmentDrafts(quantity: number, currentDrafts: Productio
       receptionEvidenceName: '',
       quotationId: '',
       legacyPriceId: '',
+      endOfLife: false,
+      endOfLifeReason: '',
+      endOfLifeNotes: '',
     };
   });
+}
+
+// A tool can arrive already dead. That is decided here, at Production Order intake,
+// and it is what feeds the End of Life KPI in the Operation Cost Tracker.
+const productionEndOfLifeReasons = [
+  'Minimum life reached',
+  'Maximum sharpenings reached',
+  'Body crack or fracture',
+  'Irreparable tooth damage',
+  'Excessive wear',
+  'Corrosion damage',
+  'Customer scrap request',
+  'Other',
+];
+
+const productionEndOfLifeReasonOptions: MesOrderDropdownOption[] = productionEndOfLifeReasons.map((reason) => ({ value: reason, label: reason }));
+
+function describeSerialSaveError(error: unknown) {
+  const message = (error as { message?: string }).message ?? '';
+  if (/end_of_life/.test(message)) {
+    return 'Piece End of Life requires database migration 174_add_production_serial_end_of_life.sql.';
+  }
+  return message;
 }
 
 function parseProductionSerialMeasurement(value: string) {
@@ -4399,6 +4436,9 @@ export function ProductionOrdersWorkspace({
   const [serialAssignmentModalOpen, setSerialAssignmentModalOpen] = React.useState(false);
   const [stationAssignmentModalOpen, setStationAssignmentModalOpen] = React.useState(false);
   const [serialStationColumnAvailable, setSerialStationColumnAvailable] = React.useState(true);
+  const [serialEndOfLifeColumnAvailable, setSerialEndOfLifeColumnAvailable] = React.useState(true);
+  const [endOfLifeDraft, setEndOfLifeDraft] = React.useState<{ pieceSequence: number; reason: string; notes: string; alreadySet: boolean } | null>(null);
+  const [endOfLifeError, setEndOfLifeError] = React.useState('');
   const [reworkNumberLocked, setReworkNumberLocked] = React.useState(false);
   const [tableMessage, setTableMessage] = React.useState<string | null>('Loading production orders...');
   const [ordersLoaded, setOrdersLoaded] = React.useState(false);
@@ -4460,6 +4500,17 @@ export function ProductionOrdersWorkspace({
   const usesHobMeasurements = ['hobs', 'skiving'].includes(formState.pieceType) || formState.pieceType === 'other';
   const usesShaperMeasurements = formState.pieceType === 'shaper';
   const usesStockToRemove = usesHobMeasurements || usesShaperMeasurements;
+  const endOfLifeSnapshotForDraft = (draft: ProductionSerialAssignmentDraft, existingAt?: string | null) => (
+    serialEndOfLifeColumnAvailable
+      ? {
+        end_of_life: draft.endOfLife,
+        end_of_life_reason: draft.endOfLife ? draft.endOfLifeReason.trim() : null,
+        end_of_life_notes: draft.endOfLife ? draft.endOfLifeNotes.trim() : null,
+        end_of_life_at: draft.endOfLife ? (existingAt ?? new Date().toISOString()) : null,
+      }
+      : {}
+  );
+
   const quotationSnapshotForDraft = (draft: ProductionSerialAssignmentDraft) => {
     const verified = verifiedQuotationPricing(
       quotationOptions.find((option) => option.id === draft.quotationId),
@@ -5195,31 +5246,41 @@ export function ProductionOrdersWorkspace({
     setSerialAssignmentDrafts(createSerialAssignmentDrafts(selectedOrder.plannedQuantity));
     setSerialAssignmentModalOpen(false);
     setSerialStationColumnAvailable(true);
+    setSerialEndOfLifeColumnAvailable(true);
     setFormMode('edit');
 
     try {
-      let { data, error } = await supabase
+      // The station columns (migration 080) and the End of Life columns (migration 174)
+      // are both optional, so the piece list is retried without whichever one is missing.
+      let endOfLifeAvailable = true;
+      const selectPieces = (withStation: boolean, withEndOfLife: boolean) => supabase
         .from('mes_production_serials')
-        .select('id, piece_sequence, tool_id, serial_number, assigned_station, compatible_stations, before_height, before_notch, before_tooth_length, stock_to_remove, quotation_id, legacy_price_id')
+        .select([
+          'id, piece_sequence, tool_id, serial_number',
+          withStation ? 'assigned_station, compatible_stations, before_height' : '',
+          'before_notch, before_tooth_length, stock_to_remove, quotation_id, legacy_price_id',
+          withEndOfLife ? 'end_of_life, end_of_life_reason, end_of_life_notes, end_of_life_at' : '',
+        ].filter(Boolean).join(', '))
         .eq('organization_id', organizationId)
         .eq('production_order_id', selectedOrder.id)
         .order('piece_sequence', { ascending: true });
+      let { data, error } = await selectPieces(true, true);
+      if (error?.message?.includes('end_of_life')) {
+        endOfLifeAvailable = false;
+        ({ data, error } = await selectPieces(true, false));
+      }
       const missingAssignedStationColumn = Boolean(error && (
         error.code === '42703'
         || error.code === 'PGRST204'
         || error.message?.includes('assigned_station')
       ));
       if (missingAssignedStationColumn) {
-        const fallbackResponse = await supabase
-          .from('mes_production_serials')
-          .select('id, piece_sequence, tool_id, serial_number, before_notch, before_tooth_length, stock_to_remove, quotation_id, legacy_price_id')
-          .eq('organization_id', organizationId)
-          .eq('production_order_id', selectedOrder.id)
-          .order('piece_sequence', { ascending: true });
+        const fallbackResponse = await selectPieces(false, endOfLifeAvailable);
         data = fallbackResponse.data as typeof data;
         error = fallbackResponse.error;
         setSerialStationColumnAvailable(false);
       }
+      setSerialEndOfLifeColumnAvailable(endOfLifeAvailable);
       if (error) throw error;
       const serialRows = (data ?? []) as ProductionSerialAssignmentRow[];
       if (!serialRows.length) return;
@@ -5249,6 +5310,9 @@ export function ProductionOrdersWorkspace({
         receptionEvidenceName: serial.id ? evidenceBySerialId.get(serial.id) ?? '' : '',
         quotationId: serial.quotation_id ?? '',
         legacyPriceId: serial.legacy_price_id ?? '',
+        endOfLife: Boolean(serial.end_of_life),
+        endOfLifeReason: serial.end_of_life_reason ?? '',
+        endOfLifeNotes: serial.end_of_life_notes ?? '',
       }))));
     } catch (error) {
       console.error('Unable to load Production Order serial assignments', error);
@@ -5278,6 +5342,8 @@ export function ProductionOrdersWorkspace({
     setSerialAssignmentDrafts([]);
     setSerialAssignmentModalOpen(false);
     setStationAssignmentModalOpen(false);
+    setEndOfLifeDraft(null);
+    setEndOfLifeError('');
     setSerialStationColumnAvailable(true);
     setReworkNumberLocked(false);
     if (abandonedRework) onModalClose?.();
@@ -5343,6 +5409,20 @@ export function ProductionOrdersWorkspace({
           : [...draft.compatibleStations, stationCode];
         return { ...draft, compatibleStations, assignedStation: compatibleStations[0] ?? '' };
       }));
+  };
+
+  const applyEndOfLife = (pieceSequence: number, endOfLife: boolean, reason: string, notes: string) => {
+    setSerialAssignmentDrafts((currentDrafts) => createSerialAssignmentDrafts(Number(formState.plannedQuantity) || 0, currentDrafts)
+      .map((draft) => draft.pieceSequence === pieceSequence
+        ? {
+          ...draft,
+          endOfLife,
+          endOfLifeReason: endOfLife ? reason : '',
+          endOfLifeNotes: endOfLife ? notes : '',
+          // A dead tool is never sharpened, so it carries no material to remove.
+          stockToRemove: endOfLife ? '' : draft.stockToRemove,
+        }
+        : draft));
   };
 
   const setSerialReceptionEvidence = (pieceSequence: number, file: File | null) => {
@@ -5459,8 +5539,14 @@ export function ProductionOrdersWorkspace({
         setSerialAssignmentModalOpen(true);
         return;
       }
+      const missingEndOfLifeReason = normalizedSerialDrafts.find((draft) => draft.endOfLife && !draft.endOfLifeReason.trim());
+      if (missingEndOfLifeReason) {
+        setOrderFormError(`Select an End of Life reason for piece ${missingEndOfLifeReason.pieceSequence}.`);
+        setSerialAssignmentModalOpen(true);
+        return;
+      }
       const missingQuotationDamage = usesStockToRemove && normalizedSerialDrafts.find(
-        (draft) => draft.quotationId && !draft.stockToRemove.trim(),
+        (draft) => draft.quotationId && !draft.endOfLife && !draft.stockToRemove.trim(),
       );
       if (missingQuotationDamage) {
         setOrderFormError(`Enter Stock to Remove for piece ${missingQuotationDamage.pieceSequence} to verify its linked quotation.`);
@@ -5509,7 +5595,7 @@ export function ProductionOrdersWorkspace({
             if (assignSerialsEnabled) {
               const { data: existingSerialsData, error: existingSerialsError } = await supabase
                 .from('mes_production_serials')
-                .select('id, piece_sequence, tool_id, serial_number, assigned_station, compatible_stations, before_height, before_notch, before_tooth_length, stock_to_remove, quotation_id, legacy_price_id')
+                .select(`id, piece_sequence, tool_id, serial_number, assigned_station, compatible_stations, before_height, before_notch, before_tooth_length, stock_to_remove, quotation_id, legacy_price_id${serialEndOfLifeColumnAvailable ? ', end_of_life_at' : ''}`)
                 .eq('organization_id', organizationId)
                 .eq('production_order_id', selectedOrder.id)
                 .abortSignal(controller.signal);
@@ -5530,6 +5616,7 @@ export function ProductionOrdersWorkspace({
                       quotation_id: draft.quotationId || null,
                       legacy_price_id: draft.legacyPriceId || null,
                       ...quotationSnapshotForDraft(draft),
+                      ...endOfLifeSnapshotForDraft(draft, existingSerial.end_of_life_at),
                       ...(serialStationColumnAvailable ? { assigned_station: formState.manufacturingType === 'multi-step' ? draft.assignedStation.trim() : null } : {}),
                       compatible_stations: formState.manufacturingType === 'multi-step' ? draft.compatibleStations : [],
                     })
@@ -5555,6 +5642,7 @@ export function ProductionOrdersWorkspace({
                     quotation_id: draft.quotationId || null,
                     legacy_price_id: draft.legacyPriceId || null,
                     ...quotationSnapshotForDraft(draft),
+                    ...endOfLifeSnapshotForDraft(draft),
                     ...(serialStationColumnAvailable ? { assigned_station: formState.manufacturingType === 'multi-step' ? draft.assignedStation.trim() : null } : {}),
                     compatible_stations: formState.manufacturingType === 'multi-step' ? draft.compatibleStations : [],
                     result: null,
@@ -5586,7 +5674,7 @@ export function ProductionOrdersWorkspace({
             console.error('Unable to update MES production order', error);
             const message = controller.signal.aborted
               ? 'Supabase did not respond within 15 seconds. Check the connection and try again.'
-              : (error as { message?: string }).message || 'This Production Order could not be updated right now.';
+              : describeSerialSaveError(error) || 'This Production Order could not be updated right now.';
             setOrderFormError(message);
             setSavingOrder(false);
           } finally {
@@ -5667,6 +5755,7 @@ export function ProductionOrdersWorkspace({
               quotation_id: draft.quotationId || null,
               legacy_price_id: draft.legacyPriceId || null,
               ...quotationSnapshotForDraft(draft),
+              ...endOfLifeSnapshotForDraft(draft),
             }));
             const { data: insertedSerials, error: serialsError } = await supabase
               .from('mes_production_serials')
@@ -5706,7 +5795,7 @@ export function ProductionOrdersWorkspace({
           console.error('Unable to create MES production order', error);
           const message = controller.signal.aborted
             ? 'Supabase did not respond within 15 seconds. Check the connection and try again.'
-            : (error as { message?: string }).message || 'This Production Order could not be created right now.';
+            : describeSerialSaveError(error) || 'This Production Order could not be created right now.';
           setOrderFormError(message);
           setSavingOrder(false);
         } finally {
@@ -6407,21 +6496,39 @@ export function ProductionOrdersWorkspace({
                       {usesShaperMeasurements ? <td><input type="number" step="any" inputMode="decimal" value={draft.beforeHeight} onChange={(event) => setSerialAssignmentField(draft.pieceSequence, 'beforeHeight', event.target.value)} placeholder="0.000" /></td> : null}
                       {usesHobMeasurements ? <td><input type="number" step="any" inputMode="decimal" value={draft.beforeNotch} onChange={(event) => setSerialAssignmentField(draft.pieceSequence, 'beforeNotch', event.target.value)} placeholder="0.000" /></td> : null}
                       {usesHobMeasurements ? <td><input type="number" step="any" inputMode="decimal" value={draft.beforeToothLength} onChange={(event) => setSerialAssignmentField(draft.pieceSequence, 'beforeToothLength', event.target.value)} placeholder="0.000" /></td> : null}
-                      {usesStockToRemove ? <td><input type="number" step="any" inputMode="decimal" value={draft.stockToRemove} onChange={(event) => setSerialAssignmentField(draft.pieceSequence, 'stockToRemove', event.target.value)} placeholder="0.000" /></td> : null}
+                      {usesStockToRemove ? <td>{draft.endOfLife
+                        ? <span className="production-piece-eol-flag" title={draft.endOfLifeReason}>End of Life</span>
+                        : <input type="number" step="any" inputMode="decimal" value={draft.stockToRemove} onChange={(event) => setSerialAssignmentField(draft.pieceSequence, 'stockToRemove', event.target.value)} placeholder="0.000" />}</td> : null}
                       <td className="production-reception-inspection-column">
-                        <label className="production-order-evidence-picker">
-                          <ImagePlus size={15} />
-                          <span>{draft.receptionEvidenceName || 'Photo / PDF'}</span>
-                          <input
-                            type="file"
-                            accept={productionPieceEvidenceAccept}
-                            onChange={(event) => {
-                              const file = event.target.files?.[0] ?? null;
-                              event.target.value = '';
-                              if (file) setSerialReceptionEvidence(draft.pieceSequence, file);
+                        <div className="production-piece-reception-actions">
+                          <button
+                            className={`production-piece-eol-button${draft.endOfLife ? ' active' : ''}`}
+                            type="button"
+                            title={draft.endOfLife ? `End of Life · ${draft.endOfLifeReason}` : 'Declare this piece End of Life'}
+                            onClick={() => {
+                              setEndOfLifeError('');
+                              setEndOfLifeDraft({ pieceSequence: draft.pieceSequence, reason: draft.endOfLifeReason, notes: draft.endOfLifeNotes, alreadySet: draft.endOfLife });
                             }}
-                          />
-                        </label>
+                          >
+                            <span>End of Life</span>
+                          </button>
+                          <label
+                            className={`production-order-evidence-picker production-piece-evidence-icon${draft.receptionEvidenceName ? ' has-file' : ''}`}
+                            title={draft.receptionEvidenceName || 'Attach reception inspection photo or PDF'}
+                          >
+                            <ImagePlus size={15} />
+                            <span className="sr-only">{draft.receptionEvidenceName || 'Photo / PDF'}</span>
+                            <input
+                              type="file"
+                              accept={productionPieceEvidenceAccept}
+                              onChange={(event) => {
+                                const file = event.target.files?.[0] ?? null;
+                                event.target.value = '';
+                                if (file) setSerialReceptionEvidence(draft.pieceSequence, file);
+                              }}
+                            />
+                          </label>
+                        </div>
                       </td>
                       <td className="production-quotation-column">
                         <ProductionQuotationDropdown
@@ -6482,6 +6589,68 @@ export function ProductionOrdersWorkspace({
             </div>
           </section>
         </div>, document.body
+      ) : null}
+      {formMode && endOfLifeDraft && typeof document !== 'undefined' ? createPortal(
+        (() => {
+          const piece = serialAssignmentDrafts.find((draft) => draft.pieceSequence === endOfLifeDraft.pieceSequence);
+          const pieceLabel = [piece?.toolId.trim(), piece?.serialNumber.trim()].filter(Boolean).join(' · ') || `Piece ${endOfLifeDraft.pieceSequence}`;
+          const confirmEndOfLife = () => {
+            if (!endOfLifeDraft.reason.trim()) {
+              setEndOfLifeError('Select the reason this piece reached End of Life.');
+              return;
+            }
+            applyEndOfLife(endOfLifeDraft.pieceSequence, true, endOfLifeDraft.reason, endOfLifeDraft.notes);
+            setEndOfLifeDraft(null);
+            setEndOfLifeError('');
+          };
+          return <div className="mes-modal-backdrop production-order-eol-backdrop" role="presentation">
+            <section className="mes-order-modal production-order-eol-modal" role="dialog" aria-modal="true" aria-labelledby="production-order-eol-title">
+              <div className="production-order-serial-modal-heading">
+                <div>
+                  <p className="eyebrow">Piece {endOfLifeDraft.pieceSequence} · {pieceLabel}</p>
+                  <h3 id="production-order-eol-title">{endOfLifeDraft.alreadySet ? 'Edit End of Life' : 'Declare End of Life'}</h3>
+                </div>
+                <button type="button" aria-label="Close End of Life" onClick={() => { setEndOfLifeDraft(null); setEndOfLifeError(''); }}><CircleX size={18} /></button>
+              </div>
+              <p className="production-order-eol-hint">This piece is scrapped before production starts and counts as End of Life in the Operation Cost Tracker. It is reversible while the order is open.</p>
+              <div className="production-order-eol-field">
+                <span>End of Life reason</span>
+                <MesOrderDropdown
+                  id="production-order-eol-reason"
+                  value={endOfLifeDraft.reason}
+                  options={productionEndOfLifeReasonOptions}
+                  placeholder="Select reason"
+                  onChange={(reason) => { setEndOfLifeError(''); setEndOfLifeDraft((current) => current ? { ...current, reason } : current); }}
+                />
+              </div>
+              <label className="production-order-eol-field">
+                Notes (optional)
+                <textarea
+                  rows={3}
+                  value={endOfLifeDraft.notes}
+                  placeholder="What was found on reception inspection."
+                  onChange={(event) => setEndOfLifeDraft((current) => current ? { ...current, notes: event.target.value } : current)}
+                />
+              </label>
+              {endOfLifeError ? <div className="mes-order-form-error" role="alert"><AlertTriangle size={16} />{endOfLifeError}</div> : null}
+              <div className="production-order-eol-actions">
+                {endOfLifeDraft.alreadySet ? (
+                  <button
+                    className="production-order-eol-remove"
+                    type="button"
+                    onClick={() => { applyEndOfLife(endOfLifeDraft.pieceSequence, false, '', ''); setEndOfLifeDraft(null); setEndOfLifeError(''); }}
+                  >
+                    Cancel End of Life
+                  </button>
+                ) : null}
+                <button type="button" onClick={() => { setEndOfLifeDraft(null); setEndOfLifeError(''); }}>Close</button>
+                <button className="production-order-eol-confirm" type="button" onClick={confirmEndOfLife}>
+                  {endOfLifeDraft.alreadySet ? 'Save End of Life' : 'Confirm End of Life'}
+                </button>
+              </div>
+            </section>
+          </div>;
+        })(), document.body
       ) : null}
       {formMode && stationAssignmentModalOpen && typeof document !== 'undefined' ? createPortal(
         <div className="mes-modal-backdrop production-order-serial-backdrop" role="presentation">

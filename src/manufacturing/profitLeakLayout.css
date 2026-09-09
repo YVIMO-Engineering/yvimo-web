@@ -149,13 +149,59 @@
   grid-template-columns: minmax(62px, .75fr) minmax(120px, 1.15fr) minmax(112px, 1.1fr);
 }
 
-.profit-kpi-title {
+.profit-kpi-head {
+  position: relative;
   grid-column: 1 / -1;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  min-height: 22px;
+}
+
+.profit-kpi-head.has-actions { padding-inline: 30px; }
+
+.profit-kpi-title {
+  min-width: 0;
   color: #526175 !important;
   font-size: .61rem !important;
   line-height: 1.15;
   text-align: center;
 }
+
+.profit-kpi-actions {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  display: flex;
+  gap: 4px;
+  transform: translateY(-50%);
+}
+
+.profit-kpi-action {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  padding: 0;
+  line-height: 0;
+  border: 1px solid var(--kpi-soft-border, #dbe4ed);
+  border-radius: 7px;
+  background: var(--kpi-soft-bg, #f8fafc);
+  color: var(--kpi-accent, #64748b);
+  cursor: pointer;
+  transition: background .15s ease, border-color .15s ease, color .15s ease;
+}
+
+.profit-kpi-action:hover:not(:disabled),
+.profit-kpi-action.active {
+  border-color: var(--kpi-accent, #64748b);
+  background: var(--kpi-accent, #64748b);
+  color: #fff;
+}
+
+.profit-kpi-action:disabled { opacity: .4; cursor: not-allowed; }
+.profit-kpi-action > svg { display: block; }
 
 .profit-kpi-count {
   display: flex !important;
@@ -167,6 +213,12 @@
 }
 
 .profit-kpi-count > svg { flex: 0 0 auto; width: 22px; height: 22px; color: #dc2626; }
+.profit-leak-kpis > article { --kpi-accent: #dc2626; --kpi-soft-bg: #fff5f5; --kpi-soft-border: #fecaca; }
+.profit-leak-kpis > article:nth-child(2) { --kpi-accent: #ea580c; --kpi-soft-bg: #fff7ed; --kpi-soft-border: #fed7aa; }
+.profit-leak-kpis > article:nth-child(3) { --kpi-accent: #ca8a04; --kpi-soft-bg: #fefce8; --kpi-soft-border: #fde68a; }
+.profit-leak-kpis > article:nth-child(4) { --kpi-accent: #0891b2; --kpi-soft-bg: #ecfeff; --kpi-soft-border: #a5f3fc; }
+.profit-leak-kpis > article:nth-child(5) { --kpi-accent: #7c3aed; --kpi-soft-bg: #f5f3ff; --kpi-soft-border: #ddd6fe; }
+.profit-leak-kpis > article.external-card { --kpi-accent: #2563eb; --kpi-soft-bg: #eff6ff; --kpi-soft-border: #bfdbfe; }
 .profit-kpi-count > strong { font-size: 1.55rem !important; line-height: 1; }
 .profit-leak-kpis > article:nth-child(2) .profit-kpi-count > svg { color: #ea580c; }
 .profit-leak-kpis > article:nth-child(3) .profit-kpi-count > svg { color: #ca8a04; }
@@ -218,25 +270,6 @@
 }
 
 .profit-leak-kpis > article { position: relative; }
-
-.profit-leak-kpi-add {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  z-index: 1;
-  display: grid;
-  width: 22px;
-  height: 22px;
-  place-items: center;
-  border: 1px solid #93c5fd;
-  border-radius: 999px;
-  background: #eff6ff;
-  color: #1d4ed8;
-  cursor: pointer;
-}
-
-.profit-leak-kpi-add:hover { background: #dbeafe; }
-.profit-leak-kpi-add:disabled { opacity: .5; cursor: not-allowed; }
 .profit-leak-setup-notice { border-color: #fed7aa; background: #fff7ed; color: #c2410c; }
 .profit-leak-setup-notice svg { flex: 0 0 auto; }
 
@@ -325,4 +358,100 @@
 
 @media (max-width: 620px) {
   .profit-leak-expense-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Downtime cost settings: pick which stations price their down time into the KPI. */
+.profit-leak-stations-modal { width: min(620px, 94vw); }
+
+.profit-leak-stations-hint {
+  margin: 0 0 10px;
+  color: #64748b;
+  font-size: .64rem;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.profit-leak-stations-list {
+  display: grid;
+  max-height: min(52vh, 420px);
+  gap: 10px;
+  overflow-y: auto;
+  padding-right: 3px;
+}
+
+.profit-leak-station-group {
+  border: 1px solid #e2e8f0;
+  border-radius: 11px;
+  background: #f8fafc;
+  padding: 10px;
+}
+
+.profit-leak-station-group > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.profit-leak-station-group > header > span { display: flex; min-width: 0; align-items: baseline; gap: 7px; }
+.profit-leak-station-group > header b { color: #7c3aed; font-size: .58rem; font-weight: 950; letter-spacing: .04em; text-transform: uppercase; }
+.profit-leak-station-group > header em { color: #475569; font-size: .66rem; font-style: normal; font-weight: 850; }
+
+.profit-leak-station-group > header > button {
+  flex: 0 0 auto;
+  min-height: 26px;
+  border: 1px solid #ddd6fe;
+  border-radius: 7px;
+  padding: 0 9px;
+  background: #f5f3ff;
+  color: #6d28d9;
+  font: inherit;
+  font-size: .56rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.profit-leak-station-group > header > button:hover { background: #ede9fe; }
+
+.profit-leak-station-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 7px;
+}
+
+.profit-leak-station-options label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 9px;
+  padding: 8px 9px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.profit-leak-station-options label.included { border-color: #ddd6fe; background: #faf9ff; }
+.profit-leak-station-options input { width: 15px; height: 15px; flex: 0 0 auto; accent-color: #7c3aed; cursor: pointer; }
+.profit-leak-station-options label > span { display: grid; min-width: 0; gap: 1px; }
+.profit-leak-station-options b { overflow: hidden; color: #1f2937; font-size: .66rem; font-weight: 850; text-overflow: ellipsis; white-space: nowrap; }
+.profit-leak-station-options em { color: #94a3b8; font-size: .54rem; font-style: normal; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+
+.profit-leak-stations-empty {
+  margin: 0;
+  border: 1px dashed #dbe4ed;
+  border-radius: 10px;
+  padding: 22px;
+  color: #64748b;
+  font-size: .66rem;
+  text-align: center;
+}
+
+/* "Operation Cost Tracker" is longer than the old title, so the heading column grows with it. */
+.profit-leak-heading { min-width: 262px; }
+.profit-leak-heading h1 { white-space: nowrap; }
+
+@media (max-width: 760px) {
+  .profit-leak-heading { min-width: 0; }
+  .profit-leak-heading h1 { white-space: normal; }
 }

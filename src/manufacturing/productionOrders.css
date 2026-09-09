@@ -1383,3 +1383,177 @@
     min-width: 80px;
   }
 }
+
+/* Reception Inspection cell: End of Life declaration next to a compact evidence picker. */
+.production-piece-reception-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 5px;
+}
+
+.production-piece-eol-button {
+  display: inline-flex;
+  min-width: 0;
+  min-height: 38px;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #fca5a5;
+  border-radius: 8px;
+  padding: 4px 6px;
+  background: #fff1f2;
+  color: #b91c1c;
+  font: inherit;
+  font-size: .6rem;
+  font-weight: 900;
+  line-height: 1.1;
+  cursor: pointer;
+  transition: background .15s ease, border-color .15s ease, color .15s ease;
+}
+
+/* The serial table is fixed-layout with no horizontal scroll, so the label wraps
+   onto a second line instead of being clipped to "End ...". */
+.production-order-serial-table .production-piece-eol-button > span {
+  min-width: 0;
+  overflow: visible;
+  text-align: center;
+  text-overflow: clip;
+  white-space: normal;
+}
+.production-piece-eol-button:hover { border-color: #ef4444; background: #fee2e2; }
+
+.production-piece-eol-button.active {
+  border-color: #b91c1c;
+  background: #b91c1c;
+  color: #fff;
+}
+
+.production-order-serial-table .production-reception-inspection-column .production-order-evidence-picker.production-piece-evidence-icon {
+  position: relative;
+  display: grid;
+  width: 34px;
+  min-width: 34px;
+  max-width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  place-items: center;
+  padding: 0;
+}
+
+.production-piece-evidence-icon.has-file {
+  border-style: solid;
+  background: #ffedd5;
+  color: #7c2d12;
+}
+
+.production-piece-evidence-icon .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Stock to Remove is meaningless for a dead tool, so the cell states the outcome instead. */
+.production-piece-eol-flag {
+  display: flex;
+  width: 100%;
+  min-height: 38px;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #b91c1c;
+  border-radius: 8px;
+  padding: 4px 6px;
+  background: #b91c1c;
+  color: #fff;
+  font-size: .58rem;
+  font-weight: 900;
+  line-height: 1.1;
+  letter-spacing: .02em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.mes-modal-backdrop.production-order-eol-backdrop { z-index: 320; padding: 24px; }
+
+.mes-modal-backdrop.production-order-eol-backdrop .mes-order-modal.production-order-eol-modal {
+  display: grid;
+  width: min(460px, calc(100vw - 48px));
+  max-width: none;
+  gap: 12px;
+  align-content: start;
+}
+
+.production-order-eol-hint {
+  margin: 0;
+  border: 1px solid #fecaca;
+  border-radius: 9px;
+  padding: 9px 11px;
+  background: #fff1f2;
+  color: #9f1239;
+  font-size: .66rem;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.production-order-eol-field {
+  display: grid;
+  gap: 6px;
+  color: #46586b;
+  font-size: .6rem;
+  font-weight: 950;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.production-order-eol-field textarea {
+  box-sizing: border-box;
+  width: 100%;
+  border: 1px solid #d8e0e8;
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: #fff;
+  color: #07111c;
+  font: inherit;
+  font-size: .7rem;
+  font-weight: 700;
+  resize: vertical;
+}
+
+.production-order-eol-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.production-order-eol-actions > button {
+  min-height: 40px;
+  border: 1px solid #d8e0e8;
+  border-radius: 9px;
+  padding: 0 14px;
+  background: #fff;
+  color: #33475b;
+  font: inherit;
+  font-size: .68rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.production-order-eol-actions > .production-order-eol-remove {
+  margin-right: auto;
+  border-color: #fca5a5;
+  background: #fff1f2;
+  color: #b91c1c;
+}
+
+.production-order-eol-actions > .production-order-eol-confirm {
+  border-color: #b91c1c;
+  background: #b91c1c;
+  color: #fff;
+}
+
+.production-order-eol-actions > .production-order-eol-confirm:hover { background: #991b1b; }

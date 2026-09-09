@@ -4597,7 +4597,7 @@ function LoggedDashboardPage({ user, onSignOut, onNavigate, onUpdateAvatar, acti
             </button>
             <button type="button" className={activeRevenueSection === 'profit-leak' ? 'active' : ''} onClick={() => onNavigate('/workspace/manufacturing-ops/intelligence/revenue-opportunity/profit-leak')}>
               <TrendingUp size={18} />
-              <span>Profit Leak</span>
+              <span>Operation Cost Tracker</span>
             </button>
           </nav>
         </aside>
