@@ -76,12 +76,20 @@ export function ProductionScheduleWorkspace({ onNavigate, organizationId }: Prop
       const activeOrdersById = new Map(activeOrders.map((order) => [order.id, order]));
       const stationsByQueueId = new Map((stationResult.data ?? []).map((station) => [station.id, station as Station]));
       const centersById = new Map((centerResult.data ?? []).map((center) => [center.id, center as WorkCenter]));
+      const pendingStationCodesByOrder = new Map<string, Set<string>>();
+      for (const piece of (pieceResult.data ?? []) as ProductionPiece[]) {
+        const codes = pendingStationCodesByOrder.get(piece.production_order_id) ?? new Set<string>();
+        if (piece.assigned_station) codes.add(piece.assigned_station);
+        for (const code of piece.compatible_stations ?? []) codes.add(code);
+        pendingStationCodesByOrder.set(piece.production_order_id, codes);
+      }
       const staleQueueIds = loadedQueue.filter((item) => {
         const order = activeOrdersById.get(item.production_order_id);
         if (!order) return true;
-        if (order.manufacturing_type !== 'single-operation') return false;
         const station = stationsByQueueId.get(item.station_id);
         if (!station) return true;
+        if (order.manufacturing_type === 'multi-step') return !pendingStationCodesByOrder.get(order.id)?.has(station.code);
+        if (order.manufacturing_type !== 'single-operation') return false;
         const assignedStations = (order.assigned_station ?? '').split(',').map((code) => code.trim()).filter(Boolean);
         if (assignedStations.length) return !assignedStations.includes(station.code);
         const center = centersById.get(station.work_center_id);
