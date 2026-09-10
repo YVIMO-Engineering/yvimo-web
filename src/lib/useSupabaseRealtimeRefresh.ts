@@ -8,10 +8,13 @@ type RealtimeRefreshTable = {
   filter?: string;
 };
 
+export type RealtimeConnectionState = 'connecting' | 'live' | 'offline';
+
 type RealtimeRefreshOptions = {
   channelName: string;
   tables: RealtimeRefreshTable[];
   onRefresh: () => void | Promise<void>;
+  onConnectionStateChange?: (state: RealtimeConnectionState) => void;
   enabled?: boolean;
   debounceMs?: number;
   client?: SupabaseClient;
@@ -23,6 +26,7 @@ export function useSupabaseRealtimeRefresh({
   channelName,
   tables,
   onRefresh,
+  onConnectionStateChange,
   enabled = true,
   debounceMs = 250,
   client = supabase,
@@ -30,12 +34,17 @@ export function useSupabaseRealtimeRefresh({
   pollMs = 0,
 }: RealtimeRefreshOptions) {
   const refreshRef = React.useRef(onRefresh);
+  const connectionStateRef = React.useRef(onConnectionStateChange);
   const refreshTimer = React.useRef<number | undefined>(undefined);
   const hasSubscribed = React.useRef(false);
 
   React.useEffect(() => {
     refreshRef.current = onRefresh;
   }, [onRefresh]);
+
+  React.useEffect(() => {
+    connectionStateRef.current = onConnectionStateChange;
+  }, [onConnectionStateChange]);
 
   const scheduleRefresh = React.useCallback(() => {
     if (refreshTimer.current) window.clearTimeout(refreshTimer.current);
@@ -50,6 +59,8 @@ export function useSupabaseRealtimeRefresh({
 
   React.useEffect(() => {
     if (!enabled || tables.length === 0) return undefined;
+
+    connectionStateRef.current?.('connecting');
 
     const channel = tables.reduce((currentChannel, tableConfig) => (
       currentChannel.on('postgres_changes', {
@@ -66,9 +77,13 @@ export function useSupabaseRealtimeRefresh({
         // Reconnects can drop changes made while the socket was down.
         if (hasSubscribed.current) scheduleRefresh();
         hasSubscribed.current = true;
+        connectionStateRef.current?.('live');
         return;
       }
-      if (state === 'CHANNEL_ERROR' || state === 'TIMED_OUT') console.warn(`[realtime] ${channelName} subscription ${state}`, error);
+      if (state === 'CHANNEL_ERROR' || state === 'TIMED_OUT') {
+        connectionStateRef.current?.('offline');
+        console.warn(`[realtime] ${channelName} subscription ${state}`, error);
+      }
     });
 
     return () => {

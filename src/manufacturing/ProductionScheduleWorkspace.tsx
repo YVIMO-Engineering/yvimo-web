@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabaseClient';
 import { getDaysUntilDelivery } from './DeliveryRiskTimeline';
 import { ProductionOrdersWorkspace } from './MesWorkspaces';
 import { getOrderRiskLevel, type OrderRiskLevel } from './orderRisk';
-import { useSupabaseRealtimeRefresh } from '../lib/useSupabaseRealtimeRefresh';
+import { useSupabaseRealtimeRefresh, type RealtimeConnectionState } from '../lib/useSupabaseRealtimeRefresh';
 import './productionSchedule.css';
 
 type Props = { onNavigate: (path: string) => void; organizationId: string };
@@ -19,6 +19,8 @@ const productionOrderDetailsDeepLinkKey = 'yvimo:mes:openProductionOrderDetails'
 const activeStatuses = ['planned', 'released', 'running', 'paused'];
 const riskLabels: Record<OrderRiskLevel, string> = { overdue: 'Overdue', high: 'High risk', moderate: 'Moderate risk', low: 'Low risk' };
 const deliveryDistance = (dueDate: string) => { const days = getDaysUntilDelivery(dueDate); return days < 0 ? `${Math.abs(days)} days overdue` : days === 0 ? 'Due today' : days === 1 ? '1 day left' : `${days} days left`; };
+const liveClockFormatter = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit', second: '2-digit' });
+const liveStateLabels: Record<RealtimeConnectionState, string> = { connecting: 'Connecting…', live: 'Live production', offline: 'Reconnecting…' };
 const formatDate = (value: string) => new Date(`${value}T00:00:00`).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
 const yvimoStationColors = ['#ff7a00', '#117a72', '#315f9a', '#774b8f', '#799a32', '#a94a42', '#28738a', '#8b6137', '#4c6f52', '#645a9b', '#b56b28', '#3f6b78', '#8a4761', '#557d33', '#476ca8', '#9a573d'];
 const stationColor = (index: number) => {
@@ -32,10 +34,11 @@ export function ProductionScheduleWorkspace({ onNavigate, organizationId }: Prop
   const [selectedStationId, setSelectedStationId] = React.useState(''), [selectedWorkCenterId, setSelectedWorkCenterId] = React.useState('all'), [workspaceMenuOpen, setWorkspaceMenuOpen] = React.useState(false), [loading, setLoading] = React.useState(true), [savingOrderId, setSavingOrderId] = React.useState(''), [error, setError] = React.useState('');
   const [reorderingStationId, setReorderingStationId] = React.useState(''), [detailOrderNumber, setDetailOrderNumber] = React.useState('');
   const [draggedStationId, setDraggedStationId] = React.useState(''), [reorderingStations, setReorderingStations] = React.useState(false);
+  const [liveState, setLiveState] = React.useState<RealtimeConnectionState>('connecting'), [lastUpdatedAt, setLastUpdatedAt] = React.useState('');
   const workspaceDropdownRef = React.useRef<HTMLDivElement>(null);
 
-  const load = React.useCallback(async () => {
-    setLoading(true);
+  const load = React.useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     const [stationResult, centerResult, orderResult, pieceResult, queueResult] = await Promise.all([
       supabase.from('mes_work_center_stations').select('id, code, name, type, capability_color, work_center_id, schedule_position').eq('organization_id', organizationId).order('schedule_position').order('name'),
       supabase.from('mes_work_centers').select('id, code, name').eq('organization_id', organizationId).order('name'),
@@ -103,19 +106,29 @@ export function ProductionScheduleWorkspace({ onNavigate, organizationId }: Prop
       setProductionPieces((pieceResult.data ?? []) as ProductionPiece[]);
       setQueue(loadedQueue.filter((item) => activeOrderIds.has(item.production_order_id) && !staleQueueIdSet.has(item.id)));
       setError('');
+      setLastUpdatedAt(new Date().toISOString());
     }
     setLoading(false);
   }, [organizationId]);
   React.useEffect(() => { void load(); }, [load]);
+  // Skip background refreshes mid-interaction so a live update never fights an in-flight reorder.
+  const interactionBusy = Boolean(draggedStationId || reorderingStationId || reorderingStations || savingOrderId);
+  const interactionBusyRef = React.useRef(interactionBusy);
+  React.useEffect(() => { interactionBusyRef.current = interactionBusy; }, [interactionBusy]);
   const realtimeTables = React.useMemo(() => ([
     { table: 'mes_production_orders', filter: `organization_id=eq.${organizationId}` },
     { table: 'mes_production_serials', filter: `organization_id=eq.${organizationId}` },
     { table: 'mes_production_schedule_queue', filter: `organization_id=eq.${organizationId}` },
+    { table: 'mes_work_center_stations', filter: `organization_id=eq.${organizationId}` },
   ]), [organizationId]);
   useSupabaseRealtimeRefresh({
     channelName: `production-schedule-live:${organizationId}`,
     tables: realtimeTables,
-    onRefresh: load,
+    onRefresh: () => { if (!interactionBusyRef.current) void load(true); },
+    onConnectionStateChange: setLiveState,
+    enabled: Boolean(organizationId),
+    refreshOnFocus: true,
+    pollMs: 20_000,
   });
   React.useEffect(() => {
     if (!workspaceMenuOpen) return;
@@ -197,7 +210,7 @@ export function ProductionScheduleWorkspace({ onNavigate, organizationId }: Prop
 
   return <section className="mes-workspace-panel production-schedule-workspace">
     <div className="mes-screen-header production-schedule-header"><button className="academy-back-button engineering-back-button mes-workspace-back" type="button" onClick={() => onNavigate('/workspace/manufacturing-ops/aps')}><ArrowLeft size={16} /> APS</button><div className="mes-workspace-heading"><p className="eyebrow">APS / PRODUCTION SCHEDULE</p><h2>Production Schedule</h2><p>Build the production plan for each machine and coordinate scheduled work across the shop floor.</p></div></div>
-    <div className="production-schedule-toolbar"><label><span>Workspace</span><div className={`production-workspace-dropdown${workspaceMenuOpen ? ' open' : ''}`} ref={workspaceDropdownRef}><button type="button" aria-haspopup="listbox" aria-expanded={workspaceMenuOpen} onClick={() => setWorkspaceMenuOpen((current) => !current)}><Factory size={17} /><strong>{selectedWorkCenter ? `${selectedWorkCenter.name} · ${selectedWorkCenter.code}` : 'All workspaces'}</strong><ChevronDown size={16} /></button>{workspaceMenuOpen ? <div className="production-workspace-menu" role="listbox"><button className={selectedWorkCenterId === 'all' ? 'selected' : ''} type="button" role="option" aria-selected={selectedWorkCenterId === 'all'} onClick={() => { setSelectedWorkCenterId('all'); setWorkspaceMenuOpen(false); }}><span><b>All workspaces</b><small>Show every production station</small></span>{selectedWorkCenterId === 'all' ? <Check size={16} /> : null}</button>{workCenters.map((center) => <button className={selectedWorkCenterId === center.id ? 'selected' : ''} type="button" role="option" aria-selected={selectedWorkCenterId === center.id} onClick={() => { setSelectedWorkCenterId(center.id); setWorkspaceMenuOpen(false); }} key={center.id}><span><b>{center.name}</b><small>{center.code}</small></span>{selectedWorkCenterId === center.id ? <Check size={16} /> : null}</button>)}</div> : null}</div></label><p><strong>{visibleStations.length}</strong> station{visibleStations.length === 1 ? '' : 's'} shown</p></div>
+    <div className="production-schedule-toolbar"><label><span>Workspace</span><div className={`production-workspace-dropdown${workspaceMenuOpen ? ' open' : ''}`} ref={workspaceDropdownRef}><button type="button" aria-haspopup="listbox" aria-expanded={workspaceMenuOpen} onClick={() => setWorkspaceMenuOpen((current) => !current)}><Factory size={17} /><strong>{selectedWorkCenter ? `${selectedWorkCenter.name} · ${selectedWorkCenter.code}` : 'All workspaces'}</strong><ChevronDown size={16} /></button>{workspaceMenuOpen ? <div className="production-workspace-menu" role="listbox"><button className={selectedWorkCenterId === 'all' ? 'selected' : ''} type="button" role="option" aria-selected={selectedWorkCenterId === 'all'} onClick={() => { setSelectedWorkCenterId('all'); setWorkspaceMenuOpen(false); }}><span><b>All workspaces</b><small>Show every production station</small></span>{selectedWorkCenterId === 'all' ? <Check size={16} /> : null}</button>{workCenters.map((center) => <button className={selectedWorkCenterId === center.id ? 'selected' : ''} type="button" role="option" aria-selected={selectedWorkCenterId === center.id} onClick={() => { setSelectedWorkCenterId(center.id); setWorkspaceMenuOpen(false); }} key={center.id}><span><b>{center.name}</b><small>{center.code}</small></span>{selectedWorkCenterId === center.id ? <Check size={16} /> : null}</button>)}</div> : null}</div></label><div className="production-schedule-toolbar-status"><p><strong>{visibleStations.length}</strong> station{visibleStations.length === 1 ? '' : 's'} shown</p><div className={`production-schedule-live-state ${liveState}`}><span><i /> {liveStateLabels[liveState]}</span><small>{lastUpdatedAt ? `Updated ${liveClockFormatter.format(new Date(lastUpdatedAt))}` : 'Waiting for data'}</small></div></div></div>
     {error ? <div className="production-schedule-message" role="alert">{error}</div> : null}
     {loading ? <div className="production-schedule-loading"><LoaderCircle size={24} /> Loading stations and orders…</div> : stations.length === 0 ? <div className="production-schedule-empty"><Factory size={28} /><strong>No stations are configured yet</strong><span>Create stations in MES Work Centers before building the production schedule.</span></div> : visibleStations.length === 0 ? <div className="production-schedule-empty"><Factory size={28} /><strong>No stations in this workspace</strong><span>Select another workspace to continue planning.</span></div> : <div className="production-schedule-board">{visibleStations.map((station) => {
       const stationQueue = queue.filter((item) => item.station_id === station.id).sort((a, b) => a.position - b.position), center = centerById.get(station.work_center_id), color = stationColorById.get(station.id) || '#ff8a1f';
