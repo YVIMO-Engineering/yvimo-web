@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertTriangle, ArrowLeft, Biohazard, CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, Combine, Factory, GripVertical, LoaderCircle, PackageOpen, Plus, Sparkles, X } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, ArrowLeftRight, Biohazard, CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, Combine, Factory, GripVertical, LoaderCircle, PackageOpen, Plus, Sparkles, X } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { getDaysUntilDelivery } from './DeliveryRiskTimeline';
 import { ProductionOrdersWorkspace } from './MesWorkspaces';
@@ -11,7 +11,7 @@ type Props = { onNavigate: (path: string) => void; organizationId: string };
 type Station = { id: string; code: string; name: string; type: string; capability_color: string | null; work_center_id: string; schedule_position: number | null; mirror_group_id?: string | null };
 type WorkCenter = { id: string; code: string; name: string };
 type Order = { id: string; order_number: string; client_name: string | null; part_number: string; part_name: string; planned_quantity: number; completed_quantity: number; scrap_quantity: number; due_date: string; priority: string; status: string; assigned_station: string | null; assigned_work_center: string | null; manufacturing_type: 'multi-step' | 'single-operation' };
-type QueueItem = { id: string; station_id: string; production_order_id: string; position: number };
+type QueueItem = { id: string; station_id: string; production_order_id: string; position: number; preferred_station_id?: string | null };
 type ProductionPiece = { production_order_id: string; assigned_station: string | null; compatible_stations: string[] | null; quarantined?: boolean | null };
 
 const productionOrderDeepLinkKey = 'yvimo:mes:selectedProductionOrderNumber';
@@ -42,7 +42,7 @@ export function ProductionScheduleWorkspace({ onNavigate, organizationId }: Prop
   const [liveState, setLiveState] = React.useState<RealtimeConnectionState>('connecting'), [lastUpdatedAt, setLastUpdatedAt] = React.useState('');
   const [intelligentScheduling, setIntelligentScheduling] = React.useState(false), [intelligentAvailable, setIntelligentAvailable] = React.useState(true), [intelligentSaving, setIntelligentSaving] = React.useState(false), [autoPlanning, setAutoPlanning] = React.useState(false);
   const autoPlanBusyRef = React.useRef(false);
-  const [mirrorGroupsAvailable, setMirrorGroupsAvailable] = React.useState(true), [mirrorStationId, setMirrorStationId] = React.useState(''), [mirrorSelection, setMirrorSelection] = React.useState<string[]>([]), [mirrorSaving, setMirrorSaving] = React.useState(false);
+  const [mirrorGroupsAvailable, setMirrorGroupsAvailable] = React.useState(true), [mirrorPreferenceAvailable, setMirrorPreferenceAvailable] = React.useState(true), [swappingItemId, setSwappingItemId] = React.useState(''), [mirrorStationId, setMirrorStationId] = React.useState(''), [mirrorSelection, setMirrorSelection] = React.useState<string[]>([]), [mirrorSaving, setMirrorSaving] = React.useState(false);
   const workspaceDropdownRef = React.useRef<HTMLDivElement>(null);
 
   const load = React.useCallback(async (silent = false) => {
@@ -52,12 +52,17 @@ export function ProductionScheduleWorkspace({ onNavigate, organizationId }: Prop
       supabase.from('mes_work_centers').select('id, code, name').eq('organization_id', organizationId).order('name'),
       supabase.from('mes_production_orders').select('id, order_number, client_name, part_number, part_name, planned_quantity, completed_quantity, scrap_quantity, due_date, priority, status, assigned_station, assigned_work_center, manufacturing_type').eq('organization_id', organizationId).in('status', activeStatuses).order('due_date'),
       supabase.from('mes_production_serials').select('production_order_id, assigned_station, compatible_stations, quarantined').eq('organization_id', organizationId).is('result', null),
-      supabase.from('mes_production_schedule_queue').select('id, station_id, production_order_id, position').eq('organization_id', organizationId).order('position'),
+      supabase.from('mes_production_schedule_queue').select('id, station_id, production_order_id, position, preferred_station_id').eq('organization_id', organizationId).order('position'),
       supabase.from('mes_production_schedule_settings').select('intelligent_scheduling').eq('organization_id', organizationId).maybeSingle(),
     ]);
     // The switch lives in migration 178; without it the board stays fully manual.
     setIntelligentAvailable(!settingsResult.error);
     setIntelligentScheduling(!settingsResult.error && settingsResult.data?.intelligent_scheduling === true);
+    // The manual mirror preference arrives with migration 180.
+    const queueRows = queueResult.error?.message?.includes('preferred_station_id')
+      ? await supabase.from('mes_production_schedule_queue').select('id, station_id, production_order_id, position').eq('organization_id', organizationId).order('position')
+      : queueResult;
+    setMirrorPreferenceAvailable(!queueResult.error?.message?.includes('preferred_station_id'));
     // Mirror groups arrive with migration 179; without them every station plans alone.
     const stationRows = stationResult.error?.message?.includes('mirror_group_id')
       ? await supabase.from('mes_work_center_stations').select('id, code, name, type, capability_color, work_center_id, schedule_position').eq('organization_id', organizationId).order('schedule_position').order('name')
@@ -68,11 +73,11 @@ export function ProductionScheduleWorkspace({ onNavigate, organizationId }: Prop
     const pieceRows = pieceResult.error?.message?.includes('quarantined')
       ? await supabase.from('mes_production_serials').select('production_order_id, assigned_station, compatible_stations').eq('organization_id', organizationId).is('result', null)
       : pieceResult;
-    const loadError = stationRows.error ?? centerResult.error ?? orderResult.error ?? pieceRows.error ?? queueResult.error;
+    const loadError = stationRows.error ?? centerResult.error ?? orderResult.error ?? pieceRows.error ?? queueRows.error;
     if (loadError) setError(`Unable to load the production schedule: ${loadError.message}. Apply SQL migrations 134–136.`);
     else {
       let activeOrders = (orderResult.data ?? []) as Order[];
-      const loadedQueue = (queueResult.data ?? []) as QueueItem[];
+      const loadedQueue = (queueRows.data ?? []) as QueueItem[];
       const pendingOrderIds = new Set((pieceRows.data ?? []).map((piece) => piece.production_order_id));
       const stationsById = new Map((stationRows.data ?? []).map((station) => [station.id, station.code]));
       const staleCompletedOrders = activeOrders.filter((order) => (
@@ -186,20 +191,6 @@ export function ProductionScheduleWorkspace({ onNavigate, organizationId }: Prop
   const mirrorSiblingsOf = React.useCallback((station: Station) => (station.mirror_group_id
     ? stations.filter((candidate) => candidate.mirror_group_id === station.mirror_group_id)
     : [station]), [stations]);
-  // Every station plans as part of a pool: its mirror group, or itself when it has none.
-  const planningGroups = React.useMemo(() => {
-    const groups: Station[][] = [];
-    const seen = new Set<string>();
-    orderedStations.forEach((station) => {
-      if (seen.has(station.id)) return;
-      const members = station.mirror_group_id
-        ? orderedStations.filter((candidate) => candidate.mirror_group_id === station.mirror_group_id)
-        : [station];
-      members.forEach((member) => seen.add(member.id));
-      groups.push(members);
-    });
-    return groups;
-  }, [orderedStations]);
   // Which stations can actually run an order: multi-step orders follow their pending
   // pieces, single-operation orders follow the stations (or work center) they carry,
   // and any mirror sibling of those stations counts as the same machine.
@@ -259,155 +250,43 @@ export function ProductionScheduleWorkspace({ onNavigate, organizationId }: Prop
     setError('');
   };
 
-  // Intelligent Scheduling keeps the board honest on its own: every active order that a
-  // station can run is queued, and every queue stays sorted by delivery urgency. It only
-  // writes when the board actually differs from the plan, so it settles after one pass.
+  // Intelligent Scheduling runs in the database (migration 180): triggers replan the
+  // board whenever orders, pieces, stations or the switch change, so the plan no longer
+  // depends on somebody keeping this page open. This call is the catch-up for the one
+  // thing no row change announces: the calendar turning an order overdue.
   const runIntelligentSchedule = React.useCallback(async () => {
     if (autoPlanBusyRef.current) return;
-    const stationList = orderedStations;
-    if (!stationList.length || !orders.length) return;
-    const queueByStation = new Map(stationList.map((station) => [station.id, queue.filter((item) => item.station_id === station.id).sort((a, b) => a.position - b.position)]));
-    const queuedOrderIds = new Set(queue.map((item) => item.production_order_id));
-    const plannedCountByStation = new Map(stationList.map((station) => [station.id, queueByStation.get(station.id)?.length ?? 0]));
-    const additions: Array<{ stationId: string; orderId: string }> = [];
-    const planOrderAt = (station: Station, orderId: string) => {
-      additions.push({ stationId: station.id, orderId });
-      plannedCountByStation.set(station.id, (plannedCountByStation.get(station.id) ?? 0) + 1);
-    };
-    orders.forEach((order) => {
-      const stationsForOrder = compatibleStationsFor(order, stationList);
-      if (!stationsForOrder.length) return;
-      if (order.manufacturing_type === 'multi-step') {
-        // Pieces already tied to a station are planned there; the rest of the order is
-        // planned once, on the lightest station that can run it.
-        const pendingPieces = productionPieces.filter((piece) => piece.production_order_id === order.id);
-        const assignedCodes = new Set(pendingPieces.flatMap((piece) => piece.assigned_station ? [piece.assigned_station] : []));
-        const assignedStations = stationsForOrder.filter((station) => assignedCodes.has(station.code));
-        const targets = assignedStations.length
-          ? assignedStations
-          : queuedOrderIds.has(order.id)
-            ? []
-            : [[...stationsForOrder].sort((a, b) => (plannedCountByStation.get(a.id) ?? 0) - (plannedCountByStation.get(b.id) ?? 0))[0]];
-        targets.forEach((station) => {
-          if (queueByStation.get(station.id)?.some((item) => item.production_order_id === order.id)) return;
-          planOrderAt(station, order.id);
-        });
-        return;
-      }
-      if (queuedOrderIds.has(order.id)) return;
-      // A single-operation order is planned once, on the compatible station carrying the least work.
-      planOrderAt([...stationsForOrder].sort((a, b) => (plannedCountByStation.get(a.id) ?? 0) - (plannedCountByStation.get(b.id) ?? 0))[0], order.id);
-    });
-
-    // Each pool is planned as a whole: a mirror group levels its urgency buckets across
-    // its sister machines, a lone station just keeps its own queue sorted.
-    const rankOf = (order: Order | undefined, station: Station) => (order
-      ? urgencyRank(getOrderRiskLevel(order.due_date), stationQuarantineHold(order.id, station.code, order.manufacturing_type === 'multi-step').held)
-      : 5);
-    const byUrgency = (a: { rank: number; order?: Order }, b: { rank: number; order?: Order }) => a.rank - b.rank
-      || (a.order?.due_date ?? '').localeCompare(b.order?.due_date ?? '')
-      || (a.order?.order_number ?? '').localeCompare(b.order?.order_number ?? '');
-    const assignments: Array<{ id: string; station_id: string; position: number }> = [];
-    let movesAcrossStations = false;
-    planningGroups.forEach((group) => {
-      const groupItems = group.flatMap((station) => (queueByStation.get(station.id) ?? []).map((item) => {
-        const order = orderById.get(item.production_order_id);
-        return { item, order, station, rank: rankOf(order, station) };
-      }));
-      if (!groupItems.length) return;
-      // Multi-step pieces are tied to the station that will machine them, so only
-      // single-operation work travels between mirror machines.
-      const movable = group.length > 1 ? groupItems.filter((entry) => entry.order?.manufacturing_type === 'single-operation') : [];
-      const movableIds = new Set(movable.map((entry) => entry.item.id));
-      const stationIdByItem = new Map(groupItems.map((entry) => [entry.item.id, entry.item.station_id]));
-      const totalLoad = new Map(group.map((station) => [station.id, 0]));
-      const bucketLoad = new Map(group.map((station) => [station.id, new Map<number, number>()]));
-      const countIn = (stationId: string, rank: number) => bucketLoad.get(stationId)?.get(rank) ?? 0;
-      const addTo = (stationId: string, rank: number) => {
-        totalLoad.set(stationId, (totalLoad.get(stationId) ?? 0) + 1);
-        bucketLoad.get(stationId)?.set(rank, countIn(stationId, rank) + 1);
-      };
-      groupItems.filter((entry) => !movableIds.has(entry.item.id)).forEach((entry) => addTo(entry.item.station_id, entry.rank));
-      // The most urgent work is spread first, so a red never piles up on one machine
-      // while its mirror sits with greens.
-      [...movable].sort(byUrgency).forEach((entry) => {
-        const target = [...group].sort((a, b) => countIn(a.id, entry.rank) - countIn(b.id, entry.rank)
-          || (totalLoad.get(a.id) ?? 0) - (totalLoad.get(b.id) ?? 0)
-          || (a.id === entry.item.station_id ? -1 : b.id === entry.item.station_id ? 1 : 0)
-          || group.indexOf(a) - group.indexOf(b))[0];
-        stationIdByItem.set(entry.item.id, target.id);
-        addTo(target.id, entry.rank);
-      });
-
-      let groupChanged = false;
-      const groupAssignments: Array<{ id: string; station_id: string; position: number }> = [];
-      group.forEach((station) => {
-        const stationEntries = groupItems
-          .filter((entry) => stationIdByItem.get(entry.item.id) === station.id)
-          .map((entry) => ({ ...entry, rank: rankOf(entry.order, station) }))
-          .sort(byUrgency);
-        stationEntries.forEach((entry, index) => {
-          const position = index + 1;
-          if (entry.item.station_id !== station.id) { groupChanged = true; movesAcrossStations = true; }
-          else if (entry.item.position !== position) groupChanged = true;
-          groupAssignments.push({ id: entry.item.id, station_id: station.id, position });
-        });
-      });
-      if (groupChanged) assignments.push(...groupAssignments);
-    });
-
-    if (!additions.length && !assignments.length) return;
-
     autoPlanBusyRef.current = true;
     setAutoPlanning(true);
     try {
-      if (additions.length) {
-        const nextPositionByStation = new Map(stationList.map((station) => [station.id, Math.max(0, ...(queueByStation.get(station.id) ?? []).map((item) => item.position)) + 1]));
-        const rows = additions.map((addition) => {
-          const position = nextPositionByStation.get(addition.stationId) ?? 1;
-          nextPositionByStation.set(addition.stationId, position + 1);
-          return { organization_id: organizationId, station_id: addition.stationId, production_order_id: addition.orderId, position };
-        });
-        const { error: insertError } = await supabase.from('mes_production_schedule_queue').insert(rows);
-        if (insertError) { setError(`Intelligent Scheduling could not queue every order: ${insertError.message}`); return; }
-        // The new cards are sorted on the next pass, once they carry real queue ids.
-        await load(true);
+      const { data, error: planError } = await supabase.rpc('mes_intelligent_schedule_apply', { p_organization_id: organizationId });
+      if (planError) {
+        setError(planError.code === '42883' || planError.message.includes('does not exist')
+          ? 'Intelligent Scheduling needs SQL migration 180.'
+          : `Intelligent Scheduling could not plan the board: ${planError.message}`);
         return;
       }
-
-      const { error: assignError } = await supabase.rpc('reassign_mes_production_schedule_queue', { p_organization_id: organizationId, p_assignments: assignments });
-      if (assignError) {
-        // Without migration 179 the board can still be sorted, it just cannot move work
-        // between mirror machines.
-        const missingRpc = assignError.code === '42883' || assignError.message.includes('does not exist');
-        if (!missingRpc) { setError(`Intelligent Scheduling could not sort the board: ${assignError.message}`); return; }
-        if (movesAcrossStations) { setError('Mirror balancing needs SQL migration 179. Queues were sorted without moving work between machines.'); }
-        const stationIds = [...new Set(assignments.filter((assignment) => assignment.station_id === queue.find((item) => item.id === assignment.id)?.station_id).map((assignment) => assignment.station_id))];
-        for (const stationId of stationIds) {
-          const itemIds = assignments.filter((assignment) => assignment.station_id === stationId).map((assignment) => assignment.id);
-          const stationItemCount = queue.filter((item) => item.station_id === stationId).length;
-          if (itemIds.length !== stationItemCount) continue;
-          const { error: reorderError } = await supabase.rpc('reorder_mes_production_schedule_queue', { p_organization_id: organizationId, p_station_id: stationId, p_queue_item_ids: itemIds });
-          if (reorderError) { setError(`Intelligent Scheduling could not sort this station: ${reorderError.message}`); return; }
-        }
-      }
-      await load(true);
+      if (Number(data) > 0) await load(true);
     } finally {
       autoPlanBusyRef.current = false;
       setAutoPlanning(false);
     }
-  }, [compatibleStationsFor, load, orderById, orderedStations, orders, organizationId, planningGroups, productionPieces, queue, stationQuarantineHold]);
+  }, [load, organizationId]);
 
   React.useEffect(() => {
-    if (!intelligentScheduling || loading || interactionBusy) return;
+    if (!intelligentScheduling || loading) return;
     void runIntelligentSchedule();
-  }, [intelligentScheduling, loading, interactionBusy, runIntelligentSchedule]);
+    const heartbeat = window.setInterval(() => { if (!interactionBusyRef.current) void runIntelligentSchedule(); }, 300_000);
+    return () => window.clearInterval(heartbeat);
+  }, [intelligentScheduling, loading, runIntelligentSchedule]);
 
   const availableOrders = selectedStation ? orders.filter((order) => {
-    const assignedCodes = (order.assigned_station ?? '').split(',').map((code) => code.trim()).filter(Boolean);
-    const center = centerById.get(selectedStation.work_center_id);
-    const stationCompatible = order.manufacturing_type === 'multi-step' ? multiStepPieceCount(order.id, selectedStation.code) > 0 : assignedCodes.includes(selectedStation.code) || (assignedCodes.length === 0 && Boolean(center && order.assigned_work_center === center.code));
-    return stationCompatible && !queue.some((item) => item.station_id === selectedStation.id && item.production_order_id === order.id);
+    if (!compatibleStationsFor(order, [selectedStation]).length) return false;
+    // Work already planned here, on a sister machine, or anywhere at all when the order
+    // only runs once, is not available any more: it is already in the plan.
+    const poolStationIds = new Set(mirrorSiblingsOf(selectedStation).map((station) => station.id));
+    if (queue.some((item) => poolStationIds.has(item.station_id) && item.production_order_id === order.id)) return false;
+    return order.manufacturing_type === 'multi-step' || !queue.some((item) => item.production_order_id === order.id);
   }) : [];
 
   const addOrder = async (order: Order) => {
@@ -427,6 +306,22 @@ export function ProductionScheduleWorkspace({ onNavigate, organizationId }: Prop
     const { error: reorderError } = await supabase.rpc('reorder_mes_production_schedule_queue', { p_organization_id: organizationId, p_station_id: stationId, p_queue_item_ids: orderedIds });
     setReorderingStationId('');
     if (reorderError) { setQueue(previous); setError(`${reorderError.message}. Apply SQL migration 135.`); }
+  };
+
+  // Sending a card to the sister machine is a preference, not a one-off move: the
+  // balancer keeps it there instead of pulling it back on the next pass.
+  const swapToMirrorStation = async (item: QueueItem, target: Station) => {
+    setSwappingItemId(item.id);
+    const nextPosition = Math.max(0, ...queue.filter((queued) => queued.station_id === target.id).map((queued) => queued.position)) + 1;
+    const { error: swapError } = await supabase
+      .from('mes_production_schedule_queue')
+      .update({ station_id: target.id, preferred_station_id: target.id, position: nextPosition })
+      .eq('id', item.id)
+      .eq('organization_id', organizationId);
+    setSwappingItemId('');
+    if (swapError) { setError(`${swapError.message}. Apply SQL migration 180.`); return; }
+    setError('');
+    await load(true);
   };
 
   const moveQueueItem = (stationId: string, itemId: string, direction: -1 | 1) => {
@@ -477,8 +372,11 @@ export function ProductionScheduleWorkspace({ onNavigate, organizationId }: Prop
         const order = orderById.get(item.production_order_id); if (!order) return null; const risk = getOrderRiskLevel(order.due_date);
         const stationPieceCount = order.manufacturing_type === 'multi-step' ? multiStepPieceCount(order.id, station.code) : Number(order.planned_quantity);
         const quarantineHold = stationQuarantineHold(order.id, station.code, order.manufacturing_type === 'multi-step');
+        const mirrorTargets = mirrorSiblingsOf(station).filter((sibling) => sibling.id !== station.id);
+        // With more than two sister machines the button walks through them in order.
+        const mirrorTarget = mirrorTargets.length ? mirrorTargets[(mirrorTargets.findIndex((sibling) => sibling.id === item.preferred_station_id) + 1) % mirrorTargets.length] : null;
         const itemIndex = stationQueue.findIndex((candidate) => candidate.id === item.id);
-        return <article className={`production-queue-order clickable${quarantineHold.held ? ' quarantined' : ''}`} role="button" tabIndex={0} aria-label={`Open production order ${order.order_number} details`} onClick={(event) => { if (!(event.target as HTMLElement).closest('button')) openOrderDetails(order.order_number); }} onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); openOrderDetails(order.order_number); } }} key={item.id}><div className="production-queue-order-controls"><span>Queue {itemIndex + 1}</span><div><button type="button" disabled={intelligentScheduling || itemIndex === 0 || reorderingStationId === station.id} title={intelligentScheduling ? 'Intelligent Scheduling controls this queue order' : undefined} aria-label={`Move order ${order.order_number} earlier`} onClick={(event) => { event.stopPropagation(); moveQueueItem(station.id, item.id, -1); }}><ChevronLeft size={15} /></button><button type="button" disabled={intelligentScheduling || itemIndex === stationQueue.length - 1 || reorderingStationId === station.id} title={intelligentScheduling ? 'Intelligent Scheduling controls this queue order' : undefined} aria-label={`Move order ${order.order_number} later`} onClick={(event) => { event.stopPropagation(); moveQueueItem(station.id, item.id, 1); }}><ChevronRight size={15} /></button></div></div><header className={quarantineHold.held ? 'quarantine' : risk}><span>{quarantineHold.held ? <><Biohazard size={14} /> In quarantine</> : <><AlertTriangle size={14} /> {riskLabels[risk]}</>}</span><b>{deliveryDistance(order.due_date)}</b><time><CalendarDays size={13} /> {formatDate(order.due_date)}</time></header><div><small>Production order</small><strong>#{order.order_number}</strong><span>{order.client_name || 'Customer not assigned'}</span><dl>{quarantineHold.held ? <div className="production-queue-order-quarantine"><dt>Quarantine</dt><dd>{quarantineHold.quarantined === 1 ? '1 piece held' : `${quarantineHold.quarantined} pieces held`}</dd></div> : null}<div><dt>Part</dt><dd>{order.part_number || order.part_name || '—'}</dd></div>
+        return <article className={`production-queue-order clickable${quarantineHold.held ? ' quarantined' : ''}`} role="button" tabIndex={0} aria-label={`Open production order ${order.order_number} details`} onClick={(event) => { if (!(event.target as HTMLElement).closest('button')) openOrderDetails(order.order_number); }} onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); openOrderDetails(order.order_number); } }} key={item.id}><div className="production-queue-order-controls"><span>Queue {itemIndex + 1}</span><div><button type="button" disabled={intelligentScheduling || itemIndex === 0 || reorderingStationId === station.id} title={intelligentScheduling ? 'Intelligent Scheduling controls this queue order' : undefined} aria-label={`Move order ${order.order_number} earlier`} onClick={(event) => { event.stopPropagation(); moveQueueItem(station.id, item.id, -1); }}><ChevronLeft size={15} /></button><button type="button" disabled={intelligentScheduling || itemIndex === stationQueue.length - 1 || reorderingStationId === station.id} title={intelligentScheduling ? 'Intelligent Scheduling controls this queue order' : undefined} aria-label={`Move order ${order.order_number} later`} onClick={(event) => { event.stopPropagation(); moveQueueItem(station.id, item.id, 1); }}><ChevronRight size={15} /></button>{mirrorTarget ? <button className={`production-queue-order-swap${item.preferred_station_id ? ' pinned' : ''}`} type="button" disabled={!mirrorPreferenceAvailable || swappingItemId === item.id} aria-label={`Move order ${order.order_number} to ${mirrorTarget.name}`} title={mirrorPreferenceAvailable ? `Work this order on ${mirrorTarget.name}` : 'Apply SQL migration 180 to choose a mirror machine'} onClick={(event) => { event.stopPropagation(); void swapToMirrorStation(item, mirrorTarget); }}><ArrowLeftRight size={15} /></button> : null}</div></div><header className={quarantineHold.held ? 'quarantine' : risk}><span>{quarantineHold.held ? <><Biohazard size={14} /> In quarantine</> : <><AlertTriangle size={14} /> {riskLabels[risk]}</>}</span><b>{deliveryDistance(order.due_date)}</b><time><CalendarDays size={13} /> {formatDate(order.due_date)}</time></header><div><small>Production order</small><strong>#{order.order_number}</strong><span>{order.client_name || 'Customer not assigned'}</span><dl>{item.preferred_station_id === station.id ? <div className="production-queue-order-pinned"><dt>Mirror choice</dt><dd>Kept on {station.name}</dd></div> : null}{quarantineHold.held ? <div className="production-queue-order-quarantine"><dt>Quarantine</dt><dd>{quarantineHold.quarantined === 1 ? '1 piece held' : `${quarantineHold.quarantined} pieces held`}</dd></div> : null}<div><dt>Part</dt><dd>{order.part_number || order.part_name || '—'}</dd></div>
 {order.manufacturing_type === 'multi-step' ? <div className="production-multistep-piece-count"><dt>Multi-step</dt><dd>{stationPieceCount.toLocaleString()} pieces for this station</dd></div> : null}<div><dt>Pieces</dt><dd>{stationPieceCount.toLocaleString()}</dd></div><div className="production-queue-order-status"><dt>Status</dt><dd className={quarantineHold.held ? 'status-quarantine' : `status-${order.status}`}>{quarantineHold.held ? 'in quarantine' : order.status.replaceAll('-', ' ')}</dd></div>
 <div><dt>Progress</dt><dd>{Number(order.completed_quantity).toLocaleString()} / {Number(order.planned_quantity).toLocaleString()}</dd></div><div><dt>Priority</dt><dd>{order.priority}</dd></div></dl></div></article>;
       })}<button className="production-queue-add" type="button" onClick={() => setSelectedStationId(station.id)}><Plus size={28} /><strong>Add order</strong><span>Place the next job in this station queue</span></button></div></section>;

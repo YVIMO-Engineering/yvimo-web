@@ -79,7 +79,13 @@
 .production-queue-order.clickable:hover,.production-queue-order.clickable:focus-visible { border-color:color-mix(in srgb, var(--station-color) 65%, #dbe5ef); box-shadow:0 12px 28px rgba(15,23,42,.13); transform:translateY(-2px); outline:none; }
 .production-queue-order-controls { display:flex; align-items:center; justify-content:space-between; min-height:31px; border-bottom:1px solid #e8edf3; padding:4px 7px 4px 10px; background:#f8fafc; color:#64748b; }
 .production-queue-order-controls>span { display:flex; align-items:center; gap:4px; font-size:.6rem; font-weight:800; text-transform:uppercase; }.production-queue-order-controls>div { display:flex; gap:3px; }
-.production-queue-order-controls button { display:grid; place-items:center; width:25px; height:23px; border:1px solid #dbe5ef; border-radius:6px; padding:0; background:#fff; color:#475569; cursor:pointer; }.production-queue-order-controls button:hover:not(:disabled) { border-color:#ff8a1f; background:#fff4e8; color:#c45b00; }.production-queue-order-controls button:disabled { opacity:.32; cursor:not-allowed; }
+.production-queue-order-controls button { display:grid; place-items:center; width:25px; height:23px; border:1px solid #dbe5ef; border-radius:6px; padding:0; background:#fff; color:#475569; cursor:pointer; }
+.production-queue-order-swap { margin-left:4px; }
+.production-queue-order-swap:hover:not(:disabled) { border-color:#4f46e5 !important; background:#eef2ff !important; color:#4338ca !important; }
+.production-queue-order-swap.pinned { border-color:#4f46e5; background:#eef2ff; color:#4338ca; }
+.production-queue-order dl .production-queue-order-pinned { grid-column:1/-1; display:flex; align-items:center; justify-content:space-between; gap:8px; border-radius:7px; padding:5px 7px; background:#eef2ff; }
+.production-queue-order .production-queue-order-pinned dt { color:#4338ca; font-weight:900; }
+.production-queue-order .production-queue-order-pinned dd { color:#3730a3; }.production-queue-order-controls button:hover:not(:disabled) { border-color:#ff8a1f; background:#fff4e8; color:#c45b00; }.production-queue-order-controls button:disabled { opacity:.32; cursor:not-allowed; }
 .production-queue-order>header { display:grid; grid-template-columns:1fr auto; gap:3px 8px; padding:8px 11px; color:#fff; background:#16a34a; }
 .production-queue-order>header.overdue { background:#b91c1c; }.production-queue-order>header.high { background:#dc2626; }.production-queue-order>header.moderate { background:#d97706; }
 .production-queue-order>header.quarantine { background:#7c3aed; }
