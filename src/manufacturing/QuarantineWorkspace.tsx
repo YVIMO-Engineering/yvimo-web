@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertTriangle, ArrowLeft, Biohazard, CalendarDays, ClipboardList, LoaderCircle, MessageSquareText, PackageOpen, Save, Search, ShieldCheck, X } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Biohazard, CalendarDays, ClipboardList, LoaderCircle, MessageSquareText, PackageOpen, Save, Search, ShieldCheck, Trash2, X } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { getDaysUntilDelivery } from './DeliveryRiskTimeline';
 import { ProductionOrdersWorkspace } from './MesWorkspaces';
@@ -8,7 +8,8 @@ import { useSupabaseRealtimeRefresh, type RealtimeConnectionState } from '../lib
 import './quarantine.css';
 
 type Props = { onNavigate: (path: string) => void; organizationId: string };
-type QuarantineStatus = 'open' | 'released';
+type QuarantineStatus = 'open' | 'released' | 'scrapped';
+type QuarantineOutcome = 'release' | 'scrap';
 type QuarantineHold = {
   id: string;
   productionOrderId: string;
@@ -22,6 +23,8 @@ type QuarantineHold = {
   quarantinedAt: string;
   releasedAt: string;
   releaseNotes: string;
+  scrappedAt: string;
+  scrapReason: string;
 };
 type QuarantineOrder = {
   id: string;
@@ -39,9 +42,40 @@ type QuarantineOrder = {
   assigned_station: string | null;
 };
 type DraftComments = { reason: string; actionPlan: string };
+// The column list is built at runtime (migration 177 may not be applied yet), so the
+// response rows are typed here instead of being inferred from the select string.
+type QuarantineHoldRow = {
+  id: string;
+  production_order_id: string;
+  production_serial_id: string;
+  piece_sequence: number | null;
+  serial_number: string | null;
+  tool_id: string | null;
+  reason: string | null;
+  action_plan: string | null;
+  status: string | null;
+  quarantined_at: string | null;
+  released_at: string | null;
+  release_notes: string | null;
+  scrapped_at?: string | null;
+  scrap_reason?: string | null;
+};
 
 const productionOrderDeepLinkKey = 'yvimo:mes:selectedProductionOrderNumber';
 const productionOrderDetailsDeepLinkKey = 'yvimo:mes:openProductionOrderDetails';
+// The same reason list the Operator Terminal uses, so quarantine scrap and shop-floor
+// scrap read identically in the cost trackers.
+const scrapReasons = [
+  'Tooth damage',
+  'Out of tolerance',
+  'Surface defect',
+  'Wrong tool',
+  'Setup issue',
+  'Machine issue',
+  'Material issue',
+  'Quarantine decision',
+  'Other',
+];
 const riskLabels: Record<OrderRiskLevel, string> = { overdue: 'Overdue', high: 'High risk', moderate: 'Moderate risk', low: 'Low risk' };
 const liveStateLabels: Record<RealtimeConnectionState, string> = { connecting: 'Connecting…', live: 'Live quarantine', offline: 'Reconnecting…' };
 const liveClockFormatter = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit', second: '2-digit' });
@@ -68,10 +102,12 @@ export function QuarantineWorkspace({ onNavigate, organizationId }: Props) {
   const [drafts, setDrafts] = React.useState<Record<string, DraftComments>>({});
   const [savingHoldId, setSavingHoldId] = React.useState('');
   const [savedHoldId, setSavedHoldId] = React.useState('');
-  const [releaseHold, setReleaseHold] = React.useState<QuarantineHold | null>(null);
-  const [releaseNotes, setReleaseNotes] = React.useState('');
-  const [releaseSaving, setReleaseSaving] = React.useState(false);
-  const [releaseError, setReleaseError] = React.useState('');
+  const [outcomeHold, setOutcomeHold] = React.useState<QuarantineHold | null>(null);
+  const [outcomeMode, setOutcomeMode] = React.useState<QuarantineOutcome>('release');
+  const [outcomeNotes, setOutcomeNotes] = React.useState('');
+  const [scrapReason, setScrapReason] = React.useState(scrapReasons[0]);
+  const [outcomeSaving, setOutcomeSaving] = React.useState(false);
+  const [outcomeError, setOutcomeError] = React.useState('');
   const [statusFilter, setStatusFilter] = React.useState<QuarantineStatus | 'all'>('open');
   const [search, setSearch] = React.useState('');
   const [loading, setLoading] = React.useState(true);
@@ -79,32 +115,48 @@ export function QuarantineWorkspace({ onNavigate, organizationId }: Props) {
   const [detailOrderNumber, setDetailOrderNumber] = React.useState('');
   const [liveState, setLiveState] = React.useState<RealtimeConnectionState>('connecting');
   const [lastUpdatedAt, setLastUpdatedAt] = React.useState('');
+  const [scrapOutcomeAvailable, setScrapOutcomeAvailable] = React.useState(true);
 
   const load = React.useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
-    const { data, error: holdError } = await supabase
+    // The scrap outcome columns arrive with migration 177, so the list still loads
+    // against a database that only has migration 176 applied.
+    const selectHolds = (withScrapOutcome: boolean) => supabase
       .from('mes_production_quarantine')
-      .select('id, production_order_id, production_serial_id, piece_sequence, serial_number, tool_id, reason, action_plan, status, quarantined_at, released_at, release_notes')
+      .select([
+        'id, production_order_id, production_serial_id, piece_sequence, serial_number, tool_id',
+        'reason, action_plan, status, quarantined_at, released_at, release_notes',
+        withScrapOutcome ? 'scrapped_at, scrap_reason' : '',
+      ].filter(Boolean).join(', '))
       .eq('organization_id', organizationId)
       .order('quarantined_at', { ascending: false });
+    let { data, error: holdError } = await selectHolds(true);
+    let scrapOutcomeAvailable = true;
+    if (holdError?.message?.includes('scrap')) {
+      scrapOutcomeAvailable = false;
+      ({ data, error: holdError } = await selectHolds(false));
+    }
+    setScrapOutcomeAvailable(scrapOutcomeAvailable);
     if (holdError) {
       setError(`Unable to load quarantine holds: ${holdError.message}. Apply SQL migration 176.`);
       setLoading(false);
       return;
     }
-    const loadedHolds: QuarantineHold[] = (data ?? []).map((row) => ({
-      id: row.id as string,
-      productionOrderId: row.production_order_id as string,
-      productionSerialId: row.production_serial_id as string,
+    const loadedHolds: QuarantineHold[] = ((data ?? []) as unknown as QuarantineHoldRow[]).map((row) => ({
+      id: row.id,
+      productionOrderId: row.production_order_id,
+      productionSerialId: row.production_serial_id,
       pieceSequence: Number(row.piece_sequence) || 0,
-      serialNumber: (row.serial_number as string | null) ?? '',
-      toolId: (row.tool_id as string | null) ?? '',
-      reason: (row.reason as string | null) ?? '',
-      actionPlan: (row.action_plan as string | null) ?? '',
-      status: row.status === 'released' ? 'released' : 'open',
-      quarantinedAt: (row.quarantined_at as string | null) ?? '',
-      releasedAt: (row.released_at as string | null) ?? '',
-      releaseNotes: (row.release_notes as string | null) ?? '',
+      serialNumber: row.serial_number ?? '',
+      toolId: row.tool_id ?? '',
+      reason: row.reason ?? '',
+      actionPlan: row.action_plan ?? '',
+      status: row.status === 'released' ? 'released' : row.status === 'scrapped' ? 'scrapped' : 'open',
+      quarantinedAt: row.quarantined_at ?? '',
+      releasedAt: row.released_at ?? '',
+      releaseNotes: row.release_notes ?? '',
+      scrappedAt: row.scrapped_at ?? '',
+      scrapReason: row.scrap_reason ?? '',
     }));
     const orderIds = [...new Set(loadedHolds.map((hold) => hold.productionOrderId))];
     const { data: orderData, error: orderError } = orderIds.length
@@ -153,7 +205,8 @@ export function QuarantineWorkspace({ onNavigate, organizationId }: Props) {
 
   const orderById = React.useMemo(() => new Map(orders.map((order) => [order.id, order])), [orders]);
   const openCount = holds.filter((hold) => hold.status === 'open').length;
-  const releasedCount = holds.length - openCount;
+  const releasedCount = holds.filter((hold) => hold.status === 'released').length;
+  const scrappedCount = holds.filter((hold) => hold.status === 'scrapped').length;
   const visibleHolds = React.useMemo(() => {
     const term = search.trim().toLowerCase();
     return holds.filter((hold) => {
@@ -165,6 +218,7 @@ export function QuarantineWorkspace({ onNavigate, organizationId }: Props) {
         hold.toolId,
         hold.reason,
         hold.actionPlan,
+        hold.scrapReason,
         order?.order_number,
         order?.client_name,
         order?.part_number,
@@ -204,23 +258,40 @@ export function QuarantineWorkspace({ onNavigate, organizationId }: Props) {
     window.setTimeout(() => setSavedHoldId((current) => (current === hold.id ? '' : current)), 2600);
   };
 
-  const releasePieceFromQuarantine = async (event: React.FormEvent) => {
+  const openOutcomeModal = (hold: QuarantineHold, mode: QuarantineOutcome) => {
+    setOutcomeHold(hold);
+    setOutcomeMode(mode);
+    setOutcomeNotes('');
+    setScrapReason(scrapReasons[0]);
+    setOutcomeError('');
+  };
+
+  const closeQuarantineHold = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!releaseHold) return;
-    setReleaseSaving(true);
-    setReleaseError('');
-    const { error: rpcError } = await supabase.rpc('mes_release_production_piece_from_quarantine', {
-      p_quarantine_id: releaseHold.id,
-      p_organization_id: organizationId,
-      p_release_notes: releaseNotes.trim(),
-    });
-    setReleaseSaving(false);
+    if (!outcomeHold) return;
+    setOutcomeSaving(true);
+    setOutcomeError('');
+    const { error: rpcError } = outcomeMode === 'scrap'
+      ? await supabase.rpc('mes_scrap_production_piece_from_quarantine', {
+        p_quarantine_id: outcomeHold.id,
+        p_organization_id: organizationId,
+        p_reason: scrapReason,
+        p_comment: outcomeNotes.trim(),
+      })
+      : await supabase.rpc('mes_release_production_piece_from_quarantine', {
+        p_quarantine_id: outcomeHold.id,
+        p_organization_id: organizationId,
+        p_release_notes: outcomeNotes.trim(),
+      });
+    setOutcomeSaving(false);
     if (rpcError) {
-      setReleaseError(rpcError.message);
+      setOutcomeError(outcomeMode === 'scrap' && (rpcError.code === '42883' || rpcError.message.includes('does not exist'))
+        ? 'Scrapping from quarantine is not available yet. Apply SQL migration 177.'
+        : rpcError.message);
       return;
     }
-    setReleaseHold(null);
-    setReleaseNotes('');
+    setOutcomeHold(null);
+    setOutcomeNotes('');
     await load(true);
   };
 
@@ -229,11 +300,14 @@ export function QuarantineWorkspace({ onNavigate, organizationId }: Props) {
     const risk = order ? getOrderRiskLevel(order.due_date) : 'low';
     const draft = drafts[hold.id] ?? { reason: hold.reason, actionPlan: hold.actionPlan };
     const dirty = draft.reason.trim() !== hold.reason.trim() || draft.actionPlan.trim() !== hold.actionPlan.trim();
-    const readOnly = hold.status === 'released';
+    const readOnly = hold.status !== 'open';
+    const closedAt = hold.status === 'scrapped' ? hold.scrappedAt : hold.releasedAt;
     return <article className={`quarantine-card ${hold.status}`} key={hold.id}>
       <header className="quarantine-card-header">
-        <span className={`quarantine-card-badge ${hold.status}`}>{hold.status === 'open' ? <><Biohazard size={13} /> On hold</> : <><ShieldCheck size={13} /> Released</>}</span>
-        <span className="quarantine-card-age">{hold.status === 'open' ? `Held for ${holdDuration(hold.quarantinedAt)}` : `Held ${holdDuration(hold.quarantinedAt, hold.releasedAt)}`}</span>
+        <span className={`quarantine-card-badge ${hold.status}`}>
+          {hold.status === 'open' ? <><Biohazard size={13} /> On hold</> : hold.status === 'scrapped' ? <><Trash2 size={13} /> Scrapped</> : <><ShieldCheck size={13} /> Released</>}
+        </span>
+        <span className="quarantine-card-age">{hold.status === 'open' ? `Held for ${holdDuration(hold.quarantinedAt)}` : `Held ${holdDuration(hold.quarantinedAt, closedAt)}`}</span>
       </header>
       <div className="quarantine-card-body">
         <section className="quarantine-order-column">
@@ -272,6 +346,7 @@ export function QuarantineWorkspace({ onNavigate, organizationId }: Props) {
               <div><dt>Piece</dt><dd>{hold.pieceSequence || '—'}</dd></div>
               <div><dt>Quarantined</dt><dd>{formatTimestamp(hold.quarantinedAt)}</dd></div>
               {hold.status === 'released' ? <div><dt>Released</dt><dd>{formatTimestamp(hold.releasedAt)}</dd></div> : null}
+              {hold.status === 'scrapped' ? <div><dt>Scrapped</dt><dd>{formatTimestamp(hold.scrappedAt)}</dd></div> : null}
             </dl>
           </div>
         </section>
@@ -297,10 +372,19 @@ export function QuarantineWorkspace({ onNavigate, organizationId }: Props) {
           {hold.status === 'released' && hold.releaseNotes ? (
             <p className="quarantine-release-note"><ShieldCheck size={14} /> {hold.releaseNotes}</p>
           ) : null}
+          {hold.status === 'scrapped' ? (
+            <p className="quarantine-scrap-note">
+              <Trash2 size={14} />
+              <span><b>Generated scrap · {hold.scrapReason || 'Reason not recorded'}</b>{hold.releaseNotes ? <em>{hold.releaseNotes}</em> : null}</span>
+            </p>
+          ) : null}
           {!readOnly ? (
             <div className="quarantine-card-actions">
               {savedHoldId === hold.id ? <em className="quarantine-saved">Comments saved</em> : null}
-              <button type="button" className="quarantine-release-button" onClick={() => { setReleaseHold(hold); setReleaseNotes(''); setReleaseError(''); }}>
+              <button type="button" className="quarantine-scrap-button" disabled={!scrapOutcomeAvailable} title={scrapOutcomeAvailable ? 'Scrap this piece as generated scrap' : 'Apply SQL migration 177 to scrap from quarantine'} onClick={() => openOutcomeModal(hold, 'scrap')}>
+                <Trash2 size={15} /> Send to scrap
+              </button>
+              <button type="button" className="quarantine-release-button" onClick={() => openOutcomeModal(hold, 'release')}>
                 <ShieldCheck size={15} /> Release from quarantine
               </button>
               <button type="button" className="quarantine-save-button" disabled={!dirty || savingHoldId === hold.id} onClick={() => void saveComments(hold)}>
@@ -320,13 +404,14 @@ export function QuarantineWorkspace({ onNavigate, organizationId }: Props) {
       <div className="mes-workspace-heading">
         <p className="eyebrow">APS / QUARANTINE</p>
         <h2>Quarantine</h2>
-        <p>Hold the pieces that cannot continue the normal manufacturing flow, record why they are held, and track the action that returns them to production.</p>
+        <p>Hold the pieces that cannot continue the normal manufacturing flow, record why they are held, and close each hold by releasing the piece back to production or scrapping it.</p>
       </div>
     </div>
     <div className="quarantine-toolbar">
       <div className="quarantine-filters" role="tablist" aria-label="Quarantine status">
         <button type="button" role="tab" aria-selected={statusFilter === 'open'} className={statusFilter === 'open' ? 'active' : ''} onClick={() => setStatusFilter('open')}><Biohazard size={15} /> On hold <b>{openCount}</b></button>
         <button type="button" role="tab" aria-selected={statusFilter === 'released'} className={statusFilter === 'released' ? 'active' : ''} onClick={() => setStatusFilter('released')}><ShieldCheck size={15} /> Released <b>{releasedCount}</b></button>
+        <button type="button" role="tab" aria-selected={statusFilter === 'scrapped'} className={statusFilter === 'scrapped' ? 'active' : ''} onClick={() => setStatusFilter('scrapped')}><Trash2 size={15} /> Scrapped <b>{scrappedCount}</b></button>
         <button type="button" role="tab" aria-selected={statusFilter === 'all'} className={statusFilter === 'all' ? 'active' : ''} onClick={() => setStatusFilter('all')}>All <b>{holds.length}</b></button>
       </div>
       <label className="quarantine-search">
@@ -350,23 +435,43 @@ export function QuarantineWorkspace({ onNavigate, organizationId }: Props) {
     ) : (
       <div className="quarantine-board">{visibleHolds.map(renderHoldCard)}</div>
     )}
-    {releaseHold ? (
-      <div className="quarantine-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !releaseSaving) setReleaseHold(null); }}>
-        <section className="quarantine-modal" role="dialog" aria-modal="true" aria-labelledby="quarantine-release-title">
-          <button className="quarantine-modal-close" type="button" onClick={() => setReleaseHold(null)} disabled={releaseSaving} aria-label="Close"><X size={18} /></button>
-          <form onSubmit={releasePieceFromQuarantine}>
-            <span className="quarantine-modal-icon"><ShieldCheck size={25} /></span>
-            <p className="eyebrow">Return to production</p>
-            <h3 id="quarantine-release-title">Release serial {releaseHold.serialNumber || `piece ${releaseHold.pieceSequence}`}?</h3>
-            <p>The piece leaves quarantine and continues the normal manufacturing flow. The reason and the action taken stay in the quarantine history.</p>
+    {outcomeHold ? (
+      <div className="quarantine-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !outcomeSaving) setOutcomeHold(null); }}>
+        <section className={`quarantine-modal ${outcomeMode}`} role="dialog" aria-modal="true" aria-labelledby="quarantine-outcome-title">
+          <button className="quarantine-modal-close" type="button" onClick={() => setOutcomeHold(null)} disabled={outcomeSaving} aria-label="Close"><X size={18} /></button>
+          <form onSubmit={closeQuarantineHold}>
+            <span className="quarantine-modal-icon">{outcomeMode === 'scrap' ? <Trash2 size={25} /> : <ShieldCheck size={25} />}</span>
+            <p className="eyebrow">{outcomeMode === 'scrap' ? 'Scrap the held piece' : 'Return to production'}</p>
+            <h3 id="quarantine-outcome-title">
+              {outcomeMode === 'scrap' ? 'Scrap' : 'Release'} serial {outcomeHold.serialNumber || `piece ${outcomeHold.pieceSequence}`}?
+            </h3>
+            <p>
+              {outcomeMode === 'scrap'
+                ? 'The piece is lost: it counts as generated scrap in the production order and in the cost trackers, and it stops gating coating and delivery.'
+                : 'The piece leaves quarantine and continues the normal manufacturing flow. The reason and the action taken stay in the quarantine history.'}
+            </p>
+            {outcomeMode === 'scrap' ? (
+              <div className="quarantine-modal-warning"><AlertTriangle size={18} /><span>A piece already reported as GOOD stops counting as produced. This cannot be undone from the Quarantine workspace.</span></div>
+            ) : null}
+            {outcomeMode === 'scrap' ? (
+              <label>
+                Scrap reason
+                <select value={scrapReason} onChange={(event) => setScrapReason(event.target.value)}>
+                  {scrapReasons.map((reason) => <option value={reason} key={reason}>{reason}</option>)}
+                </select>
+              </label>
+            ) : null}
             <label>
-              Release notes <em>(optional)</em>
-              <textarea rows={3} value={releaseNotes} onChange={(event) => setReleaseNotes(event.target.value)} placeholder="What was done to clear this piece?" autoFocus />
+              {outcomeMode === 'scrap' ? 'Scrap comment' : 'Release notes'} <em>(optional)</em>
+              <textarea rows={3} value={outcomeNotes} onChange={(event) => setOutcomeNotes(event.target.value)} placeholder={outcomeMode === 'scrap' ? 'What was found on this piece?' : 'What was done to clear this piece?'} autoFocus />
             </label>
-            {releaseError ? <div className="clients-feedback error" role="alert">{releaseError}</div> : null}
+            {outcomeError ? <div className="clients-feedback error" role="alert">{outcomeError}</div> : null}
             <div className="quarantine-modal-actions">
-              <button type="button" className="secondary" onClick={() => setReleaseHold(null)} disabled={releaseSaving}>Cancel</button>
-              <button type="submit" disabled={releaseSaving}><ShieldCheck size={16} /> {releaseSaving ? 'Releasing…' : 'Release piece'}</button>
+              <button type="button" className="secondary" onClick={() => setOutcomeHold(null)} disabled={outcomeSaving}>Cancel</button>
+              <button type="submit" disabled={outcomeSaving}>
+                {outcomeMode === 'scrap' ? <Trash2 size={16} /> : <ShieldCheck size={16} />}
+                {outcomeSaving ? (outcomeMode === 'scrap' ? 'Scrapping…' : 'Releasing…') : (outcomeMode === 'scrap' ? 'Scrap piece' : 'Release piece')}
+              </button>
             </div>
           </form>
         </section>

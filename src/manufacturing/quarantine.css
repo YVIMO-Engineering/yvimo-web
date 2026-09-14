@@ -32,6 +32,9 @@
 .quarantine-card.released .quarantine-card-header { background:#f8fafc; }
 .quarantine-card-badge { display:inline-flex; align-items:center; gap:6px; border-radius:999px; padding:4px 9px; background:#b91c1c; color:#fff; font-size:.63rem; font-weight:900; letter-spacing:.05em; text-transform:uppercase; }
 .quarantine-card-badge.released { background:#0f766e; }
+.quarantine-card-badge.scrapped { background:#334155; }
+.quarantine-card.scrapped { border-color:#cbd5e1; }
+.quarantine-card.scrapped .quarantine-card-header { background:#f1f5f9; }
 .quarantine-card-age { color:#64748b; font-size:.68rem; font-weight:800; }
 .quarantine-card-body { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:13px; padding:13px; }
 
@@ -74,12 +77,19 @@
 .quarantine-comment-box textarea { width:100%; min-height:104px; border:1px solid #cbd5e1; border-radius:11px; padding:10px 12px; background:#fff; color:#17202a; font:inherit; font-size:.78rem; line-height:1.5; resize:vertical; }
 .quarantine-comment-box textarea:focus { outline:none; border-color:#ef4444; box-shadow:0 0 0 3px rgba(239,68,68,.12); }
 .quarantine-comment-box textarea[readonly] { background:#f8fafc; color:#526274; }
+.quarantine-scrap-note { display:flex; align-items:flex-start; gap:8px; margin:0; border:1px solid #cbd5e1; border-radius:10px; padding:9px 11px; background:#f8fafc; color:#334155; font-size:.74rem; }
+.quarantine-scrap-note>span { display:grid; gap:3px; }
+.quarantine-scrap-note b { font-weight:900; }
+.quarantine-scrap-note em { color:#64748b; font-style:normal; font-weight:600; }
 .quarantine-release-note { display:flex; align-items:flex-start; gap:8px; margin:0; border:1px solid #99f6e4; border-radius:10px; padding:9px 11px; background:#f0fdfa; color:#0f766e; font-size:.74rem; font-weight:700; }
 .quarantine-card-actions { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:8px; }
 .quarantine-saved { margin-right:auto; color:#0f766e; font-size:.7rem; font-style:normal; font-weight:800; }
 .quarantine-card-actions button { display:inline-flex; align-items:center; justify-content:center; gap:6px; min-height:38px; border-radius:9px; padding:0 13px; font:inherit; font-size:.72rem; font-weight:900; cursor:pointer; }
 .quarantine-release-button { border:1px solid #99f6e4; background:#f0fdfa; color:#0f766e; }
 .quarantine-release-button:hover { border-color:#0f766e; background:#ccfbf1; }
+.quarantine-scrap-button { border:1px solid #cbd5e1; background:#f8fafc; color:#334155; }
+.quarantine-scrap-button:hover:not(:disabled) { border-color:#334155; background:#e2e8f0; }
+.quarantine-scrap-button:disabled { opacity:.45; cursor:not-allowed; }
 .quarantine-save-button { border:1px solid #b91c1c; background:#b91c1c; color:#fff; }
 .quarantine-save-button:hover:not(:disabled) { background:#991b1b; }
 .quarantine-save-button:disabled { opacity:.45; cursor:not-allowed; }
@@ -97,6 +107,16 @@
 .quarantine-modal label em { color:#94a3b8; font-style:normal; text-transform:none; }
 .quarantine-modal textarea { width:100%; min-height:82px; border:1px solid #cbd5e1; border-radius:10px; padding:10px 12px; background:#fff; color:#17202a; font:inherit; font-size:.82rem; letter-spacing:normal; resize:vertical; text-transform:none; }
 .quarantine-modal textarea:focus { outline:none; border-color:#0f766e; box-shadow:0 0 0 3px rgba(15,118,110,.14); }
+.quarantine-modal select { min-height:44px; border:1px solid #cbd5e1; border-radius:10px; padding:0 11px; background:#fff; color:#17202a; font:inherit; font-size:.82rem; letter-spacing:normal; text-transform:none; }
+.quarantine-modal select:focus { outline:none; border-color:#334155; box-shadow:0 0 0 3px rgba(51,65,85,.14); }
+.quarantine-modal-warning { display:flex; align-items:flex-start; gap:9px; border:1px solid #fed7aa; border-radius:9px; padding:11px 12px; background:#fff7ed; color:#9a4a0b; font-size:.78rem; font-weight:700; line-height:1.4; }
+.quarantine-modal-warning svg { flex:0 0 auto; }
+.quarantine-modal.scrap { border-top-color:#334155; }
+.quarantine-modal.scrap .eyebrow { color:#334155; }
+.quarantine-modal.scrap .quarantine-modal-icon { border-color:#cbd5e1; background:#f1f5f9; color:#334155; }
+.quarantine-modal.scrap textarea:focus { border-color:#334155; box-shadow:0 0 0 3px rgba(51,65,85,.14); }
+.quarantine-modal.scrap .quarantine-modal-actions button[type='submit'] { border-color:#334155; background:#334155; }
+.quarantine-modal.scrap .quarantine-modal-actions button[type='submit']:hover:not(:disabled) { background:#1e293b; }
 .quarantine-modal-actions { display:flex; justify-content:flex-end; gap:10px; padding-top:4px; }
 .quarantine-modal-actions button { display:inline-flex; align-items:center; justify-content:center; gap:7px; min-height:42px; border:1px solid #0f766e; border-radius:8px; padding:0 14px; background:#0f766e; color:#fff; font:inherit; font-size:.78rem; font-weight:900; cursor:pointer; }
 .quarantine-modal-actions button.secondary { border-color:#cbd5e1; background:#f1f5f9; color:#334155; }
