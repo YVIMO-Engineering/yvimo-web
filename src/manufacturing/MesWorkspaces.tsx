@@ -1,7 +1,7 @@
 import React from 'react';
 import { useProductionOrdersI18n } from './productionOrdersI18n';
 import { createPortal } from 'react-dom';
-import { Activity, AlertTriangle, ArrowLeft, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleHelp, CircleX, ClipboardPlus, Clock3, Copy, Database, Download, Eye, Factory, Frown, FileText, ImagePlus, LoaderCircle, Maximize2, Meh, Minimize2, Minus, Move, PackageCheck, PaintBucket, Pencil, Plus, Power, RadioTower, RotateCcw, Ruler, Search, Send, Smile, Timer, Trash2, Truck, Wrench, X, ZoomIn, ZoomOut } from 'lucide-react';
+import { Activity, AlertTriangle, ArrowLeft, Biohazard, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleHelp, CircleX, ClipboardPlus, Clock3, Copy, Database, Download, Eye, Factory, Frown, FileText, ImagePlus, LoaderCircle, Maximize2, Meh, Minimize2, Minus, Move, PackageCheck, PaintBucket, Pencil, Plus, Power, RadioTower, RotateCcw, Ruler, Search, Send, Smile, Timer, Trash2, Truck, Wrench, X, ZoomIn, ZoomOut } from 'lucide-react';
 import { GoogleWorkCentersMap } from '../components/maps/GoogleWorkCentersMap';
 import { resolveGooglePlacesAddressMatch, searchGooglePlacesAddressMatches, type GooglePlacesAddressMatch } from '../lib/maps/googlePlacesAddressLookup';
 import { supabase } from '../lib/supabaseClient';
@@ -2001,6 +2001,7 @@ export function ProductionOrderDetailsModal({
   organizationId,
   onNavigate,
   onPieceReleased,
+  onPieceQuarantined,
   onClose,
 }: {
   order: ProductionOrder;
@@ -2008,6 +2009,7 @@ export function ProductionOrderDetailsModal({
   organizationId: string;
   onNavigate?: (path: string) => void;
   onPieceReleased?: () => Promise<void> | void;
+  onPieceQuarantined?: () => Promise<void> | void;
   onClose: () => void;
 }) {
   const [activeView, setActiveView] = React.useState<'production' | 'quality' | 'damage' | 'coating' | 'reception'>('production');
@@ -2022,6 +2024,12 @@ export function ProductionOrderDetailsModal({
   const [releaseCode, setReleaseCode] = React.useState('');
   const [releaseError, setReleaseError] = React.useState('');
   const [releaseSaving, setReleaseSaving] = React.useState(false);
+  const [quarantinePiece, setQuarantinePiece] = React.useState<ProductionOrderDetailPiece | null>(null);
+  const [quarantineReason, setQuarantineReason] = React.useState('');
+  const [quarantineActionPlan, setQuarantineActionPlan] = React.useState('');
+  const [quarantineError, setQuarantineError] = React.useState('');
+  const [quarantineSaving, setQuarantineSaving] = React.useState(false);
+  const [quarantinedSerialIds, setQuarantinedSerialIds] = React.useState<Set<string>>(new Set());
   const [stationNames, setStationNames] = React.useState<string[]>(order.assignedStation ? [order.assignedStation] : []);
   const stationName = stationNames.join(' · ') || 'Not assigned';
   const [associatedReception, setAssociatedReception] = React.useState<{
@@ -2246,6 +2254,46 @@ export function ProductionOrderDetailsModal({
     window.sessionStorage.setItem('yvimo:clients:receptions:selected-id', associatedReception.id);
     onClose();
     onNavigate('/workspace/manufacturing-ops/mes/clients/receptions');
+  };
+  const loadQuarantineHolds = React.useCallback(async () => {
+    const { data, error } = await supabase
+      .from('mes_production_quarantine')
+      .select('production_serial_id')
+      .eq('organization_id', organizationId)
+      .eq('production_order_id', order.id)
+      .eq('status', 'open');
+    // The table only exists after migration 176; until then no piece is held.
+    if (error) return new Set<string>();
+    return new Set((data ?? []).map((hold) => hold.production_serial_id as string));
+  }, [organizationId, order.id]);
+  React.useEffect(() => {
+    let active = true;
+    void loadQuarantineHolds().then((holds) => { if (active) setQuarantinedSerialIds(holds); });
+    return () => { active = false; };
+  }, [loadQuarantineHolds]);
+  const sendPieceToQuarantine = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!quarantinePiece?.serialId || !quarantineReason.trim()) return;
+    setQuarantineSaving(true);
+    setQuarantineError('');
+    const { error } = await supabase.rpc('mes_quarantine_production_piece', {
+      p_serial_id: quarantinePiece.serialId,
+      p_organization_id: organizationId,
+      p_reason: quarantineReason.trim(),
+      p_action_plan: quarantineActionPlan.trim(),
+    });
+    setQuarantineSaving(false);
+    if (error) {
+      setQuarantineError(error.message.includes('does not exist') || error.code === '42883'
+        ? 'Quarantine is not available yet. Apply SQL migration 176.'
+        : error.message);
+      return;
+    }
+    setQuarantinedSerialIds(await loadQuarantineHolds());
+    setQuarantinePiece(null);
+    setQuarantineReason('');
+    setQuarantineActionPlan('');
+    await (onPieceQuarantined ?? onPieceReleased)?.();
   };
   const releaseCompletedPiece = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -2671,22 +2719,49 @@ export function ProductionOrderDetailsModal({
               <tbody>
                 {details.pieces.map((piece) => {
                   const measurements = getProductionOrderDetailMeasurements(piece.traceability);
+                  const pieceQuarantined = Boolean(piece.serialId) && quarantinedSerialIds.has(piece.serialId);
                   return (
-                    <tr key={`${piece.pieceSequence}-${piece.serialNumber || 'pending'}`}>
+                    <tr key={`${piece.pieceSequence}-${piece.serialNumber || 'pending'}`} className={pieceQuarantined ? 'quarantined' : ''}>
                       <td>
-                        {piece.status === 'good' && piece.serialId ? (
-                          <button
-                            type="button"
-                            className="production-order-release-piece"
-                            onClick={() => { setReleasePiece(piece); setReleaseCode(''); setReleaseError(''); }}
-                            title="Release completed piece"
-                          >
-                            <RotateCcw size={15} /> Release
-                          </button>
-                        ) : <span className="production-order-release-unavailable">—</span>}
+                        <div className="production-order-piece-actions">
+                          {piece.status === 'good' && piece.serialId ? (
+                            <button
+                              type="button"
+                              className="production-order-release-piece"
+                              onClick={() => { setReleasePiece(piece); setReleaseCode(''); setReleaseError(''); }}
+                              title="Release completed piece"
+                            >
+                              <RotateCcw size={15} /> Release
+                            </button>
+                          ) : null}
+                          {piece.serialId && piece.status !== 'scrap' && !pieceQuarantined ? (
+                            <button
+                              type="button"
+                              className="production-order-quarantine-piece"
+                              onClick={() => { setQuarantinePiece(piece); setQuarantineReason(''); setQuarantineActionPlan(''); setQuarantineError(''); }}
+                              title="Hold this piece in quarantine"
+                            >
+                              <Biohazard size={15} /> Quarantine
+                            </button>
+                          ) : null}
+                          {pieceQuarantined ? (
+                            <button
+                              type="button"
+                              className="production-order-quarantine-piece held"
+                              onClick={() => { onClose(); onNavigate?.('/workspace/manufacturing-ops/aps/quarantine'); }}
+                              title="Open this piece in the Quarantine workspace"
+                            >
+                              <Biohazard size={15} /> In quarantine
+                            </button>
+                          ) : null}
+                          {!piece.serialId || (piece.status === 'scrap' && !pieceQuarantined) ? <span className="production-order-release-unavailable">—</span> : null}
+                        </div>
                       </td>
                       <td><strong>{piece.pieceSequence}</strong></td>
-                      <td><span className={`production-order-details-status ${piece.status}`}>{formatProductionPieceStatus(piece.status)}</span></td>
+                      <td>
+                        <span className={`production-order-details-status ${piece.status}`}>{formatProductionPieceStatus(piece.status)}</span>
+                        {pieceQuarantined ? <span className="production-order-details-quarantine-tag"><Biohazard size={12} /> Quarantine</span> : null}
+                      </td>
                       <td>{piece.serialNumber || '-'}</td>
                       <td>{piece.toolId || '-'}</td>
                       <td>
@@ -2920,6 +2995,33 @@ export function ProductionOrderDetailsModal({
           </div>
         ) : null}
       </section>
+      {quarantinePiece ? (
+        <div className="supplier-modal-backdrop production-piece-release-backdrop" role="presentation">
+          <section className="mes-order-modal production-piece-release-modal production-piece-quarantine-modal" role="dialog" aria-modal="true" aria-labelledby="production-piece-quarantine-title">
+            <button className="supplier-modal-close" type="button" onClick={() => setQuarantinePiece(null)} disabled={quarantineSaving}><X size={18} /></button>
+            <form onSubmit={sendPieceToQuarantine}>
+              <span className="production-piece-release-icon production-piece-quarantine-icon"><Biohazard size={25} /></span>
+              <p className="eyebrow">Manufacturing Hold</p>
+              <h3 id="production-piece-quarantine-title">Send piece {quarantinePiece.pieceSequence} to quarantine?</h3>
+              <p>Serial <strong>{quarantinePiece.serialNumber || 'Not assigned'}</strong> is held outside the normal manufacturing flow and starts showing in <strong>APS / Quarantine</strong> until it is released.</p>
+              <div className="production-piece-release-warning production-piece-quarantine-warning"><AlertTriangle size={18} /><span>Production history, measurements, and recorded machine time are preserved. Both comments stay editable from the Quarantine workspace.</span></div>
+              <label>
+                Quarantine reason
+                <textarea rows={3} value={quarantineReason} onChange={(event) => setQuarantineReason(event.target.value)} placeholder="Why is this piece being held?" autoFocus required />
+              </label>
+              <label>
+                Action to take <em>(optional)</em>
+                <textarea rows={3} value={quarantineActionPlan} onChange={(event) => setQuarantineActionPlan(event.target.value)} placeholder="What has to happen before this piece returns to production?" />
+              </label>
+              {quarantineError ? <div className="clients-feedback error" role="alert">{quarantineError}</div> : null}
+              <div className="production-piece-release-actions">
+                <button type="button" className="secondary" onClick={() => setQuarantinePiece(null)} disabled={quarantineSaving}>Cancel</button>
+                <button type="submit" disabled={quarantineSaving || !quarantineReason.trim()}><Biohazard size={16} /> {quarantineSaving ? 'Sending...' : 'Send to Quarantine'}</button>
+              </div>
+            </form>
+          </section>
+        </div>
+      ) : null}
       {releasePiece ? (
         <div className="supplier-modal-backdrop production-piece-release-backdrop" role="presentation">
           <section className="mes-order-modal production-piece-release-modal" role="alertdialog" aria-modal="true" aria-labelledby="production-piece-release-title">
@@ -11074,6 +11176,7 @@ function renderTraceabilityEventIcon(eventType: string) {
   if (eventType === 'coating-received') return <PaintBucket {...iconProps} />;
   if (eventType === 'reception-sent') return <Truck {...iconProps} />;
   if (eventType === 'piece-rework-registered') return <RotateCcw {...iconProps} />;
+  if (eventType === 'piece-quarantined' || eventType === 'piece-quarantine-released') return <Biohazard {...iconProps} />;
   return <CircleHelp {...iconProps} />;
 }
 
@@ -11103,6 +11206,8 @@ function getTraceabilityEventLabel(event: TraceabilityOperatorEventRow) {
     'coating-received': 'Coating Reception',
     'reception-sent': 'Reception Sent',
     'piece-rework-registered': 'Piece Sent to Rework',
+    'piece-quarantined': 'Piece Sent to Quarantine',
+    'piece-quarantine-released': 'Piece Released from Quarantine',
     adjustment: 'Adjustment',
   };
   return eventLabels[eventType] ?? formatTitleLabel(eventType);

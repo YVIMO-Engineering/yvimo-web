@@ -1,6 +1,6 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import { Activity, AlertTriangle, ArrowRight, ArrowLeft, BarChart3, Blocks, Building2, Cable, Calculator, CalendarClock, ChevronDown, ChevronLeft, ChevronRight, Check, CircuitBoard, CircleDollarSign, ClipboardCheck, Cloud, Code2, Container, Cpu, Database, Factory, FileText, FileUp, FolderCheck, GitBranch, Gauge, GraduationCap, Hospital, Languages, LockKeyhole, LogIn, Mail, Menu, Network, PackageCheck, Pencil, Plus, RadioTower, ReceiptText, Rocket, ServerCog, ShieldCheck, Star, TerminalSquare, Truck, TrendingUp, Target, UserPlus, Users, Workflow, Wrench, ShieldAlert, X } from 'lucide-react';
+import { Activity, AlertTriangle, ArrowRight, ArrowLeft, BarChart3, Biohazard, Blocks, Building2, Cable, Calculator, CalendarClock, ChevronDown, ChevronLeft, ChevronRight, Check, CircuitBoard, CircleDollarSign, ClipboardCheck, Cloud, Code2, Container, Cpu, Database, Factory, FileText, FileUp, FolderCheck, GitBranch, Gauge, GraduationCap, Hospital, Languages, LockKeyhole, LogIn, Mail, Menu, Network, PackageCheck, Pencil, Plus, RadioTower, ReceiptText, Rocket, ServerCog, ShieldCheck, Star, TerminalSquare, Truck, TrendingUp, Target, UserPlus, Users, Workflow, Wrench, ShieldAlert, X } from 'lucide-react';
 import type { Session, User } from '@supabase/supabase-js';
 import { createSessionSupabaseClient, customerPortalSupabase, supabase } from './lib/supabaseClient';
 import { AcademyActivityPage, AcademyCatalogPage, AcademyCertificatesPage, AcademyCoursePage, AcademyHomePage, AcademyLessonPage, AcademyProgressPage, AcademyTrackPage } from './pages/AcademyPages';
@@ -16,6 +16,7 @@ import { translateClientsText } from './manufacturing/clientsI18n';
 import { OrderRisksWorkspace } from './manufacturing/OrderRisksWorkspace';
 import { ImportCostingWorkspace } from './manufacturing/ImportCostingWorkspace';
 import { ProductionScheduleWorkspace } from './manufacturing/ProductionScheduleWorkspace';
+import { QuarantineWorkspace } from './manufacturing/QuarantineWorkspace';
 import { StaffWorkspace } from './manufacturing/StaffWorkspace';
 import { RevenueOpportunityWorkspace } from './manufacturing/RevenueOpportunityWorkspace';
 import { AnalysisToolWorkspace } from './manufacturing/AnalysisToolWorkspace';
@@ -1278,6 +1279,8 @@ Object.assign(translations.es, {
   'Work Center Loading': 'Carga de centros de trabajo',
   Bottlenecks: 'Cuellos de botella',
   'Priority Sequencing': 'Secuenciaci\u00f3n de prioridades',
+  Quarantine: 'Cuarentena',
+  'Hold pieces blocked outside the normal manufacturing flow, with the reason and the action to take.': 'Ret\u00e9n piezas bloqueadas fuera del flujo normal de manufactura, con el motivo y la acci\u00f3n a realizar.',
   'Build and review sequenced production plans across lines, cells, and work centers.': 'Construye y revisa planes de producci\u00f3n secuenciados entre l\u00edneas, celdas y centros de trabajo.',
   'Compare demand against available machine, labor, and shift capacity.': 'Compara la demanda contra la capacidad disponible de m\u00e1quinas, mano de obra y turnos.',
   'Visualize assigned workload by work center and planning horizon.': 'Visualiza carga asignada por centro de trabajo y horizonte de planeaci\u00f3n.',
@@ -3469,6 +3472,14 @@ function LoggedDashboardPage({ user, onSignOut, onNavigate, onUpdateAvatar, acti
       tone: 'purple',
     },
     {
+      label: 'Quarantine',
+      description: 'Hold pieces blocked outside the normal manufacturing flow, with the reason and the action to take.',
+      icon: Biohazard,
+      path: '/workspace/manufacturing-ops/aps/quarantine',
+      implemented: true,
+      tone: 'red',
+    },
+    {
       label: 'Work Center Loading',
       description: 'Visualize assigned workload by work center and planning horizon.',
       icon: Factory,
@@ -3596,7 +3607,7 @@ function LoggedDashboardPage({ user, onSignOut, onNavigate, onUpdateAvatar, acti
   const getManufacturingAppPosition = (moduleLabel: string, index: number) => {
     const positionsByModule: Record<string, number[]> = {
       MES: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
-      APS: [1, 4, 2, 5, 6, 8],
+      APS: [1, 4, 2, 3, 5, 6, 8],
       'Operations Intelligence': [1, 2, 3, 4, 5, 6, 7, 8],
     };
     return positionsByModule[moduleLabel]?.[index] ?? index + 1;
@@ -3623,6 +3634,7 @@ function LoggedDashboardPage({ user, onSignOut, onNavigate, onUpdateAvatar, acti
   const isProductionSchedulePage = activePath === '/workspace/manufacturing-ops/aps/schedule';
   const isStaffPage = activePath === '/workspace/manufacturing-ops/aps/staff' || activePath.startsWith('/workspace/manufacturing-ops/aps/staff/');
   const isCustomerPortalAdminPage = activePath === '/workspace/manufacturing-ops/aps/customer-portal';
+  const isQuarantinePage = activePath === '/workspace/manufacturing-ops/aps/quarantine';
   const isRevenueOpportunitySection = activePath.startsWith('/workspace/manufacturing-ops/intelligence/revenue-opportunity');
   const isAnalysisToolSection = activePath === '/workspace/manufacturing-ops/intelligence/analysis-tool' || activePath.startsWith('/workspace/manufacturing-ops/intelligence/analysis-tool/');
   const activeAnalysisToolSection = activePath.endsWith('/production-tracking') ? 'production-tracking' : 'performance-check';
@@ -3775,6 +3787,9 @@ function LoggedDashboardPage({ user, onSignOut, onNavigate, onUpdateAvatar, acti
     }
     if (isStaffPage) {
       return <StaffWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} activeSection={activePath.endsWith('/shifts') ? 'shifts' : 'personnel'} />;
+    }
+    if (isQuarantinePage) {
+      return <QuarantineWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} />;
     }
     if (isCustomerPortalAdminPage) {
       return <CustomerPortalAdminWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} organizationName={manufacturingOrganization?.name ?? 'Manufacturing Organization'} />;
@@ -4295,7 +4310,7 @@ function LoggedDashboardPage({ user, onSignOut, onNavigate, onUpdateAvatar, acti
   ) : null;
 
   return (
-    <main className={['logged-shell', !isSupplierAccessOverview ? 'primary-navigation-compact-shell' : '', isOperatorTerminalPage ? 'operator-terminal-shell' : '', isCompactMesApplicationPage || isOrderRisksPage || isImportCostingPage || isProductionSchedulePage || isRevenueOpportunitySection || isAnalysisToolSection || isCustomerPortalAdminPage ? 'compact-mes-application-shell' : '', isSupplierOperationsPage || isQualityOperationsPage || isClientsOperationsPage || isStaffPage || isRevenueOpportunitySection || isAnalysisToolSection ? 'supplier-context-shell' : '', isCustomerPortalAdminPage ? 'customer-portal-admin-shell' : '', isSupplierAccessOverview ? 'supplier-access-shell' : '', isSupplierAccessOverview && supplierCustomerPickerOpen ? 'supplier-customer-picker-open' : '', standaloneHealth ? 'standalone-health-shell' : '', isManufacturingOpsPage ? 'manufacturing-focus-shell' : '', publicHealth ? 'public-health-shell' : ''].filter(Boolean).join(' ')}>
+    <main className={['logged-shell', !isSupplierAccessOverview ? 'primary-navigation-compact-shell' : '', isOperatorTerminalPage ? 'operator-terminal-shell' : '', isCompactMesApplicationPage || isOrderRisksPage || isImportCostingPage || isProductionSchedulePage || isQuarantinePage || isRevenueOpportunitySection || isAnalysisToolSection || isCustomerPortalAdminPage ? 'compact-mes-application-shell' : '', isSupplierOperationsPage || isQualityOperationsPage || isClientsOperationsPage || isStaffPage || isRevenueOpportunitySection || isAnalysisToolSection ? 'supplier-context-shell' : '', isCustomerPortalAdminPage ? 'customer-portal-admin-shell' : '', isSupplierAccessOverview ? 'supplier-access-shell' : '', isSupplierAccessOverview && supplierCustomerPickerOpen ? 'supplier-customer-picker-open' : '', standaloneHealth ? 'standalone-health-shell' : '', isManufacturingOpsPage ? 'manufacturing-focus-shell' : '', publicHealth ? 'public-health-shell' : ''].filter(Boolean).join(' ')}>
       {standaloneHealth ? (
         <header className="health-clinical-topbar">
           <button className="health-clinical-brand" type="button" onClick={() => onNavigate(publicHealth ? '/health' : '/workspace/health-apps')}>

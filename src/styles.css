@@ -12709,6 +12709,126 @@ body.work-center-map-expanded .logged-workspace {
   color: #cbd5e1;
 }
 
+.production-order-piece-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+}
+
+.production-order-quarantine-piece {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 32px;
+  border: 1px solid #fca5a5;
+  border-radius: 8px;
+  padding: 0 9px;
+  background: #fef2f2;
+  color: #b91c1c;
+  font: inherit;
+  font-size: 0.68rem;
+  font-weight: 900;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.production-order-quarantine-piece:hover,
+.production-order-quarantine-piece:focus-visible {
+  outline: none;
+  border-color: #ef4444;
+  background: #fee2e2;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.12);
+}
+
+.production-order-quarantine-piece.held {
+  border-color: #b91c1c;
+  background: #b91c1c;
+  color: #ffffff;
+}
+
+.production-order-quarantine-piece.held:hover,
+.production-order-quarantine-piece.held:focus-visible {
+  background: #991b1b;
+  box-shadow: 0 0 0 3px rgba(185, 28, 28, 0.18);
+}
+
+.production-order-details-table tr.quarantined {
+  background: #fff5f5;
+}
+
+.production-order-details-quarantine-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  border-radius: 999px;
+  padding: 3px 7px;
+  background: #fee2e2;
+  color: #b91c1c;
+  font-size: 0.58rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.production-piece-quarantine-modal {
+  border-top-color: #b91c1c;
+}
+
+.production-piece-quarantine-modal form > label {
+  display: grid;
+  gap: 5px;
+  text-align: left;
+}
+
+.production-piece-quarantine-modal form > label em {
+  color: #94a3b8;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.production-piece-quarantine-modal textarea {
+  width: 100%;
+  min-height: 74px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 9px 11px;
+  background: #ffffff;
+  color: #0f172a;
+  font: inherit;
+  font-size: 0.8rem;
+  resize: vertical;
+}
+
+.production-piece-quarantine-modal textarea:focus {
+  outline: none;
+  border-color: #ef4444;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.12);
+}
+
+.production-piece-quarantine-icon {
+  border-color: rgba(239, 68, 68, 0.3) !important;
+  background: #fef2f2 !important;
+  color: #b91c1c !important;
+}
+
+.production-piece-quarantine-warning {
+  border-color: #fecaca !important;
+  background: #fef2f2 !important;
+  color: #b91c1c !important;
+}
+
+.production-piece-quarantine-modal form > .production-piece-release-actions button[type='submit'] {
+  background: #b91c1c;
+  border-color: #b91c1c;
+}
+
+.production-piece-quarantine-modal form > .production-piece-release-actions button[type='submit']:hover:not(:disabled) {
+  background: #991b1b;
+}
+
 .production-piece-release-backdrop {
   z-index: 10040;
 }

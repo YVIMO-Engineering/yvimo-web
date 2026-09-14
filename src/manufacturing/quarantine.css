@@ -1,0 +1,108 @@
+.quarantine-workspace { min-width:0; }
+.quarantine-message,.quarantine-loading,.quarantine-empty { border:1px solid #fecaca; border-radius:12px; padding:18px; background:#fef2f2; color:#b91c1c; }
+.quarantine-loading,.quarantine-empty { display:grid; justify-items:center; gap:7px; border-color:#dbe5ef; background:#f8fafc; color:#526274; text-align:center; }
+.quarantine-loading svg { animation:quarantine-spin .9s linear infinite; }
+.quarantine-empty strong { color:#0f172a; }
+.quarantine-empty span { max-width:460px; font-size:.78rem; }
+.quarantine-spin { animation:quarantine-spin .9s linear infinite; }
+
+.quarantine-toolbar { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:14px; border:1px solid #dbe5ef; border-radius:12px; padding:12px 14px; background:#f8fafc; }
+.quarantine-filters { display:flex; flex-wrap:wrap; gap:7px; }
+.quarantine-filters button { display:inline-flex; align-items:center; gap:7px; min-height:38px; border:1px solid #dbe5ef; border-radius:999px; padding:0 13px; background:#fff; color:#475569; font:inherit; font-size:.73rem; font-weight:800; cursor:pointer; transition:border-color .16s,background .16s,color .16s; }
+.quarantine-filters button b { border-radius:999px; padding:1px 7px; background:#eef2f7; color:#334155; font-size:.66rem; }
+.quarantine-filters button:hover { border-color:#fca5a5; color:#b91c1c; }
+.quarantine-filters button.active { border-color:#b91c1c; background:#b91c1c; color:#fff; box-shadow:0 8px 20px rgba(185,28,28,.2); }
+.quarantine-filters button.active b { background:rgba(255,255,255,.22); color:#fff; }
+
+.quarantine-search { display:flex; align-items:center; gap:8px; flex:1 1 300px; min-width:240px; min-height:40px; border:1px solid #cbd5e1; border-radius:10px; padding:0 12px; background:#fff; color:#94a3b8; }
+.quarantine-search input { width:100%; border:0; background:transparent; color:#0f172a; font:inherit; font-size:.78rem; outline:none; }
+.quarantine-search:focus-within { border-color:#ef4444; box-shadow:0 0 0 3px rgba(239,68,68,.12); }
+
+.quarantine-live-state { display:grid; justify-items:end; gap:4px; }
+.quarantine-live-state span { display:inline-flex; align-items:center; gap:8px; color:#08775c; font-size:.7rem; font-weight:900; letter-spacing:.04em; text-transform:uppercase; white-space:nowrap; }
+.quarantine-live-state i { width:10px; height:10px; border-radius:50%; background:#10b981; animation:quarantine-live-pulse 1.8s ease-out infinite; }
+.quarantine-live-state small { color:#748397; font-size:.65rem; font-weight:750; white-space:nowrap; }
+.quarantine-live-state.connecting span { color:#b45309; }.quarantine-live-state.connecting i { background:#f59e0b; animation:none; }
+.quarantine-live-state.offline span { color:#b91c1c; }.quarantine-live-state.offline i { background:#ef4444; animation:none; }
+
+.quarantine-board { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; min-width:0; }
+.quarantine-card { display:grid; gap:0; min-width:0; overflow:hidden; border:1px solid #fecaca; border-radius:16px; background:#fff; box-shadow:0 10px 26px rgba(15,23,42,.07); }
+.quarantine-card.released { border-color:#cbd5e1; }
+.quarantine-card-header { display:flex; align-items:center; justify-content:space-between; gap:10px; border-bottom:1px solid #f1f5f9; padding:9px 13px; background:#fff5f5; }
+.quarantine-card.released .quarantine-card-header { background:#f8fafc; }
+.quarantine-card-badge { display:inline-flex; align-items:center; gap:6px; border-radius:999px; padding:4px 9px; background:#b91c1c; color:#fff; font-size:.63rem; font-weight:900; letter-spacing:.05em; text-transform:uppercase; }
+.quarantine-card-badge.released { background:#0f766e; }
+.quarantine-card-age { color:#64748b; font-size:.68rem; font-weight:800; }
+.quarantine-card-body { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:13px; padding:13px; }
+
+.quarantine-order-column { display:grid; align-content:start; gap:11px; min-width:0; }
+.quarantine-order-card { overflow:hidden; border:1px solid #dbe5ef; border-radius:13px; background:#fff; box-shadow:0 8px 20px rgba(15,23,42,.06); }
+.quarantine-order-card.clickable { cursor:pointer; transition:border-color .16s ease,box-shadow .16s ease,transform .16s ease; }
+.quarantine-order-card.clickable:hover,.quarantine-order-card.clickable:focus-visible { border-color:#fca5a5; box-shadow:0 12px 26px rgba(15,23,42,.12); outline:none; transform:translateY(-2px); }
+.quarantine-order-card>header { display:grid; grid-template-columns:1fr auto; gap:3px 8px; padding:8px 11px; color:#fff; background:#16a34a; }
+.quarantine-order-card>header.overdue { background:#b91c1c; }.quarantine-order-card>header.high { background:#dc2626; }.quarantine-order-card>header.moderate { background:#d97706; }.quarantine-order-card>header.unknown { background:#64748b; }
+.quarantine-order-card>header span,.quarantine-order-card>header time { display:flex; align-items:center; gap:5px; }
+.quarantine-order-card>header span,.quarantine-order-card>header b { font-size:.68rem; }
+.quarantine-order-card>header time { grid-column:1/-1; font-size:.63rem; opacity:.9; }
+.quarantine-order-card>div { display:grid; padding:11px 13px; }
+.quarantine-order-card>div>small { color:#64748b; font-size:.61rem; text-transform:uppercase; }
+.quarantine-order-card>div>strong { color:#0f172a; font-size:1rem; }
+.quarantine-order-card>div>span { color:#475569; font-size:.72rem; }
+.quarantine-order-card dl { display:grid; grid-template-columns:1fr 1fr; gap:7px 12px; margin:10px 0 0; }
+.quarantine-order-card dl div { min-width:0; }
+.quarantine-order-card dt { color:#94a3b8; font-size:.58rem; text-transform:uppercase; }
+.quarantine-order-card dd { overflow:hidden; margin:1px 0 0; color:#334155; font-size:.68rem; font-weight:700; text-overflow:ellipsis; white-space:nowrap; }
+.quarantine-order-card .quarantine-order-card-status dd { display:inline-flex; width:max-content; border-radius:999px; padding:3px 7px; font-size:.59rem; font-weight:900; text-transform:uppercase; }
+.quarantine-order-card .quarantine-order-card-status dd.status-planned { background:#e2e8f0; color:#475569; }
+.quarantine-order-card .quarantine-order-card-status dd.status-released { background:#dbeafe; color:#1d4ed8; }
+.quarantine-order-card .quarantine-order-card-status dd.status-running { background:#dcfce7; color:#15803d; }
+.quarantine-order-card .quarantine-order-card-status dd.status-paused { background:#ffedd5; color:#c2410c; }
+.quarantine-order-card .quarantine-order-card-status dd.status-waiting-inspection { background:#ede9fe; color:#6d28d9; }
+.quarantine-order-card .quarantine-order-card-status dd.status-completed { background:#dcfce7; color:#15803d; }
+.quarantine-order-card .quarantine-order-card-status dd.status-cancelled { background:#fee2e2; color:#b91c1c; }
+
+.quarantine-serial-card { display:grid; gap:4px; border:1px solid #fecaca; border-left:5px solid #b91c1c; border-radius:12px; padding:11px 13px; background:#fff5f5; }
+.quarantine-serial-label { display:inline-flex; align-items:center; gap:6px; color:#b91c1c; font-size:.6rem; font-weight:900; letter-spacing:.06em; text-transform:uppercase; }
+.quarantine-serial-card>strong { color:#0f172a; font-size:1.32rem; letter-spacing:.01em; word-break:break-all; }
+.quarantine-serial-card dl { display:grid; grid-template-columns:1fr 1fr; gap:7px 12px; margin:6px 0 0; }
+.quarantine-serial-card dt { color:#c2666a; font-size:.57rem; font-weight:800; text-transform:uppercase; }
+.quarantine-serial-card dd { margin:1px 0 0; color:#7f1d1d; font-size:.68rem; font-weight:700; }
+
+.quarantine-comment-column { display:grid; align-content:start; gap:11px; min-width:0; }
+.quarantine-comment-box { display:grid; gap:6px; }
+.quarantine-comment-box>span { display:inline-flex; align-items:center; gap:6px; color:#475569; font-size:.63rem; font-weight:900; letter-spacing:.06em; text-transform:uppercase; }
+.quarantine-comment-box textarea { width:100%; min-height:104px; border:1px solid #cbd5e1; border-radius:11px; padding:10px 12px; background:#fff; color:#17202a; font:inherit; font-size:.78rem; line-height:1.5; resize:vertical; }
+.quarantine-comment-box textarea:focus { outline:none; border-color:#ef4444; box-shadow:0 0 0 3px rgba(239,68,68,.12); }
+.quarantine-comment-box textarea[readonly] { background:#f8fafc; color:#526274; }
+.quarantine-release-note { display:flex; align-items:flex-start; gap:8px; margin:0; border:1px solid #99f6e4; border-radius:10px; padding:9px 11px; background:#f0fdfa; color:#0f766e; font-size:.74rem; font-weight:700; }
+.quarantine-card-actions { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:8px; }
+.quarantine-saved { margin-right:auto; color:#0f766e; font-size:.7rem; font-style:normal; font-weight:800; }
+.quarantine-card-actions button { display:inline-flex; align-items:center; justify-content:center; gap:6px; min-height:38px; border-radius:9px; padding:0 13px; font:inherit; font-size:.72rem; font-weight:900; cursor:pointer; }
+.quarantine-release-button { border:1px solid #99f6e4; background:#f0fdfa; color:#0f766e; }
+.quarantine-release-button:hover { border-color:#0f766e; background:#ccfbf1; }
+.quarantine-save-button { border:1px solid #b91c1c; background:#b91c1c; color:#fff; }
+.quarantine-save-button:hover:not(:disabled) { background:#991b1b; }
+.quarantine-save-button:disabled { opacity:.45; cursor:not-allowed; }
+
+.quarantine-modal-backdrop { position:fixed; z-index:10040; inset:0; display:grid; place-items:center; padding:22px; background:rgba(15,23,42,.67); backdrop-filter:blur(5px); }
+.quarantine-modal { position:relative; width:min(520px,calc(100vw - 36px)); border:1px solid #e2e8f0; border-top:5px solid #0f766e; border-radius:16px; padding:22px; background:#fff; box-shadow:0 28px 80px rgba(2,6,23,.34); }
+.quarantine-modal-close { position:absolute; top:12px; right:12px; display:grid; place-items:center; width:34px; height:34px; border:1px solid #e2e8f0; border-radius:9px; background:#fff; color:#475569; cursor:pointer; }
+.quarantine-modal form { display:grid; gap:14px; }
+.quarantine-modal h3,.quarantine-modal p { margin:0; }
+.quarantine-modal h3 { color:#0f172a; }
+.quarantine-modal form>p:not(.eyebrow) { color:#526175; font-size:.86rem; line-height:1.55; }
+.quarantine-modal .eyebrow { color:#0f766e; font-size:.66rem; font-weight:900; letter-spacing:.08em; text-transform:uppercase; }
+.quarantine-modal-icon { display:inline-grid; place-items:center; width:52px; height:52px; border:1px solid #99f6e4; border-radius:11px; background:#f0fdfa; color:#0f766e; }
+.quarantine-modal label { display:grid; gap:7px; color:#526175; font-size:.72rem; font-weight:900; letter-spacing:.06em; text-transform:uppercase; }
+.quarantine-modal label em { color:#94a3b8; font-style:normal; text-transform:none; }
+.quarantine-modal textarea { width:100%; min-height:82px; border:1px solid #cbd5e1; border-radius:10px; padding:10px 12px; background:#fff; color:#17202a; font:inherit; font-size:.82rem; letter-spacing:normal; resize:vertical; text-transform:none; }
+.quarantine-modal textarea:focus { outline:none; border-color:#0f766e; box-shadow:0 0 0 3px rgba(15,118,110,.14); }
+.quarantine-modal-actions { display:flex; justify-content:flex-end; gap:10px; padding-top:4px; }
+.quarantine-modal-actions button { display:inline-flex; align-items:center; justify-content:center; gap:7px; min-height:42px; border:1px solid #0f766e; border-radius:8px; padding:0 14px; background:#0f766e; color:#fff; font:inherit; font-size:.78rem; font-weight:900; cursor:pointer; }
+.quarantine-modal-actions button.secondary { border-color:#cbd5e1; background:#f1f5f9; color:#334155; }
+.quarantine-modal-actions button:disabled { opacity:.55; cursor:not-allowed; }
+
+@keyframes quarantine-spin { to { transform:rotate(360deg); } }
+@keyframes quarantine-live-pulse { 0% { box-shadow:0 0 0 0 #10b9814d; } 75%,100% { box-shadow:0 0 0 9px #10b98100; } }
+@media(max-width:1180px){ .quarantine-board{grid-template-columns:1fr} }
+@media(max-width:820px){ .quarantine-card-body{grid-template-columns:1fr} .quarantine-toolbar{align-items:stretch;flex-direction:column} .quarantine-live-state{justify-items:start} }
