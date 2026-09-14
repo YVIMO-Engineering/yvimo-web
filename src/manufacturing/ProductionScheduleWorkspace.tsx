@@ -5,7 +5,11 @@ import { getDaysUntilDelivery } from './DeliveryRiskTimeline';
 import { ProductionOrdersWorkspace } from './MesWorkspaces';
 import { getOrderRiskLevel, type OrderRiskLevel } from './orderRisk';
 import { useSupabaseRealtimeRefresh, type RealtimeConnectionState } from '../lib/useSupabaseRealtimeRefresh';
+import { StatisticsAlertSlider } from './statistics/StatisticsAlerts';
+import { useStatisticsAlerts } from './statistics/useStatisticsAlerts';
 import './productionSchedule.css';
+// The alarm slider and its overlay are styled with the Statistics workspace.
+import './statisticsWorkspace.css';
 
 type Props = { onNavigate: (path: string) => void; organizationId: string };
 type Station = { id: string; code: string; name: string; type: string; capability_color: string | null; work_center_id: string; schedule_position: number | null; mirror_group_id?: string | null };
@@ -42,6 +46,7 @@ export function ProductionScheduleWorkspace({ onNavigate, organizationId }: Prop
   const [liveState, setLiveState] = React.useState<RealtimeConnectionState>('connecting'), [lastUpdatedAt, setLastUpdatedAt] = React.useState('');
   const [intelligentScheduling, setIntelligentScheduling] = React.useState(false), [intelligentAvailable, setIntelligentAvailable] = React.useState(true), [intelligentSaving, setIntelligentSaving] = React.useState(false), [autoPlanning, setAutoPlanning] = React.useState(false);
   const autoPlanBusyRef = React.useRef(false);
+  const { activeAlerts, acknowledgeAlert, acknowledgeAllAlerts, reloadAlerts } = useStatisticsAlerts(organizationId);
   const [mirrorGroupsAvailable, setMirrorGroupsAvailable] = React.useState(true), [mirrorPreferenceAvailable, setMirrorPreferenceAvailable] = React.useState(true), [swappingItemId, setSwappingItemId] = React.useState(''), [mirrorStationId, setMirrorStationId] = React.useState(''), [mirrorSelection, setMirrorSelection] = React.useState<string[]>([]), [mirrorSaving, setMirrorSaving] = React.useState(false);
   const workspaceDropdownRef = React.useRef<HTMLDivElement>(null);
 
@@ -154,11 +159,13 @@ export function ProductionScheduleWorkspace({ onNavigate, organizationId }: Prop
     { table: 'mes_production_schedule_queue', filter: `organization_id=eq.${organizationId}` },
     { table: 'mes_work_center_stations', filter: `organization_id=eq.${organizationId}` },
     { table: 'mes_production_schedule_settings', filter: `organization_id=eq.${organizationId}` },
+    // Downtime and scrap raise an alarm the moment they are reported.
+    { table: 'mes_operator_terminal_events', filter: `organization_id=eq.${organizationId}` },
   ]), [organizationId]);
   useSupabaseRealtimeRefresh({
     channelName: `production-schedule-live:${organizationId}`,
     tables: realtimeTables,
-    onRefresh: () => { if (!interactionBusyRef.current) void load(true); },
+    onRefresh: () => { void reloadAlerts(); if (!interactionBusyRef.current) void load(true); },
     onConnectionStateChange: setLiveState,
     enabled: Boolean(organizationId),
     refreshOnFocus: true,
@@ -362,6 +369,9 @@ export function ProductionScheduleWorkspace({ onNavigate, organizationId }: Prop
   };
 
   return <section className="mes-workspace-panel production-schedule-workspace">
+    {activeAlerts.length ? <div className="statistics-alert-overlay" key={activeAlerts[0].id}>
+      <StatisticsAlertSlider alerts={activeAlerts} onAcknowledge={acknowledgeAlert} onAcknowledgeAll={acknowledgeAllAlerts} />
+    </div> : null}
     <div className="mes-screen-header production-schedule-header"><button className="academy-back-button engineering-back-button mes-workspace-back" type="button" onClick={() => onNavigate('/workspace/manufacturing-ops/aps')}><ArrowLeft size={16} /> APS</button><div className="mes-workspace-heading"><p className="eyebrow">APS / PRODUCTION SCHEDULE</p><h2>Production Schedule</h2><p>Build the production plan for each machine and coordinate scheduled work across the shop floor.</p></div></div>
     <div className="production-schedule-toolbar"><label><span>Workspace</span><div className={`production-workspace-dropdown${workspaceMenuOpen ? ' open' : ''}`} ref={workspaceDropdownRef}><button type="button" aria-haspopup="listbox" aria-expanded={workspaceMenuOpen} onClick={() => setWorkspaceMenuOpen((current) => !current)}><Factory size={17} /><strong>{selectedWorkCenter ? `${selectedWorkCenter.name} · ${selectedWorkCenter.code}` : 'All workspaces'}</strong><ChevronDown size={16} /></button>{workspaceMenuOpen ? <div className="production-workspace-menu" role="listbox"><button className={selectedWorkCenterId === 'all' ? 'selected' : ''} type="button" role="option" aria-selected={selectedWorkCenterId === 'all'} onClick={() => { setSelectedWorkCenterId('all'); setWorkspaceMenuOpen(false); }}><span><b>All workspaces</b><small>Show every production station</small></span>{selectedWorkCenterId === 'all' ? <Check size={16} /> : null}</button>{workCenters.map((center) => <button className={selectedWorkCenterId === center.id ? 'selected' : ''} type="button" role="option" aria-selected={selectedWorkCenterId === center.id} onClick={() => { setSelectedWorkCenterId(center.id); setWorkspaceMenuOpen(false); }} key={center.id}><span><b>{center.name}</b><small>{center.code}</small></span>{selectedWorkCenterId === center.id ? <Check size={16} /> : null}</button>)}</div> : null}</div></label><div className="production-schedule-toolbar-status"><p><strong>{visibleStations.length}</strong> station{visibleStations.length === 1 ? '' : 's'} shown</p><div className={`production-intelligent-scheduling${intelligentScheduling ? ' on' : ''}`}><div><button type="button" role="switch" aria-checked={intelligentScheduling} aria-label="Intelligent Scheduling" disabled={!intelligentAvailable || intelligentSaving} onClick={() => void toggleIntelligentScheduling()}><i /></button><span><Sparkles size={14} /> Intelligent Scheduling</span></div><small>{!intelligentAvailable ? 'Apply SQL migration 178' : autoPlanning ? 'Organizing queues…' : intelligentScheduling ? 'Queues sorted by urgency' : 'Manual planning'}</small></div><div className={`production-schedule-live-state ${liveState}`}><span><i /> {liveStateLabels[liveState]}</span><small>{lastUpdatedAt ? `Updated ${liveClockFormatter.format(new Date(lastUpdatedAt))}` : 'Waiting for data'}</small></div></div></div>
     {error ? <div className="production-schedule-message" role="alert">{error}</div> : null}
