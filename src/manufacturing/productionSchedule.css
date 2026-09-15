@@ -113,3 +113,16 @@
 .production-order-options { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; overflow:auto; padding:16px; }.production-order-options>button { position:relative; display:grid; align-content:start; border:1px solid #dbe5ef; border-radius:13px; padding:15px; background:#fff; color:inherit; text-align:left; cursor:pointer; }.production-order-options>button:hover { border-color:#60a5fa; box-shadow:0 9px 24px rgba(37,99,235,.11); }.production-order-options>button>strong { margin-top:10px; color:#0f172a; font-size:1.05rem; }.production-order-options>button>b { color:#475569; font-size:.76rem; }.production-order-option-risk { justify-self:start; border-radius:999px; padding:4px 8px; background:#dcfce7; color:#15803d; font-size:.63rem; font-weight:800; }.production-order-option-risk.overdue,.production-order-option-risk.high { background:#fee2e2; color:#b91c1c; }.production-order-option-risk.moderate { background:#ffedd5; color:#c2410c; }.production-order-option-risk.quarantine { background:#ede9fe; color:#6d28d9; }.production-order-options>button>em { display:flex; align-items:center; justify-content:flex-end; gap:5px; margin-top:13px; color:#0369a1; font-size:.7rem; font-style:normal; font-weight:800; }.production-order-options-empty { grid-column:1/-1; display:grid; justify-items:center; gap:6px; padding:45px; color:#64748b; text-align:center; }
 @keyframes production-schedule-spin { to { transform:rotate(360deg); } }
 @media(max-width:850px){.production-schedule-toolbar{align-items:stretch;flex-direction:column}.production-schedule-toolbar label{width:100%}.production-schedule-toolbar-status{flex-wrap:wrap;gap:10px;width:100%}.production-station-lane{grid-template-columns:1fr}.production-station-card{min-height:120px}.production-order-options{grid-template-columns:1fr}}
+.production-schedule-unscheduled { display:grid; gap:11px; border:1px solid #fecaca; border-radius:12px; padding:14px 16px; background:#fef2f2; }
+.production-schedule-unscheduled>header { display:flex; align-items:start; gap:9px; color:#b91c1c; }
+.production-schedule-unscheduled>header>div { display:grid; gap:3px; min-width:0; }
+.production-schedule-unscheduled>header strong { font-size:.83rem; }
+.production-schedule-unscheduled>header span { color:#9f5b5b; font-size:.7rem; }
+.production-schedule-unscheduled>ul { display:grid; gap:7px; margin:0; padding:0; list-style:none; }
+.production-schedule-unscheduled button { display:grid; grid-template-columns:auto auto minmax(0,1fr); align-items:center; gap:10px; width:100%; border:1px solid #fecaca; border-radius:9px; padding:9px 11px; background:#fff; color:#7f1d1d; font:inherit; text-align:left; cursor:pointer; }
+.production-schedule-unscheduled button:hover { border-color:#f87171; background:#fff5f5; }
+.production-schedule-unscheduled button b { font-size:.8rem; }
+.production-schedule-unscheduled button span { color:#64748b; font-size:.7rem; }
+.production-schedule-unscheduled button em { overflow:hidden; color:#b91c1c; font-size:.7rem; font-style:normal; font-weight:700; text-overflow:ellipsis; white-space:nowrap; }
+@media (max-width:760px) { .production-schedule-unscheduled button { grid-template-columns:minmax(0,1fr); gap:3px; } }
+.production-schedule-unscheduled-more { color:#9f5b5b; font-size:.7rem; font-weight:700; }

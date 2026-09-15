@@ -21,6 +21,7 @@ type ProductionPiece = { production_order_id: string; assigned_station: string |
 const productionOrderDeepLinkKey = 'yvimo:mes:selectedProductionOrderNumber';
 const productionOrderDetailsDeepLinkKey = 'yvimo:mes:openProductionOrderDetails';
 const activeStatuses = ['planned', 'released', 'running', 'paused'];
+const unscheduledListLimit = 12;
 const riskLabels: Record<OrderRiskLevel, string> = { overdue: 'Overdue', high: 'High risk', moderate: 'Moderate risk', low: 'Low risk' };
 const deliveryDistance = (dueDate: string) => { const days = getDaysUntilDelivery(dueDate); return days < 0 ? `${Math.abs(days)} days overdue` : days === 0 ? 'Due today' : days === 1 ? '1 day left' : `${days} days left`; };
 const liveClockFormatter = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit', second: '2-digit' });
@@ -37,6 +38,22 @@ const stationColor = (index: number) => {
   const cycle = Math.floor(index / yvimoStationColors.length);
   return cycle === 0 ? base : `color-mix(in srgb, ${base} ${Math.max(58, 92 - cycle * 7)}%, #17202a)`;
 };
+
+// PostgREST caps every response at 1000 rows. The board reads every pending piece in the
+// organization, so past that cap whole orders arrive with no piece and therefore with no
+// compatible station: they vanish from the board and from the Add order picker, and the
+// queue cleanup below deletes their cards as misplaced. Page to the last row instead.
+const rowPageSize = 1000;
+async function fetchAllRows<Row>(request: (from: number, to: number) => PromiseLike<{ data: Row[] | null; error: { message: string } | null }>) {
+  const rows: Row[] = [];
+  for (let from = 0; ; from += rowPageSize) {
+    const { data, error } = await request(from, from + rowPageSize - 1);
+    if (error) return { data: rows, error };
+    const page = data ?? [];
+    rows.push(...page);
+    if (page.length < rowPageSize) return { data: rows, error: null };
+  }
+}
 
 export function ProductionScheduleWorkspace({ onNavigate, organizationId }: Props) {
   const [stations, setStations] = React.useState<Station[]>([]), [workCenters, setWorkCenters] = React.useState<WorkCenter[]>([]), [orders, setOrders] = React.useState<Order[]>([]), [productionPieces, setProductionPieces] = React.useState<ProductionPiece[]>([]), [queue, setQueue] = React.useState<QueueItem[]>([]);
@@ -55,9 +72,9 @@ export function ProductionScheduleWorkspace({ onNavigate, organizationId }: Prop
     const [stationResult, centerResult, orderResult, pieceResult, queueResult, settingsResult] = await Promise.all([
       supabase.from('mes_work_center_stations').select('id, code, name, type, capability_color, work_center_id, schedule_position, mirror_group_id').eq('organization_id', organizationId).order('schedule_position').order('name'),
       supabase.from('mes_work_centers').select('id, code, name').eq('organization_id', organizationId).order('name'),
-      supabase.from('mes_production_orders').select('id, order_number, client_name, part_number, part_name, planned_quantity, completed_quantity, scrap_quantity, due_date, priority, status, assigned_station, assigned_work_center, manufacturing_type').eq('organization_id', organizationId).in('status', activeStatuses).order('due_date'),
-      supabase.from('mes_production_serials').select('production_order_id, assigned_station, compatible_stations, quarantined').eq('organization_id', organizationId).is('result', null),
-      supabase.from('mes_production_schedule_queue').select('id, station_id, production_order_id, position, preferred_station_id').eq('organization_id', organizationId).order('position'),
+      fetchAllRows<Order>((from, to) => supabase.from('mes_production_orders').select('id, order_number, client_name, part_number, part_name, planned_quantity, completed_quantity, scrap_quantity, due_date, priority, status, assigned_station, assigned_work_center, manufacturing_type').eq('organization_id', organizationId).in('status', activeStatuses).order('due_date').order('id').range(from, to)),
+      fetchAllRows<ProductionPiece>((from, to) => supabase.from('mes_production_serials').select('production_order_id, assigned_station, compatible_stations, quarantined').eq('organization_id', organizationId).is('result', null).order('id').range(from, to)),
+      fetchAllRows<QueueItem>((from, to) => supabase.from('mes_production_schedule_queue').select('id, station_id, production_order_id, position, preferred_station_id').eq('organization_id', organizationId).order('position').order('id').range(from, to)),
       supabase.from('mes_production_schedule_settings').select('intelligent_scheduling').eq('organization_id', organizationId).maybeSingle(),
     ]);
     // The switch lives in migration 178; without it the board stays fully manual.
@@ -65,7 +82,7 @@ export function ProductionScheduleWorkspace({ onNavigate, organizationId }: Prop
     setIntelligentScheduling(!settingsResult.error && settingsResult.data?.intelligent_scheduling === true);
     // The manual mirror preference arrives with migration 180.
     const queueRows = queueResult.error?.message?.includes('preferred_station_id')
-      ? await supabase.from('mes_production_schedule_queue').select('id, station_id, production_order_id, position').eq('organization_id', organizationId).order('position')
+      ? await fetchAllRows<QueueItem>((from, to) => supabase.from('mes_production_schedule_queue').select('id, station_id, production_order_id, position').eq('organization_id', organizationId).order('position').order('id').range(from, to))
       : queueResult;
     setMirrorPreferenceAvailable(!queueResult.error?.message?.includes('preferred_station_id'));
     // Mirror groups arrive with migration 179; without them every station plans alone.
@@ -76,7 +93,7 @@ export function ProductionScheduleWorkspace({ onNavigate, organizationId }: Prop
     // The quarantine flag on the pieces arrives with migration 176; without it the
     // board still loads, it just cannot mark a queue card as held.
     const pieceRows = pieceResult.error?.message?.includes('quarantined')
-      ? await supabase.from('mes_production_serials').select('production_order_id, assigned_station, compatible_stations').eq('organization_id', organizationId).is('result', null)
+      ? await fetchAllRows<ProductionPiece>((from, to) => supabase.from('mes_production_serials').select('production_order_id, assigned_station, compatible_stations').eq('organization_id', organizationId).is('result', null).order('id').range(from, to))
       : pieceResult;
     const loadError = stationRows.error ?? centerResult.error ?? orderResult.error ?? pieceRows.error ?? queueRows.error;
     if (loadError) setError(`Unable to load the production schedule: ${loadError.message}. Apply SQL migrations 134–136.`);
@@ -123,16 +140,21 @@ export function ProductionScheduleWorkspace({ onNavigate, organizationId }: Prop
       const mirrorSiblings = (station: Station) => (station.mirror_group_id
         ? ((stationRows.data ?? []) as Station[]).filter((candidate) => candidate.mirror_group_id === station.mirror_group_id)
         : [station]);
+      // The same code names a different machine in each plant, so a card only belongs here
+      // when the station sits in the work center the order carries.
+      const runsForOrder = (station: Station, order: Order) => (
+        !order.assigned_work_center || centersById.get(station.work_center_id)?.code === order.assigned_work_center
+      );
       const staleQueueIds = loadedQueue.filter((item) => {
         const order = activeOrdersById.get(item.production_order_id);
         if (!order) return true;
         const station = stationsByQueueId.get(item.station_id);
         if (!station) return true;
-        if (order.manufacturing_type === 'multi-step') return !pendingStationCodesByOrder.get(order.id)?.has(station.code);
+        if (order.manufacturing_type === 'multi-step') return !runsForOrder(station, order) || !pendingStationCodesByOrder.get(order.id)?.has(station.code);
         if (order.manufacturing_type !== 'single-operation') return false;
         const siblings = mirrorSiblings(station);
         const assignedStations = (order.assigned_station ?? '').split(',').map((code) => code.trim()).filter(Boolean);
-        if (assignedStations.length) return !siblings.some((sibling) => assignedStations.includes(sibling.code));
+        if (assignedStations.length) return !siblings.some((sibling) => assignedStations.includes(sibling.code) && runsForOrder(sibling, order));
         if (!order.assigned_work_center) return false;
         return !siblings.some((sibling) => centersById.get(sibling.work_center_id)?.code === order.assigned_work_center);
       }).map((item) => item.id);
@@ -201,16 +223,23 @@ export function ProductionScheduleWorkspace({ onNavigate, organizationId }: Prop
   // Which stations can actually run an order: multi-step orders follow their pending
   // pieces, single-operation orders follow the stations (or work center) they carry,
   // and any mirror sibling of those stations counts as the same machine.
+  // Station codes are unique per work center, not per organization (migration 030), so the
+  // KAPP 305 of Saltillo and the KAPP 305 of Queretaro are two different machines. Every
+  // match by code has to be read inside the work center the order belongs to, or the board
+  // plans Saltillo work in Queretaro and shows a multi-step order once per plant.
+  const stationRunsForOrder = React.useCallback((station: Station, order: Order) => (
+    !order.assigned_work_center || centerById.get(station.work_center_id)?.code === order.assigned_work_center
+  ), [centerById]);
   const compatibleStationsFor = React.useCallback((order: Order, stationList: Station[]) => stationList.filter((station) => {
-    if (order.manufacturing_type === 'multi-step') return multiStepPieceCount(order.id, station.code) > 0;
+    if (order.manufacturing_type === 'multi-step') return stationRunsForOrder(station, order) && multiStepPieceCount(order.id, station.code) > 0;
     const assignedCodes = (order.assigned_station ?? '').split(',').map((code) => code.trim()).filter(Boolean);
     const siblings = mirrorSiblingsOf(station);
-    if (assignedCodes.length) return siblings.some((sibling) => assignedCodes.includes(sibling.code));
+    if (assignedCodes.length) return siblings.some((sibling) => assignedCodes.includes(sibling.code) && stationRunsForOrder(sibling, order));
     return siblings.some((sibling) => {
       const center = centerById.get(sibling.work_center_id);
       return Boolean(center && order.assigned_work_center === center.code);
     });
-  }), [centerById, mirrorSiblingsOf, multiStepPieceCount]);
+  }), [centerById, mirrorSiblingsOf, multiStepPieceCount, stationRunsForOrder]);
 
   const mirrorStation = stations.find((station) => station.id === mirrorStationId) ?? null;
   const openMirrorSetup = (station: Station) => {
@@ -296,6 +325,26 @@ export function ProductionScheduleWorkspace({ onNavigate, organizationId }: Prop
     return order.manufacturing_type === 'multi-step' || !queue.some((item) => item.production_order_id === order.id);
   }) : [];
 
+  // An active order no station can run never reaches a queue and never shows up in the
+  // Add order picker either, so without this notice it just disappears from the board.
+  const unscheduledOrders = React.useMemo(() => orders.filter((order) => compatibleStationsFor(order, stations).length === 0), [compatibleStationsFor, orders, stations]);
+  const unscheduledReason = (order: Order) => {
+    if (order.manufacturing_type === 'multi-step') return productionPieces.some((piece) => piece.production_order_id === order.id)
+      ? 'Its pending pieces carry no station: assign one to every piece in Order Details'
+      : 'No pending piece left to plan: review the pieces in Order Details';
+    const stationCodes = (order.assigned_station ?? '').split(',').map((code) => code.trim()).filter(Boolean);
+    if (stationCodes.length) {
+      const elsewhere = [...new Set(stations.filter((station) => stationCodes.includes(station.code))
+        .map((station) => centerById.get(station.work_center_id)?.code).filter(Boolean))];
+      return elsewhere.length
+        ? `Station ${stationCodes.join(', ')} lives in ${elsewhere.join(', ')}, not in ${order.assigned_work_center}`
+        : `No station in this shop uses the code ${stationCodes.join(', ')}`;
+    }
+    const workCenterCode = (order.assigned_work_center ?? '').trim();
+    if (workCenterCode) return `The work center ${workCenterCode} has no station yet`;
+    return 'The order carries no station and no work center';
+  };
+
   const addOrder = async (order: Order) => {
     if (!selectedStation) return;
     setSavingOrderId(order.id);
@@ -375,6 +424,7 @@ export function ProductionScheduleWorkspace({ onNavigate, organizationId }: Prop
     <div className="mes-screen-header production-schedule-header"><button className="academy-back-button engineering-back-button mes-workspace-back" type="button" onClick={() => onNavigate('/workspace/manufacturing-ops/aps')}><ArrowLeft size={16} /> APS</button><div className="mes-workspace-heading"><p className="eyebrow">APS / PRODUCTION SCHEDULE</p><h2>Production Schedule</h2><p>Build the production plan for each machine and coordinate scheduled work across the shop floor.</p></div></div>
     <div className="production-schedule-toolbar"><label><span>Workspace</span><div className={`production-workspace-dropdown${workspaceMenuOpen ? ' open' : ''}`} ref={workspaceDropdownRef}><button type="button" aria-haspopup="listbox" aria-expanded={workspaceMenuOpen} onClick={() => setWorkspaceMenuOpen((current) => !current)}><Factory size={17} /><strong>{selectedWorkCenter ? `${selectedWorkCenter.name} · ${selectedWorkCenter.code}` : 'All workspaces'}</strong><ChevronDown size={16} /></button>{workspaceMenuOpen ? <div className="production-workspace-menu" role="listbox"><button className={selectedWorkCenterId === 'all' ? 'selected' : ''} type="button" role="option" aria-selected={selectedWorkCenterId === 'all'} onClick={() => { setSelectedWorkCenterId('all'); setWorkspaceMenuOpen(false); }}><span><b>All workspaces</b><small>Show every production station</small></span>{selectedWorkCenterId === 'all' ? <Check size={16} /> : null}</button>{workCenters.map((center) => <button className={selectedWorkCenterId === center.id ? 'selected' : ''} type="button" role="option" aria-selected={selectedWorkCenterId === center.id} onClick={() => { setSelectedWorkCenterId(center.id); setWorkspaceMenuOpen(false); }} key={center.id}><span><b>{center.name}</b><small>{center.code}</small></span>{selectedWorkCenterId === center.id ? <Check size={16} /> : null}</button>)}</div> : null}</div></label><div className="production-schedule-toolbar-status"><p><strong>{visibleStations.length}</strong> station{visibleStations.length === 1 ? '' : 's'} shown</p><div className={`production-intelligent-scheduling${intelligentScheduling ? ' on' : ''}`}><div><button type="button" role="switch" aria-checked={intelligentScheduling} aria-label="Intelligent Scheduling" disabled={!intelligentAvailable || intelligentSaving} onClick={() => void toggleIntelligentScheduling()}><i /></button><span><Sparkles size={14} /> Intelligent Scheduling</span></div><small>{!intelligentAvailable ? 'Apply SQL migration 178' : autoPlanning ? 'Organizing queues…' : intelligentScheduling ? 'Queues sorted by urgency' : 'Manual planning'}</small></div><div className={`production-schedule-live-state ${liveState}`}><span><i /> {liveStateLabels[liveState]}</span><small>{lastUpdatedAt ? `Updated ${liveClockFormatter.format(new Date(lastUpdatedAt))}` : 'Waiting for data'}</small></div></div></div>
     {error ? <div className="production-schedule-message" role="alert">{error}</div> : null}
+    {!loading && unscheduledOrders.length ? <div className="production-schedule-unscheduled"><header><AlertTriangle size={17} /><div><strong>{unscheduledOrders.length} active order{unscheduledOrders.length === 1 ? '' : 's'} cannot be scheduled</strong><span>No station in the shop can run them, so they stay out of every queue and out of the Add order picker.</span></div></header><ul>{unscheduledOrders.slice(0, unscheduledListLimit).map((order) => <li key={order.id}><button type="button" onClick={() => openOrderDetails(order.order_number)}><b>#{order.order_number}</b><span>{order.client_name || 'Customer not assigned'}</span><em>{unscheduledReason(order)}</em></button></li>)}{unscheduledOrders.length > unscheduledListLimit ? <li className="production-schedule-unscheduled-more">and {unscheduledOrders.length - unscheduledListLimit} more</li> : null}</ul></div> : null}
     {loading ? <div className="production-schedule-loading"><LoaderCircle size={24} /> Loading stations and orders…</div> : stations.length === 0 ? <div className="production-schedule-empty"><Factory size={28} /><strong>No stations are configured yet</strong><span>Create stations in MES Work Centers before building the production schedule.</span></div> : visibleStations.length === 0 ? <div className="production-schedule-empty"><Factory size={28} /><strong>No stations in this workspace</strong><span>Select another workspace to continue planning.</span></div> : <div className="production-schedule-board">{visibleStations.map((station) => {
       const stationQueue = queue.filter((item) => item.station_id === station.id).sort((a, b) => a.position - b.position), center = centerById.get(station.work_center_id), color = stationColorById.get(station.id) || '#ff8a1f';
       const stationIndex = visibleStations.findIndex((candidate) => candidate.id === station.id);
