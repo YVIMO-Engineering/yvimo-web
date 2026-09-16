@@ -304,6 +304,7 @@ export function ExpediteOrdersWorkspace({ onNavigate, organizationId, languageCo
       return;
     }
     setRuleDraft(emptyRuleDraft);
+    setRegistryOpen(false);
     await load(true);
   };
 
@@ -459,23 +460,36 @@ export function ExpediteOrdersWorkspace({ onNavigate, organizationId, languageCo
         <div className="expedite-watchlist-grid">
           {watchedRules.map((rule) => {
             const openOrders = openOrdersByRuleId.get(rule.id) ?? 0;
-            const selected = search.trim().toLowerCase() === rule.toolId.toLowerCase();
-            return <button
-              className={[rule.isActive ? 'detecting' : 'paused', openOrders ? 'hit' : '', selected ? 'selected' : ''].filter(Boolean).join(' ')}
-              type="button"
-              aria-pressed={selected}
+            return <article
+              className={[rule.isActive ? 'detecting' : 'paused', openOrders ? 'hit' : ''].filter(Boolean).join(' ')}
               title={rule.notes || rule.reason || `${rule.toolId} expedite rule`}
               key={rule.id}
-              onClick={() => { setRiskFilter('all'); setSearch(selected ? '' : rule.toolId); }}
             >
               <span className="expedite-watchlist-state">{rule.isActive ? <><i /> Detecting</> : 'Paused'}</span>
               <strong>{rule.toolId}</strong>
               <small>{expediteLeadTimeLabel(rule.leadTimeDays, dayCountMode)} · {rule.clientName || 'Any customer'}</small>
+              <small>{rule.stallAlertHours ? `Stall alarm at ${rule.stallAlertHours}h` : 'No stall alarm'}</small>
               {rule.reason ? <em>{rule.reason}</em> : null}
-              <span className={`expedite-watchlist-hits${openOrders ? ' active' : ''}`}>
-                {openOrders ? `${openOrders} open ${openOrders === 1 ? 'order' : 'orders'}` : 'No open order'}
-              </span>
-            </button>;
+              <div className="expedite-watchlist-footer">
+                <span className={`expedite-watchlist-hits${openOrders ? ' active' : ''}`}>
+                  {openOrders ? `${openOrders} open ${openOrders === 1 ? 'order' : 'orders'}` : 'No open order'}
+                </span>
+                <div className="expedite-rule-actions">
+                  <button
+                    type="button"
+                    className={`expedite-rule-toggle${rule.isActive ? ' on' : ''}`}
+                    role="switch"
+                    aria-checked={rule.isActive}
+                    title={rule.isActive ? 'Pause the auto-detection of this Tool ID' : 'Resume the auto-detection of this Tool ID'}
+                    onClick={() => void toggleRule(rule)}
+                  >
+                    <i aria-hidden="true" />
+                  </button>
+                  <button type="button" aria-label={`Edit ${rule.toolId}`} onClick={() => { setRuleError(''); setRuleDraft({ id: rule.id, toolId: rule.toolId, leadTimeDays: String(rule.leadTimeDays), stallAlertHours: String(rule.stallAlertHours), customerId: rule.customerId, reason: rule.reason, notes: rule.notes, isActive: rule.isActive }); setRegistryOpen(true); }}><Pencil size={14} /></button>
+                  <button type="button" className="danger" aria-label={`Delete ${rule.toolId}`} onClick={() => setRuleToDelete(rule)}><Trash2 size={14} /></button>
+                </div>
+              </div>
+            </article>;
           })}
         </div>
       )}
@@ -503,7 +517,7 @@ export function ExpediteOrdersWorkspace({ onNavigate, organizationId, languageCo
             <span className="expedite-modal-icon"><Siren size={24} /></span>
             <div>
               <p className="eyebrow">Auto-detection</p>
-              <h3 id="expedite-registry-title">Expedite Tool IDs</h3>
+              <h3 id="expedite-registry-title">{ruleDraft.id ? `Edit ${ruleDraft.toolId || 'expedite Tool ID'}` : 'Register an expedite Tool ID'}</h3>
               <p>Any Tool ID registered here is detected while a planner assigns pieces in Production Orders. The order is highlighted as an expedite and its delivery date is forced to the lead time below, counted in {dayCountMode === 'business' ? 'business' : 'calendar'} days as configured for this organization. The stall alarm raises a production alert in Statistics and Production Schedule when an order carrying this Tool ID sits that many hours with no movement at all; weekends and holidays are not counted, and 0 turns it off.</p>
             </div>
           </div>
@@ -543,38 +557,13 @@ export function ExpediteOrdersWorkspace({ onNavigate, organizationId, languageCo
             </label>
             {ruleError ? <div className="expedite-rule-error" role="alert">{ruleError}</div> : null}
             <div className="expedite-rule-form-actions">
-              {ruleDraft.id ? <button type="button" className="secondary" onClick={() => { setRuleDraft(emptyRuleDraft); setRuleError(''); }}>Cancel edit</button> : null}
+              {ruleDraft.id ? <button type="button" className="secondary" onClick={() => { setRuleDraft(emptyRuleDraft); setRuleError(''); setRegistryOpen(false); }}>Cancel edit</button> : null}
               <button type="submit" disabled={ruleSaving}>
                 {ruleSaving ? <LoaderCircle size={16} className="expedite-spin" /> : <Plus size={16} />}
                 {ruleSaving ? 'Saving…' : ruleDraft.id ? 'Save Tool ID' : 'Register Tool ID'}
               </button>
             </div>
           </form>
-          <div className="expedite-rule-list">
-            {rules.length === 0 ? (
-              <p className="expedite-rule-empty">No Tool ID is being auto-detected yet.</p>
-            ) : rules.map((rule) => <article className={rule.isActive ? 'active' : 'paused'} key={rule.id}>
-              <div className="expedite-rule-identity">
-                <strong>{rule.toolId}</strong>
-                <small>{expediteLeadTimeLabel(rule.leadTimeDays, dayCountMode)} · {rule.clientName || 'Any customer'} · {rule.stallAlertHours ? `stall alarm at ${rule.stallAlertHours}h` : 'no stall alarm'}</small>
-                {rule.reason ? <em>{rule.reason}</em> : null}
-              </div>
-              <div className="expedite-rule-actions">
-                <button
-                  type="button"
-                  className={`expedite-rule-toggle${rule.isActive ? ' on' : ''}`}
-                  role="switch"
-                  aria-checked={rule.isActive}
-                  title={rule.isActive ? 'Pause the auto-detection of this Tool ID' : 'Resume the auto-detection of this Tool ID'}
-                  onClick={() => void toggleRule(rule)}
-                >
-                  <span>{rule.isActive ? 'Detecting' : 'Paused'}</span><i aria-hidden="true" />
-                </button>
-                <button type="button" aria-label={`Edit ${rule.toolId}`} onClick={() => { setRuleError(''); setRuleDraft({ id: rule.id, toolId: rule.toolId, leadTimeDays: String(rule.leadTimeDays), stallAlertHours: String(rule.stallAlertHours), customerId: rule.customerId, reason: rule.reason, notes: rule.notes, isActive: rule.isActive }); }}><Pencil size={15} /></button>
-                <button type="button" className="danger" aria-label={`Delete ${rule.toolId}`} onClick={() => setRuleToDelete(rule)}><Trash2 size={15} /></button>
-              </div>
-            </article>)}
-          </div>
         </section>
       </div>
     ) : null}
