@@ -1557,3 +1557,94 @@
 }
 
 .production-order-eol-actions > .production-order-eol-confirm:hover { background: #991b1b; }
+
+/* Expedite Orders (APS) auto-detection: a registered Tool ID turns the whole production
+   order into an urgency, so the piece row, the alert, and the locked due date all share
+   the same rose language used by the Expedite Orders workspace. */
+.production-order-expedite-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 10px 0 0;
+  border: 1px solid #fb7185;
+  border-left: 5px solid #e11d48;
+  border-radius: 11px;
+  padding: 11px 13px;
+  background: #fff1f5;
+  color: #9f1239;
+}
+
+.production-order-expedite-alert.modal { margin: 0 0 12px; }
+.production-order-expedite-alert > svg { flex: 0 0 auto; margin-top: 1px; color: #e11d48; }
+.production-order-expedite-alert > span { display: grid; gap: 3px; min-width: 0; }
+
+.production-order-expedite-alert b {
+  color: #be123c;
+  font-size: .74rem;
+  font-weight: 900;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+
+.production-order-expedite-alert em {
+  color: #9f1239;
+  font-size: .72rem;
+  font-style: normal;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+.production-order-serial-row.expedited > td { background: #fff5f7; }
+.production-piece-tool-cell.expedited { box-shadow: inset 3px 0 0 #e11d48; }
+
+.production-piece-tool-cell.expedited .production-asset-dropdown > button {
+  border-color: #e11d48;
+  background: #fff1f5;
+  box-shadow: 0 0 0 2px rgba(225, 29, 72, .16);
+}
+
+.production-piece-tool-cell.expedited .production-asset-dropdown > button strong { color: #be123c; }
+
+.production-piece-expedite-flag {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-top: 5px;
+  border-radius: 999px;
+  padding: 3px 8px;
+  background: #e11d48;
+  color: #fff;
+  font-size: .56rem;
+  font-weight: 900;
+  line-height: 1.2;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+}
+
+.production-piece-expedite-flag > svg { flex: 0 0 auto; }
+
+.production-piece-expedite-flag em {
+  border-radius: 999px;
+  padding: 1px 5px;
+  background: rgba(255, 255, 255, .24);
+  font-style: normal;
+  text-transform: none;
+}
+
+.production-order-due-date-expedited .mes-order-date-picker > button,
+.production-order-due-date-expedited input[type='date'] {
+  border-color: #e11d48;
+  background: #fff1f5;
+  box-shadow: 0 0 0 2px rgba(225, 29, 72, .14);
+}
+
+.production-order-expedite-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 5px;
+  color: #be123c;
+  font-size: .68rem;
+  font-weight: 800;
+}

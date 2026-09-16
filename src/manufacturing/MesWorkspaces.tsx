@@ -1,7 +1,7 @@
 import React from 'react';
 import { useProductionOrdersI18n } from './productionOrdersI18n';
 import { createPortal } from 'react-dom';
-import { Activity, AlertTriangle, ArrowLeft, Biohazard, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleHelp, CircleX, ClipboardPlus, Clock3, Copy, Database, Download, Eye, Factory, Frown, FileText, ImagePlus, LoaderCircle, Maximize2, Meh, Minimize2, Minus, Move, PackageCheck, PaintBucket, Pencil, Plus, Power, RadioTower, RotateCcw, Ruler, Search, Send, Smile, Timer, Trash2, Truck, Wrench, X, ZoomIn, ZoomOut } from 'lucide-react';
+import { Activity, AlertTriangle, ArrowLeft, Biohazard, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleHelp, CircleX, ClipboardPlus, Clock3, Copy, Database, Download, Eye, Factory, Frown, FileText, ImagePlus, LoaderCircle, Maximize2, Meh, Minimize2, Minus, Move, PackageCheck, PaintBucket, Pencil, Plus, Power, RadioTower, RotateCcw, Ruler, Search, Send, Siren, Smile, Timer, Trash2, Truck, Wrench, X, ZoomIn, ZoomOut } from 'lucide-react';
 import { GoogleWorkCentersMap } from '../components/maps/GoogleWorkCentersMap';
 import { resolveGooglePlacesAddressMatch, searchGooglePlacesAddressMatches, type GooglePlacesAddressMatch } from '../lib/maps/googlePlacesAddressLookup';
 import { supabase } from '../lib/supabaseClient';
@@ -9,6 +9,18 @@ import { useSupabaseRealtimeRefresh } from '../lib/useSupabaseRealtimeRefresh';
 import type { ProductionOrder, ProductionOrderManufacturingType, ProductionOrderPriority, ProductionOrderStatus, QualityCheckLimit, QualityMeasurementUnit, QualityPieceType, WorkCenterStatus } from './mesTypes';
 import { qualityInspectionsByPieceType, qualityPieceTypeLabels, qualityPieceTypes, qualityReportOnlyInspection } from './qualityInspectionConfig';
 import { addLeadTimeDays, getDayCountBetween, getElapsedHoursBetween, type DayCountMode } from './DeliveryRiskTimeline';
+import {
+  buildExpediteRuleIndex,
+  expediteDetectionMessage,
+  expediteLeadTimeLabel,
+  expediteToolIdsSelect,
+  expediteToolIdsTable,
+  getExpediteEnforcement,
+  mapExpediteToolRuleRow,
+  matchExpediteRule,
+  type ExpediteToolRule,
+  type ExpediteToolRuleRow,
+} from './expediteOrders';
 import { calculateStationLoads, getStationLoadStatus, type StationLoadEvent } from './stationLoad';
 import './productionOrders.css';
 import './productionOrdersDateFilter.css';
@@ -4524,6 +4536,7 @@ export function ProductionOrdersWorkspace({
   const [customerOptions, setCustomerOptions] = React.useState<ProductionOrderCustomerOptionRow[]>([]);
   const [dueDateDayCountMode, setDueDateDayCountMode] = React.useState<DayCountMode>('calendar');
   const [automaticDueDate, setAutomaticDueDate] = React.useState('');
+  const [expediteRules, setExpediteRules] = React.useState<ExpediteToolRule[]>([]);
   const [quotationOptions, setQuotationOptions] = React.useState<ProductionQuotationOption[]>([]);
   const [legacyPriceOptions, setLegacyPriceOptions] = React.useState<ProductionLegacyPriceOption[]>([]);
   const [assetOptions, setAssetOptions] = React.useState<ProductionAssetOption[]>([]);
@@ -4644,6 +4657,31 @@ export function ProductionOrdersWorkspace({
     setAutomaticDueDate(calculatedDueDate);
     setFormState((current) => ({ ...current, clientName: customer.customer_name, dueDate: calculatedDueDate }));
   }, [automaticDueDate, customerOptions, dueDateDayCountMode, formMode, formState.customerId, languageCode]);
+  // Expedite auto-detection: any Tool ID registered in the APS Expedite Orders module
+  // turns the order it is assigned to into an urgency. The shortest configured lead time
+  // wins and the due date is counted with the organization day count mode, so business
+  // days skip weekends and holidays exactly like the customer lead time does.
+  const expediteRuleIndex = React.useMemo(() => buildExpediteRuleIndex(expediteRules), [expediteRules]);
+  const expediteEnforcement = React.useMemo(() => (
+    formMode && assignSerialsEnabled
+      ? getExpediteEnforcement(expediteRuleIndex, serialAssignmentDrafts.map((draft) => draft.toolId), dueDateDayCountMode, languageCode)
+      : null
+  ), [assignSerialsEnabled, dueDateDayCountMode, expediteRuleIndex, formMode, languageCode, serialAssignmentDrafts]);
+  const expediteDueDate = expediteEnforcement?.dueDate ?? '';
+  // An expedite can only pull a delivery date in, never push it out: an order already
+  // committed earlier than the expedite lead time keeps the tighter date it has, so
+  // reopening an old order for edit never moves its delivery further away.
+  const expediteTightensDueDate = Boolean(expediteDueDate) && (!formState.dueDate || formState.dueDate >= expediteDueDate);
+  React.useEffect(() => {
+    if (!formMode || !expediteDueDate) return;
+    const keepsTighterDate = Boolean(formState.dueDate) && formState.dueDate < expediteDueDate;
+    if (keepsTighterDate) {
+      if (formState.priority !== 'expedite') setFormState((current) => ({ ...current, priority: 'expedite' }));
+      return;
+    }
+    if (formState.dueDate === expediteDueDate && formState.priority === 'expedite') return;
+    setFormState((current) => ({ ...current, dueDate: expediteDueDate, priority: 'expedite' }));
+  }, [expediteDueDate, formMode, formState.dueDate, formState.priority]);
   const clientFilterOptions = React.useMemo<MesOrderDropdownOption[]>(() => [
     { value: 'all', label: 'All clients' },
     ...customerOptions.map((customer) => ({
@@ -4729,6 +4767,7 @@ export function ProductionOrdersWorkspace({
     { table: 'mes_legacy_prices', filter: `organization_id=eq.${organizationId}` },
     { table: 'mes_customer_assets', filter: `organization_id=eq.${organizationId}` },
     { table: 'mes_customer_tool_ids', filter: `organization_id=eq.${organizationId}` },
+    { table: expediteToolIdsTable, filter: `organization_id=eq.${organizationId}` },
   ]), [organizationId]);
 
   const loadProductionOrders = React.useCallback(async (silent = false) => {
@@ -4743,7 +4782,7 @@ export function ProductionOrdersWorkspace({
       .order('created_at', { ascending: false })
       .limit(1);
     if (workCenterFilter !== 'all') lastProductionEventQuery = lastProductionEventQuery.eq('work_center_code', workCenterFilter);
-    const [{ data, error }, { data: workCenterData, error: workCenterError }, { data: stationData, error: stationError }, { data: customerData, error: customerError }, { data: quotationData, error: quotationError }, { data: legacyPriceData, error: legacyPriceError }, { data: assetData, error: assetError }, { data: productionEventData, error: productionEventError }, { data: riskSettingsData, error: riskSettingsError }] = await Promise.all([
+    const [{ data, error }, { data: workCenterData, error: workCenterError }, { data: stationData, error: stationError }, { data: customerData, error: customerError }, { data: quotationData, error: quotationError }, { data: legacyPriceData, error: legacyPriceError }, { data: assetData, error: assetError }, { data: productionEventData, error: productionEventError }, { data: riskSettingsData, error: riskSettingsError }, { data: expediteRuleData, error: expediteRuleError }] = await Promise.all([
       supabase
         .from('mes_production_orders')
         .select('*')
@@ -4786,6 +4825,11 @@ export function ProductionOrdersWorkspace({
         .select('day_count_mode')
         .eq('organization_id', organizationId)
         .maybeSingle(),
+      supabase
+        .from(expediteToolIdsTable)
+        .select(expediteToolIdsSelect)
+        .eq('organization_id', organizationId)
+        .eq('is_active', true),
     ]);
 
     if (requestId !== productionOrdersLoadRequestRef.current) return;
@@ -4806,6 +4850,14 @@ export function ProductionOrdersWorkspace({
         : 'No active customers configured yet. Add a customer from the Clients app.');
     }
     if (!riskSettingsError) setDueDateDayCountMode(riskSettingsData?.day_count_mode === 'business' ? 'business' : 'calendar');
+    // The expedite registry arrives with migration 183: without it the workspace just
+    // keeps working and no Tool ID is auto-detected as urgent.
+    if (expediteRuleError) {
+      console.warn('Unable to load the expedite Tool ID registry', expediteRuleError);
+      setExpediteRules([]);
+    } else {
+      setExpediteRules(((expediteRuleData ?? []) as unknown as ExpediteToolRuleRow[]).map(mapExpediteToolRuleRow));
+    }
     if (quotationError) {
       console.error('Unable to load quotations for Production Orders', quotationError);
       setQuotationOptions([]);
@@ -6323,6 +6375,20 @@ export function ProductionOrdersWorkspace({
                       <button type="button" onClick={() => setSerialAssignmentModalOpen(true)}>Edit assignments</button>
                     </div>
                   ) : null}
+                  {expediteEnforcement ? (
+                    <p className="production-order-expedite-alert" role="alert">
+                      <Siren size={16} />
+                      <span>
+                        <b>{expediteDetectionMessage}</b>
+                        <em>
+                          {expediteEnforcement.matchedToolIds.join(' · ')} · {expediteTightensDueDate
+                            ? `delivery forced to ${expediteEnforcement.dueDate} using the ${expediteLeadTimeLabel(expediteEnforcement.rule.leadTimeDays, dueDateDayCountMode)} expedite lead time.`
+                            : `delivery kept at ${formState.dueDate}, already tighter than the ${expediteLeadTimeLabel(expediteEnforcement.rule.leadTimeDays, dueDateDayCountMode)} expedite lead time.`}
+                          {expediteEnforcement.rule.reason ? ` ${expediteEnforcement.rule.reason}` : ''}
+                        </em>
+                      </span>
+                    </p>
+                  ) : null}
                 </fieldset>
               ) : null}
               <label>
@@ -6365,12 +6431,22 @@ export function ProductionOrdersWorkspace({
                   ))}
                 </div>
               </fieldset>
-              <label>
+              <label className={expediteEnforcement ? 'production-order-due-date-expedited' : undefined}>
                 Due date
                 <MesOrderDatePicker
                   id="production-order-due-date"
                   value={formState.dueDate}
                   onChange={(dueDate) => {
+                    if (expediteEnforcement && dueDate > expediteEnforcement.dueDate) {
+                      setConfirmation({
+                        title: expediteDetectionMessage,
+                        message: `${expediteEnforcement.rule.toolId} is registered as an expedite Tool ID with a ${expediteLeadTimeLabel(expediteEnforcement.rule.leadTimeDays, dueDateDayCountMode)} lead time, so this order cannot be delivered later than ${expediteEnforcement.dueDate}. Remove that Tool ID from the piece assignments, or change its lead time in APS / Expedite Orders, to use a later delivery date.`,
+                        confirmLabel: 'Keep expedite date',
+                        tone: 'primary',
+                        onConfirm: () => undefined,
+                      });
+                      return;
+                    }
                     const customer = customerOptions.find((option) => option.id === formState.customerId);
                     if (formMode === 'create' && customer && automaticDueDate && dueDate !== automaticDueDate) {
                       const leadTimeDays = customer.lead_time_days ?? 15;
@@ -6386,7 +6462,14 @@ export function ProductionOrdersWorkspace({
                     setFormState((current) => ({ ...current, dueDate }));
                   }}
                 />
-                {formMode === 'create' && formState.customerId ? (
+                {expediteEnforcement ? (
+                  <small className="production-order-expedite-note">
+                    <Siren size={13} />
+                    {expediteTightensDueDate
+                      ? `Forced by the ${expediteLeadTimeLabel(expediteEnforcement.rule.leadTimeDays, dueDateDayCountMode)} expedite lead time of ${expediteEnforcement.rule.toolId}.`
+                      : `${expediteEnforcement.rule.toolId} is an expedite Tool ID: this order keeps its tighter date and cannot be delivered after ${expediteEnforcement.dueDate}.`}
+                  </small>
+                ) : formMode === 'create' && formState.customerId ? (
                   <small className="mes-form-field-note">Calculated from the customer's base lead time using {dueDateDayCountMode === 'business' ? 'business' : 'calendar'} days.</small>
                 ) : null}
               </label>
@@ -6580,6 +6663,18 @@ export function ProductionOrdersWorkspace({
               </div>
               <button type="button" aria-label="Close assignments" onClick={() => setSerialAssignmentModalOpen(false)}><CircleX size={18} /></button>
             </div>
+            {expediteEnforcement ? (
+              <p className="production-order-expedite-alert modal" role="alert">
+                <Siren size={17} />
+                <span>
+                  <b>{expediteDetectionMessage}</b>
+                  <em>
+                    {expediteEnforcement.matchedToolIds.join(' · ')} {expediteEnforcement.matchedToolIds.length === 1 ? 'is' : 'are'} registered as expedite in APS / Expedite Orders. This order cannot be delivered after {expediteEnforcement.dueDate} ({expediteLeadTimeLabel(expediteEnforcement.rule.leadTimeDays, dueDateDayCountMode)} from today) and its priority is set to expedite.
+                    {expediteEnforcement.rule.reason ? ` ${expediteEnforcement.rule.reason}` : ''}
+                  </em>
+                </span>
+              </p>
+            ) : null}
             <div className="production-order-serial-table-wrap">
               <table className="production-order-serial-table">
                 <thead>
@@ -6598,11 +6693,13 @@ export function ProductionOrdersWorkspace({
                   </tr>
                 </thead>
                 <tbody>
-                  {serialAssignmentDrafts.map((draft) => (
-                    <tr key={draft.pieceSequence}>
+                  {serialAssignmentDrafts.map((draft) => {
+                    const expediteRule = matchExpediteRule(expediteRuleIndex, draft.toolId);
+                    return (
+                    <tr className={expediteRule ? 'production-order-serial-row expedited' : 'production-order-serial-row'} key={draft.pieceSequence}>
                       <td>{draft.pieceSequence}</td>
                       {formState.pieceType !== 'wheel' ? (
-                        <td>
+                        <td className={expediteRule ? 'production-piece-tool-cell expedited' : 'production-piece-tool-cell'}>
                           <ProductionAssetDropdown
                             id={`production-piece-tool-${draft.pieceSequence}`}
                             kind="tool"
@@ -6613,6 +6710,12 @@ export function ProductionOrdersWorkspace({
                             onSelect={(asset) => setSerialAssignmentDrafts((current) => current.map((item) => item.pieceSequence === draft.pieceSequence ? { ...item, toolId: asset.toolId } : item))}
                             onCreate={(toolId) => setSerialAssignmentField(draft.pieceSequence, 'toolId', toolId)}
                           />
+                          {expediteRule ? (
+                            <span className="production-piece-expedite-flag" title={expediteRule.reason || `${expediteRule.toolId} always runs as an expedite order`}>
+                              <Siren size={12} /> {expediteDetectionMessage}
+                              <em>{expediteLeadTimeLabel(expediteRule.leadTimeDays, dueDateDayCountMode)}</em>
+                            </span>
+                          ) : null}
                         </td>
                       ) : null}
                       <td>
@@ -6713,7 +6816,8 @@ export function ProductionOrdersWorkspace({
                         />
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
               {!serialAssignmentDrafts.length ? <div className="production-order-serial-empty">Set a Planned Quantity greater than zero to assign pieces.</div> : null}

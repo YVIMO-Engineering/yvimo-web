@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertTriangle, BellRing, Check, CheckCheck, ChevronLeft, ChevronRight, CircleX, Clock3, PackageX, Plus, Siren, Volume2, VolumeX, Wrench, X } from 'lucide-react';
+import { AlertTriangle, BellRing, Check, CheckCheck, ChevronLeft, ChevronRight, CircleX, Clock3, PackageX, Plus, Siren, Timer, Volume2, VolumeX, Wrench, X, Zap } from 'lucide-react';
 import type { StatisticsAlert, StatisticsAlertType } from './statisticsAlerts';
 
 const alertMeta: Record<StatisticsAlertType, { label: string; icon: typeof AlertTriangle }> = {
@@ -8,6 +8,8 @@ const alertMeta: Record<StatisticsAlertType, { label: string; icon: typeof Alert
   inventory: { label: 'Critical inventory', icon: PackageX },
   overdue: { label: 'Overdue risk', icon: AlertTriangle },
   overtime: { label: 'Serial overtime', icon: Clock3 },
+  'expedite-stalled': { label: 'Expedite stalled', icon: Timer },
+  'expedite-due': { label: 'Expedite due', icon: Zap },
   manual: { label: 'Manual trigger', icon: Siren },
 };
 

@@ -1,6 +1,6 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import { Activity, AlertTriangle, ArrowRight, ArrowLeft, BarChart3, Biohazard, Blocks, Building2, Cable, Calculator, CalendarClock, ChevronDown, ChevronLeft, ChevronRight, Check, CircuitBoard, CircleDollarSign, ClipboardCheck, Cloud, Code2, Container, Cpu, Database, Factory, FileText, FileUp, FolderCheck, GitBranch, Gauge, GraduationCap, Hospital, Languages, LockKeyhole, LogIn, Mail, Menu, Network, PackageCheck, Pencil, Plus, RadioTower, ReceiptText, Rocket, ServerCog, ShieldCheck, Star, TerminalSquare, Truck, TrendingUp, Target, UserPlus, Users, Workflow, Wrench, ShieldAlert, X } from 'lucide-react';
+import { Activity, AlertTriangle, ArrowRight, ArrowLeft, BarChart3, Biohazard, Blocks, Building2, Cable, Calculator, CalendarClock, ChevronDown, ChevronLeft, ChevronRight, Check, CircuitBoard, CircleDollarSign, ClipboardCheck, Cloud, Code2, Container, Cpu, Database, Factory, FileText, FileUp, FolderCheck, GitBranch, Gauge, GraduationCap, Hospital, Languages, LockKeyhole, LogIn, Mail, Menu, Network, PackageCheck, Pencil, Plus, RadioTower, ReceiptText, Rocket, ServerCog, ShieldCheck, Siren, Star, TerminalSquare, Truck, TrendingUp, Target, UserPlus, Users, Workflow, Wrench, ShieldAlert, X } from 'lucide-react';
 import type { Session, User } from '@supabase/supabase-js';
 import { createSessionSupabaseClient, customerPortalSupabase, supabase } from './lib/supabaseClient';
 import { AcademyActivityPage, AcademyCatalogPage, AcademyCertificatesPage, AcademyCoursePage, AcademyHomePage, AcademyLessonPage, AcademyProgressPage, AcademyTrackPage } from './pages/AcademyPages';
@@ -16,6 +16,7 @@ import { translateClientsText } from './manufacturing/clientsI18n';
 import { OrderRisksWorkspace } from './manufacturing/OrderRisksWorkspace';
 import { ImportCostingWorkspace } from './manufacturing/ImportCostingWorkspace';
 import { ProductionScheduleWorkspace } from './manufacturing/ProductionScheduleWorkspace';
+import { ExpediteOrdersWorkspace } from './manufacturing/ExpediteOrdersWorkspace';
 import { QuarantineWorkspace } from './manufacturing/QuarantineWorkspace';
 import { StaffWorkspace } from './manufacturing/StaffWorkspace';
 import { RevenueOpportunityWorkspace } from './manufacturing/RevenueOpportunityWorkspace';
@@ -1278,14 +1279,14 @@ Object.assign(translations.es, {
   'Capacity Planning': 'Planeaci\u00f3n de capacidad',
   'Work Center Loading': 'Carga de centros de trabajo',
   Bottlenecks: 'Cuellos de botella',
-  'Priority Sequencing': 'Secuenciaci\u00f3n de prioridades',
+  'Expedite Orders': '\u00d3rdenes urgentes',
   Quarantine: 'Cuarentena',
   'Hold pieces blocked outside the normal manufacturing flow, with the reason and the action to take.': 'Ret\u00e9n piezas bloqueadas fuera del flujo normal de manufactura, con el motivo y la acci\u00f3n a realizar.',
   'Build and review sequenced production plans across lines, cells, and work centers.': 'Construye y revisa planes de producci\u00f3n secuenciados entre l\u00edneas, celdas y centros de trabajo.',
   'Compare demand against available machine, labor, and shift capacity.': 'Compara la demanda contra la capacidad disponible de m\u00e1quinas, mano de obra y turnos.',
   'Visualize assigned workload by work center and planning horizon.': 'Visualiza carga asignada por centro de trabajo y horizonte de planeaci\u00f3n.',
   'Identify constrained operations and overloaded resources before execution.': 'Identifica operaciones restringidas y recursos sobrecargados antes de ejecutar.',
-  'Sequence orders using due dates, priorities, changeovers, and constraints.': 'Secuencia \u00f3rdenes usando fechas compromiso, prioridades, cambios de modelo y restricciones.',
+  'Register the Tool IDs that always run urgent, detect them while pieces are assigned, and force the expedite delivery date.': 'Registra los Tool ID que siempre corren urgentes, detectalos al asignar piezas y fuerza la fecha de entrega de la urgencia.',
   'OEE Dashboard': 'Dashboard OEE',
   'Downtime Analysis': 'An\u00e1lisis de paros',
   'Cycle Time Trends': 'Tendencias de tiempo ciclo',
@@ -3356,7 +3357,7 @@ function LoggedDashboardPage({ user, onSignOut, onNavigate, onUpdateAvatar, acti
     icon: React.ComponentType<{ size?: number }>;
     path: string;
     implemented: boolean;
-    tone?: 'green' | 'blue' | 'orange' | 'purple' | 'red';
+    tone?: 'green' | 'blue' | 'orange' | 'purple' | 'red' | 'rose';
   }> = [
     {
       label: 'Production Orders',
@@ -3445,7 +3446,7 @@ function LoggedDashboardPage({ user, onSignOut, onNavigate, onUpdateAvatar, acti
     icon: React.ComponentType<{ size?: number }>;
     path: string;
     implemented?: boolean;
-    tone?: 'green' | 'blue' | 'orange' | 'purple' | 'red';
+    tone?: 'green' | 'blue' | 'orange' | 'purple' | 'red' | 'rose';
   }> = [
     {
       label: 'Production Schedule',
@@ -3492,10 +3493,12 @@ function LoggedDashboardPage({ user, onSignOut, onNavigate, onUpdateAvatar, acti
       path: '/workspace/manufacturing-ops/aps/bottlenecks',
     },
     {
-      label: 'Priority Sequencing',
-      description: 'Sequence orders using due dates, priorities, changeovers, and constraints.',
-      icon: Workflow,
-      path: '/workspace/manufacturing-ops/aps/priorities',
+      label: 'Expedite Orders',
+      description: 'Register the Tool IDs that always run urgent, detect them while pieces are assigned, and force the expedite delivery date.',
+      icon: Siren,
+      path: '/workspace/manufacturing-ops/aps/expedite',
+      implemented: true,
+      tone: 'rose',
     },
   ];
   const intelligenceModules: Array<{
@@ -3504,7 +3507,7 @@ function LoggedDashboardPage({ user, onSignOut, onNavigate, onUpdateAvatar, acti
     icon: React.ComponentType<{ size?: number }>;
     path: string;
     implemented?: boolean;
-    tone?: 'green' | 'blue' | 'orange' | 'purple' | 'red';
+    tone?: 'green' | 'blue' | 'orange' | 'purple' | 'red' | 'rose';
   }> = [
     {
       label: 'Order Risks',
@@ -3614,7 +3617,7 @@ function LoggedDashboardPage({ user, onSignOut, onNavigate, onUpdateAvatar, acti
   };
   const activeSpecialtyModules = isApsPage ? apsModules : isOperationsIntelligencePage ? intelligenceModules : mesModules;
   const isManufacturingAppImplemented = (module: { implemented?: boolean }) => module.implemented === true;
-  const getManufacturingAppToneClass = (module: { tone?: 'green' | 'blue' | 'orange' | 'purple' | 'red' }) => (module.tone ? `tone-${module.tone}` : '');
+  const getManufacturingAppToneClass = (module: { tone?: 'green' | 'blue' | 'orange' | 'purple' | 'red' | 'rose' }) => (module.tone ? `tone-${module.tone}` : '');
   const handleManufacturingAppLaunch = (module: { label: string; path: string; implemented?: boolean }) => {
     if (!isManufacturingAppImplemented(module)) {
       setManufacturingUnavailableApp(module.label);
@@ -3635,6 +3638,7 @@ function LoggedDashboardPage({ user, onSignOut, onNavigate, onUpdateAvatar, acti
   const isStaffPage = activePath === '/workspace/manufacturing-ops/aps/staff' || activePath.startsWith('/workspace/manufacturing-ops/aps/staff/');
   const isCustomerPortalAdminPage = activePath === '/workspace/manufacturing-ops/aps/customer-portal';
   const isQuarantinePage = activePath === '/workspace/manufacturing-ops/aps/quarantine';
+  const isExpeditePage = activePath === '/workspace/manufacturing-ops/aps/expedite';
   const isRevenueOpportunitySection = activePath.startsWith('/workspace/manufacturing-ops/intelligence/revenue-opportunity');
   const isAnalysisToolSection = activePath === '/workspace/manufacturing-ops/intelligence/analysis-tool' || activePath.startsWith('/workspace/manufacturing-ops/intelligence/analysis-tool/');
   const activeAnalysisToolSection = activePath.endsWith('/production-tracking') ? 'production-tracking' : 'performance-check';
@@ -3790,6 +3794,9 @@ function LoggedDashboardPage({ user, onSignOut, onNavigate, onUpdateAvatar, acti
     }
     if (isQuarantinePage) {
       return <QuarantineWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} />;
+    }
+    if (isExpeditePage) {
+      return <ExpediteOrdersWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} languageCode={languageCode} />;
     }
     if (isCustomerPortalAdminPage) {
       return <CustomerPortalAdminWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} organizationName={manufacturingOrganization?.name ?? 'Manufacturing Organization'} />;

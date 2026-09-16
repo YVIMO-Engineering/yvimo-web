@@ -1,4 +1,4 @@
-export type StatisticsAlertType = 'downtime' | 'scrap' | 'inventory' | 'overdue' | 'overtime' | 'manual';
+export type StatisticsAlertType = 'downtime' | 'scrap' | 'inventory' | 'overdue' | 'overtime' | 'expedite-stalled' | 'expedite-due' | 'manual';
 export type StatisticsAlertSeverity = 'critical' | 'warning';
 
 export type StatisticsAlert = {
@@ -144,4 +144,64 @@ export function buildAutomaticStatisticsAlerts(
     });
   });
   return alerts.sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
+}
+
+export type ExpediteAlertOrder = {
+  id: string;
+  orderNumber: string;
+  clientName: string;
+  status: string;
+  dueDate: string;
+  plannedQuantity: number;
+  completedQuantity: number;
+  toolIds: string[];
+  leadTimeDays: number;
+  stallAlertHours: number;
+  // The most recent sign of life on this order: a status or quantity change, a shop-floor
+  // event, a coating step or a delivery step. Empty when nothing has ever moved.
+  lastMovementAt: string;
+  lastMovementLabel: string;
+  // Hours of working time since that last movement, already counted with the organization
+  // day count mode so a weekend never trips the alarm.
+  idleHours: number;
+  // Working days left until the committed delivery date.
+  businessDaysLeft: number;
+};
+
+// Two things go wrong with an urgency: it quietly stops moving, or it reaches the day
+// before delivery. Both raise the same production alarm the other monitors use.
+export function buildExpediteStatisticsAlerts(orders: ExpediteAlertOrder[], today: string): StatisticsAlert[] {
+  const alerts: StatisticsAlert[] = [];
+  orders.forEach((order) => {
+    const tools = order.toolIds.join(', ');
+    if (order.stallAlertHours > 0 && order.idleHours >= order.stallAlertHours) {
+      alerts.push({
+        // The id carries the movement it is complaining about, so the alarm comes back on
+        // its own if the order moves and then stalls again.
+        id: `expedite-stalled:${order.id}:${order.lastMovementAt || 'never'}`,
+        type: 'expedite-stalled',
+        severity: 'critical',
+        title: `Expedite not moving · ${order.orderNumber}`,
+        message: `${tools} for ${order.clientName || 'client'} has had no movement in ${Math.floor(order.idleHours)}h (${order.lastMovementLabel}). Still ${order.status.replaceAll('-', ' ')} at ${order.completedQuantity}/${order.plannedQuantity}, due ${order.dueDate}.`,
+        source: 'Expedite Orders',
+        // Stamped at the moment the threshold was crossed, not at every refresh, so the
+        // alarm keeps a stable position in the slider while it stays unacknowledged.
+        createdAt: order.lastMovementAt
+          ? new Date(new Date(order.lastMovementAt).getTime() + order.stallAlertHours * 3_600_000).toISOString()
+          : new Date().toISOString(),
+      });
+    }
+    if (order.businessDaysLeft === 1) {
+      alerts.push({
+        id: `expedite-due:${today}:${order.id}`,
+        type: 'expedite-due',
+        severity: 'critical',
+        title: `Expedite due tomorrow · ${order.orderNumber}`,
+        message: `${tools} for ${order.clientName || 'client'} delivers ${order.dueDate}, one working day away. Still ${order.status.replaceAll('-', ' ')} at ${order.completedQuantity}/${order.plannedQuantity}.`,
+        source: 'Expedite Orders',
+        createdAt: `${today}T00:00:00`,
+      });
+    }
+  });
+  return alerts;
 }
