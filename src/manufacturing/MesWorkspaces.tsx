@@ -6712,7 +6712,7 @@ export function ProductionOrdersWorkspace({
                           />
                           {expediteRule ? (
                             <span className="production-piece-expedite-flag" title={expediteRule.reason || `${expediteRule.toolId} always runs as an expedite order`}>
-                              <Siren size={12} /> {expediteDetectionMessage}
+                              <b><Siren size={12} /> {expediteDetectionMessage}</b>
                               <em>{expediteLeadTimeLabel(expediteRule.leadTimeDays, dueDateDayCountMode)}</em>
                             </span>
                           ) : null}
