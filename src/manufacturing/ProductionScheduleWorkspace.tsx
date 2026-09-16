@@ -3,7 +3,7 @@ import { AlertTriangle, ArrowLeft, ArrowLeftRight, Biohazard, CalendarDays, Chec
 import { supabase } from '../lib/supabaseClient';
 import { getDaysUntilDelivery } from './DeliveryRiskTimeline';
 import { ProductionOrdersWorkspace } from './MesWorkspaces';
-import { getOrderRiskLevel, type OrderRiskLevel } from './orderRisk';
+import { getScheduleOrderRiskLevel, type OrderRiskLevel } from './orderRisk';
 import { useSupabaseRealtimeRefresh, type RealtimeConnectionState } from '../lib/useSupabaseRealtimeRefresh';
 import { StatisticsAlertSlider } from './statistics/StatisticsAlerts';
 import { useStatisticsAlerts } from './statistics/useStatisticsAlerts';
@@ -27,6 +27,7 @@ const deliveryDistance = (dueDate: string) => { const days = getDaysUntilDeliver
 const liveClockFormatter = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit', second: '2-digit' });
 // Intelligent Scheduling order: overdue first, then high risk, then everything held in
 // quarantine (nothing can be done with it right now), then moderate and low risk.
+// Rework (RW-) orders never rank below moderate.
 const urgencyRank = (risk: OrderRiskLevel, quarantineHeld: boolean) => (
   quarantineHeld ? 2 : risk === 'overdue' ? 0 : risk === 'high' ? 1 : risk === 'moderate' ? 3 : 4
 );
@@ -429,7 +430,7 @@ export function ProductionScheduleWorkspace({ onNavigate, organizationId }: Prop
       const stationQueue = queue.filter((item) => item.station_id === station.id).sort((a, b) => a.position - b.position), center = centerById.get(station.work_center_id), color = stationColorById.get(station.id) || '#ff8a1f';
       const stationIndex = visibleStations.findIndex((candidate) => candidate.id === station.id);
       return <section className={`production-station-lane${draggedStationId === station.id ? ' dragging' : ''}`} style={{ '--station-color': color } as React.CSSProperties} draggable={!reorderingStations} onDragStart={(event) => { if ((event.target as HTMLElement).closest('.production-queue-order')) { event.preventDefault(); return; } setDraggedStationId(station.id); }} onDragEnd={() => setDraggedStationId('')} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { if (!(event.target as HTMLElement).closest('.production-queue-order')) dropStation(station.id); }} key={station.id}><article className="production-station-card"><span className="production-station-color" /><div className="production-station-order-controls"><span><GripVertical size={15} /> Station {stationIndex + 1}</span><div><button type="button" disabled={stationIndex === 0 || reorderingStations} aria-label={`Move ${station.name} up`} onClick={() => moveStation(station.id, -1)}><ChevronDown size={15} /></button><button type="button" disabled={stationIndex === visibleStations.length - 1 || reorderingStations} aria-label={`Move ${station.name} down`} onClick={() => moveStation(station.id, 1)}><ChevronDown size={15} /></button></div></div><small>{center ? `${center.name} · ${center.code}` : 'Work center'}</small><strong>{station.name}</strong><b>{station.code}</b><em>{station.type}</em>{station.mirror_group_id ? <span className="production-station-mirror-tag"><Combine size={13} /> Mirror of {mirrorSiblingsOf(station).filter((sibling) => sibling.id !== station.id).map((sibling) => sibling.name).join(', ') || 'no machine yet'}</span> : null}<button className="production-station-mirror-button" type="button" disabled={!mirrorGroupsAvailable} title={mirrorGroupsAvailable ? 'Configure mirror machines' : 'Apply SQL migration 179 to configure mirror machines'} onClick={(event) => { event.stopPropagation(); openMirrorSetup(station); }}><Combine size={14} /> Mirror machines</button></article><div className="production-station-queue">{stationQueue.map((item) => {
-        const order = orderById.get(item.production_order_id); if (!order) return null; const risk = getOrderRiskLevel(order.due_date);
+        const order = orderById.get(item.production_order_id); if (!order) return null; const risk = getScheduleOrderRiskLevel(order);
         const stationPieceCount = order.manufacturing_type === 'multi-step' ? multiStepPieceCount(order.id, station.code) : Number(order.planned_quantity);
         const quarantineHold = stationQuarantineHold(order.id, station.code, order.manufacturing_type === 'multi-step');
         const mirrorTargets = mirrorSiblingsOf(station).filter((sibling) => sibling.id !== station.id);
@@ -442,7 +443,7 @@ export function ProductionScheduleWorkspace({ onNavigate, organizationId }: Prop
       })}<button className="production-queue-add" type="button" onClick={() => setSelectedStationId(station.id)}><Plus size={28} /><strong>Add order</strong><span>Place the next job in this station queue</span></button></div></section>;
     })}</div>}
     {selectedStation ? <div className="production-order-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelectedStationId(''); }}><section className="production-order-modal" role="dialog" aria-modal="true" aria-labelledby="production-order-picker-title"><header><div><span>Select production order</span><h3 id="production-order-picker-title">{selectedStation.name} · {selectedStation.code}</h3><p>Choose an available order assigned to this station.</p></div><button type="button" aria-label="Close" onClick={() => setSelectedStationId('')}><X size={20} /></button></header><div className="production-order-options">{availableOrders.length ? availableOrders.map((order) => {
-const risk = getOrderRiskLevel(order.due_date);
+const risk = getScheduleOrderRiskLevel(order);
 const stationPieceCount = order.manufacturing_type === 'multi-step' ? multiStepPieceCount(order.id, selectedStation.code) : Number(order.planned_quantity);
 const optionQuarantineHold = stationQuarantineHold(order.id, selectedStation.code, order.manufacturing_type === 'multi-step');
 return <button type="button" disabled={Boolean(savingOrderId)} onClick={() => void addOrder(order)} key={order.id}><span className={`production-order-option-risk ${optionQuarantineHold.held ? 'quarantine' : risk}`}>{optionQuarantineHold.held ? <>In quarantine · {deliveryDistance(order.due_date)}</> : <>{riskLabels[risk]} · {deliveryDistance(order.due_date)}</>}</span><strong>#{order.order_number}</strong><b>{order.client_name || 'Customer not assigned'}</b><dl><div><dt>Part</dt><dd>{order.part_number || order.part_name || '—'}</dd></div>
