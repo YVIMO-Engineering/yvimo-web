@@ -145,6 +145,31 @@ type MenuPosition = {
   maxHeight?: number;
 };
 
+// PostgREST caps every response at 1000 rows and rejects very long URLs, so the
+// history-wide coating lookups are filtered in chunks and paged to the last row.
+const rowPageSize = 1000;
+const filterChunkSize = 100;
+
+async function fetchAllRows<Row>(request: (from: number, to: number) => PromiseLike<{ data: Row[] | null; error: { message: string } | null }>) {
+  const rows: Row[] = [];
+  for (let from = 0; ; from += rowPageSize) {
+    const { data, error } = await request(from, from + rowPageSize - 1);
+    if (error) throw new Error(error.message);
+    const page = data ?? [];
+    rows.push(...page);
+    if (page.length < rowPageSize) return rows;
+  }
+}
+
+async function fetchAllRowsByIds<Row>(ids: string[], request: (chunk: string[], from: number, to: number) => PromiseLike<{ data: Row[] | null; error: { message: string } | null }>) {
+  // Repeated ids must be collapsed first: the same id in two chunks would return its rows twice.
+  const uniqueIds = Array.from(new Set(ids));
+  const chunks: string[][] = [];
+  for (let index = 0; index < uniqueIds.length; index += filterChunkSize) chunks.push(uniqueIds.slice(index, index + filterChunkSize));
+  const results = await Promise.all(chunks.map((chunk) => fetchAllRows<Row>((from, to) => request(chunk, from, to))));
+  return results.flat();
+}
+
 const supplierDocumentOptions: Array<{ value: SupplierDocumentType; label: string }> = [
   { value: 'certificate', label: 'Certificate' },
   { value: 'inspection-report', label: 'Inspection Report' },
@@ -546,25 +571,32 @@ function CoatingSupplierDashboard({ organizationId, onNavigate }: { organization
     const load = async () => {
       setLoading(true);
       setError('');
-      const progressResult = await supabase.from('mes_customer_reception_serial_progress').select('id, reception_item_id, production_serial_id, coating_sent_at, coating_returned_at').eq('organization_id', organizationId).not('coating_sent_at', 'is', null);
-      if (progressResult.error) { if (!cancelled) { setError(progressResult.error.message); setLoading(false); } return; }
-      const progressRows = progressResult.data ?? [];
-      const serialIds = [...new Set(progressRows.map((row) => row.production_serial_id).filter(Boolean))];
-      const serialResult = serialIds.length ? await supabase.from('mes_production_serials').select('id, production_order_id, quotation_id, serial_number, tool_id, assigned_station').in('id', serialIds) : { data: [], error: null };
-      if (serialResult.error) { if (!cancelled) { setError(serialResult.error.message); setLoading(false); } return; }
-      const quotationIds = [...new Set((serialResult.data ?? []).map((row) => row.quotation_id).filter((id): id is string => Boolean(id)))];
-      const quotationResult = quotationIds.length ? await supabase.from('mes_quotations').select('id, coating_provider, coating_price').in('id', quotationIds) : { data: [], error: null };
-      if (quotationResult.error) { if (!cancelled) { setError(quotationResult.error.message); setLoading(false); } return; }
-      const receptionItemIds = [...new Set(progressRows.map((row) => row.reception_item_id).filter(Boolean))];
-      const [itemResult, stationResult, workCenterResult] = await Promise.all([
-        receptionItemIds.length ? supabase.from('mes_customer_reception_items').select('id, production_order_id, production_order_number, quantity, mes_customers(customer_name), mes_production_orders!production_order_id(assigned_station, assigned_work_center)').in('id', receptionItemIds) : Promise.resolve({ data: [], error: null }),
-        supabase.from('mes_work_center_stations').select('code, name').eq('organization_id', organizationId),
-        supabase.from('mes_work_centers').select('code, name').eq('organization_id', organizationId).order('name'),
-      ]);
-      if (itemResult.error || stationResult.error || workCenterResult.error) { if (!cancelled) { setError(itemResult.error?.message ?? stationResult.error?.message ?? workCenterResult.error?.message ?? 'Unable to load coating sub-trackings.'); setLoading(false); } return; }
-      const quotationById = new Map((quotationResult.data ?? []).map((row) => [row.id, row]));
-      const serialById = new Map((serialResult.data ?? []).map((row) => [row.id, row]));
-      const receptionItemById = new Map((itemResult.data ?? []).map((item) => [item.id, item]));
+      const fetchCoatingData = async () => {
+        const progressRows = await fetchAllRows((from, to) => supabase.from('mes_customer_reception_serial_progress').select('id, reception_item_id, production_serial_id, coating_sent_at, coating_returned_at').eq('organization_id', organizationId).not('coating_sent_at', 'is', null).order('id').range(from, to));
+        const serialIds = progressRows.map((row) => row.production_serial_id).filter(Boolean);
+        const serialRows = await fetchAllRowsByIds(serialIds, (ids, from, to) => supabase.from('mes_production_serials').select('id, production_order_id, quotation_id, serial_number, tool_id, assigned_station').in('id', ids).order('id').range(from, to));
+        const quotationIds = serialRows.map((row) => row.quotation_id).filter((id): id is string => Boolean(id));
+        const receptionItemIds = progressRows.map((row) => row.reception_item_id).filter(Boolean);
+        const [quotationRows, itemRows, stationResult, workCenterResult] = await Promise.all([
+          fetchAllRowsByIds(quotationIds, (ids, from, to) => supabase.from('mes_quotations').select('id, coating_provider, coating_price').in('id', ids).order('id').range(from, to)),
+          fetchAllRowsByIds(receptionItemIds, (ids, from, to) => supabase.from('mes_customer_reception_items').select('id, production_order_id, production_order_number, quantity, mes_customers(customer_name), mes_production_orders!production_order_id(assigned_station, assigned_work_center)').in('id', ids).order('id').range(from, to)),
+          supabase.from('mes_work_center_stations').select('code, name').eq('organization_id', organizationId),
+          supabase.from('mes_work_centers').select('code, name').eq('organization_id', organizationId).order('name'),
+        ]);
+        if (stationResult.error || workCenterResult.error) throw new Error(stationResult.error?.message ?? workCenterResult.error?.message);
+        return { progressRows, serialRows, quotationRows, itemRows, stationRows: stationResult.data ?? [], workCenterRows: workCenterResult.data ?? [] };
+      };
+      let coatingData: Awaited<ReturnType<typeof fetchCoatingData>>;
+      try {
+        coatingData = await fetchCoatingData();
+      } catch (loadError) {
+        if (!cancelled) { setError(loadError instanceof Error ? loadError.message : 'Unable to load coating sub-trackings.'); setLoading(false); }
+        return;
+      }
+      const { progressRows, serialRows, quotationRows, itemRows, stationRows, workCenterRows } = coatingData;
+      const quotationById = new Map(quotationRows.map((row) => [row.id, row]));
+      const serialById = new Map(serialRows.map((row) => [row.id, row]));
+      const receptionItemById = new Map(itemRows.map((item) => [item.id, item]));
       if (!cancelled) {
         const nextActivity: CoatingActivity[] = progressRows.map((row) => {
           const quotation = quotationById.get(serialById.get(row.production_serial_id)?.quotation_id ?? '');
@@ -573,7 +605,7 @@ function CoatingSupplierDashboard({ organizationId, onNavigate }: { organization
           return { id: row.id, receptionItemId: row.reception_item_id, serialId: row.production_serial_id, provider: quotation?.coating_provider === 'Voestalpine' ? 'Voestalpine' : 'Balzers', workCenter: productionOrder?.assigned_work_center ?? '', sentAt: row.coating_sent_at ?? '', returnedAt: row.coating_returned_at ?? '', cost: Number(quotation?.coating_price) || 0 };
         });
         setActivity(nextActivity);
-        setTrackings((itemResult.data ?? []).map((item) => {
+        setTrackings(itemRows.map((item) => {
           const customer = Array.isArray(item.mes_customers) ? item.mes_customers[0] : item.mes_customers;
           const productionOrder = Array.isArray(item.mes_production_orders) ? item.mes_production_orders[0] : item.mes_production_orders;
           const itemActivity = nextActivity.filter((row) => row.receptionItemId === item.id);
@@ -581,8 +613,8 @@ function CoatingSupplierDashboard({ organizationId, onNavigate }: { organization
           const sentTimes = serials.map((serial) => serial.sentAt).filter(Boolean).sort();
           return { id: item.id, orderNumber: item.production_order_number ?? '', customerName: customer?.customer_name ?? 'Customer not assigned', quantity: Number(item.quantity) || 0, coatingSentAt: sentTimes[0] ?? '', workCenter: productionOrder?.assigned_work_center ?? '', stationCodes: [...new Set([productionOrder?.assigned_station, ...serials.map((serial) => serialById.get(serial.id)?.assigned_station)].filter((code): code is string => Boolean(code)))], serials };
         }).filter((tracking) => tracking.coatingSentAt && tracking.serials.some((serial) => !serial.returnedAt)));
-        setStationNames(new Map((stationResult.data ?? []).map((station) => [station.code, station.name])));
-        setWorkCenters((workCenterResult.data ?? []).map((center) => ({ code: center.code, name: center.name })));
+        setStationNames(new Map(stationRows.map((station) => [station.code, station.name])));
+        setWorkCenters(workCenterRows.map((center) => ({ code: center.code, name: center.name })));
         setLoading(false);
       }
     };
