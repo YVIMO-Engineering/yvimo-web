@@ -7,16 +7,21 @@ import { getOrderRiskLevel, type OrderRiskLevel } from './orderRisk';
 import {
   buildExpediteRuleIndex,
   defaultExpediteStallAlertHours,
+  expediteToolIdSearchFilter,
   expediteLeadTimeLabel,
   expediteToolIdsSelect,
   expediteToolIdsSelectWithoutStall,
   expediteToolIdsTable,
+  getExpediteCompletion,
   getExpediteDueDate,
+  getExpeditePieceDelivery,
   governingExpediteRule,
   mapExpediteToolRuleRow,
   matchExpeditePiecesByOrder,
   normalizeExpediteToolId,
+  type ExpediteCompletion,
   type ExpeditePiece,
+  type ExpeditePieceDelivery,
   type ExpediteSerialRow,
   type ExpediteToolRule,
   type ExpediteToolRuleRow,
@@ -26,7 +31,7 @@ import { useSupabaseRealtimeRefresh, type RealtimeConnectionState } from '../lib
 import './expediteOrders.css';
 
 type Props = { onNavigate: (path: string) => void; organizationId: string; languageCode?: string };
-type RiskFilter = 'all' | OrderRiskLevel;
+type RiskFilter = 'all' | OrderRiskLevel | 'completed';
 type ExpediteOrderRow = {
   id: string;
   order_number: string;
@@ -41,6 +46,7 @@ type ExpediteOrderRow = {
   status: string;
   assigned_work_center: string | null;
   created_at: string | null;
+  updated_at: string | null;
 };
 type ExpediteUrgency = {
   order: ExpediteOrderRow;
@@ -53,15 +59,48 @@ type ExpediteUrgency = {
   // so an order already committed tighter than the agreement keeps its own date.
   targetDueDate: string;
   onTarget: boolean;
+  deliveries: Map<string, ExpeditePieceDelivery>;
+  completion: ExpediteCompletion | null;
+  // Fulfilled on or before the governing date, judged on the day it completed.
+  completedOnTime: boolean;
 };
+type ExpediteReceptionItemRow = { production_order_id: string; sent_at: string | null };
+type ExpediteSerialProgressRow = { production_serial_id: string; sent_at: string | null; reworked_at: string | null };
 type RuleDraft = { id: string; toolId: string; leadTimeDays: string; stallAlertHours: string; customerId: string; reason: string; notes: string; isActive: boolean };
 
 const riskLabels: Record<OrderRiskLevel, string> = { overdue: 'Overdue', high: 'Critical', moderate: 'Watch', low: 'On track' };
 const liveStateLabels: Record<RealtimeConnectionState, string> = { connecting: 'Connecting…', live: 'Live expedites', offline: 'Reconnecting…' };
 const liveClockFormatter = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit', second: '2-digit' });
-const closedOrderStatuses = ['completed', 'cancelled'];
+const expediteOrderSelect = 'id, order_number, client_name, part_number, part_name, planned_quantity, completed_quantity, scrap_quantity, due_date, priority, status, assigned_work_center, created_at, updated_at';
+const rowPageSize = 1000;
+const idChunkSize = 150;
+const completionOutcomeLabels: Record<ExpediteCompletion['outcome'], string> = { sent: 'Sent to customer', closed: 'Closed', cancelled: 'Cancelled' };
 const emptyRuleDraft: RuleDraft = { id: '', toolId: '', leadTimeDays: '1', stallAlertHours: String(defaultExpediteStallAlertHours), customerId: '', reason: '', notes: '', isActive: true };
 const formatDate = (value: string) => (value ? new Date(`${value}T00:00:00`).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '—');
+const formatTimestamp = (value: string) => (value ? new Date(value).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '—');
+const toLocalIsoDate = (value: string) => {
+  const date = new Date(value);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+};
+const chunk = <T,>(values: T[]) => Array.from({ length: Math.ceil(values.length / idChunkSize) }, (_, index) => values.slice(index * idChunkSize, (index + 1) * idChunkSize));
+
+type QueryResult<Row> = PromiseLike<{ data: Row[] | null; error: { message: string } | null }>;
+async function fetchAllRows<Row>(request: (from: number, to: number) => QueryResult<Row>) {
+  const rows: Row[] = [];
+  for (let from = 0; ; from += rowPageSize) {
+    const { data, error } = await request(from, from + rowPageSize - 1);
+    if (error) return { data: rows, error };
+    rows.push(...(data ?? []));
+    if ((data ?? []).length < rowPageSize) return { data: rows, error: null };
+  }
+}
+
+// Large id lists are split so the request URL stays within what PostgREST accepts.
+async function fetchByIds<Row>(ids: string[], request: (ids: string[]) => QueryResult<Row>) {
+  const results = await Promise.all(chunk(ids).map(request));
+  const failed = results.find((result) => result.error);
+  return { data: results.flatMap((result) => result.data ?? []), error: failed?.error ?? null };
+}
 
 function deliveryDistance(dueDate: string, mode: DayCountMode, languageCode: string) {
   const calendarDays = getDaysUntilDelivery(dueDate);
@@ -76,6 +115,7 @@ export function ExpediteOrdersWorkspace({ onNavigate, organizationId, languageCo
   const [orders, setOrders] = React.useState<ExpediteOrderRow[]>([]);
   const [serials, setSerials] = React.useState<ExpediteSerialRow[]>([]);
   const [traceability, setTraceability] = React.useState<ExpediteTraceabilityRow[]>([]);
+  const [deliveryData, setDeliveryData] = React.useState<{ receptionItems: ExpediteReceptionItemRow[]; progress: ExpediteSerialProgressRow[] } | null>(null);
   const [dayCountMode, setDayCountMode] = React.useState<DayCountMode>('calendar');
   const [toolCatalog, setToolCatalog] = React.useState<string[]>([]);
   const [customers, setCustomers] = React.useState<Array<{ id: string; customer_name: string }>>([]);
@@ -102,9 +142,9 @@ export function ExpediteOrdersWorkspace({ onNavigate, organizationId, languageCo
           : result)),
       supabase
         .from('mes_production_orders')
-        .select('id, order_number, client_name, part_number, part_name, planned_quantity, completed_quantity, scrap_quantity, due_date, priority, status, assigned_work_center, created_at')
+        .select(expediteOrderSelect)
         .eq('organization_id', organizationId)
-        .not('status', 'in', `(${closedOrderStatuses.join(',')})`)
+        .not('status', 'in', '(completed,cancelled)')
         .order('due_date', { ascending: true }),
       supabase.from('mes_order_risk_settings').select('day_count_mode').eq('organization_id', organizationId).maybeSingle(),
       supabase.from('mes_customer_tool_ids').select('tool_id').eq('organization_id', organizationId).order('tool_id', { ascending: true }),
@@ -123,40 +163,76 @@ export function ExpediteOrdersWorkspace({ onNavigate, organizationId, languageCo
       return;
     }
     const loadedRules = ((ruleResult.data ?? []) as unknown as ExpediteToolRuleRow[]).map(mapExpediteToolRuleRow);
-    const loadedOrders = (orderResult.data ?? []) as ExpediteOrderRow[];
+    const openOrders = (orderResult.data ?? []) as ExpediteOrderRow[];
+    // Urgencies stay on the board until their pieces are sent, and after that they live in
+    // the Completed tab. Those orders are usually closed already, so they are found through
+    // the registered Tool IDs instead of through the open order list.
+    const toolIdFilter = expediteToolIdSearchFilter(loadedRules.map((rule) => rule.toolId));
+    const openOrderIds = new Set(openOrders.map((order) => order.id));
+    const [historySerials, historyCaptures] = toolIdFilter
+      ? await Promise.all([
+        fetchAllRows<{ production_order_id: string }>((from, to) => supabase.from('mes_production_serials').select('production_order_id').eq('organization_id', organizationId).or(toolIdFilter).order('id').range(from, to)),
+        fetchAllRows<{ production_order_id: string | null }>((from, to) => supabase.from('mes_operator_terminal_traceability').select('production_order_id').eq('organization_id', organizationId).not('production_order_id', 'is', null).or(toolIdFilter).order('id').range(from, to)),
+      ])
+      : [{ data: [], error: null }, { data: [], error: null }];
+    if (historySerials.error || historyCaptures.error) console.warn('Unable to look up completed expedites', historySerials.error ?? historyCaptures.error);
+    const historyOrderIds = [...new Set([...historySerials.data, ...historyCaptures.data]
+      .map((row) => row.production_order_id)
+      .filter((id): id is string => Boolean(id) && !openOrderIds.has(id as string)))];
+    const historyOrderResult = await fetchByIds<ExpediteOrderRow>(historyOrderIds, (ids) => supabase.from('mes_production_orders').select(expediteOrderSelect).eq('organization_id', organizationId).in('id', ids));
+    if (historyOrderResult.error) console.warn('Unable to load completed expedite orders', historyOrderResult.error);
+    const loadedOrders = [...openOrders, ...historyOrderResult.data];
     // Tool IDs reach a production order two ways: pre-assigned on the serial row, or typed
     // by the operator on the shop floor, where they land in the traceability capture. Both
     // are read for the open orders and matched in memory, so an order already running is
     // detected even though it never went through the assignment modal.
     const orderIds = loadedOrders.map((order) => order.id);
-    const [serialResult, traceabilityResult] = orderIds.length
-      ? await Promise.all([
-        supabase
-          .from('mes_production_serials')
-          .select('id, production_order_id, piece_sequence, serial_number, tool_id')
-          .eq('organization_id', organizationId)
-          .in('production_order_id', orderIds),
-        supabase
-          .from('mes_operator_terminal_traceability')
-          .select('id, production_order_id, serial_number, tool_id, payload')
-          .eq('organization_id', organizationId)
-          .in('production_order_id', orderIds),
-      ])
-      : [{ data: [], error: null }, { data: [], error: null }];
+    const [serialResult, traceabilityResult, receptionItemResult] = await Promise.all([
+      fetchByIds<ExpediteSerialRow>(orderIds, (ids) => supabase
+        .from('mes_production_serials')
+        .select('id, production_order_id, piece_sequence, serial_number, tool_id, result')
+        .eq('organization_id', organizationId)
+        .in('production_order_id', ids)),
+      fetchByIds<ExpediteTraceabilityRow>(orderIds, (ids) => supabase
+        .from('mes_operator_terminal_traceability')
+        .select('id, production_order_id, serial_number, tool_id, payload')
+        .eq('organization_id', organizationId)
+        .in('production_order_id', ids)),
+      fetchByIds<ExpediteReceptionItemRow>(orderIds, (ids) => supabase
+        .from('mes_customer_reception_items')
+        .select('production_order_id, sent_at')
+        .eq('organization_id', organizationId)
+        .in('production_order_id', ids)),
+    ]);
     if (serialResult.error) {
       setError(`Unable to load the assigned Tool IDs: ${serialResult.error.message}.`);
       setLoading(false);
       return;
     }
-    const serialData = serialResult.data;
+    // Only the pieces that carry a registered Tool ID need their delivery progress.
+    const historyIndex = buildExpediteRuleIndex(loadedRules, { includePaused: true });
+    const expediteSerialIds = [...matchExpeditePiecesByOrder(historyIndex, serialResult.data, traceabilityResult.error ? [] : traceabilityResult.data).values()]
+      .flatMap((pieces) => pieces.map((piece) => piece.serialId).filter(Boolean));
+    const progressResult = await fetchByIds<ExpediteSerialProgressRow>(expediteSerialIds, (ids) => supabase
+      .from('mes_customer_reception_serial_progress')
+      .select('production_serial_id, sent_at, reworked_at')
+      .eq('organization_id', organizationId)
+      .in('production_serial_id', ids));
+    // Without reception progress the board cannot tell what was sent, so every urgency
+    // stays open rather than being filed as completed on a guess.
+    if (receptionItemResult.error || progressResult.error) {
+      setError(`Unable to read the reception progress of the expedite pieces: ${(receptionItemResult.error ?? progressResult.error)?.message}.`);
+    }
     // A traceability read that fails only costs the shop-floor fallback, so the board still
     // renders everything the serial rows already know.
     if (traceabilityResult.error) console.warn('Unable to load shop-floor Tool ID captures', traceabilityResult.error);
-    setError('');
+    const progressAvailable = !receptionItemResult.error && !progressResult.error;
+    if (progressAvailable) setError('');
     setRules(loadedRules);
     setOrders(loadedOrders);
-    setSerials((serialData ?? []) as ExpediteSerialRow[]);
-    setTraceability((traceabilityResult.error ? [] : traceabilityResult.data ?? []) as ExpediteTraceabilityRow[]);
+    setSerials(serialResult.data);
+    setTraceability(traceabilityResult.error ? [] : traceabilityResult.data);
+    setDeliveryData(progressAvailable ? { receptionItems: receptionItemResult.data, progress: progressResult.data } : null);
     if (!settingsResult.error) setDayCountMode(settingsResult.data?.day_count_mode === 'business' ? 'business' : 'calendar');
     if (!catalogResult.error) setToolCatalog([...new Set(((catalogResult.data ?? []) as Array<{ tool_id: string }>).map((tool) => tool.tool_id.trim()).filter(Boolean))]);
     if (!customerResult.error) setCustomers((customerResult.data ?? []) as Array<{ id: string; customer_name: string }>);
@@ -171,6 +247,8 @@ export function ExpediteOrdersWorkspace({ onNavigate, organizationId, languageCo
     { table: 'mes_production_orders', filter: `organization_id=eq.${organizationId}` },
     { table: 'mes_production_serials', filter: `organization_id=eq.${organizationId}` },
     { table: 'mes_operator_terminal_traceability', filter: `organization_id=eq.${organizationId}` },
+    { table: 'mes_customer_reception_serial_progress', filter: `organization_id=eq.${organizationId}` },
+    { table: 'mes_customer_reception_items', filter: `organization_id=eq.${organizationId}` },
   ]), [organizationId]);
   useSupabaseRealtimeRefresh({
     channelName: `expedite-orders-live:${organizationId}`,
@@ -183,31 +261,72 @@ export function ExpediteOrdersWorkspace({ onNavigate, organizationId, languageCo
   });
 
   const ruleIndex = React.useMemo(() => buildExpediteRuleIndex(rules), [rules]);
-  const urgencies = React.useMemo<ExpediteUrgency[]>(() => {
-    const piecesByOrder = matchExpeditePiecesByOrder(ruleIndex, serials, traceability);
-    return orders
-      .filter((order) => piecesByOrder.has(order.id))
-      .map((order) => {
-        const pieces = (piecesByOrder.get(order.id) ?? []).sort((left: ExpeditePiece, right: ExpeditePiece) => left.pieceSequence - right.pieceSequence);
-        const rule = governingExpediteRule(pieces) as ExpediteToolRule;
-        // The promise is measured from the day the order was created, so an old order is
-        // never judged against a lead time recounted from today.
-        const createdAt = order.created_at ? new Date(order.created_at) : new Date();
-        const leadTimeDueDate = getExpediteDueDate(rule.leadTimeDays, dayCountMode, languageCode, createdAt);
-        const onTarget = order.due_date <= leadTimeDueDate;
-        return {
-          order,
-          pieces,
-          rule,
-          risk: getOrderRiskLevel(order.due_date, new Date(), dayCountMode, languageCode),
-          leadTimeDueDate,
-          targetDueDate: onTarget ? order.due_date : leadTimeDueDate,
-          onTarget,
-        };
-      })
-      .sort((left, right) => left.order.due_date.localeCompare(right.order.due_date));
-  }, [dayCountMode, languageCode, orders, ruleIndex, serials, traceability]);
+  const historyIndex = React.useMemo(() => buildExpediteRuleIndex(rules, { includePaused: true }), [rules]);
+  const deliveryBySerialId = React.useMemo(() => {
+    const map = new Map<string, ExpeditePieceDelivery>();
+    serials.forEach((serial) => { if (serial.result === 'scrap') map.set(serial.id, { sentAt: '', reworkedAt: '', scrapped: true }); });
+    deliveryData?.progress.forEach((progress) => map.set(progress.production_serial_id, {
+      sentAt: progress.sent_at ?? '',
+      reworkedAt: progress.reworked_at ?? '',
+      scrapped: map.get(progress.production_serial_id)?.scrapped ?? false,
+    }));
+    return map;
+  }, [deliveryData, serials]);
 
+  const { urgencies, completedUrgencies } = React.useMemo(() => {
+    const activePiecesByOrder = matchExpeditePiecesByOrder(ruleIndex, serials, traceability);
+    const historyPiecesByOrder = matchExpeditePiecesByOrder(historyIndex, serials, traceability);
+    const receptionItemsByOrder = new Map<string, ExpediteReceptionItemRow[]>();
+    deliveryData?.receptionItems.forEach((item) => receptionItemsByOrder.set(item.production_order_id, [...(receptionItemsByOrder.get(item.production_order_id) ?? []), item]));
+
+    const build = (order: ExpediteOrderRow, rawPieces: ExpeditePiece[], orderSentAt: string, completion: ExpediteCompletion | null): ExpediteUrgency => {
+      const pieces = [...rawPieces].sort((left, right) => left.pieceSequence - right.pieceSequence);
+      const rule = governingExpediteRule(pieces) as ExpediteToolRule;
+      // The promise is measured from the day the order was created, so an old order is
+      // never judged against a lead time recounted from today.
+      const createdAt = order.created_at ? new Date(order.created_at) : new Date();
+      const leadTimeDueDate = getExpediteDueDate(rule.leadTimeDays, dayCountMode, languageCode, createdAt);
+      const onTarget = order.due_date <= leadTimeDueDate;
+      const targetDueDate = onTarget ? order.due_date : leadTimeDueDate;
+      return {
+        order,
+        pieces,
+        rule,
+        risk: getOrderRiskLevel(order.due_date, new Date(), dayCountMode, languageCode),
+        leadTimeDueDate,
+        targetDueDate,
+        onTarget,
+        deliveries: new Map(pieces.map((piece) => [piece.key, getExpeditePieceDelivery(piece, deliveryBySerialId, orderSentAt)])),
+        completion,
+        completedOnTime: Boolean(completion?.completedAt) && toLocalIsoDate(completion!.completedAt) <= targetDueDate,
+      };
+    };
+    const active: ExpediteUrgency[] = [];
+    const completed: ExpediteUrgency[] = [];
+    orders.forEach((order) => {
+      const historyPieces = historyPiecesByOrder.get(order.id);
+      if (!historyPieces?.length) return;
+      const items = receptionItemsByOrder.get(order.id) ?? [];
+      const orderSentAt = items.length && items.every((item) => item.sent_at) ? items.map((item) => item.sent_at ?? '').sort().at(-1) ?? '' : '';
+      const completion = deliveryData
+        ? getExpediteCompletion({ order, pieces: historyPieces, deliveryBySerialId, orderSentAt, hasReception: items.length > 0 })
+        : null;
+      if (completion) {
+        completed.push(build(order, historyPieces, orderSentAt, completion));
+        return;
+      }
+      // Without reception progress a closed order cannot be judged, so it stays off the
+      // board as it did before the Completed tab existed.
+      if (!deliveryData && order.status === 'completed') return;
+      // Paused Tool IDs stop flagging open work, exactly as before.
+      const activePieces = activePiecesByOrder.get(order.id);
+      if (activePieces?.length && order.status !== 'cancelled') active.push(build(order, activePieces, orderSentAt, null));
+    });
+    return {
+      urgencies: active.sort((left, right) => left.order.due_date.localeCompare(right.order.due_date)),
+      completedUrgencies: completed.sort((left, right) => (right.completion?.completedAt ?? '').localeCompare(left.completion?.completedAt ?? '')),
+    };
+  }, [dayCountMode, deliveryBySerialId, deliveryData, historyIndex, languageCode, orders, ruleIndex, serials, traceability]);
   const riskCounts = React.useMemo(() => urgencies.reduce((counts, urgency) => {
     counts[urgency.risk] += 1;
     return counts;
@@ -234,8 +353,9 @@ export function ExpediteOrdersWorkspace({ onNavigate, organizationId, languageCo
 
   const visibleUrgencies = React.useMemo(() => {
     const term = search.trim().toLowerCase();
-    return urgencies.filter((urgency) => {
-      if (riskFilter !== 'all' && urgency.risk !== riskFilter) return false;
+    const source = riskFilter === 'completed' ? completedUrgencies : urgencies;
+    return source.filter((urgency) => {
+      if (riskFilter !== 'all' && riskFilter !== 'completed' && urgency.risk !== riskFilter) return false;
       if (!term) return true;
       return [
         urgency.order.order_number,
@@ -246,7 +366,7 @@ export function ExpediteOrdersWorkspace({ onNavigate, organizationId, languageCo
         ...urgency.pieces.flatMap((piece) => [piece.toolId, piece.serialNumber]),
       ].some((value) => (value ?? '').toLowerCase().includes(term));
     });
-  }, [riskFilter, search, urgencies]);
+  }, [completedUrgencies, riskFilter, search, urgencies]);
 
   const openOrderDetails = (orderNumber: string) => {
     window.sessionStorage.setItem('yvimo:mes:selectedProductionOrderNumber', orderNumber);
@@ -338,10 +458,11 @@ export function ExpediteOrdersWorkspace({ onNavigate, organizationId, languageCo
   };
 
   const renderUrgencyCard = (urgency: ExpediteUrgency) => {
-    const { order, pieces, rule, risk } = urgency;
-    return <article className={`expedite-card ${risk}`} key={order.id}>
+    const { order, pieces, rule, risk, completion } = urgency;
+    const headerState = completion ? (completion.outcome === 'sent' && urgency.completedOnTime ? 'completed' : `completed ${completion.outcome === 'sent' ? 'late' : completion.outcome}`) : risk;
+    return <article className={`expedite-card ${completion ? 'completed' : risk}`} key={order.id}>
       <header className="expedite-card-header">
-        <span className="expedite-card-badge"><Siren size={13} /> Expedite</span>
+        <span className="expedite-card-badge">{completion ? <><CheckCircle2 size={13} /> Completed</> : <><Siren size={13} /> Expedite</>}</span>
         <span className="expedite-card-lead">{expediteLeadTimeLabel(rule.leadTimeDays, dayCountMode)} lead time</span>
       </header>
       <div className="expedite-card-body">
@@ -354,11 +475,15 @@ export function ExpediteOrdersWorkspace({ onNavigate, organizationId, languageCo
             onClick={() => openOrderDetails(order.order_number)}
             onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openOrderDetails(order.order_number); } }}
           >
-            <header className={risk}>
+            {completion ? <header className={headerState}>
+              <span><CheckCircle2 size={14} /> {completionOutcomeLabels[completion.outcome]}</span>
+              <b>{completion.outcome !== 'sent' ? '' : urgency.completedOnTime ? 'On time' : 'Late'}</b>
+              <time><CalendarDays size={13} /> {formatTimestamp(completion.completedAt)} · due {formatDate(urgency.targetDueDate)}</time>
+            </header> : <header className={risk}>
               <span><AlertTriangle size={14} /> {riskLabels[risk]}</span>
               <b>{deliveryDistance(order.due_date, dayCountMode, languageCode)}</b>
               <time><CalendarDays size={13} /> {formatDate(order.due_date)}</time>
-            </header>
+            </header>}
             <div>
               <small>Production order</small>
               <strong>#{order.order_number}</strong>
@@ -373,11 +498,17 @@ export function ExpediteOrdersWorkspace({ onNavigate, organizationId, languageCo
               </dl>
             </div>
           </article>
-          <div className={`expedite-target-card${urgency.onTarget ? ' on-target' : ' off-target'}`}>
+          {completion ? <div className={`expedite-target-card${completion.outcome !== 'sent' || urgency.completedOnTime ? ' on-target' : ' off-target'}`}>
+            {completion.outcome === 'cancelled'
+              ? <><X size={15} /><span><b>Order cancelled</b><em>The urgency closed without a delivery on {formatTimestamp(completion.completedAt)}.</em></span></>
+              : completion.outcome === 'closed'
+                ? <><CheckCircle2 size={15} /><span><b>Closed without a shipment</b><em>{completion.reworkedCount || completion.scrappedCount ? `${[completion.reworkedCount ? `${completion.reworkedCount} sent to rework` : '', completion.scrappedCount ? `${completion.scrappedCount} scrapped` : ''].filter(Boolean).join(' · ')}.` : 'This order never came in through a reception, so its completion closed the urgency.'}</em></span></>
+                : <>{urgency.completedOnTime ? <CheckCircle2 size={15} /> : <TriangleAlert size={15} />}<span><b>{completion.sentCount} of {pieces.length} expedite {pieces.length === 1 ? 'piece' : 'pieces'} sent · {formatTimestamp(completion.completedAt)}</b><em>{urgency.completedOnTime ? `Delivered within the date the ${expediteLeadTimeLabel(rule.leadTimeDays, dayCountMode)} agreement governs.` : `Went out after ${formatDate(urgency.targetDueDate)}, the date the agreement governs.`}{completion.reworkedCount ? ` ${completion.reworkedCount} sent to rework.` : ''}{completion.scrappedCount ? ` ${completion.scrappedCount} scrapped.` : ''}</em></span></>}
+          </div> : <div className={`expedite-target-card${urgency.onTarget ? ' on-target' : ' off-target'}`}>
             {urgency.onTarget
               ? <><CheckCircle2 size={15} /><span><b>Lead time honored · delivering {formatDate(urgency.targetDueDate)}</b><em>Within the {expediteLeadTimeLabel(rule.leadTimeDays, dayCountMode)} agreed for {rule.toolId}{order.due_date < urgency.leadTimeDueDate ? ', and tighter than the agreement asks for' : ''}.</em></span></>
               : <><TriangleAlert size={15} /><span><b>Due date beyond the expedite lead time</b><em>Committed {formatDate(order.due_date)} · the {expediteLeadTimeLabel(rule.leadTimeDays, dayCountMode)} agreement allowed {formatDate(urgency.leadTimeDueDate)} at the latest.</em></span></>}
-          </div>
+          </div>}
         </section>
         <section className="expedite-tool-column">
           <div className="expedite-rule-card">
@@ -390,7 +521,7 @@ export function ExpediteOrdersWorkspace({ onNavigate, organizationId, languageCo
             {rule.reason ? <p className="expedite-rule-reason">{rule.reason}</p> : null}
           </div>
           <ul className="expedite-piece-list">
-            {pieces.map((piece) => <li key={piece.key}>
+            {pieces.map((piece) => { const delivery = urgency.deliveries.get(piece.key); return <li key={piece.key}>
               <span className="expedite-piece-sequence">{piece.pieceSequence || '—'}</span>
               <span className="expedite-piece-body">
                 <strong>{piece.toolId || 'Tool ID not assigned'}</strong>
@@ -399,8 +530,14 @@ export function ExpediteOrdersWorkspace({ onNavigate, organizationId, languageCo
                   {piece.source === 'shop-floor' ? <b className="expedite-piece-source">Shop floor</b> : null}
                 </small>
               </span>
-              <span className="expedite-piece-lead">{expediteLeadTimeLabel(piece.rule.leadTimeDays, dayCountMode)}</span>
-            </li>)}
+              {delivery?.sentAt
+                ? <span className="expedite-piece-delivery sent">Sent {formatTimestamp(delivery.sentAt)}</span>
+                : delivery?.reworkedAt
+                  ? <span className="expedite-piece-delivery rework">Rework</span>
+                  : delivery?.scrapped
+                    ? <span className="expedite-piece-delivery scrap">Scrap</span>
+                    : <span className="expedite-piece-lead">{expediteLeadTimeLabel(piece.rule.leadTimeDays, dayCountMode)}</span>}
+            </li>; })}
           </ul>
         </section>
       </div>
@@ -417,7 +554,7 @@ export function ExpediteOrdersWorkspace({ onNavigate, organizationId, languageCo
       </div>
     </div>
     <div className="expedite-summary">
-      <article><small>Open expedites</small><strong>{urgencies.length}</strong><span>production orders carrying an expedite Tool ID</span></article>
+      <article><small>Open expedites</small><strong>{urgencies.length}</strong><span>expedite orders not yet sent to the customer</span></article>
       <article className={riskCounts.overdue ? 'alarm' : ''}><small>Overdue</small><strong>{riskCounts.overdue}</strong><span>past the committed delivery date</span></article>
       <article className={riskCounts.high ? 'warn' : ''}><small>Critical</small><strong>{riskCounts.high}</strong><span>due today or tomorrow</span></article>
       <article className={offTargetCount ? 'warn' : ''}><small>Off lead time</small><strong>{offTargetCount}</strong><span>committed later than the expedite lead time</span></article>
@@ -430,6 +567,7 @@ export function ExpediteOrdersWorkspace({ onNavigate, organizationId, languageCo
         <button type="button" role="tab" aria-selected={riskFilter === 'high'} className={riskFilter === 'high' ? 'active' : ''} onClick={() => setRiskFilter('high')}>Critical <b>{riskCounts.high}</b></button>
         <button type="button" role="tab" aria-selected={riskFilter === 'moderate'} className={riskFilter === 'moderate' ? 'active' : ''} onClick={() => setRiskFilter('moderate')}>Watch <b>{riskCounts.moderate}</b></button>
         <button type="button" role="tab" aria-selected={riskFilter === 'low'} className={riskFilter === 'low' ? 'active' : ''} onClick={() => setRiskFilter('low')}>On track <b>{riskCounts.low}</b></button>
+        <button type="button" role="tab" aria-selected={riskFilter === 'completed'} className={`completed${riskFilter === 'completed' ? ' active' : ''}`} onClick={() => setRiskFilter('completed')}><CheckCircle2 size={15} /> Completed <b>{completedUrgencies.length}</b></button>
       </div>
       <label className="expedite-search">
         <Search size={16} />
@@ -499,8 +637,12 @@ export function ExpediteOrdersWorkspace({ onNavigate, organizationId, languageCo
     ) : visibleUrgencies.length === 0 ? (
       <div className="expedite-empty">
         <PackageOpen size={28} />
-        <strong>{urgencies.length === 0 ? 'No open order carries an expedite Tool ID' : 'No expedite matches this view'}</strong>
-        <span>{urgencies.length === 0
+        <strong>{riskFilter === 'completed'
+          ? completedUrgencies.length === 0 ? 'No expedite has been completed yet' : 'No completed expedite matches this search'
+          : urgencies.length === 0 ? 'No open order carries an expedite Tool ID' : 'No expedite matches this view'}</strong>
+        <span>{riskFilter === 'completed'
+          ? 'An expedite moves here once every one of its pieces is sent from Client Receptions.'
+          : urgencies.length === 0
           ? activeRuleCount === 0
             ? 'Nothing is being auto-detected yet, so no production order can be flagged as an expedite.'
             : 'An order shows up here as soon as one of the watched Tool IDs above is assigned to a piece.'

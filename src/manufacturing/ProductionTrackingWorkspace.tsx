@@ -7,10 +7,19 @@ import {
   FileText,
   Mail,
   Search,
+  Siren,
 } from "lucide-react";
 import { supabase } from "../lib/supabaseClient";
 import { exportElementScreenshotToSinglePagePdf } from "../lib/screenshotPdfExport";
 import { MesOrderDatePicker } from "./MesWorkspaces";
+import {
+  buildExpediteRuleIndex,
+  expediteToolIdsSelectWithoutStall,
+  expediteToolIdsTable,
+  mapExpediteToolRuleRow,
+  matchExpediteRule,
+  type ExpediteToolRuleRow,
+} from "./expediteOrders";
 import "./productionTrackingWorkspace.css";
 import "./productionTrackingViewport.css";
 
@@ -218,10 +227,28 @@ export function ProductionTrackingWorkspace({
     [rows, setRows] = React.useState<Row[]>([]),
     [loading, setLoading] = React.useState(false),
     [error, setError] = React.useState("");
+  const [expediteRules, setExpediteRules] = React.useState<ExpediteToolRuleRow[]>([]);
+  // Paused Tool IDs still mark their pieces: the table is a history, and those pieces did
+  // run as expedites.
+  const expediteRuleIndex = React.useMemo(
+    () => buildExpediteRuleIndex(expediteRules.map(mapExpediteToolRuleRow), { includePaused: true }),
+    [expediteRules],
+  );
+  const isExpediteRow = (row: Row) =>
+    Boolean(row.serial?.tool_id && matchExpediteRule(expediteRuleIndex, row.serial.tool_id));
   const [pdfStatus, setPdfStatus] = React.useState<
     "idle" | "generating" | "generated" | "error"
   >("idle");
   React.useEffect(() => {
+    // The highlight is a nicety, so a registry that cannot be read leaves the table plain.
+    void supabase
+      .from(expediteToolIdsTable)
+      .select(expediteToolIdsSelectWithoutStall)
+      .eq("organization_id", organizationId)
+      .then(({ data, error: expediteError }) => {
+        if (expediteError) console.warn("Unable to load expedite Tool IDs", expediteError);
+        setExpediteRules(expediteError ? [] : ((data ?? []) as unknown as ExpediteToolRuleRow[]));
+      });
     void Promise.all([
       supabase
         .from("mes_customers")
@@ -691,8 +718,9 @@ export function ProductionTrackingWorkspace({
             <tbody>
               {visibleRows.map((row) => {
                 const { key, order, serial, traceability } = row;
+                const expedite = isExpediteRow(row);
                 return (
-                  <tr key={key}>
+                  <tr key={key} className={expedite ? "tracking-expedite-row" : undefined}>
                     <td>
                       <strong>#{order.order_number}</strong>
                     </td>
@@ -704,7 +732,16 @@ export function ProductionTrackingWorkspace({
                       </span>
                     </td>
                     <td>{order.part_number || order.part_name || "—"}</td>
-                    <td>{serial?.tool_id || "—"}</td>
+                    <td>
+                      <span className="tracking-tool-id">
+                        {serial?.tool_id || "—"}
+                        {expedite ? (
+                          <b className="tracking-expedite-badge">
+                            <Siren size={11} /> Expedite
+                          </b>
+                        ) : null}
+                      </span>
+                    </td>
                     <td>{serial?.serial_number || "—"}</td>
                     {isAllParts ? (
                       <td>{processData(row)}</td>
@@ -862,7 +899,7 @@ export function ProductionTrackingWorkspace({
                 </thead>
                 <tbody>
                   {partRows.map((row) => (
-                    <tr key={`pdf:${row.key}`}>
+                    <tr key={`pdf:${row.key}`} className={isExpediteRow(row) ? "tracking-expedite-row" : undefined}>
                       <td>#{row.order.order_number}</td>
                       <td>{date(row.receptionReceivedAt)}</td>
                       <td>{row.order.client_name || "—"}</td>
@@ -874,7 +911,12 @@ export function ProductionTrackingWorkspace({
                       <td>
                         {row.order.part_number || row.order.part_name || "—"}
                       </td>
-                      <td>{row.serial?.tool_id || "—"}</td>
+                      <td>
+                        {row.serial?.tool_id || "—"}
+                        {isExpediteRow(row) ? (
+                          <b className="tracking-expedite-badge">Expedite</b>
+                        ) : null}
+                      </td>
                       <td>{row.serial?.serial_number || "—"}</td>
                       {pdfMeasurementValues(row).map((value, index) => (
                         <td key={`${row.key}:measurement:${index}`}>{value}</td>

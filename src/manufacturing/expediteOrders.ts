@@ -63,11 +63,12 @@ export function normalizeExpediteToolId(value: string) {
 export type ExpediteRuleIndex = Map<string, ExpediteToolRule>;
 
 // Only active rules can flag an order. If the same Tool ID somehow resolves twice, the
-// shortest lead time wins so detection never relaxes an urgency.
-export function buildExpediteRuleIndex(rules: ExpediteToolRule[]): ExpediteRuleIndex {
+// shortest lead time wins so detection never relaxes an urgency. History views pass
+// includePaused so pausing a Tool ID does not erase the urgencies it already produced.
+export function buildExpediteRuleIndex(rules: ExpediteToolRule[], { includePaused = false } = {}): ExpediteRuleIndex {
   const index: ExpediteRuleIndex = new Map();
   rules.forEach((rule) => {
-    if (!rule.isActive) return;
+    if (!rule.isActive && !includePaused) return;
     const key = normalizeExpediteToolId(rule.toolId);
     if (!key) return;
     const current = index.get(key);
@@ -135,6 +136,7 @@ export type ExpediteSerialRow = {
   piece_sequence: number | null;
   serial_number: string | null;
   tool_id: string | null;
+  result?: string | null;
 };
 
 export type ExpediteTraceabilityRow = {
@@ -241,4 +243,76 @@ export function matchExpeditePiecesByOrder(
 // expedite Tool IDs it carries.
 export function governingExpediteRule(pieces: ExpeditePiece[]) {
   return [...pieces].sort((left, right) => left.rule.leadTimeDays - right.rule.leadTimeDays)[0]?.rule ?? null;
+}
+
+// PostgREST filter that finds every row whose Tool ID could belong to a registered rule.
+// Anything other than letters, digits and dashes becomes a wildcard, so the filter only
+// ever over-matches; the exact comparison happens afterwards with matchExpediteRule.
+export function expediteToolIdSearchFilter(toolIds: string[]) {
+  const patterns = [...new Set(toolIds
+    .map((toolId) => toolId.trim().replace(/[^A-Za-z0-9-]+/g, '*'))
+    .filter((pattern) => pattern.replaceAll('*', '')))];
+  return patterns.map((pattern) => `tool_id.ilike.*${pattern}*`).join(',');
+}
+
+// How far each expedite piece got on its way to the customer, read from the per-serial
+// progress of Client Receptions.
+export type ExpeditePieceDelivery = { sentAt: string; reworkedAt: string; scrapped: boolean };
+export type ExpediteCompletionOutcome = 'sent' | 'closed' | 'cancelled';
+export type ExpediteCompletion = {
+  completedAt: string;
+  outcome: ExpediteCompletionOutcome;
+  sentCount: number;
+  reworkedCount: number;
+  scrappedCount: number;
+};
+
+export function getExpeditePieceDelivery(
+  piece: ExpeditePiece,
+  deliveryBySerialId: Map<string, ExpeditePieceDelivery>,
+  orderSentAt: string,
+): ExpeditePieceDelivery {
+  const delivery = piece.serialId ? deliveryBySerialId.get(piece.serialId) : undefined;
+  // A reception item is stamped sent only once every piece of it went out, so it also
+  // covers shop-floor captures that have no serial row to carry their own progress.
+  return {
+    sentAt: delivery?.sentAt || (delivery?.reworkedAt || delivery?.scrapped ? '' : orderSentAt),
+    reworkedAt: delivery?.reworkedAt ?? '',
+    scrapped: delivery?.scrapped ?? false,
+  };
+}
+
+// An urgency is fulfilled when the customer has every expedite piece back, not when the
+// order is released by Quality. A piece sent to rework or scrapped no longer blocks it:
+// the rework order carries the piece from there. Orders that never came in through a
+// reception have nothing to ship, so their completion closes the urgency.
+export function getExpediteCompletion({
+  order,
+  pieces,
+  deliveryBySerialId,
+  orderSentAt,
+  hasReception,
+}: {
+  order: { status: string; updated_at: string | null };
+  pieces: ExpeditePiece[];
+  deliveryBySerialId: Map<string, ExpeditePieceDelivery>;
+  orderSentAt: string;
+  hasReception: boolean;
+}): ExpediteCompletion | null {
+  const closedAt = order.updated_at ?? '';
+  if (order.status === 'cancelled') return { completedAt: closedAt, outcome: 'cancelled', sentCount: 0, reworkedCount: 0, scrappedCount: 0 };
+  if (!hasReception) {
+    return order.status === 'completed' ? { completedAt: closedAt, outcome: 'closed', sentCount: 0, reworkedCount: 0, scrappedCount: 0 } : null;
+  }
+  const deliveries = pieces.map((piece) => getExpeditePieceDelivery(piece, deliveryBySerialId, orderSentAt));
+  if (!deliveries.length || deliveries.some((delivery) => !delivery.sentAt && !delivery.reworkedAt && !delivery.scrapped)) return null;
+  const sentCount = deliveries.filter((delivery) => delivery.sentAt).length;
+  const lastMovement = deliveries.map((delivery) => delivery.sentAt || delivery.reworkedAt).filter(Boolean).sort().at(-1);
+  return {
+    completedAt: lastMovement || closedAt,
+    outcome: sentCount ? 'sent' : 'closed',
+    sentCount,
+    reworkedCount: deliveries.filter((delivery) => !delivery.sentAt && delivery.reworkedAt).length,
+    scrappedCount: deliveries.filter((delivery) => !delivery.sentAt && !delivery.reworkedAt && delivery.scrapped).length,
+  };
 }

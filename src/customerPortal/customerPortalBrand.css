@@ -1198,3 +1198,4 @@
 .cp-public-header-actions>button.has-alert:after{animation:cp-bell-alert-dot 1.4s steps(1,end) infinite}
 /* Reduced motion still needs the alert: slow cross-fade instead of a blink. */
 @media(prefers-reduced-motion:reduce){.cp-public-header-actions>button.has-alert{animation:cp-bell-alert-soft 3.4s ease-in-out infinite}.cp-public-header-actions>button.has-alert:after{animation:cp-bell-alert-dot-soft 3.4s ease-in-out infinite}}
+.cp-tracking-table tbody tr.expedite{background:#fff1f5}.cp-tracking-table tbody tr.expedite>td:first-child{box-shadow:inset 4px 0 0 #e11d48}.cp-tracking-tool{display:inline-flex;flex-direction:column;align-items:flex-start;gap:4px}.cp-tracking-table .cp-tracking-expedite{display:inline-flex;align-items:center;gap:3px;border-radius:999px;padding:3px 8px;background:#e11d48;color:#fff;font-size:9px;font-weight:900;letter-spacing:.05em;text-transform:uppercase;white-space:nowrap}
