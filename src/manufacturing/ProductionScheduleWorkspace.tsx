@@ -103,22 +103,32 @@ export function ProductionScheduleWorkspace({ onNavigate, organizationId }: Prop
       const loadedQueue = (queueRows.data ?? []) as QueueItem[];
       const pendingOrderIds = new Set((pieceRows.data ?? []).map((piece) => piece.production_order_id));
       const stationsById = new Map((stationRows.data ?? []).map((station) => [station.id, station.code]));
+      // Every planned piece already came back good or scrap, so there is no work left to
+      // run. A Multi-step order reaches that point when the last station closes; a
+      // single-operation order reaches it the moment its last piece is scrapped, and
+      // nothing closes it afterwards because the terminal only completes on demand. Until
+      // the order is completed it keeps its queue card and ages into Overdue on a plan
+      // nobody can act on, so reconcile both types.
       const staleCompletedOrders = activeOrders.filter((order) => (
-        order.manufacturing_type === 'multi-step'
+        Number(order.planned_quantity) > 0
         && Number(order.completed_quantity) + Number(order.scrap_quantity) >= Number(order.planned_quantity)
         && !pendingOrderIds.has(order.id)
       ));
       const reconciledOrderIds = new Set<string>();
       await Promise.all(staleCompletedOrders.map(async (order) => {
         const queuedStationId = loadedQueue.find((item) => item.production_order_id === order.id)?.station_id;
-        const stationCode = queuedStationId ? stationsById.get(queuedStationId) : undefined;
+        // An order fully reported outside the board has no queue card to read the station
+        // from, and a single-operation order can carry several compatible codes: the
+        // completion event only records where the work stopped, so the first one is enough.
+        const stationCode = (queuedStationId ? stationsById.get(queuedStationId) : undefined)
+          ?? (order.assigned_station ?? '').split(',').map((code) => code.trim()).find(Boolean);
         if (!stationCode) return;
         const { error: completionError } = await supabase.rpc('mes_operator_set_state', {
           p_order_id: order.id,
           p_organization_id: organizationId,
           p_station_code: stationCode,
           p_state: 'completed',
-          p_reason: 'Reconciled completed Multi-step order',
+          p_reason: `Reconciled completed ${order.manufacturing_type === 'multi-step' ? 'Multi-step' : 'single-operation'} order`,
           p_comment: 'All planned pieces were already reported and no station work remained',
           p_shift: null,
         });
