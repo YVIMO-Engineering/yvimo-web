@@ -15,6 +15,8 @@ type PatientRow = {
   created_at: string;
 };
 
+type ConflictingPatient = Pick<PatientRow, 'id' | 'full_name' | 'curp' | 'medical_record_number'>;
+
 type Props = {
   organizationId: string;
   organizationName: string;
@@ -38,6 +40,11 @@ function getBirthDateFromCurp(curp: string): string | null {
   const date = new Date(Date.UTC(year, month - 1, day));
   if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return null;
   return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+function getSexFromCurp(curp: string): PatientRow['sex'] | null {
+  if (!/^[A-Z]{4}\d{6}[HM]/.test(curp)) return null;
+  return curp.charAt(10) === 'H' ? 'Male' : 'Female';
 }
 
 function getAgeFromBirthDate(birthDate: string, today = new Date()) {
@@ -127,6 +134,7 @@ export function HealthPatientsWorkspace({ organizationId, organizationName, onNa
   const [dialogOpen, setDialogOpen] = React.useState(false);
   const [form, setForm] = React.useState(emptyForm);
   const [formError, setFormError] = React.useState('');
+  const [formErrorDetails, setFormErrorDetails] = React.useState<string[]>([]);
   const [saving, setSaving] = React.useState(false);
   const [editingPatient, setEditingPatient] = React.useState<PatientRow | null>(null);
   const [deletingPatient, setDeletingPatient] = React.useState<PatientRow | null>(null);
@@ -214,7 +222,7 @@ export function HealthPatientsWorkspace({ organizationId, organizationName, onNa
   const openCreateDialog = () => {
     setEditingPatient(null);
     setForm(emptyForm);
-    setFormError('');
+    showFormError('');
     setDialogOpen(true);
   };
 
@@ -225,10 +233,28 @@ export function HealthPatientsWorkspace({ organizationId, organizationName, onNa
     });
   };
 
+  const showFormError = (message: string, details: string[] = []) => {
+    setFormError(message);
+    setFormErrorDetails(details);
+  };
+
+  const findConflictingPatient = async (column: 'curp' | 'medical_record_number', value: string, excludedPatientId: string | null) => {
+    let query = supabase
+      .from('health_patients')
+      .select('id, full_name, curp, medical_record_number')
+      .eq('organization_id', organizationId)
+      .eq(column, value)
+      .limit(1);
+    if (excludedPatientId) query = query.neq('id', excludedPatientId);
+    const { data, error } = await query.maybeSingle();
+    if (error) console.warn('Unable to identify the duplicated patient', error);
+    return (data as ConflictingPatient | null) ?? null;
+  };
+
   const openEditDialog = (patient: PatientRow) => {
     setEditingPatient(patient);
     setForm({ fullName: normalizePatientName(patient.full_name), curp: patient.curp, medicalRecordNumber: patient.medical_record_number, sex: patient.sex });
-    setFormError('');
+    showFormError('');
     setDialogOpen(true);
   };
 
@@ -239,19 +265,19 @@ export function HealthPatientsWorkspace({ organizationId, organizationName, onNa
     const medicalRecordNumber = form.medicalRecordNumber.trim().toUpperCase();
     const birthDate = getBirthDateFromCurp(curp);
     if (!fullName || !curp || !medicalRecordNumber || !form.sex) {
-      setFormError('Full name, CURP, medical record number, and sex are required.');
+      showFormError('Full name, CURP, medical record number, and sex are required.');
       return;
     }
     if (curp.length !== 18) {
-      setFormError('CURP must contain exactly 18 characters.');
+      showFormError('CURP must contain exactly 18 characters.');
       return;
     }
     if (!birthDate || getAgeFromBirthDate(birthDate) < 0 || getAgeFromBirthDate(birthDate) > 130) {
-      setFormError('CURP does not contain a valid birth date.');
+      showFormError('CURP does not contain a valid birth date.');
       return;
     }
     setSaving(true);
-    setFormError('');
+    showFormError('');
     const patientValues = { organization_id: organizationId, full_name: fullName, curp, medical_record_number: medicalRecordNumber, sex: form.sex, birth_date: birthDate };
     const query = editingPatient
       ? supabase.from('health_patients').update(patientValues).eq('id', editingPatient.id).eq('organization_id', organizationId)
@@ -261,7 +287,25 @@ export function HealthPatientsWorkspace({ organizationId, organizationName, onNa
       .single();
     if (error) {
       console.warn('Unable to create patient', error);
-      setFormError(error.code === '23505' ? 'This CURP or medical record number is already registered in this organization.' : editingPatient ? 'The patient could not be updated.' : 'The patient could not be registered.');
+      if (error.code === '23505') {
+        const excludedPatientId = editingPatient?.id ?? null;
+        const [curpConflict, recordConflict] = await Promise.all([
+          findConflictingPatient('curp', curp, excludedPatientId),
+          findConflictingPatient('medical_record_number', medicalRecordNumber, excludedPatientId),
+        ]);
+        const conflicts = [curpConflict, recordConflict].filter((patient): patient is ConflictingPatient => patient !== null);
+        const details = [...new Map(conflicts.map((patient) => [patient.id, patient])).values()]
+          .map((patient) => `${t('Already registered to')}: ${normalizePatientName(patient.full_name)} · CURP ${patient.curp} · ${t('Medical record number')} ${patient.medical_record_number}`);
+        showFormError(
+          curpConflict && recordConflict ? 'This CURP and this medical record number are both already registered in this organization.'
+            : curpConflict ? 'This CURP is already registered in this organization.'
+            : recordConflict ? 'This medical record number is already registered in this organization.'
+            : 'This CURP or medical record number is already registered in this organization.',
+          details,
+        );
+      } else {
+        showFormError(editingPatient ? 'The patient could not be updated.' : 'The patient could not be registered.');
+      }
     } else {
       setPatients((current) => (editingPatient ? current.map((patient) => patient.id === editingPatient.id ? data as PatientRow : patient) : [...current, data as PatientRow]).sort((a, b) => a.full_name.localeCompare(b.full_name)));
       setDialogOpen(false);
@@ -335,7 +379,7 @@ export function HealthPatientsWorkspace({ organizationId, organizationName, onNa
             )}
       </section>
 
-      {dialogOpen ? <div className="health-patient-dialog-backdrop" onMouseDown={() => !saving && setDialogOpen(false)}><section className="health-patient-dialog" role="dialog" aria-modal="true" aria-labelledby="new-patient-title" onMouseDown={(event) => event.stopPropagation()}><button className="health-patient-dialog-close" type="button" aria-label={t('Close')} onClick={() => setDialogOpen(false)} disabled={saving}><X size={18} /></button><div className="health-patient-dialog-heading"><span>{editingPatient ? <Pencil size={23} /> : <UserPlus size={23} />}</span><div><small>YVIMO HEALTH</small><h2 id="new-patient-title">{t(editingPatient ? 'Edit patient' : 'Register new patient')}</h2><p>{t('The patient will belong to')} {organizationName}.</p></div></div><form onSubmit={savePatient}><label><span>{t('Full name')}</span><input className="health-patient-name-input notranslate" translate="no" autoFocus value={form.fullName} onChange={(event) => setForm((current) => ({ ...current, fullName: normalizePatientName(event.target.value) }))} placeholder={t('First name and surnames')} maxLength={180} /></label><label><span>CURP</span><input value={form.curp} onChange={(event) => setForm((current) => ({ ...current, curp: event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 18) }))} placeholder={t('18-character CURP')} maxLength={18} /><small>{form.curp.length}/18 {t('characters')}</small></label><label><span>{t('Medical record number')}</span><input value={form.medicalRecordNumber} onChange={(event) => setForm((current) => ({ ...current, medicalRecordNumber: event.target.value }))} placeholder="e.g. EXP-000123" maxLength={60} /></label><div className="health-patient-form-row"><label><span>{t('Sex')}</span><HealthSexDropdown value={form.sex} onChange={(sex) => setForm((current) => ({ ...current, sex }))} t={t} /></label><label><span>{t('Birth date')}</span><input className="health-derived-input" readOnly value={derivedBirthDate ?? ''} placeholder={t('Calculated from CURP')} /></label><label><span>{t('Age')}</span><input className="health-derived-input" readOnly value={derivedAge ?? ''} placeholder={t('Calculated')} /></label></div>{formError ? <p className="health-patient-form-error">{t(formError)}</p> : null}<div className="health-patient-dialog-actions"><button type="button" onClick={() => setDialogOpen(false)} disabled={saving}>{t('Cancel')}</button><button type="submit" disabled={saving}>{saving ? <LoaderCircle className="spin" size={17} /> : editingPatient ? <Check size={17} /> : <Plus size={17} />}{t(saving ? 'Saving...' : editingPatient ? 'Save changes' : 'Register patient')}</button></div></form></section></div> : null}
+      {dialogOpen ? <div className="health-patient-dialog-backdrop" onMouseDown={() => !saving && setDialogOpen(false)}><section className="health-patient-dialog" role="dialog" aria-modal="true" aria-labelledby="new-patient-title" onMouseDown={(event) => event.stopPropagation()}><button className="health-patient-dialog-close" type="button" aria-label={t('Close')} onClick={() => setDialogOpen(false)} disabled={saving}><X size={18} /></button><div className="health-patient-dialog-heading"><span>{editingPatient ? <Pencil size={23} /> : <UserPlus size={23} />}</span><div><small>YVIMO HEALTH</small><h2 id="new-patient-title">{t(editingPatient ? 'Edit patient' : 'Register new patient')}</h2><p>{t('The patient will belong to')} {organizationName}.</p></div></div><form onSubmit={savePatient}><label><span>{t('Full name')}</span><input className="health-patient-name-input notranslate" translate="no" autoFocus value={form.fullName} onChange={(event) => setForm((current) => ({ ...current, fullName: normalizePatientName(event.target.value) }))} placeholder={t('First name and surnames')} maxLength={180} /></label><label><span>CURP</span><input value={form.curp} onChange={(event) => setForm((current) => { const curp = event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 18); return { ...current, curp, sex: getSexFromCurp(curp) ?? current.sex }; })} placeholder={t('18-character CURP')} maxLength={18} /><small>{form.curp.length}/18 {t('characters')}</small></label><label><span>{t('Medical record number')}</span><input value={form.medicalRecordNumber} onChange={(event) => setForm((current) => ({ ...current, medicalRecordNumber: event.target.value }))} placeholder="e.g. EXP-000123" maxLength={60} /></label><div className="health-patient-form-row"><label><span>{t('Sex')}</span><HealthSexDropdown value={form.sex} onChange={(sex) => setForm((current) => ({ ...current, sex }))} t={t} /></label><label><span>{t('Birth date')}</span><input className="health-derived-input" readOnly value={derivedBirthDate ?? ''} placeholder={t('Calculated from CURP')} /></label><label><span>{t('Age')}</span><input className="health-derived-input" readOnly value={derivedAge ?? ''} placeholder={t('Calculated')} /></label></div>{formError ? <p className="health-patient-form-error">{t(formError)}{formErrorDetails.map((detail) => <span className="notranslate" translate="no" key={detail}>{detail}</span>)}</p> : null}<div className="health-patient-dialog-actions"><button type="button" onClick={() => setDialogOpen(false)} disabled={saving}>{t('Cancel')}</button><button type="submit" disabled={saving}>{saving ? <LoaderCircle className="spin" size={17} /> : editingPatient ? <Check size={17} /> : <Plus size={17} />}{t(saving ? 'Saving...' : editingPatient ? 'Save changes' : 'Register patient')}</button></div></form></section></div> : null}
       {deletingPatient ? <div className="health-patient-dialog-backdrop" onMouseDown={() => !saving && setDeletingPatient(null)}><section className="health-patient-delete-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-patient-title" onMouseDown={(event) => event.stopPropagation()}><span className="health-patient-delete-icon"><Trash2 size={24} /></span><small>YVIMO HEALTH</small><h2 id="delete-patient-title">{t('Delete patient')}</h2><strong>{deletingPatient.full_name}</strong><p>{t('This permanently removes the patient record. Enter the deletion password to confirm.')}</p><form onSubmit={confirmDeletePatient}><label><span>{t('Deletion password')}</span><input type="password" autoFocus value={deletePassword} onChange={(event) => setDeletePassword(event.target.value)} autoComplete="off" placeholder="••••••••••" /></label>{deleteError ? <p className="health-patient-form-error">{t(deleteError)}</p> : null}<div><button type="button" onClick={() => setDeletingPatient(null)} disabled={saving}>{t('Cancel')}</button><button className="danger" type="submit" disabled={saving || !deletePassword}>{saving ? <LoaderCircle className="spin" size={17} /> : <Trash2 size={17} />}{t(saving ? 'Deleting...' : 'Delete permanently')}</button></div></form></section></div> : null}
     </div>
   );
