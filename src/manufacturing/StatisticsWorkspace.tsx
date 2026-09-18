@@ -13,7 +13,10 @@ import { useStatisticsAlerts } from './statistics/useStatisticsAlerts';
 import {
   addDays,
   buildWeeklyProductionStats,
+  formatShiftTime,
   getWeekRange,
+  getWeekShiftTimes,
+  type ProductionShiftSchedule,
   type ProductionStatisticsEvent,
   type ProductionTargetOrder,
   toLocalDateInput,
@@ -29,7 +32,8 @@ type StatisticsWorkspaceProps = {
 type StatisticsView = 'production' | 'receptions' | 'income';
 type FinancialRangePreset = 'this-month' | 'last-month' | 'this-year' | 'custom';
 type ReceptionVoucherStatRow = { id: string; expected_date: string | null; created_at: string };
-type StatisticsWorkCenter = { code: string; name: string };
+type StatisticsWorkCenter = { id: string; code: string; name: string };
+type StatisticsShiftRow = { work_center_id: string; week_start: string; shift_number: number; start_time: string; end_time: string };
 type StatisticsTargetSetting = { work_center_code: string; daily_production_target: number; production_work_days: number[] };
 type ReceptionItemStatRow = {
   reception_voucher_id: string;
@@ -66,6 +70,7 @@ export function StatisticsWorkspace({ onNavigate, organizationId, financialIncom
   const [workCenterMenuOpen, setWorkCenterMenuOpen] = React.useState(false);
   const workCenterMenuRef = React.useRef<HTMLDivElement>(null);
   const [targetOrders, setTargetOrders] = React.useState<ProductionTargetOrder[]>([]);
+  const [shiftSchedules, setShiftSchedules] = React.useState<ProductionShiftSchedule[]>([]);
   const [receptionVouchers, setReceptionVouchers] = React.useState<ReceptionVoucherStatRow[]>([]);
   const [receptionItems, setReceptionItems] = React.useState<ReceptionItemStatRow[]>([]);
   const [incomeRows, setIncomeRows] = React.useState<IncomeProductionRow[]>([]);
@@ -134,13 +139,17 @@ export function StatisticsWorkspace({ onNavigate, organizationId, financialIncom
     const rangeStart = new Date(`${analysisRange.from}T00:00:00`);
     const rangeEnd = new Date(`${analysisRange.to}T00:00:00`);
     rangeEnd.setDate(rangeEnd.getDate() + 1);
+    // A shift that starts on the last day can finish after midnight and still
+    // counts toward that day, so production events reach one extra day.
+    const eventsEnd = new Date(rangeEnd);
+    eventsEnd.setDate(eventsEnd.getDate() + 1);
     let eventsQuery = supabase
         .from('mes_operator_terminal_events')
         .select('id, event_type, quantity, work_center_code, created_at')
         .eq('organization_id', organizationId)
         .in('event_type', ['production-good', 'production-scrap'])
         .gte('created_at', rangeStart.toISOString())
-        .lt('created_at', rangeEnd.toISOString())
+        .lt('created_at', eventsEnd.toISOString())
         .order('created_at', { ascending: true });
     let targetQuery = supabase
         .from('mes_production_orders')
@@ -153,7 +162,7 @@ export function StatisticsWorkspace({ onNavigate, organizationId, financialIncom
       eventsQuery = eventsQuery.eq('work_center_code', selectedWorkCenter);
       targetQuery = targetQuery.eq('assigned_work_center', selectedWorkCenter);
     }
-    const [eventsResponse, targetResponse, receptionResponse, incomeResponse, workCentersResponse, settingsResponse] = await Promise.all([
+    const [eventsResponse, targetResponse, receptionResponse, incomeResponse, workCentersResponse, settingsResponse, shiftsResponse] = await Promise.all([
       eventsQuery,
       targetQuery,
       supabase
@@ -172,8 +181,9 @@ export function StatisticsWorkspace({ onNavigate, organizationId, financialIncom
         .gte('reported_at', rangeStart.toISOString())
         .lt('reported_at', rangeEnd.toISOString())
         .order('reported_at', { ascending: true }),
-      supabase.from('mes_work_centers').select('code, name').eq('organization_id', organizationId).order('name', { ascending: true }),
+      supabase.from('mes_work_centers').select('id, code, name').eq('organization_id', organizationId).order('name', { ascending: true }),
       supabase.from('mes_statistics_settings').select('work_center_code, daily_production_target, production_work_days').eq('organization_id', organizationId),
+      supabase.from('aps_staff_shifts').select('work_center_id, week_start, shift_number, start_time, end_time').eq('organization_id', organizationId).lte('week_start', analysisRange.to),
     ]);
     const receptionIds = (receptionResponse.data ?? []).map((voucher) => voucher.id);
     const receptionItemsResponse = receptionIds.length
@@ -200,7 +210,15 @@ export function StatisticsWorkspace({ onNavigate, organizationId, financialIncom
       setReceptionVouchers((receptionResponse.data ?? []) as ReceptionVoucherStatRow[]);
       setReceptionItems((receptionItemsResponse.data ?? []) as ReceptionItemStatRow[]);
       setIncomeRows((incomeResponse.data ?? []) as unknown as IncomeProductionRow[]);
-      setWorkCenters((workCentersResponse.data ?? []) as StatisticsWorkCenter[]);
+      const loadedWorkCenters = (workCentersResponse.data ?? []) as StatisticsWorkCenter[];
+      const workCenterCodeById = new Map(loadedWorkCenters.map((center) => [center.id, center.code]));
+      setWorkCenters(loadedWorkCenters);
+      // Shift schedules come from Staff > Shifts; without them the chart falls
+      // back to the default shift times instead of failing.
+      setShiftSchedules(((shiftsResponse.data ?? []) as StatisticsShiftRow[]).flatMap((row) => {
+        const workCenterCode = workCenterCodeById.get(row.work_center_id);
+        return workCenterCode ? [{ workCenterCode, weekStart: row.week_start, shiftNumber: row.shift_number, startTime: row.start_time, endTime: row.end_time }] : [];
+      }));
       setTargetSettings((settingsResponse.data ?? []) as StatisticsTargetSetting[]);
       setError('');
       setLastUpdatedAt(new Date().toISOString());
@@ -239,15 +257,22 @@ export function StatisticsWorkspace({ onNavigate, organizationId, financialIncom
       { table: 'mes_production_serials', filter: `organization_id=eq.${organizationId}` },
       { table: 'mes_quotations', filter: `organization_id=eq.${organizationId}` },
       { table: 'mes_statistics_settings', filter: `organization_id=eq.${organizationId}` },
+      { table: 'aps_staff_shifts', filter: `organization_id=eq.${organizationId}` },
     ],
     onRefresh: () => { void loadStatistics(true); void reloadAlerts(); },
     enabled: Boolean(organizationId),
   });
 
   const stats = React.useMemo(
-    () => buildWeeklyProductionStats(weekAnchor, events, targetOrders),
-    [events, targetOrders, weekAnchor],
+    () => buildWeeklyProductionStats(weekAnchor, events, targetOrders, shiftSchedules),
+    [events, shiftSchedules, targetOrders, weekAnchor],
   );
+  // Shift hours are only meaningful for a single work center; each center keeps its own schedule.
+  const shiftTimes = React.useMemo(
+    () => selectedWorkCenter === 'all' ? null : getWeekShiftTimes(shiftSchedules, selectedWorkCenter, weekRange.from),
+    [selectedWorkCenter, shiftSchedules, weekRange.from],
+  );
+  const hasUnassignedProduction = stats.some((stat) => stat.shiftProduction.some((shift) => shift.shiftNumber === null && shift.quantity > 0));
   const weeklyProductionTarget = React.useMemo(() => {
     if (selectedWorkCenter !== 'all') return dailyTarget * productionWorkDays.length;
     const settingsByCenter = new Map(targetSettings.map((setting) => [setting.work_center_code, setting]));
@@ -400,10 +425,17 @@ export function StatisticsWorkspace({ onNavigate, organizationId, financialIncom
             <section className="statistics-production-panel">
               <div className="statistics-production-heading">
                 <div><span className="statistics-heading-icon"><BarChart3 size={22} /></span><span><small>Weekly production trend</small><h3>{weekLabel}</h3></span></div>
-                <div className="statistics-chart-key"><span className="actual"><i /> Production</span><span className="target"><i /> Daily target · {dailyTarget}</span><span className="trend"><i /> Production trend</span></div>
+                <div className="statistics-chart-key">
+                  {[1, 2, 3].map((shiftNumber) => {
+                    const times = shiftTimes?.find((shift) => shift.shiftNumber === shiftNumber);
+                    return <span className={`shift shift-${shiftNumber}`} key={shiftNumber}><i /> Shift {shiftNumber}{times ? ` · ${formatShiftTime(times.startTime)}–${formatShiftTime(times.endTime)}` : ''}</span>;
+                  })}
+                  {hasUnassignedProduction ? <span className="shift shift-none"><i /> Outside shifts</span> : null}
+                  <span className="target"><i /> Daily target · {dailyTarget}</span><span className="trend"><i /> Production trend</span>
+                </div>
               </div>
               {error ? <div className="statistics-message error" role="alert">{error}</div> : null}
-              {loading && !events.length ? <div className="statistics-chart-loading">Loading weekly production...</div> : <WeeklyProductionChart stats={stats} selectedDate={selectedDate} dailyTarget={dailyTarget} canEditTarget={selectedWorkCenter !== 'all'} onSelectDate={setSelectedDate} onEditTarget={openTargetDialog} />}
+              {loading && !events.length ? <div className="statistics-chart-loading">Loading weekly production...</div> : <WeeklyProductionChart stats={stats} shiftTimes={shiftTimes} selectedDate={selectedDate} dailyTarget={dailyTarget} canEditTarget={selectedWorkCenter !== 'all'} onSelectDate={setSelectedDate} onEditTarget={openTargetDialog} />}
               <footer className="statistics-chart-footer">
                 <span>{selectedWorkCenter === 'all' ? `Combined weekly target: ${weeklyProductionTarget} pieces across ${workCenters.length} work centers.` : `Daily target is ${dailyTarget} pieces for ${selectedWorkCenter} (${weeklyProductionTarget} per week).`}</span>
                 <em>Live updates every 30 seconds and when shop-floor events arrive.</em>

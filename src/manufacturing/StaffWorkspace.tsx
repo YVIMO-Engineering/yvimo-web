@@ -16,6 +16,7 @@ import {
 import { supabase } from "../lib/supabaseClient";
 import { useSupabaseRealtimeRefresh } from "../lib/useSupabaseRealtimeRefresh";
 import { MesOrderDatePicker } from "./MesWorkspaces";
+import { defaultShiftTimes } from "./statistics/productionStatistics";
 import "./staffWorkspace.css";
 
 type Props = {
@@ -41,11 +42,6 @@ type Shift = {
   startTime: string;
   endTime: string;
 };
-const defaultShiftTimes = [
-  { startTime: "06:00", endTime: "14:00" },
-  { startTime: "14:00", endTime: "22:00" },
-  { startTime: "22:00", endTime: "06:00" },
-];
 const isoDate = (date: Date) => new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
 const weekStartFor = (value: string | Date) => { const date = typeof value === "string" ? new Date(`${value}T12:00:00`) : new Date(value); const day = date.getDay(); date.setDate(date.getDate() - (day === 0 ? 6 : day - 1)); return isoDate(date); };
 
