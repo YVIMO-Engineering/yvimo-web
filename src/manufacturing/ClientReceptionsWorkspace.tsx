@@ -166,12 +166,16 @@ type ReceptionItemRow = {
   sent_at: string | null;
   is_rework: boolean | null;
   mes_customers: { customer_name: string } | Array<{ customer_name: string }> | null;
+  production_order: ProductionOrderRow | ProductionOrderRow[] | null;
 };
 
-type ProductionOrderRow = { id: string; status: string; piece_type: string | null; completed_quantity: number | null; scrap_quantity: number | null };
+type ProductionOrderRow = { status: string; piece_type: string | null; completed_quantity: number | null; scrap_quantity: number | null };
 type ProductionSerialRow = { id: string; production_order_id: string; serial_number: string | null; tool_id: string | null; result: string | null; reported_at: string | null; piece_sequence: number | null };
 type SerialProgressRow = { reception_item_id: string; production_serial_id: string; coating_sent_at: string | null; coating_returned_at: string | null; sent_at: string | null; reworked_at: string | null };
-type SerialReworkRow = { source_reception_item_id: string; source_production_serial_id: string; detected_stage: ReworkStage; reason: string; created_at: string; rework_production_order_id: string | null };
+type SerialReworkRow = { source_reception_item_id: string; source_production_serial_id: string; detected_stage: ReworkStage; reason: string; created_at: string; rework_order: { order_number: string } | Array<{ order_number: string }> | null };
+
+// The registry reopens from the last load while the refresh runs, instead of starting empty.
+const voucherCacheByOrganization = new Map<string, ReceptionVoucher[]>();
 
 type Props = {
   organizationId: string;
@@ -342,8 +346,8 @@ function ReceptionPortalDropdown({ open, onOpenChange, label, disabled = false, 
 }
 
 export function ClientReceptionsWorkspace({ organizationId, onNavigate, customers, languageCode }: Props) {
-  const [vouchers, setVouchers] = React.useState<ReceptionVoucher[]>([]);
-  const [selectedId, setSelectedId] = React.useState('');
+  const [vouchers, setVouchers] = React.useState<ReceptionVoucher[]>(() => voucherCacheByOrganization.get(organizationId) ?? []);
+  const [selectedId, setSelectedId] = React.useState(() => voucherCacheByOrganization.get(organizationId)?.[0]?.id ?? '');
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
   const [sendingItemId, setSendingItemId] = React.useState('');
@@ -480,38 +484,56 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
     let receptionRows: ReceptionRow[] = [];
     let itemRows: ReceptionItemRow[] = [];
     try {
-      receptionRows = await fetchAllRows<ReceptionRow>((from, to) => supabase
-        .from('mes_customer_reception_vouchers')
-        .select('*, mes_customers(customer_name)')
-        .eq('organization_id', organizationId)
-        .order('created_at', { ascending: false })
-        .range(from, to));
-      itemRows = await fetchAllRowsByIds<ReceptionItemRow>(receptionRows.map((row) => row.id), (chunk, from, to) => supabase
-        .from('mes_customer_reception_items')
-        .select('id, reception_voucher_id, customer_id, quantity, production_order_id, production_order_number, coating_sent_at, coating_returned_at, sent_at, is_rework, mes_customers(customer_name)')
-        .in('reception_voucher_id', chunk)
-        .order('created_at')
-        .range(from, to));
-      const productionOrderIds = itemRows.map((row) => row.production_order_id).filter((id): id is string => Boolean(id));
-      const [productionOrders, productionSerials] = await Promise.all([
-        fetchAllRowsByIds<ProductionOrderRow>(productionOrderIds, (chunk, from, to) => supabase
-          .from('mes_production_orders')
-          .select('id, status, piece_type, completed_quantity, scrap_quantity')
-          .in('id', chunk)
+      // Every reception table is scoped by organization, so they load side by side; only the
+      // serials depend on the items, which keeps the load to two round trips instead of five.
+      let serialProgressRows: SerialProgressRow[] = [];
+      let reworkRows: SerialReworkRow[] = [];
+      [receptionRows, itemRows, serialProgressRows, reworkRows] = await Promise.all([
+        fetchAllRows<ReceptionRow>((from, to) => supabase
+          .from('mes_customer_reception_vouchers')
+          .select('*, mes_customers(customer_name)')
+          .eq('organization_id', organizationId)
+          .order('created_at', { ascending: false })
+          .order('id')
           .range(from, to)),
-        fetchAllRowsByIds<ProductionSerialRow>(productionOrderIds, (chunk, from, to) => supabase
-          .from('mes_production_serials')
-          .select('id, production_order_id, serial_number, tool_id, result, reported_at, piece_sequence')
-          .in('production_order_id', chunk)
-          .order('piece_sequence')
+        fetchAllRows<ReceptionItemRow>((from, to) => supabase
+          .from('mes_customer_reception_items')
+          .select('id, reception_voucher_id, customer_id, quantity, production_order_id, production_order_number, coating_sent_at, coating_returned_at, sent_at, is_rework, mes_customers(customer_name), production_order:mes_production_orders!production_order_id(status, piece_type, completed_quantity, scrap_quantity)')
+          .eq('organization_id', organizationId)
+          .order('created_at')
+          .order('id')
+          .range(from, to)),
+        fetchAllRows<SerialProgressRow>((from, to) => supabase
+          .from('mes_customer_reception_serial_progress')
+          .select('reception_item_id, production_serial_id, coating_sent_at, coating_returned_at, sent_at, reworked_at')
+          .eq('organization_id', organizationId)
+          .order('id')
+          .range(from, to)),
+        fetchAllRows<SerialReworkRow>((from, to) => supabase
+          .from('mes_production_serial_reworks')
+          .select('source_reception_item_id, source_production_serial_id, detected_stage, reason, created_at, rework_order:mes_production_orders!rework_production_order_id(order_number)')
+          .eq('organization_id', organizationId)
+          .order('id')
           .range(from, to)),
       ]);
-      productionOrders.forEach((order) => productionStatusById.set(order.id, {
-        status: order.status,
-        pieceType: String(order.piece_type ?? ''),
-        completedQuantity: Number(order.completed_quantity) || 0,
-        scrapQuantity: Number(order.scrap_quantity) || 0,
-      }));
+      itemRows.forEach((item) => {
+        const order = Array.isArray(item.production_order) ? item.production_order[0] : item.production_order;
+        if (!item.production_order_id || !order) return;
+        productionStatusById.set(item.production_order_id, {
+          status: order.status,
+          pieceType: String(order.piece_type ?? ''),
+          completedQuantity: Number(order.completed_quantity) || 0,
+          scrapQuantity: Number(order.scrap_quantity) || 0,
+        });
+      });
+      const productionOrderIds = itemRows.map((row) => row.production_order_id).filter((id): id is string => Boolean(id));
+      const productionSerials = await fetchAllRowsByIds<ProductionSerialRow>(productionOrderIds, (chunk, from, to) => supabase
+        .from('mes_production_serials')
+        .select('id, production_order_id, serial_number, tool_id, result, reported_at, piece_sequence')
+        .in('production_order_id', chunk)
+        .order('piece_sequence')
+        .order('id')
+        .range(from, to));
       productionSerials.forEach((serial) => {
         const identifiers = productionIdentifiersById.get(serial.production_order_id) ?? { serialNumbers: [], toolIds: [], serials: [] };
         const serialNumber = String(serial.serial_number ?? '').trim();
@@ -521,44 +543,30 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
         identifiers.serials.push({ id: serial.id, serialNumber, toolId, result: serial.result as 'good' | 'scrap' | null, reportedAt: serial.reported_at ?? '' });
         productionIdentifiersById.set(serial.production_order_id, identifiers);
       });
-      const serialIds = productionSerials.map((serial) => serial.id);
-      const [serialProgressRows, reworkRows] = await Promise.all([
-        fetchAllRowsByIds<SerialProgressRow>(serialIds, (chunk, from, to) => supabase
-          .from('mes_customer_reception_serial_progress')
-          .select('reception_item_id, production_serial_id, coating_sent_at, coating_returned_at, sent_at, reworked_at')
-          .in('production_serial_id', chunk)
-          .range(from, to)),
-        fetchAllRowsByIds<SerialReworkRow>(serialIds, (chunk, from, to) => supabase
-          .from('mes_production_serial_reworks')
-          .select('source_reception_item_id, source_production_serial_id, detected_stage, reason, created_at, rework_production_order_id')
-          .eq('organization_id', organizationId)
-          .in('source_production_serial_id', chunk)
-          .range(from, to)),
-      ]);
       serialProgressRows.forEach((progress) => serialProgressByKey.set(`${progress.reception_item_id}:${progress.production_serial_id}`, progress));
-      const reworkOrderNumberById = new Map((await fetchAllRowsByIds<{ id: string; order_number: string }>(
-        reworkRows.flatMap((rework) => rework.rework_production_order_id ? [rework.rework_production_order_id] : []),
-        (chunk, from, to) => supabase
-          .from('mes_production_orders')
-          .select('id, order_number')
-          .eq('organization_id', organizationId)
-          .in('id', chunk)
-          .range(from, to),
-      )).map((order) => [order.id, order.order_number]));
-      reworkRows.forEach((rework) => reworkByKey.set(`${rework.source_reception_item_id}:${rework.source_production_serial_id}`, {
-        detectedStage: rework.detected_stage,
-        reason: rework.reason,
-        createdAt: rework.created_at,
-        reworkOrderNumber: rework.rework_production_order_id ? reworkOrderNumberById.get(rework.rework_production_order_id) ?? '' : '',
-      }));
+      reworkRows.forEach((rework) => {
+        const reworkOrder = Array.isArray(rework.rework_order) ? rework.rework_order[0] : rework.rework_order;
+        reworkByKey.set(`${rework.source_reception_item_id}:${rework.source_production_serial_id}`, {
+          detectedStage: rework.detected_stage,
+          reason: rework.reason,
+          createdAt: rework.created_at,
+          reworkOrderNumber: reworkOrder?.order_number ?? '',
+        });
+      });
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Unable to load reception vouchers.');
       setLoading(false);
       return;
     }
+    const itemRowsByVoucher = new Map<string, ReceptionItemRow[]>();
+    itemRows.forEach((item) => {
+      const voucherItems = itemRowsByVoucher.get(item.reception_voucher_id);
+      if (voucherItems) voucherItems.push(item);
+      else itemRowsByVoucher.set(item.reception_voucher_id, [item]);
+    });
     const mapped = receptionRows.map((row) => {
       const customerRelation = Array.isArray(row.mes_customers) ? row.mes_customers[0] : row.mes_customers;
-      const receptionItems: ReceptionItem[] = itemRows.filter((item) => item.reception_voucher_id === row.id).map((item) => {
+      const receptionItems: ReceptionItem[] = (itemRowsByVoucher.get(row.id) ?? []).map((item) => {
         const itemCustomer = Array.isArray(item.mes_customers) ? item.mes_customers[0] : item.mes_customers;
         const productionOrder = item.production_order_id ? productionStatusById.get(item.production_order_id) : null;
         const productionIdentifiers = item.production_order_id ? productionIdentifiersById.get(item.production_order_id) : null;
@@ -620,6 +628,7 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
         items: receptionItems,
       };
     });
+    voucherCacheByOrganization.set(organizationId, mapped);
     setVouchers(mapped);
     const requestedReceptionId = window.sessionStorage.getItem('yvimo:clients:receptions:selected-id') ?? '';
     setSelectedId((current) => requestedReceptionId && mapped.some((voucher) => voucher.id === requestedReceptionId)
@@ -1369,6 +1378,7 @@ export function ClientReceptionsWorkspace({ organizationId, onNavigate, customer
                 </div>
               </article>
             ))}
+            {!vouchers.length && loading ? <div className="supplier-empty-note">Loading reception vouchers...</div> : null}
             {!filteredVouchers.length && !loading ? <div className="supplier-empty-note">No reception vouchers match these filters.</div> : null}
           </div>
         </section>

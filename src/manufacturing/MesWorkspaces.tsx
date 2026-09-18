@@ -1559,6 +1559,20 @@ type ProductionOrderReworkPrefillRow = {
   legacy_price_id: string | null;
 };
 
+// PostgREST caps every response at 1000 rows. Organization-wide serial reads past that cap
+// silently drop pieces, so page to the last row.
+const rowPageSize = 1000;
+async function fetchAllRows<Row>(request: (from: number, to: number) => PromiseLike<{ data: Row[] | null; error: { message: string } | null }>) {
+  const rows: Row[] = [];
+  for (let from = 0; ; from += rowPageSize) {
+    const { data, error } = await request(from, from + rowPageSize - 1);
+    if (error) return { data: rows, error };
+    const page = data ?? [];
+    rows.push(...page);
+    if (page.length < rowPageSize) return { data: rows, error: null };
+  }
+}
+
 // Rework orders carry their own RW- identity in both the order and part number,
 // so the number has to be free on either column before the order is created.
 async function createReworkOrderNumber(organizationId: string) {
@@ -5102,14 +5116,19 @@ export function ProductionOrdersWorkspace({
       { data: stationData, error: stationError },
       { data: cycleData, error: cycleError },
     ] = await Promise.all([
-      supabase
+      // Pieces missing past the row cap fall back to "Unassigned station", so read every page.
+      fetchAllRows<PendingWorkReportSerialRow>((from, to) => supabase
         .from('mes_production_serials')
         .select('production_order_id, assigned_station, result, ready_for_quality, serial_number, reported_at')
-        .eq('organization_id', organizationId),
-      supabase
+        .eq('organization_id', organizationId)
+        .order('id')
+        .range(from, to)),
+      fetchAllRows<PendingWorkReportInspectionRow>((from, to) => supabase
         .from('mes_quality_serial_inspections')
         .select('production_order_id, serial_number')
-        .eq('organization_id', organizationId),
+        .eq('organization_id', organizationId)
+        .order('id')
+        .range(from, to)),
       supabase
         .from('mes_work_center_stations')
         .select('code, name, status, current_job')
@@ -8665,11 +8684,12 @@ export function WorkCentersWorkspace({ onNavigate, organizationId }: WorkspacePr
     const [{ data: workCenterRows, error: workCenterError }, { data: stationRows, error: stationError }, { data: productionOrderRows, error: productionOrderError }, { data: productionEventRows, error: productionEventError }, { data: stationLoadEventRows, error: stationLoadEventError }, { data: statusCycleRows, error: statusCycleError }, { data: serialStationRows, error: serialStationError }] = await Promise.all([
       supabase.from('mes_work_centers').select('*').eq('organization_id', organizationId).order('created_at', { ascending: false }),
       supabase.from('mes_work_center_stations').select('*').eq('organization_id', organizationId).order('created_at', { ascending: true }),
-      supabase.from('mes_production_orders').select('*').eq('organization_id', organizationId).order('due_date', { ascending: true }),
-      supabase.from('mes_operator_terminal_events').select('production_order_id, work_center_code, station_code, event_type, quantity, created_at, payload').eq('organization_id', organizationId).eq('event_type', 'production-good').order('created_at', { ascending: false }),
-      supabase.from('mes_operator_terminal_events').select('production_order_id, station_code, event_type, quantity, created_at').eq('organization_id', organizationId).in('event_type', ['production-good', 'production-scrap']).gte('created_at', new Date(Date.now() - (90 * 86_400_000)).toISOString()).order('created_at', { ascending: false }),
-      supabase.from('mes_station_status_cycles').select('id, work_center_id, station_id, station_code, status, production_order_id, order_number, serial_number, client_name, started_at, ended_at').eq('organization_id', organizationId).order('started_at', { ascending: false }),
-      supabase.from('mes_production_serials').select('production_order_id, assigned_station, compatible_stations, result').eq('organization_id', organizationId),
+      // Orders, events, cycles and serials all outgrow the 1000-row cap, so read every page.
+      fetchAllRows((from, to) => supabase.from('mes_production_orders').select('*').eq('organization_id', organizationId).order('due_date', { ascending: true }).order('id').range(from, to)),
+      fetchAllRows((from, to) => supabase.from('mes_operator_terminal_events').select('production_order_id, work_center_code, station_code, event_type, quantity, created_at, payload').eq('organization_id', organizationId).eq('event_type', 'production-good').order('created_at', { ascending: false }).order('id').range(from, to)),
+      fetchAllRows((from, to) => supabase.from('mes_operator_terminal_events').select('production_order_id, station_code, event_type, quantity, created_at').eq('organization_id', organizationId).in('event_type', ['production-good', 'production-scrap']).gte('created_at', new Date(Date.now() - (90 * 86_400_000)).toISOString()).order('created_at', { ascending: false }).order('id').range(from, to)),
+      fetchAllRows((from, to) => supabase.from('mes_station_status_cycles').select('id, work_center_id, station_id, station_code, status, production_order_id, order_number, serial_number, client_name, started_at, ended_at').eq('organization_id', organizationId).order('started_at', { ascending: false }).order('id').range(from, to)),
+      fetchAllRows((from, to) => supabase.from('mes_production_serials').select('production_order_id, assigned_station, compatible_stations, result').eq('organization_id', organizationId).is('result', null).order('id').range(from, to)),
     ]);
 
     if (workCenterError || stationError || productionOrderError || productionEventError || stationLoadEventError || statusCycleError || serialStationError) {
