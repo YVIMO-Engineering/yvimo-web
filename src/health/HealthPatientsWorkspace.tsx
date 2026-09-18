@@ -1,6 +1,5 @@
 import React from 'react';
-import { createPortal } from 'react-dom';
-import { ArrowDown, ArrowLeft, ArrowUp, Check, ChevronDown, ChevronLeft, ChevronRight, Hash, LoaderCircle, Pencil, Plus, Search, Trash2, UserPlus, Users, X } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowUp, Check, ChevronLeft, ChevronRight, Hash, LoaderCircle, Pencil, Plus, Search, Trash2, UserPlus, Users, X } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import './healthPatients.css';
 
@@ -25,7 +24,7 @@ type Props = {
   languageCode: 'en' | 'es' | 'zh';
 };
 
-const emptyForm = { fullName: '', curp: '', medicalRecordNumber: '', sex: '' as '' | PatientRow['sex'] };
+const emptyForm = { fullName: '', curp: '', medicalRecordNumber: '' };
 const medicalRecordCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
 const patientsPerPage = 100;
 const maximumAvailableRecordNumber = 400;
@@ -89,39 +88,6 @@ function formatPatientDate(value: string, languageCode: Props['languageCode'], u
     return `${getPart('day')} de ${getPart('month')}, ${getPart('year')}`;
   }
   return new Intl.DateTimeFormat(languageCode === 'zh' ? 'zh-CN' : 'en-US', { dateStyle: 'medium', ...(utc ? { timeZone: 'UTC' } : {}) }).format(date);
-}
-
-function HealthSexDropdown({ value, onChange, t }: { value: '' | PatientRow['sex']; onChange: (value: PatientRow['sex']) => void; t: (text: string) => string }) {
-  const [open, setOpen] = React.useState(false);
-  const [position, setPosition] = React.useState({ top: 0, left: 0, width: 0 });
-  const triggerRef = React.useRef<HTMLButtonElement>(null);
-  const options: PatientRow['sex'][] = ['Male', 'Female'];
-
-  const toggle = () => {
-    if (!open && triggerRef.current) {
-      const rect = triggerRef.current.getBoundingClientRect();
-      setPosition({ top: rect.bottom + 6, left: rect.left, width: rect.width });
-    }
-    setOpen((current) => !current);
-  };
-
-  React.useEffect(() => {
-    if (!open) return;
-    const close = () => setOpen(false);
-    window.addEventListener('resize', close);
-    window.addEventListener('scroll', close, true);
-    return () => { window.removeEventListener('resize', close); window.removeEventListener('scroll', close, true); };
-  }, [open]);
-
-  return <>
-    <button ref={triggerRef} className={open ? 'health-sex-trigger open' : 'health-sex-trigger'} type="button" aria-haspopup="listbox" aria-expanded={open} onClick={toggle}>
-      <span className={value ? '' : 'placeholder'}>{value ? t(value) : t('Select sex')}</span><ChevronDown size={17} />
-    </button>
-    {open && typeof document !== 'undefined' ? createPortal(
-      <div className="health-sex-portal" role="listbox" style={{ top: position.top, left: position.left, width: position.width }}>
-        {options.map((option) => <button className={value === option ? 'active' : ''} type="button" role="option" aria-selected={value === option} key={option} onClick={() => { onChange(option); setOpen(false); }}><span>{t(option)}</span>{value === option ? <Check size={16} /> : null}</button>)}
-      </div>, document.body) : null}
-  </>;
 }
 
 export function HealthPatientsWorkspace({ organizationId, organizationName, onNavigate, t, languageCode }: Props) {
@@ -253,7 +219,7 @@ export function HealthPatientsWorkspace({ organizationId, organizationName, onNa
 
   const openEditDialog = (patient: PatientRow) => {
     setEditingPatient(patient);
-    setForm({ fullName: normalizePatientName(patient.full_name), curp: patient.curp, medicalRecordNumber: patient.medical_record_number, sex: patient.sex });
+    setForm({ fullName: normalizePatientName(patient.full_name), curp: patient.curp, medicalRecordNumber: patient.medical_record_number });
     showFormError('');
     setDialogOpen(true);
   };
@@ -264,12 +230,17 @@ export function HealthPatientsWorkspace({ organizationId, organizationName, onNa
     const curp = form.curp.trim().toUpperCase();
     const medicalRecordNumber = form.medicalRecordNumber.trim().toUpperCase();
     const birthDate = getBirthDateFromCurp(curp);
-    if (!fullName || !curp || !medicalRecordNumber || !form.sex) {
-      showFormError('Full name, CURP, medical record number, and sex are required.');
+    const sex = getSexFromCurp(curp);
+    if (!fullName || !curp || !medicalRecordNumber) {
+      showFormError('Full name, CURP, and medical record number are required.');
       return;
     }
     if (curp.length !== 18) {
       showFormError('CURP must contain exactly 18 characters.');
+      return;
+    }
+    if (!sex) {
+      showFormError('CURP does not contain a valid sex marker.');
       return;
     }
     if (!birthDate || getAgeFromBirthDate(birthDate) < 0 || getAgeFromBirthDate(birthDate) > 130) {
@@ -278,7 +249,7 @@ export function HealthPatientsWorkspace({ organizationId, organizationName, onNa
     }
     setSaving(true);
     showFormError('');
-    const patientValues = { organization_id: organizationId, full_name: fullName, curp, medical_record_number: medicalRecordNumber, sex: form.sex, birth_date: birthDate };
+    const patientValues = { organization_id: organizationId, full_name: fullName, curp, medical_record_number: medicalRecordNumber, sex, birth_date: birthDate };
     const query = editingPatient
       ? supabase.from('health_patients').update(patientValues).eq('id', editingPatient.id).eq('organization_id', organizationId)
       : supabase.from('health_patients').insert(patientValues);
@@ -332,6 +303,7 @@ export function HealthPatientsWorkspace({ organizationId, organizationName, onNa
     setSaving(false);
   };
 
+  const derivedSex = getSexFromCurp(form.curp);
   const derivedBirthDate = getBirthDateFromCurp(form.curp);
   const derivedAge = derivedBirthDate ? getAgeFromBirthDate(derivedBirthDate) : null;
 
@@ -379,7 +351,7 @@ export function HealthPatientsWorkspace({ organizationId, organizationName, onNa
             )}
       </section>
 
-      {dialogOpen ? <div className="health-patient-dialog-backdrop" onMouseDown={() => !saving && setDialogOpen(false)}><section className="health-patient-dialog" role="dialog" aria-modal="true" aria-labelledby="new-patient-title" onMouseDown={(event) => event.stopPropagation()}><button className="health-patient-dialog-close" type="button" aria-label={t('Close')} onClick={() => setDialogOpen(false)} disabled={saving}><X size={18} /></button><div className="health-patient-dialog-heading"><span>{editingPatient ? <Pencil size={23} /> : <UserPlus size={23} />}</span><div><small>YVIMO HEALTH</small><h2 id="new-patient-title">{t(editingPatient ? 'Edit patient' : 'Register new patient')}</h2><p>{t('The patient will belong to')} {organizationName}.</p></div></div><form onSubmit={savePatient}><label><span>{t('Full name')}</span><input className="health-patient-name-input notranslate" translate="no" autoFocus value={form.fullName} onChange={(event) => setForm((current) => ({ ...current, fullName: normalizePatientName(event.target.value) }))} placeholder={t('First name and surnames')} maxLength={180} /></label><label><span>CURP</span><input value={form.curp} onChange={(event) => setForm((current) => { const curp = event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 18); return { ...current, curp, sex: getSexFromCurp(curp) ?? current.sex }; })} placeholder={t('18-character CURP')} maxLength={18} /><small>{form.curp.length}/18 {t('characters')}</small></label><label><span>{t('Medical record number')}</span><input value={form.medicalRecordNumber} onChange={(event) => setForm((current) => ({ ...current, medicalRecordNumber: event.target.value }))} placeholder="e.g. EXP-000123" maxLength={60} /></label><div className="health-patient-form-row"><label><span>{t('Sex')}</span><HealthSexDropdown value={form.sex} onChange={(sex) => setForm((current) => ({ ...current, sex }))} t={t} /></label><label><span>{t('Birth date')}</span><input className="health-derived-input" readOnly value={derivedBirthDate ?? ''} placeholder={t('Calculated from CURP')} /></label><label><span>{t('Age')}</span><input className="health-derived-input" readOnly value={derivedAge ?? ''} placeholder={t('Calculated')} /></label></div>{formError ? <p className="health-patient-form-error">{t(formError)}{formErrorDetails.map((detail) => <span className="notranslate" translate="no" key={detail}>{detail}</span>)}</p> : null}<div className="health-patient-dialog-actions"><button type="button" onClick={() => setDialogOpen(false)} disabled={saving}>{t('Cancel')}</button><button type="submit" disabled={saving}>{saving ? <LoaderCircle className="spin" size={17} /> : editingPatient ? <Check size={17} /> : <Plus size={17} />}{t(saving ? 'Saving...' : editingPatient ? 'Save changes' : 'Register patient')}</button></div></form></section></div> : null}
+      {dialogOpen ? <div className="health-patient-dialog-backdrop" onMouseDown={() => !saving && setDialogOpen(false)}><section className="health-patient-dialog" role="dialog" aria-modal="true" aria-labelledby="new-patient-title" onMouseDown={(event) => event.stopPropagation()}><button className="health-patient-dialog-close" type="button" aria-label={t('Close')} onClick={() => setDialogOpen(false)} disabled={saving}><X size={18} /></button><div className="health-patient-dialog-heading"><span>{editingPatient ? <Pencil size={23} /> : <UserPlus size={23} />}</span><div><small>YVIMO HEALTH</small><h2 id="new-patient-title">{t(editingPatient ? 'Edit patient' : 'Register new patient')}</h2><p>{t('The patient will belong to')} {organizationName}.</p></div></div><form onSubmit={savePatient}><label><span>{t('Full name')}</span><input className="health-patient-name-input notranslate" translate="no" autoFocus value={form.fullName} onChange={(event) => setForm((current) => ({ ...current, fullName: normalizePatientName(event.target.value) }))} placeholder={t('First name and surnames')} maxLength={180} /></label><label><span>CURP</span><input value={form.curp} onChange={(event) => setForm((current) => ({ ...current, curp: event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 18) }))} placeholder={t('18-character CURP')} maxLength={18} /><small>{form.curp.length}/18 {t('characters')}</small></label><label><span>{t('Medical record number')}</span><input value={form.medicalRecordNumber} onChange={(event) => setForm((current) => ({ ...current, medicalRecordNumber: event.target.value }))} placeholder="e.g. EXP-000123" maxLength={60} /></label><div className="health-patient-form-row"><label><span>{t('Sex')}</span><input className="health-derived-input" readOnly value={derivedSex ? t(derivedSex) : ''} placeholder={t('From CURP')} /></label><label><span>{t('Birth date')}</span><input className="health-derived-input" readOnly value={derivedBirthDate ?? ''} placeholder={t('Calculated from CURP')} /></label><label><span>{t('Age')}</span><input className="health-derived-input" readOnly value={derivedAge ?? ''} placeholder={t('Calculated')} /></label></div>{formError ? <p className="health-patient-form-error">{t(formError)}{formErrorDetails.map((detail) => <span className="notranslate" translate="no" key={detail}>{detail}</span>)}</p> : null}<div className="health-patient-dialog-actions"><button type="button" onClick={() => setDialogOpen(false)} disabled={saving}>{t('Cancel')}</button><button type="submit" disabled={saving}>{saving ? <LoaderCircle className="spin" size={17} /> : editingPatient ? <Check size={17} /> : <Plus size={17} />}{t(saving ? 'Saving...' : editingPatient ? 'Save changes' : 'Register patient')}</button></div></form></section></div> : null}
       {deletingPatient ? <div className="health-patient-dialog-backdrop" onMouseDown={() => !saving && setDeletingPatient(null)}><section className="health-patient-delete-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-patient-title" onMouseDown={(event) => event.stopPropagation()}><span className="health-patient-delete-icon"><Trash2 size={24} /></span><small>YVIMO HEALTH</small><h2 id="delete-patient-title">{t('Delete patient')}</h2><strong>{deletingPatient.full_name}</strong><p>{t('This permanently removes the patient record. Enter the deletion password to confirm.')}</p><form onSubmit={confirmDeletePatient}><label><span>{t('Deletion password')}</span><input type="password" autoFocus value={deletePassword} onChange={(event) => setDeletePassword(event.target.value)} autoComplete="off" placeholder="••••••••••" /></label>{deleteError ? <p className="health-patient-form-error">{t(deleteError)}</p> : null}<div><button type="button" onClick={() => setDeletingPatient(null)} disabled={saving}>{t('Cancel')}</button><button className="danger" type="submit" disabled={saving || !deletePassword}>{saving ? <LoaderCircle className="spin" size={17} /> : <Trash2 size={17} />}{t(saving ? 'Deleting...' : 'Delete permanently')}</button></div></form></section></div> : null}
     </div>
   );
