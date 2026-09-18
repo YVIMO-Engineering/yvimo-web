@@ -4635,6 +4635,13 @@ body.work-center-map-expanded .logged-workspace {
   box-shadow: 0 12px 28px rgba(225, 29, 72, 0.3);
 }
 
+.manufacturing-app-icon.tone-teal .manufacturing-app-glyph {
+  --app-glow: rgba(20, 184, 166, 0.76);
+  border-color: rgba(94, 234, 212, 0.7);
+  background: linear-gradient(145deg, #0f766e, #2dd4bf);
+  color: #ffffff;
+}
+
 .manufacturing-app-icon.unimplemented {
   color: rgba(255, 255, 255, 0.68);
 }

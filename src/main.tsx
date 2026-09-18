@@ -21,6 +21,7 @@ import { QuarantineWorkspace } from './manufacturing/QuarantineWorkspace';
 import { StaffWorkspace } from './manufacturing/StaffWorkspace';
 import { RevenueOpportunityWorkspace } from './manufacturing/RevenueOpportunityWorkspace';
 import { AnalysisToolWorkspace } from './manufacturing/AnalysisToolWorkspace';
+import { OrderToCashWorkspace } from './manufacturing/OrderToCashWorkspace';
 import { InvoiceTargetWorkspace } from './manufacturing/InvoiceTargetWorkspace';
 import { ProductionTrackingWorkspace } from './manufacturing/ProductionTrackingWorkspace';
 import { ProfitLeakWorkspace } from './manufacturing/ProfitLeakWorkspace';
@@ -1302,6 +1303,7 @@ Object.assign(translations.es, {
   'Track cycle time behavior and variation across products, shifts, and operations.': 'Rastrea comportamiento y variaci\u00f3n de tiempo ciclo por productos, turnos y operaciones.',
   'Review output, pace, constraints, and production flow across the plant.': 'Revisa salida, ritmo, restricciones y flujo de producci\u00f3n en la planta.',
   'Prepare production summaries, KPI reports, and execution history snapshots.': 'Prepara res\u00famenes de producci\u00f3n, reportes KPI e instant\u00e1neas del historial de ejecuci\u00f3n.',
+  'Track the administrative status of every production order, from purchase order to remission and invoice.': 'Da seguimiento al estado administrativo de cada orden de producci\u00f3n, desde la orden de compra hasta la remisi\u00f3n y la factura.',
   Preview: 'Preview',
   'Courses, guided paths, and professional training for people building real automation, robotics, and industrial software systems.': 'Cursos, rutas guiadas y capacitaci\u00f3n profesional para personas que construyen automatizaci\u00f3n, rob\u00f3tica y software industrial real.',
   'PLC Programming': 'Programaci\u00f3n PLC',
@@ -3362,7 +3364,7 @@ function LoggedDashboardPage({ user, onSignOut, onNavigate, onUpdateAvatar, acti
     icon: React.ComponentType<{ size?: number }>;
     path: string;
     implemented: boolean;
-    tone?: 'green' | 'blue' | 'orange' | 'purple' | 'red' | 'rose';
+    tone?: 'green' | 'blue' | 'orange' | 'purple' | 'red' | 'rose' | 'teal';
   }> = [
     {
       label: 'Production Orders',
@@ -3451,7 +3453,7 @@ function LoggedDashboardPage({ user, onSignOut, onNavigate, onUpdateAvatar, acti
     icon: React.ComponentType<{ size?: number }>;
     path: string;
     implemented?: boolean;
-    tone?: 'green' | 'blue' | 'orange' | 'purple' | 'red' | 'rose';
+    tone?: 'green' | 'blue' | 'orange' | 'purple' | 'red' | 'rose' | 'teal';
   }> = [
     {
       label: 'Production Schedule',
@@ -3512,7 +3514,7 @@ function LoggedDashboardPage({ user, onSignOut, onNavigate, onUpdateAvatar, acti
     icon: React.ComponentType<{ size?: number }>;
     path: string;
     implemented?: boolean;
-    tone?: 'green' | 'blue' | 'orange' | 'purple' | 'red' | 'rose';
+    tone?: 'green' | 'blue' | 'orange' | 'purple' | 'red' | 'rose' | 'teal';
   }> = [
     {
       label: 'Order Risks',
@@ -3565,10 +3567,12 @@ function LoggedDashboardPage({ user, onSignOut, onNavigate, onUpdateAvatar, acti
       tone: 'purple',
     },
     {
-      label: 'Production Reports',
-      description: 'Prepare production summaries, KPI reports, and execution history snapshots.',
-      icon: FileUp,
-      path: '/workspace/manufacturing-ops/intelligence/reports',
+      label: 'OTC',
+      description: 'Track the administrative status of every production order, from purchase order to remission and invoice.',
+      icon: ReceiptText,
+      path: '/workspace/manufacturing-ops/intelligence/otc',
+      implemented: true,
+      tone: 'teal',
     },
   ];
   const isManufacturingOpsPage = activePath === '/workspace/manufacturing-ops' || activePath.startsWith('/workspace/manufacturing-ops/');
@@ -3622,7 +3626,7 @@ function LoggedDashboardPage({ user, onSignOut, onNavigate, onUpdateAvatar, acti
   };
   const activeSpecialtyModules = isApsPage ? apsModules : isOperationsIntelligencePage ? intelligenceModules : mesModules;
   const isManufacturingAppImplemented = (module: { implemented?: boolean }) => module.implemented === true;
-  const getManufacturingAppToneClass = (module: { tone?: 'green' | 'blue' | 'orange' | 'purple' | 'red' | 'rose' }) => (module.tone ? `tone-${module.tone}` : '');
+  const getManufacturingAppToneClass = (module: { tone?: 'green' | 'blue' | 'orange' | 'purple' | 'red' | 'rose' | 'teal' }) => (module.tone ? `tone-${module.tone}` : '');
   const handleManufacturingAppLaunch = (module: { label: string; path: string; implemented?: boolean }) => {
     if (!isManufacturingAppImplemented(module)) {
       setManufacturingUnavailableApp(module.label);
@@ -3647,6 +3651,7 @@ function LoggedDashboardPage({ user, onSignOut, onNavigate, onUpdateAvatar, acti
   const isRevenueOpportunitySection = activePath.startsWith('/workspace/manufacturing-ops/intelligence/revenue-opportunity');
   const isAnalysisToolSection = activePath === '/workspace/manufacturing-ops/intelligence/analysis-tool' || activePath.startsWith('/workspace/manufacturing-ops/intelligence/analysis-tool/');
   const activeAnalysisToolSection = activePath.endsWith('/production-tracking') ? 'production-tracking' : 'performance-check';
+  const isOtcSection = activePath === '/workspace/manufacturing-ops/intelligence/otc' || activePath.startsWith('/workspace/manufacturing-ops/intelligence/otc/');
   const activeRevenueSection = activePath.endsWith('/income-flow') ? 'income-flow' : activePath.endsWith('/balances') ? 'balances' : activePath.endsWith('/invoice-target') ? 'invoice-target' : activePath.endsWith('/profit-leak') ? 'profit-leak' : 'price-misalignment';
   const supplierContextTabs: Array<{
     value: SupplierContextTab;
@@ -3817,6 +3822,9 @@ function LoggedDashboardPage({ user, onSignOut, onNavigate, onUpdateAvatar, acti
         return <CustomerOperationsWorkspace onNavigate={onNavigate} activeTab="balances" organizationId={activeManufacturingOrganizationId} languageCode={languageCode} hostSection="financial-status" />;
       }
       return <RevenueOpportunityWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} activeSection={activeRevenueSection} />;
+    }
+    if (isOtcSection) {
+      return <OrderToCashWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} />;
     }
     if (isAnalysisToolSection) {
       if (activeAnalysisToolSection === 'production-tracking') {
@@ -4322,7 +4330,7 @@ function LoggedDashboardPage({ user, onSignOut, onNavigate, onUpdateAvatar, acti
   ) : null;
 
   return (
-    <main className={['logged-shell', !isSupplierAccessOverview ? 'primary-navigation-compact-shell' : '', isOperatorTerminalPage ? 'operator-terminal-shell' : '', isCompactMesApplicationPage || isOrderRisksPage || isImportCostingPage || isProductionSchedulePage || isQuarantinePage || isRevenueOpportunitySection || isAnalysisToolSection || isCustomerPortalAdminPage ? 'compact-mes-application-shell' : '', isSupplierOperationsPage || isQualityOperationsPage || isClientsOperationsPage || isStaffPage || isRevenueOpportunitySection || isAnalysisToolSection ? 'supplier-context-shell' : '', isCustomerPortalAdminPage ? 'customer-portal-admin-shell' : '', isSupplierAccessOverview ? 'supplier-access-shell' : '', isSupplierAccessOverview && supplierCustomerPickerOpen ? 'supplier-customer-picker-open' : '', standaloneHealth ? 'standalone-health-shell' : '', isManufacturingOpsPage ? 'manufacturing-focus-shell' : '', publicHealth ? 'public-health-shell' : ''].filter(Boolean).join(' ')}>
+    <main className={['logged-shell', !isSupplierAccessOverview ? 'primary-navigation-compact-shell' : '', isOperatorTerminalPage ? 'operator-terminal-shell' : '', isCompactMesApplicationPage || isOrderRisksPage || isImportCostingPage || isProductionSchedulePage || isQuarantinePage || isRevenueOpportunitySection || isAnalysisToolSection || isOtcSection || isCustomerPortalAdminPage ? 'compact-mes-application-shell' : '', isSupplierOperationsPage || isQualityOperationsPage || isClientsOperationsPage || isStaffPage || isRevenueOpportunitySection || isAnalysisToolSection || isOtcSection ? 'supplier-context-shell' : '', isCustomerPortalAdminPage ? 'customer-portal-admin-shell' : '', isSupplierAccessOverview ? 'supplier-access-shell' : '', isSupplierAccessOverview && supplierCustomerPickerOpen ? 'supplier-customer-picker-open' : '', standaloneHealth ? 'standalone-health-shell' : '', isManufacturingOpsPage ? 'manufacturing-focus-shell' : '', publicHealth ? 'public-health-shell' : ''].filter(Boolean).join(' ')}>
       {standaloneHealth ? (
         <header className="health-clinical-topbar">
           <button className="health-clinical-brand" type="button" onClick={() => onNavigate(publicHealth ? '/health' : '/workspace/health-apps')}>
@@ -4644,6 +4652,21 @@ function LoggedDashboardPage({ user, onSignOut, onNavigate, onUpdateAvatar, acti
             <button type="button" className={activeAnalysisToolSection === 'production-tracking' ? 'active' : ''} aria-current={activeAnalysisToolSection === 'production-tracking' ? 'page' : undefined} onClick={() => onNavigate('/workspace/manufacturing-ops/intelligence/analysis-tool/production-tracking')}>
               <FileText size={18} />
               <span>Production Tracking</span>
+            </button>
+          </nav>
+        </aside>
+      ) : null}
+
+      {isOtcSection ? (
+        <aside className="supplier-shell-context-menu otc-shell-context-menu" aria-label="OTC sections">
+          <div>
+            <span>OPS INTELLIGENCE</span>
+            <strong>OTC</strong>
+          </div>
+          <nav>
+            <button type="button" className="active" aria-current="page" onClick={() => onNavigate('/workspace/manufacturing-ops/intelligence/otc')}>
+              <ReceiptText size={18} />
+              <span>Order-to-Cash</span>
             </button>
           </nav>
         </aside>
