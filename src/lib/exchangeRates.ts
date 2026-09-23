@@ -14,7 +14,7 @@ export type ExchangeRatesResult = {
 type CachedExchangeRates = Omit<ExchangeRatesResult, 'fromCache' | 'stale'>;
 
 const FRANKFURTER_URL = 'https://api.frankfurter.dev/v1/latest';
-const CACHE_DURATION_MS = 12 * 60 * 60 * 1000;
+const CACHE_DURATION_MS = 60 * 60 * 1000;
 
 function cacheKey(baseCurrency: SupportedCurrency, targetCurrencies: SupportedCurrency[]) {
   const targets = [...new Set(targetCurrencies)]
@@ -43,16 +43,22 @@ function writeCache(key: string, value: CachedExchangeRates) {
   }
 }
 
+export type ExchangeRatesOptions = {
+  /** Skips the local cache so the caller always sees the rate published right now. */
+  forceRefresh?: boolean;
+};
+
 export async function getExchangeRates(
   baseCurrency: SupportedCurrency,
   targetCurrencies: SupportedCurrency[],
+  options: ExchangeRatesOptions = {},
 ): Promise<ExchangeRatesResult> {
   const targets = [...new Set(targetCurrencies)].filter((currency) => currency !== baseCurrency).sort();
   const key = cacheKey(baseCurrency, targets);
   const cached = readCache(key);
   const cacheAge = cached ? Date.now() - new Date(cached.fetchedAt).getTime() : Number.POSITIVE_INFINITY;
 
-  if (cached && cacheAge < CACHE_DURATION_MS) {
+  if (cached && !options.forceRefresh && cacheAge < CACHE_DURATION_MS) {
     return { ...cached, rates: { ...cached.rates, [baseCurrency]: 1 }, fromCache: true, stale: false };
   }
 
@@ -90,9 +96,13 @@ export async function getExchangeRates(
   }
 }
 
-export async function getExchangeRate(baseCurrency: SupportedCurrency, targetCurrency: SupportedCurrency) {
+export async function getExchangeRate(
+  baseCurrency: SupportedCurrency,
+  targetCurrency: SupportedCurrency,
+  options: ExchangeRatesOptions = {},
+) {
   if (baseCurrency === targetCurrency) return 1;
-  const result = await getExchangeRates(baseCurrency, [targetCurrency]);
+  const result = await getExchangeRates(baseCurrency, [targetCurrency], options);
   const rate = result.rates[targetCurrency];
   if (!rate) throw new Error(`No ${baseCurrency}/${targetCurrency} exchange rate is available.`);
   return rate;

@@ -9,17 +9,21 @@ export type ImportEstimateInput = {
 export type ImportEstimateTotals = {
   merchandiseCost:number; logisticsCost:number; totalCost:number; clientSale:number; profitLoss:number;
   minimumUnitPrice:number; recommendedUnitPrice:number; result:'PROFIT'|'BREAK-EVEN'|'LOSS';
+  valueAddedTax:number; totalDisbursement:number;
 };
 const moneyPrecision=(value:number)=>Math.round((value+Number.EPSILON)*10000)/10000;
 
 export function calculateImportEstimate(input:ImportEstimateInput):ImportEstimateTotals {
   const merchandiseCost=input.quantity*input.invoiceUnitValue*input.purchaseFx;
-  const logisticsCost=input.internationalFreight+input.insurance+input.taxes+input.customsAgentFees+input.handling+input.domesticTransport+input.otherExpenses+input.logisticsManagement;
+  // IVA is a recoverable tax credit: it is tracked on its own and never enters landed cost, margin or profit / loss.
+  const valueAddedTax=input.taxes;
+  const logisticsCost=input.internationalFreight+input.insurance+input.customsAgentFees+input.handling+input.domesticTransport+input.otherExpenses+input.logisticsManagement;
   const totalCost=merchandiseCost+logisticsCost;
+  const totalDisbursement=totalCost+valueAddedTax;
   const clientSale=input.quantity*input.clientUnitPrice*input.saleFx;
   const profitLoss=clientSale-totalCost;
   const minimumUnitPrice=input.quantity>0&&input.saleFx>0?totalCost/input.quantity/input.saleFx:0;
   const recommendedUnitPrice=minimumUnitPrice*(1+input.desiredMarginPercent/100);
   const result=profitLoss<-.005?'LOSS':profitLoss>.005?'PROFIT':'BREAK-EVEN';
-  return{merchandiseCost:moneyPrecision(merchandiseCost),logisticsCost:moneyPrecision(logisticsCost),totalCost:moneyPrecision(totalCost),clientSale:moneyPrecision(clientSale),profitLoss:moneyPrecision(profitLoss),minimumUnitPrice:moneyPrecision(minimumUnitPrice),recommendedUnitPrice:moneyPrecision(recommendedUnitPrice),result};
+  return{merchandiseCost:moneyPrecision(merchandiseCost),logisticsCost:moneyPrecision(logisticsCost),totalCost:moneyPrecision(totalCost),clientSale:moneyPrecision(clientSale),profitLoss:moneyPrecision(profitLoss),minimumUnitPrice:moneyPrecision(minimumUnitPrice),recommendedUnitPrice:moneyPrecision(recommendedUnitPrice),result,valueAddedTax:moneyPrecision(valueAddedTax),totalDisbursement:moneyPrecision(totalDisbursement)};
 }
