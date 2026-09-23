@@ -72,7 +72,6 @@
 .profit-leak-kpis > article:nth-child(3) .profit-leak-spend { color: #a16207; }
 .profit-leak-kpis > article:nth-child(4) .profit-leak-spend { color: #be123c; }
 .profit-leak-kpis > article:nth-child(5) .profit-leak-spend { color: #6d28d9; }
-.scrap-card > .profit-leak-spend { border-left-width: 1px; }
 
 @media (min-width: 1251px) {
   .profit-leak-kpis { grid-template-columns: 1.8fr repeat(4, minmax(0, 1fr)); }
@@ -146,7 +145,7 @@
 }
 
 .profit-leak-kpis .scrap-card {
-  grid-template-columns: minmax(62px, .75fr) minmax(120px, 1.15fr) minmax(112px, 1.1fr);
+  grid-template-columns: minmax(62px, .8fr) minmax(120px, 1.2fr);
 }
 
 .profit-kpi-head {
@@ -249,14 +248,14 @@
 }
 
 /* External Suppliers is the sixth KPI: services bought outside the plant. */
-.profit-leak-kpis { grid-template-columns: 1.55fr repeat(5, minmax(0, 1fr)); }
+.profit-leak-kpis { grid-template-columns: 1.2fr repeat(5, minmax(0, 1fr)); }
 .profit-leak-kpis > article.external-card { border-left-color: #2563eb; background: #f5f9ff; }
 .profit-leak-kpis > article.external-card .profit-kpi-count > svg { color: #2563eb; }
 .profit-leak-kpis > article.external-card .profit-leak-spend { color: #1d4ed8; }
 .profit-leak-category.external { border-color: #bfdbfe; background: #eff6ff; color: #1d4ed8; }
 
 @media (min-width: 1251px) {
-  .profit-leak-kpis { grid-template-columns: 1.7fr repeat(5, minmax(0, 1fr)); }
+  .profit-leak-kpis { grid-template-columns: 1.3fr repeat(5, minmax(0, 1fr)); }
 }
 
 @media (max-width: 1250px) {
@@ -455,3 +454,55 @@
   .profit-leak-heading { min-width: 0; }
   .profit-leak-heading h1 { white-space: normal; }
 }
+
+/* Display currency: the whole tracker reads in the currency the organization picked. */
+.profit-leak-currency {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+  margin-left: auto;
+  border: 1px solid #dbe4ed;
+  border-radius: 9px;
+  padding: 5px 8px;
+  background: #f8fafc;
+}
+
+.profit-leak-currency > svg { flex: 0 0 auto; color: #dc2626; }
+
+.profit-leak-currency-label {
+  color: #56697e;
+  font-size: .5rem;
+  font-weight: 950;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.profit-leak-currency .mes-order-dropdown { min-width: 86px; }
+.profit-leak-currency .mes-order-dropdown > button { min-height: 32px; padding: 0 8px; font-size: .65rem; font-weight: 900; }
+
+/* The live badge keeps the right edge; the currency control sits to its left. */
+.profit-leak-live { margin-left: 10px !important; }
+
+.profit-leak-kpis article > .profit-leak-spend > .profit-leak-spend-note {
+  color: inherit;
+  font-size: .44rem;
+  font-style: normal;
+  font-weight: 900;
+  letter-spacing: .04em;
+  opacity: .75;
+  text-transform: uppercase;
+}
+
+.profit-leak-table-wrap .cost-value.unconverted { color: #a16207; }
+
+.profit-leak-rate {
+  display: grid;
+  gap: 1px;
+  border-left: 1px solid #dbe4ed;
+  padding-left: 8px;
+  white-space: nowrap;
+}
+
+.profit-leak-rate > strong { color: #b91c1c; font-size: .6rem; font-weight: 950; }
+.profit-leak-rate > small { color: #64748b; font-size: .48rem; font-weight: 800; }

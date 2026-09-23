@@ -1,9 +1,10 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { AlertTriangle, ArrowLeft, Boxes, ChevronDown, CircleX, Pencil, Plus, RefreshCw, Repeat2, ShieldCheck, Trash2, Truck, TriangleAlert, Wrench } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Boxes, ChevronDown, CircleX, Globe2, Pencil, Plus, RefreshCw, Repeat2, ShieldCheck, Trash2, Truck, TriangleAlert, Wrench } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { useSupabaseRealtimeRefresh } from '../lib/useSupabaseRealtimeRefresh';
 import { getWorkCenterHourlyRate } from './workCenterRates';
+import { SUPPORTED_CURRENCIES, getExchangeRates, type ExchangeRatesResult, type SupportedCurrency } from '../lib/exchangeRates';
 import './profitLeak.css';
 import './profitLeakLayout.css';
 
@@ -138,7 +139,8 @@ const eventSpend = (event: LeakEvent) => {
 const stationKey = (workCenterCode: string | null, stationCode: string | null) => `${workCenterCode ?? ''}::${stationCode ?? ''}`;
 const money = (value: number, currency = 'USD') => new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 2 }).format(value);
 const categoryTone = (category: string) => category.includes('Scrap') ? 'scrap' : category === 'Manufacturing Transfer' ? 'transfer' : category === 'Supplies Used' ? 'supplies' : category === 'Warranty' ? 'warranty' : category === 'External Supplier' ? 'external' : 'downtime';
-const SpendBox = ({ value }: { value: string | null }) => <span className="profit-leak-spend"><small>Money Spent</small><strong>{value ?? 'Not recorded'}</strong></span>;
+type SpendTotal = { label: string; note: string };
+const SpendBox = ({ total }: { total: SpendTotal | null }) => <span className="profit-leak-spend" title={total?.note || undefined}><small>Money Spent</small><strong>{total?.label ?? 'Not recorded'}</strong>{total?.note ? <em className="profit-leak-spend-note">Partial</em> : null}</span>;
 const relation = <T,>(value: T | T[] | null) => Array.isArray(value) ? value[0] ?? null : value;
 const durationLabel = (hours: number) => hours >= 1 ? `${hours.toFixed(2)} h` : hours >= (1 / 60) ? `${Math.max(1, Math.round(hours * 60))} min` : `${Math.max(1, Math.round(hours * 3600))} sec`;
 const workCenterPalette = [
@@ -246,6 +248,12 @@ export function ProfitLeakWorkspace({ onNavigate, organizationId }: Props) {
   const [setupNotice, setSetupNotice] = React.useState('');
   const [entrySetupError, setEntrySetupError] = React.useState('');
   const [updatedAt, setUpdatedAt] = React.useState('');
+  // The tracker reads in one currency. Which one is an organization setting, so every
+  // plant reports its operating cost the same way no matter who opens the workspace.
+  const [displayCurrency, setDisplayCurrency] = React.useState<SupportedCurrency>('USD');
+  const [exchangeRates, setExchangeRates] = React.useState<ExchangeRatesResult | null>(null);
+  const [rateWarning, setRateWarning] = React.useState('');
+  const [currencySaveError, setCurrencySaveError] = React.useState('');
 
   const load = React.useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -313,7 +321,31 @@ export function ProfitLeakWorkspace({ onNavigate, organizationId }: Props) {
     setLoading(false);
   }, [organizationId, range.from, range.to]);
 
+  const loadDisplayCurrency = React.useCallback(async () => {
+    const { data, error: settingError } = await supabase.from('mes_profit_leak_settings')
+      .select('display_currency').eq('organization_id', organizationId).maybeSingle();
+    // The setting ships with its own migration: an organization still without the table
+    // keeps reading the tracker in the default currency.
+    if (settingError) return;
+    const saved = data?.display_currency as SupportedCurrency | undefined;
+    if (saved && SUPPORTED_CURRENCIES.includes(saved)) setDisplayCurrency(saved);
+  }, [organizationId]);
+
   React.useEffect(() => { void load(); }, [load]);
+  React.useEffect(() => { void loadDisplayCurrency(); }, [loadDisplayCurrency]);
+
+  React.useEffect(() => {
+    let active = true;
+    getExchangeRates(displayCurrency, [...SUPPORTED_CURRENCIES])
+      .then((result) => { if (active) { setExchangeRates(result); setRateWarning(''); } })
+      .catch((rateError) => {
+        if (!active) return;
+        setExchangeRates(null);
+        setRateWarning(rateError instanceof Error ? rateError.message : 'Exchange rates are unavailable.');
+      });
+    return () => { active = false; };
+  }, [displayCurrency]);
+
   useSupabaseRealtimeRefresh({
     channelName: `profit-leak:${organizationId}`,
     tables: [
@@ -324,8 +356,9 @@ export function ProfitLeakWorkspace({ onNavigate, organizationId }: Props) {
       { table: 'mes_inventory_items', filter: `organization_id=eq.${organizationId}` },
       { table: 'mes_downtime_cost_excluded_stations', filter: `organization_id=eq.${organizationId}` },
       { table: 'mes_production_serials', filter: `organization_id=eq.${organizationId}` },
+      { table: 'mes_profit_leak_settings', filter: `organization_id=eq.${organizationId}` },
     ],
-    onRefresh: () => void load(true),
+    onRefresh: () => { void load(true); void loadDisplayCurrency(); },
   });
 
   const validDowntimeCycles = React.useMemo(() => {
@@ -367,6 +400,15 @@ export function ProfitLeakWorkspace({ onNavigate, organizationId }: Props) {
     currency: item.currency || 'USD',
   }])), [inventoryPrices]);
 
+  // Frankfurter publishes the rates with the display currency as the base, so an amount
+  // captured in another currency is divided by its rate. A currency with no published
+  // rate returns null: it is shown as it was recorded instead of being counted wrong.
+  const toDisplayAmount = React.useCallback((amount: number, currency: string) => {
+    if (currency === displayCurrency) return amount;
+    const rate = exchangeRates?.rates[currency as SupportedCurrency];
+    return rate ? amount / rate : null;
+  }, [displayCurrency, exchangeRates]);
+
   const tableRows = React.useMemo<LeakTableRow[]>(() => {
     const locationFor = (workCenterCode: string | null, stationCode: string | null) => {
       const center = workCenters.find((item) => item.code === workCenterCode);
@@ -397,7 +439,9 @@ export function ProfitLeakWorkspace({ onNavigate, organizationId }: Props) {
       const centerName = workCenters.find((center) => center.code === cycle.work_center_code)?.name ?? cycle.work_center_code;
       const rate = getWorkCenterHourlyRate(`${centerName} ${cycle.work_center_code}`);
       const location = locationFor(cycle.work_center_code, cycle.station_code);
-      return { id: `downtime-${cycle.id}`, date: cycle.started_at, category: 'Downtime Incident', detail: `${durationLabel(hours)} × ${money(rate)}/hour`, item: '—', duration: durationLabel(hours), ...location, quantity: 1, spent: hours * rate, currency: 'USD' };
+      const displayRate = toDisplayAmount(rate, 'USD');
+      const rateLabel = displayRate === null ? money(rate) : money(displayRate, displayCurrency);
+      return { id: `downtime-${cycle.id}`, date: cycle.started_at, category: 'Downtime Incident', detail: `${durationLabel(hours)} × ${rateLabel}/hour`, item: '—', duration: durationLabel(hours), ...location, quantity: 1, spent: hours * rate, currency: 'USD' };
     });
     const endOfLifeRows: LeakTableRow[] = endOfLifePieces.map((piece) => {
       const order = relation(piece.mes_production_orders);
@@ -430,29 +474,40 @@ export function ProfitLeakWorkspace({ onNavigate, organizationId }: Props) {
       entry,
     }));
     return [...operationalRows, ...transferRows, ...downtimeRows, ...endOfLifeRows, ...entryRows].sort((left, right) => new Date(right.date).getTime() - new Date(left.date).getTime());
-  }, [endOfLifePieces, entries, events, priceByItem, stations, transfers, validDowntimeCycles, workCenters]);
+  }, [displayCurrency, endOfLifePieces, entries, events, priceByItem, stations, toDisplayAmount, transfers, validDowntimeCycles, workCenters]);
   const workCenterStyle = React.useCallback((name: string) => {
     const index = Math.max(0, workCenters.findIndex((center) => center.name === name));
     return workCenterPalette[index % workCenterPalette.length];
   }, [workCenters]);
   const spendTotals = React.useMemo(() => {
-    // Amounts are never converted between currencies: each one keeps its own subtotal.
-    const totalFor = (categories: string[]) => {
+    // Every subtotal is stated in the organization's display currency. An amount whose
+    // currency has no published rate is left out rather than added as if it already were
+    // the display currency, and the KPI says so.
+    const totalFor = (categories: string[]): SpendTotal | null => {
       const recorded = tableRows.filter((row) => categories.includes(row.category) && row.spent !== null);
       if (!recorded.length) return null;
-      const byCurrency = new Map<string, number>();
-      recorded.forEach((row) => byCurrency.set(row.currency, (byCurrency.get(row.currency) ?? 0) + (row.spent ?? 0)));
-      return [...byCurrency.entries()].map(([currency, total]) => money(total, currency)).join(' + ');
+      const unconverted = new Set<string>();
+      let total = 0;
+      let converted = 0;
+      recorded.forEach((row) => {
+        const amount = toDisplayAmount(row.spent ?? 0, row.currency);
+        if (amount === null) unconverted.add(row.currency);
+        else { total += amount; converted += 1; }
+      });
+      const pending = recorded.length - converted;
+      const note = pending
+        ? `${pending} event${pending === 1 ? '' : 's'} recorded in ${[...unconverted].join(', ')} ${pending === 1 ? 'is' : 'are'} not included: no rate to ${displayCurrency} is available.`
+        : '';
+      return { label: converted ? money(total, displayCurrency) : `No rate to ${displayCurrency}`, note };
     };
     return {
-      scrap: totalFor(['End of Life Scrap', 'Generated Scrap']),
       transfers: totalFor(['Manufacturing Transfer']),
       supplies: totalFor(['Supplies Used']),
       warranties: totalFor(['Warranty']),
       downtime: totalFor(['Downtime Incident']),
       external: totalFor(['External Supplier']),
     };
-  }, [tableRows]);
+  }, [displayCurrency, tableRows, toDisplayAmount]);
 
   const setPresetRange = (next: RangePreset) => {
     setPreset(next);
@@ -576,6 +631,42 @@ export function ProfitLeakWorkspace({ onNavigate, organizationId }: Props) {
   const activeConfig = entryCategory ? CATEGORY_CONFIG[entryCategory] : null;
   const workCenterOptions: SelectOption[] = [{ value: '', label: 'Company wide' }, ...workCenters.map((center) => ({ value: center.id, label: `${center.code} · ${center.name}` }))];
   const currencyOptions: SelectOption[] = ENTRY_CURRENCIES.map((currency) => ({ value: currency, label: currency }));
+  const displayCurrencyOptions: SelectOption[] = SUPPORTED_CURRENCIES.map((currency) => ({ value: currency, label: currency }));
+
+  const changeDisplayCurrency = async (currency: SupportedCurrency) => {
+    const previous = displayCurrency;
+    setDisplayCurrency(currency);
+    const { error: saveError } = await supabase.from('mes_profit_leak_settings')
+      .upsert({ organization_id: organizationId, display_currency: currency }, { onConflict: 'organization_id' });
+    if (saveError) {
+      setDisplayCurrency(previous);
+      setCurrencySaveError(`The display currency is shared by the organization and could not be saved: ${saveError.message}`);
+      return;
+    }
+    setCurrencySaveError('');
+  };
+
+  // The rate that turns the recorded money into what the tracker shows: against MXN,
+  // or against USD when the organization already reads in MXN.
+  const referenceCurrency: SupportedCurrency = displayCurrency === 'MXN' ? 'USD' : 'MXN';
+  const referenceRate = exchangeRates?.rates[referenceCurrency] ?? null;
+  const rateBreakdown = exchangeRates
+    ? SUPPORTED_CURRENCIES.filter((currency) => currency !== displayCurrency)
+      .map((currency) => `1 ${displayCurrency} = ${(exchangeRates.rates[currency] ?? 0).toFixed(4)} ${currency}`)
+      .join(' · ')
+    : '';
+
+  const renderSpent = (amount: number, currency: string) => {
+    const converted = toDisplayAmount(amount, currency);
+    return converted === null
+      ? <strong className="cost-value unconverted" title={`No ${currency} → ${displayCurrency} rate is available, so this amount is shown as it was recorded.`}>{money(amount, currency)}</strong>
+      : <strong className="cost-value">{money(converted, displayCurrency)}</strong>;
+  };
+
+  const currencyNotice = [
+    currencySaveError,
+    rateWarning ? `Exchange rates are unavailable (${rateWarning}). Amounts recorded in another currency stay in the currency they were captured in and are left out of the KPI totals.` : '',
+  ].filter(Boolean).join(' ');
 
   return <section className="profit-leak-workspace">
     <header className="profit-leak-header">
@@ -587,22 +678,32 @@ export function ProfitLeakWorkspace({ onNavigate, organizationId }: Props) {
         <label><span>To</span><input type="date" value={range.to} onChange={(event) => { setPreset('custom'); setRange((current) => ({ ...current, to: event.target.value })); }} /></label>
         <button className="profit-leak-refresh" type="button" disabled={loading} onClick={() => void load()}><RefreshCw size={15} className={loading ? 'spinning' : ''} /> Refresh</button>
       </section>
+      <div className="profit-leak-currency">
+        <Globe2 size={15} />
+        <span className="profit-leak-currency-label">Currency</span>
+        <ProfitLeakDropdown id="profit-leak-display-currency" value={displayCurrency} options={displayCurrencyOptions} onChange={(value) => void changeDisplayCurrency(value as SupportedCurrency)} />
+        <span className="profit-leak-rate" title={rateBreakdown || undefined}>
+          <strong>{referenceRate ? `1 ${displayCurrency} = ${referenceRate.toFixed(4)} ${referenceCurrency}` : 'Rate unavailable'}</strong>
+          <small>{exchangeRates ? `Frankfurter · ${exchangeRates.date}${exchangeRates.stale ? ' · stale' : exchangeRates.fromCache ? ' · cached' : ''}` : 'Exchange rates unavailable'}</small>
+        </span>
+      </div>
       <span className="profit-leak-live"><span><i /> Live analysis</span><small>{updatedAt ? new Date(updatedAt).toLocaleTimeString() : 'Connecting'}</small></span>
     </header>
     {error ? <div className="profit-leak-error"><AlertTriangle size={18} />{error}</div> : null}
     {setupNotice ? <div className="profit-leak-error profit-leak-setup-notice"><AlertTriangle size={18} />{setupNotice}</div> : null}
+    {currencyNotice ? <div className="profit-leak-error profit-leak-setup-notice"><AlertTriangle size={18} />{currencyNotice}</div> : null}
     <section className="profit-leak-kpis" aria-label="Profit leak KPIs">
-      <article className="scrap-card"><header className="profit-kpi-head"><small className="profit-kpi-title">Total Scrap</small></header><span className="profit-kpi-count"><Trash2 /><strong>{summary.scraps.toLocaleString()}</strong></span><span className="scrap-breakdown"><b><i />End of Life <strong>{summary.eol.toLocaleString()}</strong></b><b><i />Generated Scrap <strong>{summary.generated.toLocaleString()}</strong></b></span><SpendBox value={spendTotals.scrap} /></article>
-      <article><header className="profit-kpi-head has-actions"><small className="profit-kpi-title">Manufacturing Transfers</small><span className="profit-kpi-actions"><button className="profit-kpi-action" type="button" disabled={Boolean(entrySetupError)} title="Log manufacturing transfer" aria-label="Log manufacturing transfer" onClick={() => openEntryModal('manufacturing-transfer', null)}><Plus size={13} /></button></span></header><span className="profit-kpi-count"><Repeat2 /><strong>{summary.transfersCount.toLocaleString()}</strong></span><SpendBox value={spendTotals.transfers} /></article>
-      <article><header className="profit-kpi-head"><small className="profit-kpi-title">Supplies Used</small></header><span className="profit-kpi-count"><Boxes /><strong>{summary.supplies.toLocaleString()}</strong></span><SpendBox value={spendTotals.supplies} /></article>
-      <article><header className="profit-kpi-head has-actions"><small className="profit-kpi-title">Warranties</small><span className="profit-kpi-actions"><button className="profit-kpi-action" type="button" disabled={Boolean(entrySetupError)} title="Log warranty" aria-label="Log warranty" onClick={() => openEntryModal('warranty', null)}><Plus size={13} /></button></span></header><span className="profit-kpi-count"><ShieldCheck /><strong>{summary.warranties.toLocaleString()}</strong></span><SpendBox value={spendTotals.warranties} /></article>
-      <article><header className="profit-kpi-head has-actions"><small className="profit-kpi-title">Downtime Incidents</small><span className="profit-kpi-actions"><button className={`profit-kpi-action${excludedCount ? ' active' : ''}`} type="button" disabled={!stationConfigAvailable} title={excludedCount ? `Downtime cost settings · ${excludedCount} station${excludedCount === 1 ? '' : 's'} excluded` : 'Downtime cost settings'} aria-label="Downtime cost settings" onClick={openStationModal}><Wrench size={13} /></button></span></header><span className="profit-kpi-count"><TriangleAlert /><strong>{summary.downtime.toLocaleString()}</strong></span><SpendBox value={spendTotals.downtime} /></article>
-      <article className="external-card"><header className="profit-kpi-head has-actions"><small className="profit-kpi-title">External Suppliers</small><span className="profit-kpi-actions"><button className="profit-kpi-action" type="button" disabled={Boolean(entrySetupError)} title="Log external supplier expense" aria-label="Log external supplier expense" onClick={() => openEntryModal('external-supplier', null)}><Plus size={13} /></button></span></header><span className="profit-kpi-count"><Truck /><strong>{summary.externalCount.toLocaleString()}</strong></span><SpendBox value={spendTotals.external} /></article>
+      <article className="scrap-card"><header className="profit-kpi-head"><small className="profit-kpi-title">Total Scrap</small></header><span className="profit-kpi-count"><Trash2 /><strong>{summary.scraps.toLocaleString()}</strong></span><span className="scrap-breakdown"><b><i />End of Life <strong>{summary.eol.toLocaleString()}</strong></b><b><i />Generated Scrap <strong>{summary.generated.toLocaleString()}</strong></b></span></article>
+      <article><header className="profit-kpi-head has-actions"><small className="profit-kpi-title">Manufacturing Transfers</small><span className="profit-kpi-actions"><button className="profit-kpi-action" type="button" disabled={Boolean(entrySetupError)} title="Log manufacturing transfer" aria-label="Log manufacturing transfer" onClick={() => openEntryModal('manufacturing-transfer', null)}><Plus size={13} /></button></span></header><span className="profit-kpi-count"><Repeat2 /><strong>{summary.transfersCount.toLocaleString()}</strong></span><SpendBox total={spendTotals.transfers} /></article>
+      <article><header className="profit-kpi-head"><small className="profit-kpi-title">Supplies Used</small></header><span className="profit-kpi-count"><Boxes /><strong>{summary.supplies.toLocaleString()}</strong></span><SpendBox total={spendTotals.supplies} /></article>
+      <article><header className="profit-kpi-head has-actions"><small className="profit-kpi-title">Warranties</small><span className="profit-kpi-actions"><button className="profit-kpi-action" type="button" disabled={Boolean(entrySetupError)} title="Log warranty" aria-label="Log warranty" onClick={() => openEntryModal('warranty', null)}><Plus size={13} /></button></span></header><span className="profit-kpi-count"><ShieldCheck /><strong>{summary.warranties.toLocaleString()}</strong></span><SpendBox total={spendTotals.warranties} /></article>
+      <article><header className="profit-kpi-head has-actions"><small className="profit-kpi-title">Downtime Incidents</small><span className="profit-kpi-actions"><button className={`profit-kpi-action${excludedCount ? ' active' : ''}`} type="button" disabled={!stationConfigAvailable} title={excludedCount ? `Downtime cost settings · ${excludedCount} station${excludedCount === 1 ? '' : 's'} excluded` : 'Downtime cost settings'} aria-label="Downtime cost settings" onClick={openStationModal}><Wrench size={13} /></button></span></header><span className="profit-kpi-count"><TriangleAlert /><strong>{summary.downtime.toLocaleString()}</strong></span><SpendBox total={spendTotals.downtime} /></article>
+      <article className="external-card"><header className="profit-kpi-head has-actions"><small className="profit-kpi-title">External Suppliers</small><span className="profit-kpi-actions"><button className="profit-kpi-action" type="button" disabled={Boolean(entrySetupError)} title="Log external supplier expense" aria-label="Log external supplier expense" onClick={() => openEntryModal('external-supplier', null)}><Plus size={13} /></button></span></header><span className="profit-kpi-count"><Truck /><strong>{summary.externalCount.toLocaleString()}</strong></span><SpendBox total={spendTotals.external} /></article>
     </section>
     <section className="profit-leak-events">
       <header><span><small>Cost detail</small><h2>Operation Cost Events</h2></span><strong>{tableRows.length.toLocaleString()} events</strong></header>
-      <div className="profit-leak-table-wrap"><table><thead><tr><th>Date</th><th>KPI</th><th>Event detail</th><th>Item / Tool & Client</th><th>Workcenter / Station</th><th>Downtime</th><th>Quantity</th><th>Money Spent</th><th>Actions</th></tr></thead><tbody>
-        {tableRows.map((row) => { const tone = workCenterStyle(row.workCenter); return <tr key={row.id}><td>{new Date(row.date).toLocaleString()}</td><td><span className={`profit-leak-category ${categoryTone(row.category)}`}>{row.category}</span></td><td>{row.detail}</td><td>{row.item}</td><td><span className="profit-leak-location"><b className="workcenter-pill" style={{ background: tone.background, borderColor: tone.border, color: tone.color }}>{row.workCenter}</b><em>{row.station}</em></span></td><td>{row.duration}</td><td>{row.quantity.toLocaleString()}</td><td>{row.spent === null ? <em className="cost-missing">Not recorded</em> : <strong className="cost-value">{money(row.spent, row.currency)}</strong>}</td><td>{row.entry ? <span className="profit-leak-row-actions"><button type="button" aria-label={`Edit ${row.entry.title}`} onClick={() => openEntryModal(row.entry!.category, row.entry!)}><Pencil size={14} /></button><button className="danger" type="button" aria-label={`Delete ${row.entry.title}`} onClick={() => setEntryDeleteCandidate(row.entry!)}><Trash2 size={14} /></button></span> : <em className="cost-missing">—</em>}</td></tr>; })}
+      <div className="profit-leak-table-wrap"><table><thead><tr><th>Date</th><th>KPI</th><th>Event detail</th><th>Item / Tool & Client</th><th>Workcenter / Station</th><th>Downtime</th><th>Quantity</th><th>Money Spent ({displayCurrency})</th><th>Actions</th></tr></thead><tbody>
+        {tableRows.map((row) => { const tone = workCenterStyle(row.workCenter); return <tr key={row.id}><td>{new Date(row.date).toLocaleString()}</td><td><span className={`profit-leak-category ${categoryTone(row.category)}`}>{row.category}</span></td><td>{row.detail}</td><td>{row.item}</td><td><span className="profit-leak-location"><b className="workcenter-pill" style={{ background: tone.background, borderColor: tone.border, color: tone.color }}>{row.workCenter}</b><em>{row.station}</em></span></td><td>{row.duration}</td><td>{row.quantity.toLocaleString()}</td><td>{row.spent === null ? <em className="cost-missing">Not recorded</em> : renderSpent(row.spent, row.currency)}</td><td>{row.entry ? <span className="profit-leak-row-actions"><button type="button" aria-label={`Edit ${row.entry.title}`} onClick={() => openEntryModal(row.entry!.category, row.entry!)}><Pencil size={14} /></button><button className="danger" type="button" aria-label={`Delete ${row.entry.title}`} onClick={() => setEntryDeleteCandidate(row.entry!)}><Trash2 size={14} /></button></span> : <em className="cost-missing">—</em>}</td></tr>; })}
         {!tableRows.length ? <tr><td className="profit-leak-empty" colSpan={9}>{loading ? 'Loading profit leak events…' : 'No profit leak events were recorded in this period.'}</td></tr> : null}
       </tbody></table></div>
     </section>
