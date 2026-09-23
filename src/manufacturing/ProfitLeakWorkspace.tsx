@@ -1,6 +1,6 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { AlertTriangle, ArrowLeft, Boxes, ChevronDown, CircleX, Globe2, Pencil, Plus, RefreshCw, Repeat2, ShieldCheck, Trash2, Truck, TriangleAlert, Wrench } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Boxes, ChevronDown, CircleX, Globe2, ListFilter, Pencil, Plus, RefreshCw, Repeat2, ShieldCheck, Trash2, Truck, TriangleAlert, Wrench } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { useSupabaseRealtimeRefresh } from '../lib/useSupabaseRealtimeRefresh';
 import { getWorkCenterHourlyRate } from './workCenterRates';
@@ -54,6 +54,18 @@ const WARRANTY_REASONS = [
   'Material defect',
 ];
 const ENTRY_CURRENCIES = ['USD', 'MXN', 'EUR'];
+
+// Each KPI owns the event categories it counts: the card's subtotal adds them up and its
+// filter button narrows the event table to exactly those rows.
+type KpiKey = 'scrap' | 'transfers' | 'supplies' | 'warranties' | 'downtime' | 'external';
+const KPI_FILTERS: Record<KpiKey, { label: string; categories: string[] }> = {
+  scrap: { label: 'Total Scrap', categories: ['End of Life Scrap', 'Generated Scrap'] },
+  transfers: { label: 'Manufacturing Transfers', categories: ['Manufacturing Transfer'] },
+  supplies: { label: 'Supplies Used', categories: ['Supplies Used'] },
+  warranties: { label: 'Warranties', categories: ['Warranty'] },
+  downtime: { label: 'Downtime Incidents', categories: ['Downtime Incident'] },
+  external: { label: 'External Suppliers', categories: ['External Supplier'] },
+};
 
 type CategoryConfig = {
   eyebrow: string;
@@ -254,6 +266,7 @@ export function ProfitLeakWorkspace({ onNavigate, organizationId }: Props) {
   const [exchangeRates, setExchangeRates] = React.useState<ExchangeRatesResult | null>(null);
   const [rateWarning, setRateWarning] = React.useState('');
   const [currencySaveError, setCurrencySaveError] = React.useState('');
+  const [kpiFilter, setKpiFilter] = React.useState<KpiKey | null>(null);
 
   const load = React.useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -501,13 +514,20 @@ export function ProfitLeakWorkspace({ onNavigate, organizationId }: Props) {
       return { label: converted ? money(total, displayCurrency) : `No rate to ${displayCurrency}`, note };
     };
     return {
-      transfers: totalFor(['Manufacturing Transfer']),
-      supplies: totalFor(['Supplies Used']),
-      warranties: totalFor(['Warranty']),
-      downtime: totalFor(['Downtime Incident']),
-      external: totalFor(['External Supplier']),
+      transfers: totalFor(KPI_FILTERS.transfers.categories),
+      supplies: totalFor(KPI_FILTERS.supplies.categories),
+      warranties: totalFor(KPI_FILTERS.warranties.categories),
+      downtime: totalFor(KPI_FILTERS.downtime.categories),
+      external: totalFor(KPI_FILTERS.external.categories),
     };
   }, [displayCurrency, tableRows, toDisplayAmount]);
+
+  // "Only show this" on a KPI card: the table keeps the same period and only drops the
+  // rows that belong to another KPI.
+  const visibleRows = React.useMemo(
+    () => kpiFilter ? tableRows.filter((row) => KPI_FILTERS[kpiFilter].categories.includes(row.category)) : tableRows,
+    [kpiFilter, tableRows],
+  );
 
   const setPresetRange = (next: RangePreset) => {
     setPreset(next);
@@ -656,6 +676,19 @@ export function ProfitLeakWorkspace({ onNavigate, organizationId }: Props) {
       .join(' · ')
     : '';
 
+  const kpiFilterButton = (kpi: KpiKey) => {
+    const active = kpiFilter === kpi;
+    const label = KPI_FILTERS[kpi].label;
+    return <button
+      className={`profit-kpi-action${active ? ' active' : ''}`}
+      type="button"
+      aria-pressed={active}
+      title={active ? `Showing only ${label} events · Click to list every cost event again` : `Only show ${label} events`}
+      aria-label={active ? `Show every cost event again` : `Only show ${label} events`}
+      onClick={() => setKpiFilter((current) => current === kpi ? null : kpi)}
+    ><ListFilter size={13} /></button>;
+  };
+
   const renderSpent = (amount: number, currency: string) => {
     const converted = toDisplayAmount(amount, currency);
     return converted === null
@@ -693,18 +726,22 @@ export function ProfitLeakWorkspace({ onNavigate, organizationId }: Props) {
     {setupNotice ? <div className="profit-leak-error profit-leak-setup-notice"><AlertTriangle size={18} />{setupNotice}</div> : null}
     {currencyNotice ? <div className="profit-leak-error profit-leak-setup-notice"><AlertTriangle size={18} />{currencyNotice}</div> : null}
     <section className="profit-leak-kpis" aria-label="Profit leak KPIs">
-      <article className="scrap-card"><header className="profit-kpi-head"><small className="profit-kpi-title">Total Scrap</small></header><span className="profit-kpi-count"><Trash2 /><strong>{summary.scraps.toLocaleString()}</strong></span><span className="scrap-breakdown"><b><i />End of Life <strong>{summary.eol.toLocaleString()}</strong></b><b><i />Generated Scrap <strong>{summary.generated.toLocaleString()}</strong></b></span></article>
-      <article><header className="profit-kpi-head has-actions"><small className="profit-kpi-title">Manufacturing Transfers</small><span className="profit-kpi-actions"><button className="profit-kpi-action" type="button" disabled={Boolean(entrySetupError)} title="Log manufacturing transfer" aria-label="Log manufacturing transfer" onClick={() => openEntryModal('manufacturing-transfer', null)}><Plus size={13} /></button></span></header><span className="profit-kpi-count"><Repeat2 /><strong>{summary.transfersCount.toLocaleString()}</strong></span><SpendBox total={spendTotals.transfers} /></article>
-      <article><header className="profit-kpi-head"><small className="profit-kpi-title">Supplies Used</small></header><span className="profit-kpi-count"><Boxes /><strong>{summary.supplies.toLocaleString()}</strong></span><SpendBox total={spendTotals.supplies} /></article>
-      <article><header className="profit-kpi-head has-actions"><small className="profit-kpi-title">Warranties</small><span className="profit-kpi-actions"><button className="profit-kpi-action" type="button" disabled={Boolean(entrySetupError)} title="Log warranty" aria-label="Log warranty" onClick={() => openEntryModal('warranty', null)}><Plus size={13} /></button></span></header><span className="profit-kpi-count"><ShieldCheck /><strong>{summary.warranties.toLocaleString()}</strong></span><SpendBox total={spendTotals.warranties} /></article>
-      <article><header className="profit-kpi-head has-actions"><small className="profit-kpi-title">Downtime Incidents</small><span className="profit-kpi-actions"><button className={`profit-kpi-action${excludedCount ? ' active' : ''}`} type="button" disabled={!stationConfigAvailable} title={excludedCount ? `Downtime cost settings · ${excludedCount} station${excludedCount === 1 ? '' : 's'} excluded` : 'Downtime cost settings'} aria-label="Downtime cost settings" onClick={openStationModal}><Wrench size={13} /></button></span></header><span className="profit-kpi-count"><TriangleAlert /><strong>{summary.downtime.toLocaleString()}</strong></span><SpendBox total={spendTotals.downtime} /></article>
-      <article className="external-card"><header className="profit-kpi-head has-actions"><small className="profit-kpi-title">External Suppliers</small><span className="profit-kpi-actions"><button className="profit-kpi-action" type="button" disabled={Boolean(entrySetupError)} title="Log external supplier expense" aria-label="Log external supplier expense" onClick={() => openEntryModal('external-supplier', null)}><Plus size={13} /></button></span></header><span className="profit-kpi-count"><Truck /><strong>{summary.externalCount.toLocaleString()}</strong></span><SpendBox total={spendTotals.external} /></article>
+      <article className="scrap-card"><header className="profit-kpi-head has-actions"><small className="profit-kpi-title">Total Scrap</small><span className="profit-kpi-actions">{kpiFilterButton('scrap')}</span></header><span className="profit-kpi-count"><Trash2 /><strong>{summary.scraps.toLocaleString()}</strong></span><span className="scrap-breakdown"><b><i />End of Life <strong>{summary.eol.toLocaleString()}</strong></b><b><i />Generated Scrap <strong>{summary.generated.toLocaleString()}</strong></b></span></article>
+      <article><header className="profit-kpi-head has-actions two"><small className="profit-kpi-title">Manufacturing Transfers</small><span className="profit-kpi-actions">{kpiFilterButton('transfers')}<button className="profit-kpi-action" type="button" disabled={Boolean(entrySetupError)} title="Log manufacturing transfer" aria-label="Log manufacturing transfer" onClick={() => openEntryModal('manufacturing-transfer', null)}><Plus size={13} /></button></span></header><span className="profit-kpi-count"><Repeat2 /><strong>{summary.transfersCount.toLocaleString()}</strong></span><SpendBox total={spendTotals.transfers} /></article>
+      <article><header className="profit-kpi-head has-actions"><small className="profit-kpi-title">Supplies Used</small><span className="profit-kpi-actions">{kpiFilterButton('supplies')}</span></header><span className="profit-kpi-count"><Boxes /><strong>{summary.supplies.toLocaleString()}</strong></span><SpendBox total={spendTotals.supplies} /></article>
+      <article><header className="profit-kpi-head has-actions two"><small className="profit-kpi-title">Warranties</small><span className="profit-kpi-actions">{kpiFilterButton('warranties')}<button className="profit-kpi-action" type="button" disabled={Boolean(entrySetupError)} title="Log warranty" aria-label="Log warranty" onClick={() => openEntryModal('warranty', null)}><Plus size={13} /></button></span></header><span className="profit-kpi-count"><ShieldCheck /><strong>{summary.warranties.toLocaleString()}</strong></span><SpendBox total={spendTotals.warranties} /></article>
+      <article><header className="profit-kpi-head has-actions two"><small className="profit-kpi-title">Downtime Incidents</small><span className="profit-kpi-actions">{kpiFilterButton('downtime')}<button className={`profit-kpi-action${excludedCount ? ' active' : ''}`} type="button" disabled={!stationConfigAvailable} title={excludedCount ? `Downtime cost settings · ${excludedCount} station${excludedCount === 1 ? '' : 's'} excluded` : 'Downtime cost settings'} aria-label="Downtime cost settings" onClick={openStationModal}><Wrench size={13} /></button></span></header><span className="profit-kpi-count"><TriangleAlert /><strong>{summary.downtime.toLocaleString()}</strong></span><SpendBox total={spendTotals.downtime} /></article>
+      <article className="external-card"><header className="profit-kpi-head has-actions two"><small className="profit-kpi-title">External Suppliers</small><span className="profit-kpi-actions">{kpiFilterButton('external')}<button className="profit-kpi-action" type="button" disabled={Boolean(entrySetupError)} title="Log external supplier expense" aria-label="Log external supplier expense" onClick={() => openEntryModal('external-supplier', null)}><Plus size={13} /></button></span></header><span className="profit-kpi-count"><Truck /><strong>{summary.externalCount.toLocaleString()}</strong></span><SpendBox total={spendTotals.external} /></article>
     </section>
     <section className="profit-leak-events">
-      <header><span><small>Cost detail</small><h2>Operation Cost Events</h2></span><strong>{tableRows.length.toLocaleString()} events</strong></header>
+      <header>
+        <span><small>Cost detail</small><h2>Operation Cost Events</h2></span>
+        {kpiFilter ? <button className="profit-leak-filter-chip" type="button" onClick={() => setKpiFilter(null)} title="List every cost event again">Only {KPI_FILTERS[kpiFilter].label}<CircleX size={13} /></button> : null}
+        <strong>{kpiFilter ? `${visibleRows.length.toLocaleString()} of ${tableRows.length.toLocaleString()} events` : `${tableRows.length.toLocaleString()} events`}</strong>
+      </header>
       <div className="profit-leak-table-wrap"><table><thead><tr><th>Date</th><th>KPI</th><th>Event detail</th><th>Item / Tool & Client</th><th>Workcenter / Station</th><th>Downtime</th><th>Quantity</th><th>Money Spent ({displayCurrency})</th><th>Actions</th></tr></thead><tbody>
-        {tableRows.map((row) => { const tone = workCenterStyle(row.workCenter); return <tr key={row.id}><td>{new Date(row.date).toLocaleString()}</td><td><span className={`profit-leak-category ${categoryTone(row.category)}`}>{row.category}</span></td><td>{row.detail}</td><td>{row.item}</td><td><span className="profit-leak-location"><b className="workcenter-pill" style={{ background: tone.background, borderColor: tone.border, color: tone.color }}>{row.workCenter}</b><em>{row.station}</em></span></td><td>{row.duration}</td><td>{row.quantity.toLocaleString()}</td><td>{row.spent === null ? <em className="cost-missing">Not recorded</em> : renderSpent(row.spent, row.currency)}</td><td>{row.entry ? <span className="profit-leak-row-actions"><button type="button" aria-label={`Edit ${row.entry.title}`} onClick={() => openEntryModal(row.entry!.category, row.entry!)}><Pencil size={14} /></button><button className="danger" type="button" aria-label={`Delete ${row.entry.title}`} onClick={() => setEntryDeleteCandidate(row.entry!)}><Trash2 size={14} /></button></span> : <em className="cost-missing">—</em>}</td></tr>; })}
-        {!tableRows.length ? <tr><td className="profit-leak-empty" colSpan={9}>{loading ? 'Loading profit leak events…' : 'No profit leak events were recorded in this period.'}</td></tr> : null}
+        {visibleRows.map((row) => { const tone = workCenterStyle(row.workCenter); return <tr key={row.id}><td>{new Date(row.date).toLocaleString()}</td><td><span className={`profit-leak-category ${categoryTone(row.category)}`}>{row.category}</span></td><td>{row.detail}</td><td>{row.item}</td><td><span className="profit-leak-location"><b className="workcenter-pill" style={{ background: tone.background, borderColor: tone.border, color: tone.color }}>{row.workCenter}</b><em>{row.station}</em></span></td><td>{row.duration}</td><td>{row.quantity.toLocaleString()}</td><td>{row.spent === null ? <em className="cost-missing">Not recorded</em> : renderSpent(row.spent, row.currency)}</td><td>{row.entry ? <span className="profit-leak-row-actions"><button type="button" aria-label={`Edit ${row.entry.title}`} onClick={() => openEntryModal(row.entry!.category, row.entry!)}><Pencil size={14} /></button><button className="danger" type="button" aria-label={`Delete ${row.entry.title}`} onClick={() => setEntryDeleteCandidate(row.entry!)}><Trash2 size={14} /></button></span> : <em className="cost-missing">—</em>}</td></tr>; })}
+        {!visibleRows.length ? <tr><td className="profit-leak-empty" colSpan={9}>{loading ? 'Loading profit leak events…' : kpiFilter ? `No ${KPI_FILTERS[kpiFilter].label} events were recorded in this period.` : 'No profit leak events were recorded in this period.'}</td></tr> : null}
       </tbody></table></div>
     </section>
     {entryCategory && activeConfig ? <div className="mes-modal-backdrop profit-leak-modal-backdrop" role="presentation">
