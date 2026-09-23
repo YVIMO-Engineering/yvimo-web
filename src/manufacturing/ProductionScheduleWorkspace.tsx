@@ -1,9 +1,9 @@
 import React from 'react';
-import { AlertTriangle, ArrowLeft, ArrowLeftRight, Biohazard, CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, Combine, Factory, GripVertical, LoaderCircle, PackageOpen, Plus, Sparkles, X } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, ArrowLeftRight, Biohazard, CalendarDays, Check, ChevronDown, ChevronLeft, ChevronRight, Combine, Factory, GripVertical, LoaderCircle, PackageOpen, Plus, SlidersHorizontal, Sparkles, X } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { getDaysUntilDelivery } from './DeliveryRiskTimeline';
 import { ProductionOrdersWorkspace } from './MesWorkspaces';
-import { getScheduleOrderRiskLevel, type OrderRiskLevel } from './orderRisk';
+import { defaultRiskThresholds, getScheduleOrderRiskLevel, normalizeRiskThresholds, type OrderRiskLevel, type RiskThresholds } from './orderRisk';
 import { useSupabaseRealtimeRefresh, type RealtimeConnectionState } from '../lib/useSupabaseRealtimeRefresh';
 import { StatisticsAlertSlider } from './statistics/StatisticsAlerts';
 import { useStatisticsAlerts } from './statistics/useStatisticsAlerts';
@@ -63,6 +63,8 @@ export function ProductionScheduleWorkspace({ onNavigate, organizationId }: Prop
   const [draggedStationId, setDraggedStationId] = React.useState(''), [reorderingStations, setReorderingStations] = React.useState(false);
   const [liveState, setLiveState] = React.useState<RealtimeConnectionState>('connecting'), [lastUpdatedAt, setLastUpdatedAt] = React.useState('');
   const [intelligentScheduling, setIntelligentScheduling] = React.useState(false), [intelligentAvailable, setIntelligentAvailable] = React.useState(true), [intelligentSaving, setIntelligentSaving] = React.useState(false), [autoPlanning, setAutoPlanning] = React.useState(false);
+  const [riskThresholds, setRiskThresholds] = React.useState<RiskThresholds>(defaultRiskThresholds), [riskDaysAvailable, setRiskDaysAvailable] = React.useState(true);
+  const [urgencyModalOpen, setUrgencyModalOpen] = React.useState(false), [urgencyDraft, setUrgencyDraft] = React.useState({ high: '1', moderate: '3' }), [urgencySaving, setUrgencySaving] = React.useState(false), [urgencyError, setUrgencyError] = React.useState('');
   const autoPlanBusyRef = React.useRef(false);
   const { activeAlerts, acknowledgeAlert, acknowledgeAllAlerts, reloadAlerts } = useStatisticsAlerts(organizationId);
   const [mirrorGroupsAvailable, setMirrorGroupsAvailable] = React.useState(true), [mirrorPreferenceAvailable, setMirrorPreferenceAvailable] = React.useState(true), [swappingItemId, setSwappingItemId] = React.useState(''), [mirrorStationId, setMirrorStationId] = React.useState(''), [mirrorSelection, setMirrorSelection] = React.useState<string[]>([]), [mirrorSaving, setMirrorSaving] = React.useState(false);
@@ -76,11 +78,21 @@ export function ProductionScheduleWorkspace({ onNavigate, organizationId }: Prop
       fetchAllRows<Order>((from, to) => supabase.from('mes_production_orders').select('id, order_number, client_name, part_number, part_name, planned_quantity, completed_quantity, scrap_quantity, due_date, priority, status, assigned_station, assigned_work_center, manufacturing_type').eq('organization_id', organizationId).in('status', activeStatuses).order('due_date').order('id').range(from, to)),
       fetchAllRows<ProductionPiece>((from, to) => supabase.from('mes_production_serials').select('production_order_id, assigned_station, compatible_stations, quarantined').eq('organization_id', organizationId).is('result', null).order('id').range(from, to)),
       fetchAllRows<QueueItem>((from, to) => supabase.from('mes_production_schedule_queue').select('id, station_id, production_order_id, position, preferred_station_id').eq('organization_id', organizationId).order('position').order('id').range(from, to)),
-      supabase.from('mes_production_schedule_settings').select('intelligent_scheduling').eq('organization_id', organizationId).maybeSingle(),
+      supabase.from('mes_production_schedule_settings').select('intelligent_scheduling, high_risk_days, moderate_risk_days').eq('organization_id', organizationId).maybeSingle(),
     ]);
+    // The urgency windows arrive with migration 188; before it the board keeps the
+    // original 1 and 3 days and the settings button says which migration is missing.
+    const settingsRows = settingsResult.error?.message?.includes('high_risk_days')
+      ? await supabase.from('mes_production_schedule_settings').select('intelligent_scheduling').eq('organization_id', organizationId).maybeSingle()
+      : settingsResult;
+    setRiskDaysAvailable(!settingsResult.error?.message?.includes('high_risk_days'));
+    const settingsRow = settingsRows.data as unknown as { intelligent_scheduling?: boolean; high_risk_days?: number; moderate_risk_days?: number } | null;
+    setRiskThresholds(settingsRow && settingsRow.high_risk_days != null
+      ? normalizeRiskThresholds(settingsRow.high_risk_days, settingsRow.moderate_risk_days)
+      : defaultRiskThresholds);
     // The switch lives in migration 178; without it the board stays fully manual.
-    setIntelligentAvailable(!settingsResult.error);
-    setIntelligentScheduling(!settingsResult.error && settingsResult.data?.intelligent_scheduling === true);
+    setIntelligentAvailable(!settingsRows.error);
+    setIntelligentScheduling(!settingsRows.error && settingsRow?.intelligent_scheduling === true);
     // The manual mirror preference arrives with migration 180.
     const queueRows = queueResult.error?.message?.includes('preferred_station_id')
       ? await fetchAllRows<QueueItem>((from, to) => supabase.from('mes_production_schedule_queue').select('id, station_id, production_order_id, position').eq('organization_id', organizationId).order('position').order('id').range(from, to))
@@ -297,6 +309,52 @@ export function ProductionScheduleWorkspace({ onNavigate, organizationId }: Prop
     setError('');
   };
 
+  const openUrgencySettings = () => {
+    setUrgencyDraft({ high: String(riskThresholds.high), moderate: String(riskThresholds.moderate) });
+    setUrgencyError('');
+    setUrgencyModalOpen(true);
+  };
+
+  // The two windows are shared by the whole organization: the colors on this board and
+  // the order Intelligent Scheduling plans in have to mean the same thing for everybody.
+  const saveUrgencySettings = async () => {
+    const high = Number(urgencyDraft.high.trim()), moderate = Number(urgencyDraft.moderate.trim());
+    // An empty box reads as zero, and zero days means an order only turns red on its
+    // delivery day: ask for the number instead of saving that by accident.
+    if (!urgencyDraft.high.trim() || !urgencyDraft.moderate.trim()) {
+      setUrgencyError('Fill both windows with a number of days.');
+      return;
+    }
+    if (!Number.isInteger(high) || !Number.isInteger(moderate) || high < 0 || moderate < 0) {
+      setUrgencyError('Use whole days, zero or more.');
+      return;
+    }
+    if (moderate < high) {
+      setUrgencyError('Moderate risk has to start at least as early as high risk, otherwise an order would turn red without ever being orange.');
+      return;
+    }
+    if (moderate > 365) {
+      setUrgencyError('Moderate risk cannot start more than 365 days before delivery.');
+      return;
+    }
+    const next = normalizeRiskThresholds(high, moderate);
+    setUrgencySaving(true);
+    const { error: settingsError } = await supabase
+      .from('mes_production_schedule_settings')
+      .upsert({ organization_id: organizationId, high_risk_days: next.high, moderate_risk_days: next.moderate }, { onConflict: 'organization_id' });
+    setUrgencySaving(false);
+    if (settingsError) {
+      setUrgencyError(settingsError.message.includes('high_risk_days') || settingsError.message.includes('moderate_risk_days')
+        ? `${settingsError.message}. Apply SQL migration 188.`
+        : settingsError.message);
+      return;
+    }
+    setRiskThresholds(next);
+    setUrgencyModalOpen(false);
+    // Intelligent Scheduling reranks the board from the settings trigger, so read it back.
+    await load(true);
+  };
+
   // Intelligent Scheduling runs in the database (migration 180): triggers replan the
   // board whenever orders, pieces, stations or the switch change, so the plan no longer
   // depends on somebody keeping this page open. This call is the catch-up for the one
@@ -433,14 +491,14 @@ export function ProductionScheduleWorkspace({ onNavigate, organizationId }: Prop
       <StatisticsAlertSlider alerts={activeAlerts} onAcknowledge={acknowledgeAlert} onAcknowledgeAll={acknowledgeAllAlerts} />
     </div> : null}
     <div className="mes-screen-header production-schedule-header"><button className="academy-back-button engineering-back-button mes-workspace-back" type="button" onClick={() => onNavigate('/workspace/manufacturing-ops/aps')}><ArrowLeft size={16} /> APS</button><div className="mes-workspace-heading"><p className="eyebrow">APS / PRODUCTION SCHEDULE</p><h2>Production Schedule</h2><p>Build the production plan for each machine and coordinate scheduled work across the shop floor.</p></div></div>
-    <div className="production-schedule-toolbar"><label><span>Workspace</span><div className={`production-workspace-dropdown${workspaceMenuOpen ? ' open' : ''}`} ref={workspaceDropdownRef}><button type="button" aria-haspopup="listbox" aria-expanded={workspaceMenuOpen} onClick={() => setWorkspaceMenuOpen((current) => !current)}><Factory size={17} /><strong>{selectedWorkCenter ? `${selectedWorkCenter.name} · ${selectedWorkCenter.code}` : 'All workspaces'}</strong><ChevronDown size={16} /></button>{workspaceMenuOpen ? <div className="production-workspace-menu" role="listbox"><button className={selectedWorkCenterId === 'all' ? 'selected' : ''} type="button" role="option" aria-selected={selectedWorkCenterId === 'all'} onClick={() => { setSelectedWorkCenterId('all'); setWorkspaceMenuOpen(false); }}><span><b>All workspaces</b><small>Show every production station</small></span>{selectedWorkCenterId === 'all' ? <Check size={16} /> : null}</button>{workCenters.map((center) => <button className={selectedWorkCenterId === center.id ? 'selected' : ''} type="button" role="option" aria-selected={selectedWorkCenterId === center.id} onClick={() => { setSelectedWorkCenterId(center.id); setWorkspaceMenuOpen(false); }} key={center.id}><span><b>{center.name}</b><small>{center.code}</small></span>{selectedWorkCenterId === center.id ? <Check size={16} /> : null}</button>)}</div> : null}</div></label><div className="production-schedule-toolbar-status"><p><strong>{visibleStations.length}</strong> station{visibleStations.length === 1 ? '' : 's'} shown</p><div className={`production-intelligent-scheduling${intelligentScheduling ? ' on' : ''}`}><div><button type="button" role="switch" aria-checked={intelligentScheduling} aria-label="Intelligent Scheduling" disabled={!intelligentAvailable || intelligentSaving} onClick={() => void toggleIntelligentScheduling()}><i /></button><span><Sparkles size={14} /> Intelligent Scheduling</span></div><small>{!intelligentAvailable ? 'Apply SQL migration 178' : autoPlanning ? 'Organizing queues…' : intelligentScheduling ? 'Queues sorted by urgency' : 'Manual planning'}</small></div><div className={`production-schedule-live-state ${liveState}`}><span><i /> {liveStateLabels[liveState]}</span><small>{lastUpdatedAt ? `Updated ${liveClockFormatter.format(new Date(lastUpdatedAt))}` : 'Waiting for data'}</small></div></div></div>
+    <div className="production-schedule-toolbar"><label><span>Workspace</span><div className={`production-workspace-dropdown${workspaceMenuOpen ? ' open' : ''}`} ref={workspaceDropdownRef}><button type="button" aria-haspopup="listbox" aria-expanded={workspaceMenuOpen} onClick={() => setWorkspaceMenuOpen((current) => !current)}><Factory size={17} /><strong>{selectedWorkCenter ? `${selectedWorkCenter.name} · ${selectedWorkCenter.code}` : 'All workspaces'}</strong><ChevronDown size={16} /></button>{workspaceMenuOpen ? <div className="production-workspace-menu" role="listbox"><button className={selectedWorkCenterId === 'all' ? 'selected' : ''} type="button" role="option" aria-selected={selectedWorkCenterId === 'all'} onClick={() => { setSelectedWorkCenterId('all'); setWorkspaceMenuOpen(false); }}><span><b>All workspaces</b><small>Show every production station</small></span>{selectedWorkCenterId === 'all' ? <Check size={16} /> : null}</button>{workCenters.map((center) => <button className={selectedWorkCenterId === center.id ? 'selected' : ''} type="button" role="option" aria-selected={selectedWorkCenterId === center.id} onClick={() => { setSelectedWorkCenterId(center.id); setWorkspaceMenuOpen(false); }} key={center.id}><span><b>{center.name}</b><small>{center.code}</small></span>{selectedWorkCenterId === center.id ? <Check size={16} /> : null}</button>)}</div> : null}</div></label><div className="production-schedule-toolbar-status"><button className="production-urgency-button" type="button" onClick={openUrgencySettings} title={riskDaysAvailable ? 'Set how many days before delivery an order turns red or orange' : 'Apply SQL migration 188 to set the urgency days'}><SlidersHorizontal size={15} /><span><b>Urgency days</b><small>{riskDaysAvailable ? `Red ${riskThresholds.high}d · Orange ${riskThresholds.moderate}d` : 'Apply SQL migration 188'}</small></span></button><p><strong>{visibleStations.length}</strong> station{visibleStations.length === 1 ? '' : 's'} shown</p><div className={`production-intelligent-scheduling${intelligentScheduling ? ' on' : ''}`}><div><button type="button" role="switch" aria-checked={intelligentScheduling} aria-label="Intelligent Scheduling" disabled={!intelligentAvailable || intelligentSaving} onClick={() => void toggleIntelligentScheduling()}><i /></button><span><Sparkles size={14} /> Intelligent Scheduling</span></div><small>{!intelligentAvailable ? 'Apply SQL migration 178' : autoPlanning ? 'Organizing queues…' : intelligentScheduling ? 'Queues sorted by urgency' : 'Manual planning'}</small></div><div className={`production-schedule-live-state ${liveState}`}><span><i /> {liveStateLabels[liveState]}</span><small>{lastUpdatedAt ? `Updated ${liveClockFormatter.format(new Date(lastUpdatedAt))}` : 'Waiting for data'}</small></div></div></div>
     {error ? <div className="production-schedule-message" role="alert">{error}</div> : null}
     {!loading && unscheduledOrders.length ? <div className="production-schedule-unscheduled"><header><AlertTriangle size={17} /><div><strong>{unscheduledOrders.length} active order{unscheduledOrders.length === 1 ? '' : 's'} cannot be scheduled</strong><span>No station in the shop can run them, so they stay out of every queue and out of the Add order picker.</span></div></header><ul>{unscheduledOrders.slice(0, unscheduledListLimit).map((order) => <li key={order.id}><button type="button" onClick={() => openOrderDetails(order.order_number)}><b>#{order.order_number}</b><span>{order.client_name || 'Customer not assigned'}</span><em>{unscheduledReason(order)}</em></button></li>)}{unscheduledOrders.length > unscheduledListLimit ? <li className="production-schedule-unscheduled-more">and {unscheduledOrders.length - unscheduledListLimit} more</li> : null}</ul></div> : null}
     {loading ? <div className="production-schedule-loading"><LoaderCircle size={24} /> Loading stations and orders…</div> : stations.length === 0 ? <div className="production-schedule-empty"><Factory size={28} /><strong>No stations are configured yet</strong><span>Create stations in MES Work Centers before building the production schedule.</span></div> : visibleStations.length === 0 ? <div className="production-schedule-empty"><Factory size={28} /><strong>No stations in this workspace</strong><span>Select another workspace to continue planning.</span></div> : <div className="production-schedule-board">{visibleStations.map((station) => {
       const stationQueue = queue.filter((item) => item.station_id === station.id).sort((a, b) => a.position - b.position), center = centerById.get(station.work_center_id), color = stationColorById.get(station.id) || '#ff8a1f';
       const stationIndex = visibleStations.findIndex((candidate) => candidate.id === station.id);
       return <section className={`production-station-lane${draggedStationId === station.id ? ' dragging' : ''}`} style={{ '--station-color': color } as React.CSSProperties} draggable={!reorderingStations} onDragStart={(event) => { if ((event.target as HTMLElement).closest('.production-queue-order')) { event.preventDefault(); return; } setDraggedStationId(station.id); }} onDragEnd={() => setDraggedStationId('')} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { if (!(event.target as HTMLElement).closest('.production-queue-order')) dropStation(station.id); }} key={station.id}><article className="production-station-card"><span className="production-station-color" /><div className="production-station-order-controls"><span><GripVertical size={15} /> Station {stationIndex + 1}</span><div><button type="button" disabled={stationIndex === 0 || reorderingStations} aria-label={`Move ${station.name} up`} onClick={() => moveStation(station.id, -1)}><ChevronDown size={15} /></button><button type="button" disabled={stationIndex === visibleStations.length - 1 || reorderingStations} aria-label={`Move ${station.name} down`} onClick={() => moveStation(station.id, 1)}><ChevronDown size={15} /></button></div></div><small>{center ? `${center.name} · ${center.code}` : 'Work center'}</small><strong>{station.name}</strong><b>{station.code}</b><em>{station.type}</em>{station.mirror_group_id ? <span className="production-station-mirror-tag"><Combine size={13} /> Mirror of {mirrorSiblingsOf(station).filter((sibling) => sibling.id !== station.id).map((sibling) => sibling.name).join(', ') || 'no machine yet'}</span> : null}<button className="production-station-mirror-button" type="button" disabled={!mirrorGroupsAvailable} title={mirrorGroupsAvailable ? 'Configure mirror machines' : 'Apply SQL migration 179 to configure mirror machines'} onClick={(event) => { event.stopPropagation(); openMirrorSetup(station); }}><Combine size={14} /> Mirror machines</button></article><div className="production-station-queue">{stationQueue.map((item) => {
-        const order = orderById.get(item.production_order_id); if (!order) return null; const risk = getScheduleOrderRiskLevel(order);
+        const order = orderById.get(item.production_order_id); if (!order) return null; const risk = getScheduleOrderRiskLevel(order, new Date(), riskThresholds);
         const stationPieceCount = order.manufacturing_type === 'multi-step' ? multiStepPieceCount(order.id, station.code) : Number(order.planned_quantity);
         const quarantineHold = stationQuarantineHold(order.id, station.code, order.manufacturing_type === 'multi-step');
         const mirrorTargets = mirrorSiblingsOf(station).filter((sibling) => sibling.id !== station.id);
@@ -453,12 +511,19 @@ export function ProductionScheduleWorkspace({ onNavigate, organizationId }: Prop
       })}<button className="production-queue-add" type="button" onClick={() => setSelectedStationId(station.id)}><Plus size={28} /><strong>Add order</strong><span>Place the next job in this station queue</span></button></div></section>;
     })}</div>}
     {selectedStation ? <div className="production-order-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelectedStationId(''); }}><section className="production-order-modal" role="dialog" aria-modal="true" aria-labelledby="production-order-picker-title"><header><div><span>Select production order</span><h3 id="production-order-picker-title">{selectedStation.name} · {selectedStation.code}</h3><p>Choose an available order assigned to this station.</p></div><button type="button" aria-label="Close" onClick={() => setSelectedStationId('')}><X size={20} /></button></header><div className="production-order-options">{availableOrders.length ? availableOrders.map((order) => {
-const risk = getScheduleOrderRiskLevel(order);
+const risk = getScheduleOrderRiskLevel(order, new Date(), riskThresholds);
 const stationPieceCount = order.manufacturing_type === 'multi-step' ? multiStepPieceCount(order.id, selectedStation.code) : Number(order.planned_quantity);
 const optionQuarantineHold = stationQuarantineHold(order.id, selectedStation.code, order.manufacturing_type === 'multi-step');
 return <button type="button" disabled={Boolean(savingOrderId)} onClick={() => void addOrder(order)} key={order.id}><span className={`production-order-option-risk ${optionQuarantineHold.held ? 'quarantine' : risk}`}>{optionQuarantineHold.held ? <>In quarantine · {deliveryDistance(order.due_date)}</> : <>{riskLabels[risk]} · {deliveryDistance(order.due_date)}</>}</span><strong>#{order.order_number}</strong><b>{order.client_name || 'Customer not assigned'}</b><dl><div><dt>Part</dt><dd>{order.part_number || order.part_name || '—'}</dd></div>
 {order.manufacturing_type === 'multi-step' ? <div className="production-multistep-piece-count"><dt>Multi-step</dt><dd>{stationPieceCount.toLocaleString()} pieces for this station</dd></div> : null}<div><dt>Pieces</dt><dd>{stationPieceCount.toLocaleString()}</dd></div>
 <div><dt>Completed</dt><dd>{Number(order.completed_quantity).toLocaleString()}</dd></div><div><dt>Delivery</dt><dd>{formatDate(order.due_date)}</dd></div><div><dt>Status</dt><dd>{order.status}</dd></div><div><dt>Priority</dt><dd>{order.priority}</dd></div></dl>{savingOrderId === order.id ? <em><LoaderCircle size={15} /> Adding…</em> : <em>Add to queue <Plus size={15} /></em>}</button>; }) : <div className="production-order-options-empty"><PackageOpen size={26} /><strong>No available orders for this station</strong><span>Active orders assigned to this station will appear here.</span></div>}</div></section></div> : null}
+    {urgencyModalOpen ? <div className="production-order-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !urgencySaving) setUrgencyModalOpen(false); }}><section className="production-order-modal production-urgency-modal" role="dialog" aria-modal="true" aria-labelledby="production-urgency-title"><header><div><span>Urgency days</span><h3 id="production-urgency-title">When an order changes color</h3><p>Counted in days before the delivery date, for the whole organization. Intelligent Scheduling ranks the queues with the same windows.</p></div><button type="button" aria-label="Close" onClick={() => setUrgencyModalOpen(false)} disabled={urgencySaving}><X size={20} /></button></header><div className="production-urgency-fields">
+      <label className="high"><span><i /> High risk</span><div><input type="number" min={0} max={365} step={1} value={urgencyDraft.high} disabled={urgencySaving} onChange={(event) => { setUrgencyError(''); setUrgencyDraft((current) => ({ ...current, high: event.target.value })); }} /><b>days or less to delivery</b></div><small>Red. Everything past its delivery date stays Overdue no matter what these windows say.</small></label>
+      <label className="moderate"><span><i /> Moderate risk</span><div><input type="number" min={0} max={365} step={1} value={urgencyDraft.moderate} disabled={urgencySaving} onChange={(event) => { setUrgencyError(''); setUrgencyDraft((current) => ({ ...current, moderate: event.target.value })); }} /><b>days or less to delivery</b></div><small>Orange. Has to start at least as early as high risk. A rework (RW-) order never shows below this level.</small></label>
+      <p className="production-urgency-preview"><span className="low"><i /> Low risk</span> is everything further out than {urgencyDraft.moderate || '0'} day{urgencyDraft.moderate === '1' ? '' : 's'}.</p>
+      {!riskDaysAvailable ? <p className="production-urgency-warning">These windows need SQL migration 188. Until it is applied the board keeps 1 and 3 days.</p> : null}
+      {urgencyError ? <p className="production-urgency-error" role="alert">{urgencyError}</p> : null}
+    </div><footer className="production-mirror-actions"><span>Shared by everyone in this organization</span><div><button type="button" className="secondary" onClick={() => setUrgencyModalOpen(false)} disabled={urgencySaving}>Cancel</button><button type="button" onClick={() => void saveUrgencySettings()} disabled={urgencySaving}>{urgencySaving ? <><LoaderCircle size={15} /> Saving…</> : 'Save urgency days'}</button></div></footer></section></div> : null}
     {mirrorStation ? <div className="production-order-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !mirrorSaving) setMirrorStationId(''); }}><section className="production-order-modal production-mirror-modal" role="dialog" aria-modal="true" aria-labelledby="production-mirror-title"><header><div><span>Mirror machines</span><h3 id="production-mirror-title">{mirrorStation.name} · {mirrorStation.code}</h3><p>Pick the sister machines that can run the same work. Intelligent Scheduling levels each urgency level across them.</p></div><button type="button" aria-label="Close" onClick={() => setMirrorStationId('')} disabled={mirrorSaving}><X size={20} /></button></header><div className="production-mirror-options">{stations.filter((station) => station.id !== mirrorStation.id).map((station) => {
       const center = centerById.get(station.work_center_id);
       const selected = mirrorSelection.includes(station.id);
