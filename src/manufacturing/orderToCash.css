@@ -485,6 +485,334 @@
 .otc-shell-context-menu nav button.active { border-color: rgba(45, 212, 191, .4); background: rgba(13, 148, 136, .2); color: #ccfbf1; }
 .otc-shell-context-menu nav button.active svg { color: #5eead4; }
 
+/* OTC step 2: registered PO picker */
+.otc-po-picker { display: grid; gap: 6px; }
+
+.otc-po-picker-input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  border: 1px solid #0d9488;
+  border-radius: 8px;
+  padding: 0 11px;
+  background: #fff;
+  color: #0d9488;
+  cursor: text;
+}
+
+.otc-po-picker.open .otc-po-picker-input,
+.otc-po-picker-input:focus-within { box-shadow: 0 0 0 3px rgba(20, 184, 166, .14); }
+.otc-po-picker-input input { flex: 1; min-width: 0; border: 0; background: transparent; color: #0f172a; font: inherit; font-size: .8rem; font-weight: 500; outline: 0; }
+.otc-po-picker-input input::placeholder { color: #64748b; font-weight: 400; }
+.otc-po-picker-input > svg:last-child { color: #64748b; }
+
+.otc-po-picker-list {
+  display: grid;
+  max-height: 280px;
+  margin: 0;
+  border: 1px solid #dbe4ec;
+  border-radius: 8px;
+  padding: 4px;
+  background: #fff;
+  box-shadow: 0 12px 26px rgba(15, 23, 42, .1);
+  list-style: none;
+  overflow-y: auto;
+}
+
+.otc-po-picker-list li { display: flex; align-items: center; gap: 10px; border-radius: 6px; padding: 8px 9px; cursor: pointer; }
+.otc-po-picker-list li.active { background: #f0fdfa; }
+.otc-po-picker-list li.current { box-shadow: inset 3px 0 0 #10b981; }
+.otc-po-picker-list li > svg { flex: 0 0 auto; color: #10b981; }
+.otc-po-picker-main { display: grid; flex: 1; gap: 1px; min-width: 0; }
+.otc-po-picker-main strong { color: #0f172a; font-size: .8rem; font-weight: 600; }
+.otc-po-picker-main small { overflow: hidden; color: #64748b; font-size: .68rem; text-overflow: ellipsis; white-space: nowrap; }
+.otc-po-picker-main .otc-po-picker-tools { color: #0f766e; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.otc-po-picker-list li > em { color: #0f172a; font-size: .74rem; font-style: normal; font-weight: 500; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.otc-po-picker-list li.otc-po-picker-empty { color: #64748b; font-size: .74rem; cursor: default; }
+
+.otc-po-picker-none { display: grid; justify-items: start; gap: 8px; border: 1px dashed #cbd5e1; border-radius: 8px; padding: 10px 11px; background: #f8fafc; }
+
+.otc-po-picker-none button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  border: 1px solid #0d9488;
+  border-radius: 8px;
+  padding: 0 12px;
+  background: #0d9488;
+  color: #fff;
+  font: inherit;
+  font-size: .72rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.otc-po-registry-tag { display: inline-flex; align-items: center; gap: 4px; color: #047857; font-size: .64rem; font-style: normal; font-weight: 500; }
+
+/* Purchase Orders */
+.otc-header-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.otc-header-actions .otc-refresh { margin-left: 0; }
+
+.otc-primary-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 36px;
+  border: 1px solid #0d9488;
+  border-radius: 8px;
+  padding: 0 13px;
+  background: #0d9488;
+  color: #fff;
+  font: inherit;
+  font-size: .72rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.otc-primary-action:disabled { opacity: .55; cursor: not-allowed; }
+
+.otc-toolbar-filters { display: flex; flex-wrap: wrap; gap: 8px; }
+.otc-select { width: min(100%, 220px); }
+.otc-select select { flex: 1; min-width: 0; border: 0; background: transparent; color: #0f172a; font: inherit; font-size: .76rem; font-weight: 800; outline: 0; cursor: pointer; }
+
+.otc-status.po-active { background: #0d9488; }
+.otc-status.po-closed { background: #64748b; }
+
+.otc-identification .otc-status-box.po-total { border-color: rgba(20, 184, 166, .42); border-left-color: #0d9488; background: linear-gradient(135deg, #f0fdfa, #ccfbf1); }
+.otc-identification .otc-status-box.po-total b { color: #0f766e; }
+
+.otc-po-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: -4px; }
+
+.otc-po-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 0 12px;
+  background: #fff;
+  color: #334155;
+  font: inherit;
+  font-size: .72rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.otc-po-actions button:hover { border-color: #14b8a6; color: #0f766e; }
+.otc-po-actions button:disabled { opacity: .55; cursor: default; }
+
+.otc-po-facts { display: flex; flex-wrap: wrap; gap: 8px 22px; border: 1px solid #e2e8f0; border-radius: 8px; padding: 9px 12px; background: #f8fafc; }
+.otc-po-facts span { display: grid; gap: 2px; color: #0f172a; font-size: .8rem; font-weight: 500; }
+.otc-po-facts b { color: #64748b; font-size: .6rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+
+.otc-po-linked-orders { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.otc-po-linked-orders b { color: #64748b; font-size: .6rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+.otc-po-linked-orders .otc-tool-chips { margin: 0; }
+.otc-po-linked-orders small { color: #64748b; font-size: .74rem; }
+
+.otc-po-notes { margin: 0; font-weight: 400; border-left: 3px solid #cbd5e1; padding: 2px 0 2px 10px; color: #475569; font-size: .78rem; line-height: 1.5; white-space: pre-wrap; }
+
+.otc-po-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; align-items: start; }
+
+.otc-po-items,
+.otc-po-viewer { display: grid; min-width: 0; border: 1px solid #dbe4ec; border-radius: 10px; background: #fff; box-shadow: 0 8px 18px rgba(15, 23, 42, .05); overflow: hidden; }
+
+.otc-po-items > header { display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #e2e8f0; padding: 10px 12px; }
+.otc-po-items > header strong { color: #0f172a; font-size: .85rem; font-weight: 600; }
+.otc-po-items > header span { border-radius: 999px; padding: 1px 8px; background: #ccfbf1; color: #0f766e; font-size: .66rem; font-weight: 600; }
+
+.otc-po-table-wrap { overflow-x: auto; }
+.otc-po-items table { width: 100%; border-collapse: collapse; font-size: .76rem; }
+.otc-po-items th { border-bottom: 1px solid #e2e8f0; padding: 8px 10px; background: #f8fafc; color: #64748b; font-size: .6rem; font-weight: 600; letter-spacing: .05em; text-align: left; text-transform: uppercase; white-space: nowrap; }
+.otc-po-items td { border-bottom: 1px solid #f1f5f9; padding: 9px 10px; color: #334155; font-weight: 400; vertical-align: top; }
+.otc-po-items td strong { display: block; color: #0f172a; font-weight: 500; }
+.otc-po-items .numeric { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.otc-po-items tfoot td { border-bottom: 0; background: #f0fdfa; color: #0f766e; font-size: .8rem; font-weight: 700; }
+
+.otc-tool-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+
+.otc-tool-chips em,
+.otc-tool-input em {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid rgba(20, 184, 166, .35);
+  border-radius: 6px;
+  padding: 2px 7px;
+  background: #f0fdfa;
+  color: #0f766e;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: .66rem;
+  font-style: normal;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.otc-po-viewer > header { display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #e2e8f0; padding: 8px 10px 8px 12px; color: #0d9488; }
+.otc-po-viewer > header > span { display: grid; flex: 1; min-width: 0; }
+.otc-po-viewer > header strong { overflow: hidden; color: #0f172a; font-size: .76rem; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.otc-po-viewer > header small { color: #64748b; font-size: .64rem; font-weight: 700; }
+
+.otc-po-viewer > header button,
+.otc-po-viewer > header a {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  color: #334155;
+  cursor: pointer;
+}
+
+.otc-po-viewer > header button:hover,
+.otc-po-viewer > header a:hover { border-color: #14b8a6; color: #0f766e; }
+
+.otc-po-viewer-frame { display: grid; place-items: center; height: min(72vh, 760px); min-height: 420px; background: #e2e8f0; }
+.otc-po-viewer-frame iframe { width: 100%; height: 100%; border: 0; background: #fff; }
+.otc-po-viewer-frame img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.otc-po-viewer-frame p { margin: 0; padding: 20px; color: #64748b; font-size: .76rem; font-weight: 400; text-align: center; }
+
+/* .mes-order-modal (styles.css) caps width and height and loads later, so these need the extra class. */
+/* The app header stays on top of modal backdrops, so the PO modal is laid out below it. */
+.mes-modal-backdrop.otc-po-backdrop { padding: calc(var(--header-height, 64px) + 16px) 20px 20px; }
+.mes-modal-backdrop .mes-order-modal.otc-po-modal { width: min(1320px, calc(100vw - 40px)); max-height: calc(100dvh - var(--header-height, 64px) - 36px); padding: 22px 24px; }
+.otc-po-modal h3 { font-size: 1.35rem; font-weight: 700; }
+.otc-po-form-head { display: flex; align-items: center; gap: 12px; }
+.otc-po-form-head .eyebrow { margin: 0; font-weight: 700; }
+.otc-po-form-layout { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+.otc-po-form-fields { display: grid; gap: 16px; min-width: 0; }
+.otc-po-form-fields fieldset { display: grid; gap: 12px; min-width: 0; margin: 0; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px 16px 16px; }
+.otc-po-form-fields legend { padding: 0 6px; color: #0d9488; font-size: .66rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.otc-po-form-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 14px; }
+.otc-po-form-grid .wide { grid-column: 1 / -1; }
+
+.otc-po-modal .otc-link-field,
+.otc-po-modal .otc-link-file { gap: 5px; min-width: 0; }
+
+.otc-po-modal .otc-link-field > span,
+.otc-po-modal .otc-link-file > span:first-child { color: #64748b; font-size: .64rem; font-weight: 600; letter-spacing: .04em; }
+
+.otc-po-modal .otc-link-field input,
+.otc-po-modal .otc-link-field select,
+.otc-po-modal .otc-link-field textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: 40px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 0 11px;
+  background: #f8fafc;
+  color: #0f172a;
+  font: inherit;
+  font-size: .84rem;
+  font-weight: 500;
+}
+
+.otc-po-modal .otc-link-field textarea { height: auto; min-height: 64px; padding: 9px 11px; resize: vertical; }
+.otc-po-modal .otc-link-field input::placeholder { color: #94a3b8; font-weight: 400; }
+.otc-po-modal .otc-link-field select:focus,
+.otc-po-modal .otc-link-field textarea:focus { border-color: #14b8a6; outline: none; box-shadow: 0 0 0 3px rgba(20, 184, 166, .14); }
+.otc-po-modal .otc-link-file-drop { min-height: 46px; font-weight: 500; }
+.otc-po-modal .otc-link-actions button { font-weight: 700; }
+
+.otc-po-form-items { display: grid; gap: 10px; }
+
+.otc-po-form-item {
+  display: grid;
+  grid-template-columns: 26px repeat(3, minmax(0, 1fr)) 40px;
+  grid-template-areas:
+    "line desc desc desc remove"
+    ". qty price subtotal ."
+    ". tools tools tools .";
+  align-items: end;
+  gap: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-left: 3px solid #14b8a6;
+  border-radius: 8px;
+  padding: 12px;
+  background: #fcfefe;
+}
+
+.otc-po-line { grid-area: line; display: inline-grid; place-items: center; align-self: center; width: 26px; height: 26px; border-radius: 50%; background: #ccfbf1; color: #0f766e; font-size: .7rem; font-weight: 700; }
+.otc-po-form-item .description { grid-area: desc; }
+.otc-po-form-item .quantity { grid-area: qty; }
+.otc-po-form-item .price { grid-area: price; }
+.otc-po-form-item .tools { grid-area: tools; }
+.otc-po-subtotal { grid-area: subtotal; display: grid; gap: 5px; color: #0f172a; font-size: .86rem; font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
+.otc-po-subtotal small { color: #64748b; font-size: .64rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; line-height: 1; }
+.otc-po-subtotal { min-height: 40px; align-content: end; padding-bottom: 10px; box-sizing: border-box; }
+
+.otc-po-remove { grid-area: remove; display: inline-grid; place-items: center; width: 40px; height: 40px; border: 1px solid #fecaca; border-radius: 8px; background: #fff; color: #dc2626; cursor: pointer; }
+.otc-po-remove:disabled { border-color: #e2e8f0; color: #cbd5e1; cursor: not-allowed; }
+
+.otc-tool-input { box-sizing: border-box; display: flex; flex-wrap: wrap; align-items: center; gap: 5px; min-height: 40px; border: 1px solid #cbd5e1; border-radius: 8px; padding: 5px 8px; background: #f8fafc; }
+.otc-tool-input:focus-within { border-color: #14b8a6; box-shadow: 0 0 0 3px rgba(20, 184, 166, .14); }
+.otc-po-modal .otc-tool-input input { flex: 1; width: auto; min-width: 140px; height: 28px; border: 0; padding: 0 4px; background: transparent; box-shadow: none; }
+.otc-po-modal .otc-tool-input input:focus { box-shadow: none; }
+.otc-tool-input em.unregistered { border-style: dashed; border-color: #f59e0b; background: #fffbeb; color: #b45309; }
+.otc-tool-input em button { display: inline-grid; place-items: center; border: 0; padding: 0; background: transparent; color: inherit; cursor: pointer; }
+
+.otc-po-form-total { display: flex; align-items: center; justify-content: space-between; gap: 10px; border-top: 1px solid #e2e8f0; padding-top: 12px; }
+
+.otc-po-form-total button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  border: 1px dashed #14b8a6;
+  border-radius: 8px;
+  padding: 0 12px;
+  background: #f0fdfa;
+  color: #0f766e;
+  font: inherit;
+  font-size: .74rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.otc-po-form-total > span { display: grid; justify-items: end; gap: 2px; color: #0f172a; font-size: 1.1rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.otc-po-form-total small { color: #0d9488; font-size: .62rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+
+.otc-po-form-preview { position: sticky; top: 0; display: grid; place-items: center; height: min(calc(100dvh - var(--header-height, 64px) - 200px), 900px); min-height: 420px; border: 1px solid #dbe4ec; border-radius: 10px; background: #eef2f6; overflow: hidden; }
+.otc-po-form-preview iframe { width: 100%; height: 100%; border: 0; background: #fff; }
+.otc-po-form-preview img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.otc-po-form-preview p { display: grid; justify-items: center; gap: 8px; max-width: 260px; margin: 0; color: #64748b; font-size: .8rem; font-weight: 400; text-align: center; }
+.otc-po-form-preview p svg { color: #14b8a6; }
+
+@media (max-width: 1500px) {
+  .otc-po-body { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 1100px) {
+  .otc-po-form-layout { grid-template-columns: 1fr; }
+  .otc-po-form-preview { position: static; height: 60vh; }
+}
+
+@media (max-width: 760px) {
+  .otc-header-actions { width: 100%; margin-left: 0; }
+  .otc-toolbar-filters,
+  .otc-select { width: 100%; }
+  .mes-modal-backdrop .mes-order-modal.otc-po-modal { width: calc(100vw - 24px); padding: 18px 14px; }
+  .otc-po-form-grid { grid-template-columns: 1fr; }
+  .otc-po-form-item {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-areas:
+      "line remove"
+      "desc desc"
+      "qty price"
+      "subtotal subtotal"
+      "tools tools";
+  }
+  .otc-po-remove { justify-self: end; }
+  .otc-po-subtotal { min-height: 0; padding-bottom: 0; text-align: left; }
+}
+
 @media (max-width: 1300px) {
   .otc-documents { grid-template-columns: 1fr; }
   .otc-identification { grid-template-columns: repeat(3, minmax(120px, 1fr)); }

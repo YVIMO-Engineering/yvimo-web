@@ -1,6 +1,6 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import { Activity, AlertTriangle, ArrowRight, ArrowLeft, BarChart3, Biohazard, Blocks, Building2, Cable, Calculator, CalendarClock, ChevronDown, ChevronLeft, ChevronRight, Check, CircuitBoard, CircleDollarSign, ClipboardCheck, Cloud, Code2, Container, Cpu, Database, Factory, FileText, FileUp, FolderCheck, GitBranch, Gauge, GraduationCap, Hospital, Languages, LockKeyhole, LogIn, Mail, Menu, Network, PackageCheck, Pencil, Plus, RadioTower, ReceiptText, Rocket, ServerCog, ShieldCheck, Siren, Star, TerminalSquare, Truck, TrendingUp, Target, UserPlus, Users, Workflow, Wrench, ShieldAlert, X } from 'lucide-react';
+import { Activity, AlertTriangle, ArrowRight, ArrowLeft, BarChart3, Biohazard, Blocks, Building2, Cable, Calculator, CalendarClock, ChevronDown, ChevronLeft, ChevronRight, Check, CircuitBoard, CircleDollarSign, ClipboardCheck, Cloud, Code2, Container, Cpu, Database, Factory, FileText, FileUp, FolderCheck, GitBranch, Gauge, GraduationCap, Hospital, Languages, LockKeyhole, LogIn, Mail, Menu, Network, PackageCheck, Pencil, Plus, RadioTower, ReceiptText, ShoppingCart, Rocket, ServerCog, ShieldCheck, Siren, Star, TerminalSquare, Truck, TrendingUp, Target, UserPlus, Users, Workflow, Wrench, ShieldAlert, X } from 'lucide-react';
 import type { Session, User } from '@supabase/supabase-js';
 import { createSessionSupabaseClient, customerPortalSupabase, supabase } from './lib/supabaseClient';
 import { AcademyActivityPage, AcademyCatalogPage, AcademyCertificatesPage, AcademyCoursePage, AcademyHomePage, AcademyLessonPage, AcademyProgressPage, AcademyTrackPage } from './pages/AcademyPages';
@@ -22,6 +22,7 @@ import { StaffWorkspace } from './manufacturing/StaffWorkspace';
 import { RevenueOpportunityWorkspace } from './manufacturing/RevenueOpportunityWorkspace';
 import { AnalysisToolWorkspace } from './manufacturing/AnalysisToolWorkspace';
 import { OrderToCashWorkspace } from './manufacturing/OrderToCashWorkspace';
+import { PurchaseOrdersWorkspace } from './manufacturing/PurchaseOrdersWorkspace';
 import { InvoiceTargetWorkspace } from './manufacturing/InvoiceTargetWorkspace';
 import { ProductionTrackingWorkspace } from './manufacturing/ProductionTrackingWorkspace';
 import { ProfitLeakWorkspace } from './manufacturing/ProfitLeakWorkspace';
@@ -3652,6 +3653,7 @@ function LoggedDashboardPage({ user, onSignOut, onNavigate, onUpdateAvatar, acti
   const isAnalysisToolSection = activePath === '/workspace/manufacturing-ops/intelligence/analysis-tool' || activePath.startsWith('/workspace/manufacturing-ops/intelligence/analysis-tool/');
   const activeAnalysisToolSection = activePath.endsWith('/production-tracking') ? 'production-tracking' : 'performance-check';
   const isOtcSection = activePath === '/workspace/manufacturing-ops/intelligence/otc' || activePath.startsWith('/workspace/manufacturing-ops/intelligence/otc/');
+  const activeOtcSection = activePath.endsWith('/otc/purchase-orders') ? 'purchase-orders' : 'order-to-cash';
   const activeRevenueSection = activePath.endsWith('/income-flow') ? 'income-flow' : activePath.endsWith('/balances') ? 'balances' : activePath.endsWith('/invoice-target') ? 'invoice-target' : activePath.endsWith('/profit-leak') ? 'profit-leak' : 'price-misalignment';
   const supplierContextTabs: Array<{
     value: SupplierContextTab;
@@ -3824,6 +3826,9 @@ function LoggedDashboardPage({ user, onSignOut, onNavigate, onUpdateAvatar, acti
       return <RevenueOpportunityWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} activeSection={activeRevenueSection} />;
     }
     if (isOtcSection) {
+      if (activeOtcSection === 'purchase-orders') {
+        return <PurchaseOrdersWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} />;
+      }
       return <OrderToCashWorkspace onNavigate={onNavigate} organizationId={activeManufacturingOrganizationId} />;
     }
     if (isAnalysisToolSection) {
@@ -4664,9 +4669,13 @@ function LoggedDashboardPage({ user, onSignOut, onNavigate, onUpdateAvatar, acti
             <strong>OTC</strong>
           </div>
           <nav>
-            <button type="button" className="active" aria-current="page" onClick={() => onNavigate('/workspace/manufacturing-ops/intelligence/otc')}>
+            <button type="button" className={activeOtcSection === 'order-to-cash' ? 'active' : ''} aria-current={activeOtcSection === 'order-to-cash' ? 'page' : undefined} onClick={() => onNavigate('/workspace/manufacturing-ops/intelligence/otc')}>
               <ReceiptText size={18} />
               <span>Order-to-Cash</span>
+            </button>
+            <button type="button" className={activeOtcSection === 'purchase-orders' ? 'active' : ''} aria-current={activeOtcSection === 'purchase-orders' ? 'page' : undefined} onClick={() => onNavigate('/workspace/manufacturing-ops/intelligence/otc/purchase-orders')}>
+              <ShoppingCart size={18} />
+              <span>Purchase Orders</span>
             </button>
           </nav>
         </aside>

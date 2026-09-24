@@ -1,6 +1,6 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowLeft, CalendarDays, Check, ClipboardList, Download, Eye, FileCheck2, FileText, History, ImagePlus, LockKeyhole, ReceiptText, RefreshCw, Search, Truck, Upload, X } from 'lucide-react';
+import { ArrowLeft, CalendarDays, Check, ChevronDown, ClipboardList, Download, Eye, FileCheck2, FileText, History, ImagePlus, LockKeyhole, Plus, ReceiptText, RefreshCw, Search, ShoppingCart, Truck, Upload, X } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { useSupabaseRealtimeRefresh } from '../lib/useSupabaseRealtimeRefresh';
 import './orderToCash.css';
@@ -18,6 +18,25 @@ type OtcDocument = {
   filePath: string;
   fileType: string;
   uploadedAt: string;
+  purchaseOrderId: string;
+};
+
+// An active PO from the Purchase Orders registry that step 2 can link.
+type RegisteredPo = {
+  id: string;
+  customerId: string;
+  customerName: string;
+  poReference: string;
+  revisionNumber: number;
+  poDate: string;
+  currency: string;
+  requisitionNumber: string;
+  fileName: string;
+  filePath: string;
+  fileType: string;
+  itemCount: number;
+  toolIds: string[];
+  total: number;
 };
 
 type OtcOrder = {
@@ -27,6 +46,7 @@ type OtcOrder = {
   partName: string;
   productionStatus: string;
   quantity: number;
+  customerIds: string[];
   customerNames: string[];
   voucherNumbers: string[];
   receivedAt: string;
@@ -39,6 +59,7 @@ type OtcOrder = {
 
 type ReceptionItemRow = {
   production_order_id: string | null;
+  customer_id: string | null;
   production_order_number: string | null;
   quantity: number | null;
   is_rework: boolean | null;
@@ -57,6 +78,22 @@ type DocumentRow = {
   file_path: string;
   file_type: string;
   uploaded_at: string;
+  purchase_order_id: string | null;
+};
+
+type RegisteredPoRow = {
+  id: string;
+  customer_id: string;
+  po_reference: string;
+  revision_number: number;
+  po_date: string;
+  currency: string;
+  requisition_number: string;
+  file_name: string;
+  file_path: string;
+  file_type: string;
+  customer: { customer_name: string } | Array<{ customer_name: string }> | null;
+  items: Array<{ subtotal: number | string; tool_ids: string[] | null }> | null;
 };
 
 type LinkTarget = { order: OtcOrder; stage: DocumentStage; existing?: OtcDocument };
@@ -80,7 +117,7 @@ const legacyNotice = 'This order was processed before the OTC system was impleme
 
 const steps = ['Production Order', 'Purchase Order', 'Remission', 'Invoice'];
 const documentStages: Array<{ stage: DocumentStage; label: string; folioLabel: string; description: string }> = [
-  { stage: 'purchase-order', label: 'Purchase Order', folioLabel: 'PO folio', description: 'Link the active customer purchase order that covers this production order.' },
+  { stage: 'purchase-order', label: 'Purchase Order', folioLabel: 'PO reference', description: 'Select the active customer purchase order that covers this production order.' },
   { stage: 'remission', label: 'Remission', folioLabel: 'Remission folio', description: 'Link the remission issued when the pieces were delivered.' },
   { stage: 'invoice', label: 'Invoice', folioLabel: 'Invoice folio', description: 'Link the invoice billed to the customer for this production order.' },
 ];
@@ -140,6 +177,16 @@ function formatTimestamp(value: string) {
   return new Date(value).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
+function formatPoDate(value: string) {
+  if (!value) return 'Not specified';
+  const [year, month, day] = value.slice(0, 10).split('-').map(Number);
+  return new Date(year, month - 1, day).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function formatMoney(value: number, currency: string) {
+  return `${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
+}
+
 function formatProductionStatus(status: string) {
   return status ? status.charAt(0).toUpperCase() + status.slice(1) : 'Not specified';
 }
@@ -153,6 +200,97 @@ async function fetchAllRows<Row>(request: (from: number, to: number) => PromiseL
     rows.push(...page);
     if (page.length < rowPageSize) return rows;
   }
+}
+
+type PurchaseOrderPickerProps = {
+  candidates: RegisteredPo[];
+  currentId: string;
+  disabled: boolean;
+  onPick: (purchaseOrder: RegisteredPo) => void;
+};
+
+// Search dropdown of the active POs a production order can be linked to. The list opens
+// inline, under the search box, so the document card never clips it.
+function PurchaseOrderPicker({ candidates, currentId, disabled, onPick }: PurchaseOrderPickerProps) {
+  const [query, setQuery] = React.useState('');
+  const [open, setOpen] = React.useState(false);
+  const [activeIndex, setActiveIndex] = React.useState(0);
+  const listId = React.useId();
+
+  const matches = React.useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return candidates;
+    return candidates.filter((purchaseOrder) => [purchaseOrder.poReference, purchaseOrder.requisitionNumber, purchaseOrder.customerName, ...purchaseOrder.toolIds]
+      .some((value) => value.toLowerCase().includes(needle)));
+  }, [candidates, query]);
+
+  React.useEffect(() => { setActiveIndex(0); }, [query]);
+
+  const pick = (purchaseOrder: RegisteredPo) => {
+    setOpen(false);
+    setQuery('');
+    onPick(purchaseOrder);
+  };
+
+  return (
+    <div className={`otc-po-picker${open ? ' open' : ''}`}>
+      <label className="otc-po-picker-input">
+        <Search size={15} />
+        <input
+          value={query}
+          onChange={(event) => { setQuery(event.target.value); setOpen(true); }}
+          onFocus={() => setOpen(true)}
+          onBlur={() => setOpen(false)}
+          onKeyDown={(event) => {
+            if (event.key === 'ArrowDown') {
+              event.preventDefault();
+              setOpen(true);
+              setActiveIndex((index) => Math.min(index + 1, matches.length - 1));
+            } else if (event.key === 'ArrowUp') {
+              event.preventDefault();
+              setActiveIndex((index) => Math.max(index - 1, 0));
+            } else if (event.key === 'Enter' && open && matches[activeIndex]) {
+              event.preventDefault();
+              pick(matches[activeIndex]);
+            } else if (event.key === 'Escape') {
+              setOpen(false);
+            }
+          }}
+          placeholder="Search active POs by reference or Tool ID"
+          disabled={disabled}
+          role="combobox"
+          aria-expanded={open}
+          aria-controls={listId}
+          aria-autocomplete="list"
+        />
+        <ChevronDown size={15} />
+      </label>
+      {open ? (
+        <ul id={listId} role="listbox" className="otc-po-picker-list">
+          {matches.map((purchaseOrder, index) => (
+            <li
+              role="option"
+              aria-selected={index === activeIndex}
+              className={`${index === activeIndex ? 'active' : ''}${purchaseOrder.id === currentId ? ' current' : ''}`}
+              key={purchaseOrder.id}
+              onMouseDown={(event) => event.preventDefault()}
+              onMouseEnter={() => setActiveIndex(index)}
+              onClick={() => pick(purchaseOrder)}
+            >
+              <span className="otc-po-picker-main">
+                <strong>{purchaseOrder.poReference}{purchaseOrder.revisionNumber ? ` · Rev ${purchaseOrder.revisionNumber}` : ''}</strong>
+                <small>{purchaseOrder.customerName} · {formatPoDate(purchaseOrder.poDate)} · {purchaseOrder.itemCount} {purchaseOrder.itemCount === 1 ? 'item' : 'items'}</small>
+                {purchaseOrder.toolIds.length ? <small className="otc-po-picker-tools">{purchaseOrder.toolIds.slice(0, 4).join(', ')}{purchaseOrder.toolIds.length > 4 ? ` +${purchaseOrder.toolIds.length - 4}` : ''}</small> : null}
+              </span>
+              <em>{formatMoney(purchaseOrder.total, purchaseOrder.currency)}</em>
+              {purchaseOrder.id === currentId ? <Check size={15} /> : null}
+            </li>
+          ))}
+          {!matches.length ? <li className="otc-po-picker-empty">No active POs match "{query.trim()}".</li> : null}
+        </ul>
+      ) : null}
+    </div>
+  );
 }
 
 export function OrderToCashWorkspace({ organizationId, onNavigate }: Props) {
@@ -169,15 +307,19 @@ export function OrderToCashWorkspace({ organizationId, onNavigate }: Props) {
   const [linkSaving, setLinkSaving] = React.useState(false);
   const [preview, setPreview] = React.useState<Preview | null>(null);
   const [previewError, setPreviewError] = React.useState('');
+  const [purchaseOrders, setPurchaseOrders] = React.useState<RegisteredPo[]>([]);
+  const [poLinking, setPoLinking] = React.useState(false);
+  const [poLinkError, setPoLinkError] = React.useState('');
+  const [changingPo, setChangingPo] = React.useState(false);
 
   const loadOrders = React.useCallback(async () => {
     if (!organizationId) return;
     setLoading(true);
     try {
-      const [itemRows, documentRows] = await Promise.all([
+      const [itemRows, documentRows, purchaseOrderResult] = await Promise.all([
         fetchAllRows<ReceptionItemRow>((from, to) => supabase
           .from('mes_customer_reception_items')
-          .select('production_order_id, production_order_number, quantity, is_rework, created_at, mes_customers(customer_name), voucher:mes_customer_reception_vouchers!reception_voucher_id(voucher_number, received_at, created_at), production_order:mes_production_orders!production_order_id(order_number, part_number, part_name, status, created_at)')
+          .select('production_order_id, customer_id, production_order_number, quantity, is_rework, created_at, mes_customers(customer_name), voucher:mes_customer_reception_vouchers!reception_voucher_id(voucher_number, received_at, created_at), production_order:mes_production_orders!production_order_id(order_number, part_number, part_name, status, created_at)')
           .eq('organization_id', organizationId)
           .not('production_order_id', 'is', null)
           .order('created_at', { ascending: false })
@@ -185,15 +327,42 @@ export function OrderToCashWorkspace({ organizationId, onNavigate }: Props) {
           .range(from, to)),
         fetchAllRows<DocumentRow>((from, to) => supabase
           .from('mes_order_to_cash_documents')
-          .select('id, production_order_id, stage, folio, file_name, file_path, file_type, uploaded_at')
+          .select('id, production_order_id, stage, folio, file_name, file_path, file_type, uploaded_at, purchase_order_id')
           .eq('organization_id', organizationId)
           .order('id')
           .range(from, to)),
+        supabase
+          .from('mes_customer_purchase_orders')
+          .select('id, customer_id, po_reference, revision_number, po_date, currency, requisition_number, file_name, file_path, file_type, customer:mes_customers!customer_id(customer_name), items:mes_customer_purchase_order_items(subtotal, tool_ids)')
+          .eq('organization_id', organizationId)
+          .eq('status', 'active')
+          .order('po_date', { ascending: false })
+          .returns<RegisteredPoRow[]>(),
       ]);
+      if (purchaseOrderResult.error) throw new Error(purchaseOrderResult.error.message);
+      setPurchaseOrders((purchaseOrderResult.data ?? []).map((row) => {
+        const items = row.items ?? [];
+        return {
+          id: row.id,
+          customerId: row.customer_id,
+          customerName: single(row.customer)?.customer_name ?? 'Unknown client',
+          poReference: row.po_reference,
+          revisionNumber: row.revision_number,
+          poDate: row.po_date,
+          currency: row.currency,
+          requisitionNumber: row.requisition_number,
+          fileName: row.file_name,
+          filePath: row.file_path,
+          fileType: row.file_type,
+          itemCount: items.length,
+          toolIds: Array.from(new Set(items.flatMap((item) => item.tool_ids ?? []))),
+          total: Math.round(items.reduce((sum, item) => sum + (Number(item.subtotal) || 0), 0) * 100) / 100,
+        };
+      }));
       const documentsByOrder = new Map<string, OtcOrder['documents']>();
       documentRows.forEach((row) => {
         const documents = documentsByOrder.get(row.production_order_id) ?? {};
-        documents[row.stage] = { id: row.id, productionOrderId: row.production_order_id, stage: row.stage, folio: row.folio, fileName: row.file_name, filePath: row.file_path, fileType: row.file_type, uploadedAt: row.uploaded_at };
+        documents[row.stage] = { id: row.id, productionOrderId: row.production_order_id, stage: row.stage, folio: row.folio, fileName: row.file_name, filePath: row.file_path, fileType: row.file_type, uploadedAt: row.uploaded_at, purchaseOrderId: row.purchase_order_id ?? '' };
         documentsByOrder.set(row.production_order_id, documents);
       });
       // One production order can be split across several reception items (and vouchers);
@@ -208,6 +377,7 @@ export function OrderToCashWorkspace({ organizationId, onNavigate }: Props) {
         const current = ordersById.get(row.production_order_id);
         if (current) {
           current.quantity += Number(row.quantity) || 0;
+          if (row.customer_id && !current.customerIds.includes(row.customer_id)) current.customerIds.push(row.customer_id);
           if (customerName && !current.customerNames.includes(customerName)) current.customerNames.push(customerName);
           if (voucher && !current.voucherNumbers.includes(voucher.voucher_number)) current.voucherNumbers.push(voucher.voucher_number);
           if (receivedAt > current.receivedAt) current.receivedAt = receivedAt;
@@ -223,6 +393,7 @@ export function OrderToCashWorkspace({ organizationId, onNavigate }: Props) {
           partName: productionOrder?.part_name ?? '',
           productionStatus: productionOrder?.status ?? '',
           quantity: Number(row.quantity) || 0,
+          customerIds: row.customer_id ? [row.customer_id] : [],
           customerNames: customerName ? [customerName] : [],
           voucherNumbers: voucher ? [voucher.voucher_number] : [],
           receivedAt,
@@ -252,6 +423,7 @@ export function OrderToCashWorkspace({ organizationId, onNavigate }: Props) {
     { table: 'mes_order_to_cash_documents', filter: `organization_id=eq.${organizationId}` },
     { table: 'mes_customer_reception_items', filter: `organization_id=eq.${organizationId}` },
     { table: 'mes_production_orders', filter: `organization_id=eq.${organizationId}` },
+    { table: 'mes_customer_purchase_orders', filter: `organization_id=eq.${organizationId}` },
   ]), [organizationId]);
 
   useSupabaseRealtimeRefresh({
@@ -279,6 +451,69 @@ export function OrderToCashWorkspace({ organizationId, onNavigate }: Props) {
   }, [orders, filter, search]);
 
   const selected = orders.find((order) => order.productionOrderId === selectedId) ?? null;
+
+  React.useEffect(() => {
+    setChangingPo(false);
+    setPoLinkError('');
+  }, [selectedId]);
+
+  const linkPurchaseOrder = async (order: OtcOrder, purchaseOrder: RegisteredPo) => {
+    const existing = order.documents['purchase-order'];
+    if (poLinking || existing?.purchaseOrderId === purchaseOrder.id) {
+      setChangingPo(false);
+      return;
+    }
+    setPoLinking(true);
+    setPoLinkError('');
+    try {
+      // Folio and file are copied from the registered PO by the database; they are sent too
+      // because the columns are required.
+      const { error: saveError } = await supabase.from('mes_order_to_cash_documents').upsert({
+        organization_id: organizationId,
+        production_order_id: order.productionOrderId,
+        stage: 'purchase-order',
+        purchase_order_id: purchaseOrder.id,
+        folio: purchaseOrder.poReference,
+        file_name: purchaseOrder.fileName,
+        file_path: purchaseOrder.filePath,
+        file_type: purchaseOrder.fileType,
+      }, { onConflict: 'production_order_id,stage' });
+      if (saveError) throw saveError;
+      // A PO uploaded directly in OTC (before the registry) owned its file; a registered PO's
+      // file belongs to the registry and must stay.
+      if (existing && !existing.purchaseOrderId) {
+        await supabase.storage.from(documentsBucket).remove([existing.filePath]);
+      }
+      setChangingPo(false);
+      await loadOrders();
+    } catch (saveError) {
+      console.error('Unable to link purchase order', saveError);
+      setPoLinkError(saveError instanceof Error ? saveError.message : typeof saveError === 'object' && saveError && 'message' in saveError ? String(saveError.message) : 'Unable to link the purchase order.');
+    } finally {
+      setPoLinking(false);
+    }
+  };
+
+  const renderPurchaseOrderPicker = (order: OtcOrder) => {
+    const candidates = purchaseOrders.filter((purchaseOrder) => order.customerIds.includes(purchaseOrder.customerId));
+    const clientName = order.customerNames.join(', ') || 'this client';
+    if (!candidates.length) {
+      return (
+        <div className="otc-po-picker-none">
+          <p className="otc-document-hint">No active purchase orders for {clientName}.</p>
+          <button type="button" onClick={() => onNavigate('/workspace/manufacturing-ops/intelligence/otc/purchase-orders')}><Plus size={15} /> Register Purchase Order</button>
+        </div>
+      );
+    }
+    return (
+      <PurchaseOrderPicker
+        candidates={candidates}
+        currentId={order.documents['purchase-order']?.purchaseOrderId ?? ''}
+        disabled={poLinking}
+        onPick={(purchaseOrder) => void linkPurchaseOrder(order, purchaseOrder)}
+      />
+    );
+  };
 
   const openLink = (order: OtcOrder, stage: DocumentStage) => {
     const existing = order.documents[stage];
@@ -470,16 +705,26 @@ export function OrderToCashWorkspace({ organizationId, onNavigate }: Props) {
                         <div><small>Step {index + 2}</small><strong>{entry.label}</strong></div>
                         <em>{linkedDocument ? 'Linked' : notRequired ? 'Not required' : locked ? 'Locked' : 'Pending'}</em>
                       </header>
-                      {linkedDocument ? (
+                      {entry.stage === 'purchase-order' && !notRequired && (!linkedDocument || changingPo) ? (
                         <>
-                          <div className="otc-document-folio"><small>{entry.folioLabel}</small><strong>{linkedDocument.folio}</strong></div>
+                          <p className="otc-document-hint">{entry.description}</p>
+                          {renderPurchaseOrderPicker(selected)}
+                          {poLinking ? <p className="otc-document-hint">Linking purchase order...</p> : null}
+                          {poLinkError ? <div className="otc-feedback error" role="alert">{poLinkError}</div> : null}
+                          {linkedDocument ? <footer><button type="button" onClick={() => { setChangingPo(false); setPoLinkError(''); }} disabled={poLinking}>Cancel</button></footer> : null}
+                        </>
+                      ) : linkedDocument ? (
+                        <>
+                          <div className="otc-document-folio"><small>{entry.folioLabel}</small><strong>{linkedDocument.folio}</strong>{linkedDocument.purchaseOrderId ? <em className="otc-po-registry-tag"><ShoppingCart size={12} /> Purchase Orders registry</em> : null}</div>
                           <button type="button" className="otc-document-file" onClick={() => void openPreview(linkedDocument)} title={`View ${linkedDocument.fileName}`}>
                             {isPdfDocument(linkedDocument) ? <FileText size={18} /> : <ImagePlus size={18} />}
                             <span><strong>{linkedDocument.fileName}</strong><small>Uploaded {formatTimestamp(linkedDocument.uploadedAt)}</small></span>
                           </button>
                           <footer>
                             <button type="button" className="primary" onClick={() => void openPreview(linkedDocument)}><Eye size={15} /> View document</button>
-                            <button type="button" onClick={() => openLink(selected, entry.stage)}><RefreshCw size={15} /> Replace</button>
+                            {entry.stage === 'purchase-order'
+                              ? <button type="button" onClick={() => { setChangingPo(true); setPoLinkError(''); }}><RefreshCw size={15} /> Change PO</button>
+                              : <button type="button" onClick={() => openLink(selected, entry.stage)}><RefreshCw size={15} /> Replace</button>}
                           </footer>
                         </>
                       ) : notRequired ? (
