@@ -1,9 +1,10 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowLeft, Ban, CalendarDays, Check, Download, FileText, Maximize2, Pencil, Plus, RefreshCw, RotateCcw, Search, ShoppingCart, Trash2, Truck, Upload, Users, X } from 'lucide-react';
+import { ArrowLeft, Ban, CalendarDays, Check, ChevronDown, Download, FileText, Maximize2, Pencil, Plus, RefreshCw, RotateCcw, Search, ShoppingCart, Trash2, Truck, Upload, Users, X } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { useSupabaseRealtimeRefresh } from '../lib/useSupabaseRealtimeRefresh';
 import { addToCurrency, billingStatus, sumActiveQuantities, type BillingStatus } from './otcBalances';
+import { MesOrderDatePicker } from './MesWorkspaces';
 import { DocumentFrame, DocumentPreviewModal, documentAccept, errorMessage, fetchAllRows, formatCalendarDate as formatDate, formatMoneyByCurrency, formatQuantity, getDocumentMimeType, isAcceptedDocument, isPdfFile, parseNumber, removeRegistryFiles, single, todayIso, uploadRegistryFile, useSignedDocumentUrl } from './otcShared';
 import './orderToCash.css';
 
@@ -128,6 +129,156 @@ function sortFolios(values: Iterable<string>) {
 
 function poLineLabel(line: PoLine) {
   return line.description || line.toolIds.join(', ') || `Line ${line.lineNumber}`;
+}
+
+type PoLineGroup = { id: string; reference: string; lines: PoLine[] };
+
+type SearchSelectGroup<Item> = { id: string; label?: string; items: Item[] };
+
+type SearchSelectProps<Item extends { id: string }> = {
+  groups: Array<SearchSelectGroup<Item>>;
+  currentId: string;
+  placeholder: string;
+  emptyText: string;
+  disabled: boolean;
+  // Text of the picked item, shown in the box while the list is closed.
+  selectedLabel: (item: Item) => string;
+  searchValues: (item: Item, group: SearchSelectGroup<Item>) => string[];
+  renderItem: (item: Item) => React.ReactNode;
+  onPick: (id: string) => void;
+};
+
+// yvimo search dropdown of the remission form: type to filter, arrows and Enter to pick. The list
+// floats under the box so it does not push the rest of the form.
+function SearchSelect<Item extends { id: string }>({ groups, currentId, placeholder, emptyText, disabled, selectedLabel, searchValues, renderItem, onPick }: SearchSelectProps<Item>) {
+  const [query, setQuery] = React.useState('');
+  const [open, setOpen] = React.useState(false);
+  const [activeIndex, setActiveIndex] = React.useState(0);
+  const listId = React.useId();
+
+  const current = React.useMemo(() => groups.flatMap((group) => group.items).find((item) => item.id === currentId) ?? null, [groups, currentId]);
+  const matchingGroups = React.useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return groups.filter((group) => group.items.length);
+    return groups
+      .map((group) => ({ ...group, items: group.items.filter((item) => searchValues(item, group).some((value) => value.toLowerCase().includes(needle))) }))
+      .filter((group) => group.items.length);
+  }, [groups, query, searchValues]);
+  const matches = React.useMemo(() => matchingGroups.flatMap((group) => group.items), [matchingGroups]);
+
+  React.useEffect(() => { setActiveIndex(0); }, [query]);
+
+  const pick = (item: Item) => {
+    setOpen(false);
+    setQuery('');
+    onPick(item.id);
+  };
+
+  const currentLabel = current ? selectedLabel(current) : '';
+  let optionIndex = -1;
+  return (
+    <div className={`otc-po-picker floating${open ? ' open' : ''}`}>
+      <div className="otc-po-picker-input">
+        <Search size={15} />
+        <input
+          value={open ? query : currentLabel}
+          onChange={(event) => { setQuery(event.target.value); setOpen(true); }}
+          onFocus={() => setOpen(true)}
+          onBlur={() => { setOpen(false); setQuery(''); }}
+          onKeyDown={(event) => {
+            if (event.key === 'ArrowDown') {
+              event.preventDefault();
+              setOpen(true);
+              setActiveIndex((index) => Math.min(index + 1, matches.length - 1));
+            } else if (event.key === 'ArrowUp') {
+              event.preventDefault();
+              setActiveIndex((index) => Math.max(index - 1, 0));
+            } else if (event.key === 'Enter' && open && matches[activeIndex]) {
+              event.preventDefault();
+              pick(matches[activeIndex]);
+            } else if (event.key === 'Escape') {
+              setOpen(false);
+            }
+          }}
+          placeholder={currentLabel || placeholder}
+          disabled={disabled}
+          role="combobox"
+          aria-expanded={open}
+          aria-controls={listId}
+          aria-autocomplete="list"
+        />
+        <ChevronDown size={15} />
+      </div>
+      {open ? (
+        <ul id={listId} role="listbox" className="otc-po-picker-list">
+          {matchingGroups.map((group) => (
+            <React.Fragment key={group.id}>
+              {group.label ? <li className="otc-po-picker-group" role="presentation">{group.label}</li> : null}
+              {group.items.map((item) => {
+                optionIndex += 1;
+                const index = optionIndex;
+                return (
+                  <li
+                    role="option"
+                    aria-selected={index === activeIndex}
+                    className={`${index === activeIndex ? 'active' : ''}${item.id === currentId ? ' current' : ''}`}
+                    key={item.id}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onMouseEnter={() => setActiveIndex(index)}
+                    onClick={() => pick(item)}
+                  >
+                    {renderItem(item)}
+                    {item.id === currentId ? <Check size={15} /> : null}
+                  </li>
+                );
+              })}
+            </React.Fragment>
+          ))}
+          {!matches.length ? <li className="otc-po-picker-empty">{query.trim() ? `Nothing matches "${query.trim()}".` : emptyText}</li> : null}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
+type PoLinePickerProps = {
+  groups: PoLineGroup[];
+  currentId: string;
+  // PO lines already on other lines of the form; they are left out of the list.
+  takenIds: Set<string>;
+  availableFor: (line: PoLine) => number;
+  disabled: boolean;
+  onPick: (poItemId: string) => void;
+};
+
+// Searches the PO, the line number, the description and the tool IDs, so the line can be found
+// by what it carries.
+function PoLinePicker({ groups, currentId, takenIds, availableFor, disabled, onPick }: PoLinePickerProps) {
+  const selectGroups = React.useMemo(
+    () => groups.map((group) => ({ id: group.id, label: `PO ${group.reference}`, items: group.lines.filter((line) => line.id === currentId || !takenIds.has(line.id)) })),
+    [groups, currentId, takenIds],
+  );
+  return (
+    <SearchSelect<PoLine>
+      groups={selectGroups}
+      currentId={currentId}
+      placeholder="Search PO, line or tool ID"
+      emptyText="No PO lines left to add."
+      disabled={disabled}
+      selectedLabel={(line) => `PO ${line.poReference} · L${line.lineNumber} · ${poLineLabel(line)}`}
+      searchValues={(line, group) => [group.label ?? '', `L${line.lineNumber}`, line.description, ...line.toolIds]}
+      renderItem={(line) => (
+        <>
+          <span className="otc-po-picker-main">
+            <strong>L{line.lineNumber} · {line.description || `Line ${line.lineNumber}`}</strong>
+            <small className="otc-po-picker-tools">{line.toolIds.length ? line.toolIds.join(', ') : 'No tool ID'}</small>
+          </span>
+          <em>{formatQuantity(Math.max(availableFor(line), 0))} left</em>
+        </>
+      )}
+      onPick={onPick}
+    />
+  );
 }
 
 function newFormLine(poItemId = '', quantity = ''): FormLine {
@@ -379,7 +530,7 @@ export function RemissionsWorkspace({ organizationId, onNavigate }: Props) {
   // keeps the lines it delivered).
   const clientPoLines = React.useMemo(() => poLines.filter((line) => line.customerId === form.customerId && (line.poStatus === 'active' || editing?.lines.some((entry) => entry.poItemId === line.id))), [poLines, form.customerId, editing]);
   const clientPurchaseOrders = React.useMemo(() => {
-    const groups = new Map<string, { id: string; reference: string; lines: PoLine[] }>();
+    const groups = new Map<string, PoLineGroup>();
     clientPoLines.forEach((line) => {
       const group = groups.get(line.purchaseOrderId) ?? { id: line.purchaseOrderId, reference: `${line.poReference}${line.revisionNumber ? ` · Rev ${line.revisionNumber}` : ''}`, lines: [] };
       group.lines.push(line);
@@ -388,6 +539,8 @@ export function RemissionsWorkspace({ organizationId, onNavigate }: Props) {
     return Array.from(groups.values());
   }, [clientPoLines]);
   const poLineById = React.useMemo(() => new Map(poLines.map((line) => [line.id, line])), [poLines]);
+  const customerGroups = React.useMemo(() => [{ id: 'customers', items: customers }], [customers]);
+  const takenPoItemIds = React.useMemo(() => new Set(form.lines.map((line) => line.poItemId).filter(Boolean)), [form.lines]);
 
   const openCreate = () => {
     setEditing(null);
@@ -744,25 +897,28 @@ export function RemissionsWorkspace({ organizationId, onNavigate }: Props) {
                   <fieldset>
                     <legend>Identification</legend>
                     <div className="otc-po-form-grid">
-                      <label className="otc-link-field wide">
+                      <div className="otc-link-field wide">
                         <span>Client <b>*</b></span>
-                        <select
-                          value={form.customerId}
-                          onChange={(event) => setForm((current) => ({ ...current, customerId: event.target.value, lines: current.customerId === event.target.value ? current.lines : [newFormLine()] }))}
+                        <SearchSelect<Customer>
+                          groups={customerGroups}
+                          currentId={form.customerId}
+                          placeholder="Search a client"
+                          emptyText="No clients registered."
                           disabled={formSaving}
-                        >
-                          <option value="">Select a client</option>
-                          {customers.map((customer) => <option value={customer.id} key={customer.id}>{customer.name}</option>)}
-                        </select>
-                      </label>
+                          selectedLabel={(customer) => customer.name}
+                          searchValues={(customer) => [customer.name]}
+                          renderItem={(customer) => <span className="otc-po-picker-main"><strong>{customer.name}</strong></span>}
+                          onPick={(customerId) => setForm((current) => ({ ...current, customerId, lines: current.customerId === customerId ? current.lines : [newFormLine()] }))}
+                        />
+                      </div>
                       <label className="otc-link-field">
                         <span>Remission folio <b>*</b></span>
                         <input value={form.folio} onChange={(event) => updateForm('folio', event.target.value)} placeholder="R-10452" disabled={formSaving} />
                       </label>
-                      <label className="otc-link-field">
+                      <div className="otc-link-field">
                         <span>Date <b>*</b></span>
-                        <input type="date" value={form.date} onChange={(event) => updateForm('date', event.target.value)} disabled={formSaving} />
-                      </label>
+                        <MesOrderDatePicker id="otc-remission-date" value={form.date} onChange={(value) => updateForm('date', value)} />
+                      </div>
                       <label className="otc-link-field">
                         <span>Received by</span>
                         <input value={form.receivedBy} onChange={(event) => updateForm('receivedBy', event.target.value)} disabled={formSaving} />
@@ -791,21 +947,17 @@ export function RemissionsWorkspace({ organizationId, onNavigate }: Props) {
                           return (
                             <div className="otc-reg-form-line" key={line.key}>
                               <span className="otc-po-line">{index + 1}</span>
-                              <label className="otc-link-field source">
+                              <div className="otc-link-field source">
                                 <span>PO line <b>*</b></span>
-                                <select value={line.poItemId} onChange={(event) => pickPoLine(line.key, event.target.value)} disabled={formSaving}>
-                                  <option value="">Select a PO line</option>
-                                  {clientPurchaseOrders.map((group) => (
-                                    <optgroup label={`PO ${group.reference}`} key={group.id}>
-                                      {group.lines.map((entry) => (
-                                        <option value={entry.id} key={entry.id} disabled={entry.id !== line.poItemId && form.lines.some((other) => other.poItemId === entry.id)}>
-                                          L{entry.lineNumber} · {poLineLabel(entry)} · {formatQuantity(Math.max(availableFor(entry), 0))} left
-                                        </option>
-                                      ))}
-                                    </optgroup>
-                                  ))}
-                                </select>
-                              </label>
+                                <PoLinePicker
+                                  groups={clientPurchaseOrders}
+                                  currentId={line.poItemId}
+                                  takenIds={takenPoItemIds}
+                                  availableFor={availableFor}
+                                  disabled={formSaving}
+                                  onPick={(poItemId) => pickPoLine(line.key, poItemId)}
+                                />
+                              </div>
                               <label className="otc-link-field quantity">
                                 <span>Qty <b>*</b></span>
                                 <input inputMode="decimal" value={line.quantity} onChange={(event) => updateLine(line.key, { quantity: event.target.value })} disabled={formSaving || !line.poItemId} />

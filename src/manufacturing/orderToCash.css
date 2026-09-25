@@ -969,3 +969,17 @@
   .otc-reg-form-line .otc-po-subtotal { min-height: 0; padding-bottom: 0; text-align: left; }
   .otc-reg-form-totals { justify-items: start; }
 }
+
+/* Remissions form: PO line search dropdown. The list floats over the form instead of pushing it. */
+.otc-po-picker.floating { position: relative; }
+.otc-po-picker.floating .otc-po-picker-list { position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 30; }
+.otc-po-modal .otc-po-picker-input input,
+.otc-po-modal .otc-po-picker-input input:focus { height: auto; border: 0; padding: 0; background: transparent; box-shadow: none; font-size: .84rem; }
+.otc-po-picker-list li.otc-po-picker-group { padding: 8px 9px 4px; color: #0f766e; font-size: .64rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; cursor: default; }
+
+/* Remissions form: yvimo date picker. Its calendar is portaled to the body, so it has to clear the modal. */
+body:has(.otc-modal-backdrop) .mes-order-calendar { z-index: 3700; }
+.otc-po-modal .mes-order-date-picker > button { box-sizing: border-box; min-height: 40px; border-color: #cbd5e1; font-size: .84rem; font-weight: 500; }
+.otc-po-modal .mes-order-date-picker.open > button,
+.otc-po-modal .mes-order-date-picker > button:focus-visible { border-color: #14b8a6; outline: none; background: #fff; box-shadow: 0 0 0 3px rgba(20, 184, 166, .14); }
+.otc-po-modal .mes-order-date-picker > button svg { color: #0d9488; }
