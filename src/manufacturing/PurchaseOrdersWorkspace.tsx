@@ -4,7 +4,7 @@ import { Archive, ArchiveRestore, ArrowLeft, CalendarDays, Check, Download, File
 import { supabase } from '../lib/supabaseClient';
 import { useSupabaseRealtimeRefresh } from '../lib/useSupabaseRealtimeRefresh';
 import { assignUsageToLines, sumActiveQuantities } from './otcBalances';
-import { currencies, documentAccept, documentsBucket, DocumentFrame, errorMessage, fetchAllRows, formatCalendarDate as formatDate, formatMoney, formatQuantity, getDocumentMimeType, isAcceptedDocument, isPdfFile, parseNumber, signedUrlSeconds, single, todayIso, type Currency } from './otcShared';
+import { currencies, documentAccept, documentsBucket, DocumentFrame, clearFocusParam, errorMessage, fetchAllRows, formatCalendarDate as formatDate, formatMoney, formatQuantity, getDocumentMimeType, isAcceptedDocument, isPdfFile, parseNumber, readFocusParam, signedUrlSeconds, single, todayIso, type Currency } from './otcShared';
 import './orderToCash.css';
 
 type PoStatus = 'active' | 'closed';
@@ -86,7 +86,7 @@ type ItemRow = {
 };
 
 type LinkedOrderRow = {
-  purchase_order_id: string;
+  purchase_order_id: string; pieces: number;
   production_order: { order_number: string } | Array<{ order_number: string }> | null;
 };
 
@@ -193,6 +193,8 @@ export function PurchaseOrdersWorkspace({ organizationId, onNavigate }: Props) {
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState('');
   const [selectedId, setSelectedId] = React.useState('');
+  // The record opened from Order-to-Cash with ?focus=<id>, until it is selected.
+  const focusRef = React.useRef(readFocusParam());
   const [tab, setTab] = React.useState<PoStatus>('active');
   const [customerFilter, setCustomerFilter] = React.useState('');
   const [search, setSearch] = React.useState('');
@@ -229,7 +231,7 @@ export function PurchaseOrdersWorkspace({ organizationId, onNavigate }: Props) {
           .range(from, to)),
         fetchAllRows<LinkedOrderRow>((from, to) => supabase
           .from('mes_order_to_cash_documents')
-          .select('purchase_order_id, production_order:mes_production_orders!production_order_id(order_number)')
+          .select('purchase_order_id, pieces, production_order:mes_production_orders!production_order_id(order_number)')
           .eq('organization_id', organizationId)
           .not('purchase_order_id', 'is', null)
           .order('id')
@@ -280,8 +282,9 @@ export function PurchaseOrdersWorkspace({ organizationId, onNavigate }: Props) {
       const productionOrdersByPo = new Map<string, string[]>();
       linkedRows.forEach((row) => {
         const orderNumber = single(row.production_order)?.order_number;
+        // Each order shows the pieces this record covers of it.
         if (!orderNumber) return;
-        productionOrdersByPo.set(row.purchase_order_id, [...(productionOrdersByPo.get(row.purchase_order_id) ?? []), orderNumber]);
+        productionOrdersByPo.set(row.purchase_order_id, [...(productionOrdersByPo.get(row.purchase_order_id) ?? []), `${orderNumber} · ${formatQuantity(Number(row.pieces) || 0)} pcs`]);
       });
       const usageByPo = new Map<string, UsageRow[]>();
       usageRows.forEach((row) => usageByPo.set(row.purchase_order_id, [...(usageByPo.get(row.purchase_order_id) ?? []), row]));
@@ -376,8 +379,23 @@ export function PurchaseOrdersWorkspace({ organizationId, onNavigate }: Props) {
     });
   }, [orders, tab, customerFilter, search]);
 
+  // Bring the record opened with ?focus=<id> into the list; the effect below selects it once it shows.
+  React.useEffect(() => {
+    const target = orders.find((order) => order.id === focusRef.current);
+    if (!target) return;
+    setTab(target.status);
+    setCustomerFilter((current) => (current && current !== target.customerId ? '' : current));
+  }, [orders]);
+
   // Keep the selection inside the visible tab so the detail never shows a PO the list hides.
   React.useEffect(() => {
+    const focusId = focusRef.current;
+    if (focusId && filteredOrders.some((order) => order.id === focusId)) {
+      focusRef.current = '';
+      clearFocusParam();
+      setSelectedId(focusId);
+      return;
+    }
     setSelectedId((current) => (filteredOrders.some((order) => order.id === current) ? current : filteredOrders[0]?.id ?? ''));
   }, [filteredOrders]);
 

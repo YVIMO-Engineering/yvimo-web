@@ -357,6 +357,115 @@
 .otc-document-card > footer button.primary { border-color: #0d9488; background: #0d9488; color: #fff; }
 .otc-document-card > footer button:hover { filter: brightness(.97); }
 
+/* A stage whose documents cover only part of the order's pieces. */
+.otc-document-card.partial { border-top-color: #f59e0b; }
+.otc-document-card.partial > header em { background: #fef3c7; color: #b45309; }
+.otc-document-card.partial .otc-document-step { border-color: #f59e0b; background: #fffbeb; color: #b45309; }
+
+.otc-coverage { display: grid; gap: 5px; }
+.otc-coverage > span { color: #475569; font-size: .74rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.otc-coverage > span strong { color: #0f172a; font-size: .9rem; }
+.otc-coverage > small { color: #64748b; font-size: .68rem; line-height: 1.4; }
+.otc-coverage meter { width: 100%; height: 8px; border: 0; border-radius: 999px; background: #e2e8f0; }
+.otc-coverage meter::-webkit-meter-bar { border: 0; border-radius: 999px; background: #e2e8f0; }
+.otc-coverage meter::-webkit-meter-optimum-value { border-radius: 999px; background: #10b981; }
+.otc-coverage meter::-moz-meter-bar { border-radius: 999px; background: #10b981; }
+.otc-document-card.partial .otc-coverage meter::-webkit-meter-optimum-value { background: #f59e0b; }
+.otc-document-card.partial .otc-coverage meter::-moz-meter-bar { background: #f59e0b; }
+
+.otc-document-hint.warning { border-radius: 8px; padding: 8px 10px; background: #fff7ed; color: #b45309; }
+
+.otc-linked-documents { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.otc-linked-documents > li { display: grid; gap: 8px; border: 1px solid #e2e8f0; border-radius: 9px; padding: 10px; background: #fff; }
+.otc-linked-document-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.otc-linked-document-head .otc-document-folio { flex: 1; min-width: 0; padding: 7px 10px; }
+.otc-linked-document-head .otc-document-folio strong { font-size: .95rem; }
+
+.otc-pieces-pill {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 4px 10px;
+  background: #ecfeff;
+  color: #0e7490;
+  font-size: .72rem;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.otc-pieces-pill { display: inline-flex; align-items: center; gap: 5px; border: 1px solid transparent; font-family: inherit; cursor: pointer; }
+.otc-pieces-pill svg { opacity: .6; }
+.otc-pieces-pill:hover:not(:disabled),
+.otc-pieces-pill:focus-visible { border-color: #67e8f9; outline: none; }
+.otc-pieces-pill:hover:not(:disabled) svg { opacity: 1; }
+.otc-pieces-pill:disabled { cursor: not-allowed; opacity: .6; }
+
+.otc-pieces-edit { display: flex; flex: 0 0 auto; align-items: center; gap: 4px; }
+.otc-pieces-edit input,
+.otc-link-draft input {
+  width: 72px;
+  min-height: 32px;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  padding: 0 8px;
+  color: #0f172a;
+  font: inherit;
+  font-size: .8rem;
+  font-variant-numeric: tabular-nums;
+}
+.otc-pieces-edit input:focus,
+.otc-link-draft input:focus { border-color: #14b8a6; outline: none; box-shadow: 0 0 0 3px rgba(20, 184, 166, .14); }
+
+.otc-pieces-edit button,
+.otc-linked-document-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 30px;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  padding: 0 9px;
+  background: #fff;
+  color: #334155;
+  font: inherit;
+  font-size: .68rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+.otc-pieces-edit button[type="submit"] { border-color: #0d9488; background: #0d9488; color: #fff; }
+.otc-linked-document-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.otc-linked-document-actions button.danger { color: #b91c1c; }
+.otc-linked-document-actions button.danger:hover:not(:disabled) { border-color: #fecaca; background: #fff1f2; }
+.otc-pieces-edit button:disabled,
+.otc-linked-document-actions button:disabled { opacity: .55; cursor: not-allowed; }
+
+.otc-link-draft { display: grid; gap: 10px; border: 1px solid #99f6e4; border-radius: 9px; padding: 11px; background: #f0fdfa; }
+.otc-link-draft > div { display: grid; gap: 2px; min-width: 0; }
+.otc-link-draft > div small { color: #0f766e; font-size: .6rem; font-weight: 900; letter-spacing: .06em; text-transform: uppercase; }
+.otc-link-draft > div strong { overflow-wrap: anywhere; color: #0f172a; font-size: .95rem; }
+.otc-link-draft > div span { color: #64748b; font-size: .7rem; }
+.otc-link-draft label { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: #334155; font-size: .74rem; font-weight: 700; }
+.otc-link-draft footer { display: flex; flex-wrap: wrap; gap: 8px; }
+.otc-link-draft footer button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 0 12px;
+  background: #fff;
+  color: #334155;
+  font: inherit;
+  font-size: .72rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+.otc-link-draft footer button.primary { border-color: #0d9488; background: #0d9488; color: #fff; }
+
+.otc-po-picker-side { display: grid; flex: 0 0 auto; justify-items: end; gap: 2px; }
+.otc-po-picker-side em { color: #0f172a; font-size: .74rem; font-style: normal; font-weight: 500; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.otc-po-picker-side small { color: #0f766e; font-size: .64rem; font-weight: 700; white-space: nowrap; }
+
 .otc-empty {
   display: grid;
   justify-items: center;
@@ -983,3 +1092,9 @@ body:has(.otc-modal-backdrop) .mes-order-calendar { z-index: 3700; }
 .otc-po-modal .mes-order-date-picker.open > button,
 .otc-po-modal .mes-order-date-picker > button:focus-visible { border-color: #14b8a6; outline: none; background: #fff; box-shadow: 0 0 0 3px rgba(20, 184, 166, .14); }
 .otc-po-modal .mes-order-date-picker > button svg { color: #0d9488; }
+
+/* Invoices form: the optional due date can be emptied from its label. */
+.otc-date-label { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.otc-date-clear { border: 0; padding: 0; background: none; color: #0d9488; font: inherit; font-size: .64rem; font-weight: 700; letter-spacing: normal; text-transform: none; cursor: pointer; }
+.otc-date-clear:hover:not(:disabled) { text-decoration: underline; }
+.otc-date-clear:disabled { opacity: .55; cursor: not-allowed; }

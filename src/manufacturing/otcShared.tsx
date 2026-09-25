@@ -1,6 +1,6 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { Download, X } from 'lucide-react';
+import { Check, ChevronDown, Download, Search, X } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 
 // Helpers shared by the OTC registries (Purchase Orders, Remissions, Invoices) and their views.
@@ -18,6 +18,27 @@ export const signedUrlSeconds = 60 * 60;
 const documentExtensions = /\.(?:pdf|jpe?g|png|webp|heic|heif|avif)$/i;
 const documentMimeTypes = new Set(['application/pdf', 'image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/heic', 'image/heif', 'image/avif']);
 const rowPageSize = 1000;
+
+// Order-to-Cash opens a registry on one record with ?focus=<id>; the registry selects it once
+// its records load and then drops the parameter from the address.
+const focusParam = 'focus';
+
+export function registryFocusPath(path: string, id: string) {
+  return `${path}?${focusParam}=${encodeURIComponent(id)}`;
+}
+
+export function readFocusParam() {
+  if (typeof window === 'undefined') return '';
+  return new URLSearchParams(window.location.search).get(focusParam) ?? '';
+}
+
+export function clearFocusParam() {
+  if (typeof window === 'undefined') return;
+  const url = new URL(window.location.href);
+  if (!url.searchParams.has(focusParam)) return;
+  url.searchParams.delete(focusParam);
+  window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
+}
 
 export function single<Row>(value: Row | Row[] | null): Row | null {
   return Array.isArray(value) ? value[0] ?? null : value;
@@ -167,4 +188,112 @@ export function DocumentPreviewModal({ subtitle, title, url, isPdf, onClose }: D
       </div>
     </div>
   ), document.body);
+}
+
+export type SearchSelectGroup<Item> = { id: string; label?: string; items: Item[] };
+
+type SearchSelectProps<Item extends { id: string }> = {
+  groups: Array<SearchSelectGroup<Item>>;
+  currentId: string;
+  placeholder: string;
+  emptyText: string;
+  disabled: boolean;
+  // Text of the picked item, shown in the box while the list is closed.
+  selectedLabel: (item: Item) => string;
+  searchValues: (item: Item, group: SearchSelectGroup<Item>) => string[];
+  renderItem: (item: Item) => React.ReactNode;
+  onPick: (id: string) => void;
+};
+
+// yvimo search dropdown of the OTC forms: type to filter, arrows and Enter to pick. The list
+// floats under the box so it does not push the rest of the form.
+export function SearchSelect<Item extends { id: string }>({ groups, currentId, placeholder, emptyText, disabled, selectedLabel, searchValues, renderItem, onPick }: SearchSelectProps<Item>) {
+  const [query, setQuery] = React.useState('');
+  const [open, setOpen] = React.useState(false);
+  const [activeIndex, setActiveIndex] = React.useState(0);
+  const listId = React.useId();
+
+  const current = React.useMemo(() => groups.flatMap((group) => group.items).find((item) => item.id === currentId) ?? null, [groups, currentId]);
+  const matchingGroups = React.useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return groups.filter((group) => group.items.length);
+    return groups
+      .map((group) => ({ ...group, items: group.items.filter((item) => searchValues(item, group).some((value) => value.toLowerCase().includes(needle))) }))
+      .filter((group) => group.items.length);
+  }, [groups, query, searchValues]);
+  const matches = React.useMemo(() => matchingGroups.flatMap((group) => group.items), [matchingGroups]);
+
+  React.useEffect(() => { setActiveIndex(0); }, [query]);
+
+  const pick = (item: Item) => {
+    setOpen(false);
+    setQuery('');
+    onPick(item.id);
+  };
+
+  const currentLabel = current ? selectedLabel(current) : '';
+  let optionIndex = -1;
+  return (
+    <div className={`otc-po-picker floating${open ? ' open' : ''}`}>
+      <div className="otc-po-picker-input">
+        <Search size={15} />
+        <input
+          value={open ? query : currentLabel}
+          onChange={(event) => { setQuery(event.target.value); setOpen(true); }}
+          onFocus={() => setOpen(true)}
+          onBlur={() => { setOpen(false); setQuery(''); }}
+          onKeyDown={(event) => {
+            if (event.key === 'ArrowDown') {
+              event.preventDefault();
+              setOpen(true);
+              setActiveIndex((index) => Math.min(index + 1, matches.length - 1));
+            } else if (event.key === 'ArrowUp') {
+              event.preventDefault();
+              setActiveIndex((index) => Math.max(index - 1, 0));
+            } else if (event.key === 'Enter' && open && matches[activeIndex]) {
+              event.preventDefault();
+              pick(matches[activeIndex]);
+            } else if (event.key === 'Escape') {
+              setOpen(false);
+            }
+          }}
+          placeholder={currentLabel || placeholder}
+          disabled={disabled}
+          role="combobox"
+          aria-expanded={open}
+          aria-controls={listId}
+          aria-autocomplete="list"
+        />
+        <ChevronDown size={15} />
+      </div>
+      {open ? (
+        <ul id={listId} role="listbox" className="otc-po-picker-list">
+          {matchingGroups.map((group) => (
+            <React.Fragment key={group.id}>
+              {group.label ? <li className="otc-po-picker-group" role="presentation">{group.label}</li> : null}
+              {group.items.map((item) => {
+                optionIndex += 1;
+                const index = optionIndex;
+                return (
+                  <li
+                    role="option"
+                    aria-selected={index === activeIndex}
+                    className={`${index === activeIndex ? 'active' : ''}${item.id === currentId ? ' current' : ''}`}
+                    key={item.id}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onMouseEnter={() => setActiveIndex(index)}
+                    onClick={() => pick(item)}
+                  >
+                    {renderItem(item)}
+                    {item.id === currentId ? <Check size={15} /> : null}
+                  </li>
+                );
+              })}
+            </React.Fragment>
+          ))}
+          {!matches.length ? <li className="otc-po-picker-empty">{query.trim() ? `Nothing matches "${query.trim()}".` : emptyText}</li> : null}
+        </ul>
+      ) : null}
+    </div>
+  );
 }

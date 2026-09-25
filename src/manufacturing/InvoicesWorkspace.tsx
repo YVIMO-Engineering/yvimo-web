@@ -4,7 +4,8 @@ import { ArrowLeft, Ban, CalendarDays, Check, Download, FileCode2, FileText, Max
 import { supabase } from '../lib/supabaseClient';
 import { useSupabaseRealtimeRefresh } from '../lib/useSupabaseRealtimeRefresh';
 import { invoiceTotals, roundMoney, sumActiveQuantities } from './otcBalances';
-import { currencies, DocumentFrame, DocumentPreviewModal, documentAccept, errorMessage, fetchAllRows, formatCalendarDate as formatDate, formatMoney, formatQuantity, getDocumentMimeType, isAcceptedDocument, isPdfFile, isXmlFile, openSignedFile, parseNumber, removeRegistryFiles, single, todayIso, uploadRegistryFile, useSignedDocumentUrl, xmlAccept, type Currency } from './otcShared';
+import { currencies, DocumentFrame, DocumentPreviewModal, SearchSelect, documentAccept, clearFocusParam, errorMessage, fetchAllRows, formatCalendarDate as formatDate, formatMoney, formatQuantity, getDocumentMimeType, isAcceptedDocument, isPdfFile, isXmlFile, openSignedFile, parseNumber, readFocusParam, removeRegistryFiles, single, todayIso, uploadRegistryFile, useSignedDocumentUrl, xmlAccept, type Currency } from './otcShared';
+import { MesOrderDatePicker } from './MesWorkspaces';
 import './orderToCash.css';
 
 type InvoiceStatus = 'active' | 'cancelled';
@@ -92,7 +93,7 @@ type RemissionRow = { id: string; customer_id: string; remission_folio: string; 
 type RemissionItemRow = { id: string; remission_id: string; line_number: number; purchase_order_item_id: string; quantity: number | string };
 type PurchaseOrderRow = { id: string; po_reference: string; currency: string };
 type PoItemRow = { id: string; purchase_order_id: string; line_number: number; description: string; tool_ids: string[] | null; unit_price: number | string };
-type LinkedOrderRow = { invoice_id: string; production_order: { order_number: string } | Array<{ order_number: string }> | null };
+type LinkedOrderRow = { invoice_id: string; pieces: number; production_order: { order_number: string } | Array<{ order_number: string }> | null };
 
 type Customer = { id: string; name: string; paymentTerms: string };
 
@@ -156,6 +157,8 @@ export function InvoicesWorkspace({ organizationId, onNavigate }: Props) {
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState('');
   const [selectedId, setSelectedId] = React.useState('');
+  // The record opened from Order-to-Cash with ?focus=<id>, until it is selected.
+  const focusRef = React.useRef(readFocusParam());
   const [tab, setTab] = React.useState<InvoiceStatus>('active');
   const [customerFilter, setCustomerFilter] = React.useState('');
   const [search, setSearch] = React.useState('');
@@ -217,7 +220,7 @@ export function InvoicesWorkspace({ organizationId, onNavigate }: Props) {
           .range(from, to)),
         fetchAllRows<LinkedOrderRow>((from, to) => supabase
           .from('mes_order_to_cash_documents')
-          .select('invoice_id, production_order:mes_production_orders!production_order_id(order_number)')
+          .select('invoice_id, pieces, production_order:mes_production_orders!production_order_id(order_number)')
           .eq('organization_id', organizationId)
           .not('invoice_id', 'is', null)
           .order('id')
@@ -266,7 +269,8 @@ export function InvoicesWorkspace({ organizationId, onNavigate }: Props) {
       const productionOrdersByInvoice = new Map<string, string[]>();
       linkedRows.forEach((row) => {
         const orderNumber = single(row.production_order)?.order_number;
-        if (orderNumber) productionOrdersByInvoice.set(row.invoice_id, [...(productionOrdersByInvoice.get(row.invoice_id) ?? []), orderNumber]);
+        // Each order shows the pieces this record covers of it.
+        if (orderNumber) productionOrdersByInvoice.set(row.invoice_id, [...(productionOrdersByInvoice.get(row.invoice_id) ?? []), `${orderNumber} · ${formatQuantity(Number(row.pieces) || 0)} pcs`]);
       });
 
       const nextInvoices = invoiceRows.map((row): Invoice => {
@@ -354,8 +358,23 @@ export function InvoicesWorkspace({ organizationId, onNavigate }: Props) {
     });
   }, [invoices, tab, customerFilter, search]);
 
+  // Bring the record opened with ?focus=<id> into the list; the effect below selects it once it shows.
+  React.useEffect(() => {
+    const target = invoices.find((invoice) => invoice.id === focusRef.current);
+    if (!target) return;
+    setTab(target.status);
+    setCustomerFilter((current) => (current && current !== target.customerId ? '' : current));
+  }, [invoices]);
+
   // Keep the selection inside the visible tab so the detail never shows an invoice the list hides.
   React.useEffect(() => {
+    const focusId = focusRef.current;
+    if (focusId && filteredInvoices.some((invoice) => invoice.id === focusId)) {
+      focusRef.current = '';
+      clearFocusParam();
+      setSelectedId(focusId);
+      return;
+    }
     setSelectedId((current) => (filteredInvoices.some((invoice) => invoice.id === current) ? current : filteredInvoices[0]?.id ?? ''));
   }, [filteredInvoices]);
 
@@ -380,6 +399,9 @@ export function InvoicesWorkspace({ organizationId, onNavigate }: Props) {
     return quantities;
   }, [editing]);
   const availableFor = (line: RemissionLine) => line.quantity - (line.invoiced - (ownQuantities.get(line.id) ?? 0));
+
+  const customerGroups = React.useMemo(() => [{ id: 'customers', items: customers }], [customers]);
+  const takenRemissionItemIds = React.useMemo(() => new Set(form.lines.map((line) => line.remissionItemId).filter(Boolean)), [form.lines]);
 
   const clientRemissions = React.useMemo(() => {
     const groups = new Map<string, { id: string; folio: string; lines: RemissionLine[] }>();
@@ -804,13 +826,20 @@ export function InvoicesWorkspace({ organizationId, onNavigate }: Props) {
                   <fieldset>
                     <legend>Identification</legend>
                     <div className="otc-po-form-grid">
-                      <label className="otc-link-field wide">
+                      <div className="otc-link-field wide">
                         <span>Client <b>*</b></span>
-                        <select value={form.customerId} onChange={(event) => selectCustomer(event.target.value)} disabled={formSaving}>
-                          <option value="">Select a client</option>
-                          {customers.map((customer) => <option value={customer.id} key={customer.id}>{customer.name}</option>)}
-                        </select>
-                      </label>
+                        <SearchSelect<Customer>
+                          groups={customerGroups}
+                          currentId={form.customerId}
+                          placeholder="Search a client"
+                          emptyText="No clients registered."
+                          disabled={formSaving}
+                          selectedLabel={(customer) => customer.name}
+                          searchValues={(customer) => [customer.name]}
+                          renderItem={(customer) => <span className="otc-po-picker-main"><strong>{customer.name}</strong></span>}
+                          onPick={selectCustomer}
+                        />
+                      </div>
                       <label className="otc-link-field">
                         <span>Invoice folio <b>*</b></span>
                         <input value={form.folio} onChange={(event) => updateForm('folio', event.target.value)} placeholder="A-2231" disabled={formSaving} />
@@ -819,14 +848,18 @@ export function InvoicesWorkspace({ organizationId, onNavigate }: Props) {
                         <span>Fiscal UUID (CFDI)</span>
                         <input value={form.fiscalUuid} onChange={(event) => updateForm('fiscalUuid', event.target.value)} placeholder="6F9619FF-8B86-D011-B42D-00C04FC964FF" disabled={formSaving} />
                       </label>
-                      <label className="otc-link-field">
+                      <div className="otc-link-field">
                         <span>Invoice date <b>*</b></span>
-                        <input type="date" value={form.date} onChange={(event) => updateForm('date', event.target.value)} disabled={formSaving} />
-                      </label>
-                      <label className="otc-link-field">
-                        <span>Due date</span>
-                        <input type="date" value={form.dueDate} min={form.date || undefined} onChange={(event) => updateForm('dueDate', event.target.value)} disabled={formSaving} />
-                      </label>
+                        <MesOrderDatePicker id="otc-invoice-date" value={form.date} onChange={(value) => updateForm('date', value)} />
+                      </div>
+                      <div className="otc-link-field">
+                        <span className="otc-date-label">
+                          Due date
+                          {/* The due date is optional; the yvimo picker has no way to empty it. */}
+                          {form.dueDate ? <button type="button" className="otc-date-clear" onClick={() => updateForm('dueDate', '')} disabled={formSaving}>Clear</button> : null}
+                        </span>
+                        <MesOrderDatePicker id="otc-invoice-due-date" value={form.dueDate} placeholder="No due date" onChange={(value) => updateForm('dueDate', value)} />
+                      </div>
                       <label className="otc-link-field">
                         <span>Payment terms</span>
                         <input value={form.paymentTerms} onChange={(event) => updateForm('paymentTerms', event.target.value)} disabled={formSaving} />
@@ -861,21 +894,34 @@ export function InvoicesWorkspace({ organizationId, onNavigate }: Props) {
                           return (
                             <div className="otc-reg-form-line priced" key={line.key}>
                               <span className="otc-po-line">{index + 1}</span>
-                              <label className="otc-link-field source">
+                              <div className="otc-link-field source">
                                 <span>Remission line <b>*</b></span>
-                                <select value={line.remissionItemId} onChange={(event) => pickRemissionLine(line.key, event.target.value)} disabled={formSaving}>
-                                  <option value="">Select a remission line</option>
-                                  {clientRemissions.map((group) => (
-                                    <optgroup label={`Remission ${group.folio}`} key={group.id}>
-                                      {group.lines.map((entry) => (
-                                        <option value={entry.id} key={entry.id} disabled={entry.id !== line.remissionItemId && form.lines.some((other) => other.remissionItemId === entry.id)}>
-                                          L{entry.lineNumber} · PO {entry.poReference} L{entry.poLineNumber} · {lineLabel(entry)} · {formatQuantity(Math.max(availableFor(entry), 0))} left
-                                        </option>
-                                      ))}
-                                    </optgroup>
-                                  ))}
-                                </select>
-                              </label>
+                                <SearchSelect<RemissionLine>
+                                  groups={clientRemissions.map((group) => ({
+                                    id: group.id,
+                                    label: `Remission ${group.folio}`,
+                                    // Lines already on another line of the form are left out.
+                                    items: group.lines.filter((entry) => entry.id === line.remissionItemId || !takenRemissionItemIds.has(entry.id)),
+                                  }))}
+                                  currentId={line.remissionItemId}
+                                  placeholder="Search remission, PO, line or tool ID"
+                                  emptyText="No remission lines left to add."
+                                  disabled={formSaving}
+                                  selectedLabel={(entry) => `${entry.remissionFolio} · L${entry.lineNumber} · ${entry.toolIds.length ? entry.toolIds.join(', ') : lineLabel(entry)}`}
+                                  searchValues={(entry, group) => [group.label ?? '', `L${entry.lineNumber}`, `PO ${entry.poReference}`, `L${entry.poLineNumber}`, entry.description, ...entry.toolIds]}
+                                  renderItem={(entry) => (
+                                    <>
+                                      <span className="otc-po-picker-main">
+                                        <strong>L{entry.lineNumber} · {entry.description || `PO line ${entry.poLineNumber}`}</strong>
+                                        <small className="otc-po-picker-tools">{entry.toolIds.length ? entry.toolIds.join(', ') : 'No tool ID'}</small>
+                                        <small>PO {entry.poReference} · Line {entry.poLineNumber}</small>
+                                      </span>
+                                      <em>{formatQuantity(Math.max(availableFor(entry), 0))} left</em>
+                                    </>
+                                  )}
+                                  onPick={(remissionItemId) => pickRemissionLine(line.key, remissionItemId)}
+                                />
+                              </div>
                               <label className="otc-link-field quantity">
                                 <span>Qty <b>*</b></span>
                                 <input inputMode="decimal" value={line.quantity} onChange={(event) => updateLine(line.key, { quantity: event.target.value })} disabled={formSaving || !line.remissionItemId} />

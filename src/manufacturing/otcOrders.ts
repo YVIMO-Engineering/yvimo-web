@@ -1,11 +1,11 @@
 import { supabase } from '../lib/supabaseClient';
+import { documentStageOrder, getStatus, stageCoverage, type DocumentStage, type OtcStatus, type StageCoverage } from './otcBalances';
 import { fetchAllRows, single } from './otcShared';
 
 // The production orders in Order-to-Cash and the documents linked to each stage. Shared by the
 // Order-to-Cash workspace and the Reconciliation view.
 
-export type DocumentStage = 'purchase-order' | 'remission' | 'invoice';
-export type OtcStatus = DocumentStage | 'completed';
+export { documentStageOrder, getStatus, stageLimit, type DocumentStage, type OtcStatus } from './otcBalances';
 
 export type OtcDocument = {
   id: string;
@@ -16,6 +16,9 @@ export type OtcDocument = {
   filePath: string;
   fileType: string;
   uploadedAt: string;
+  linkedAt: string;
+  // Pieces of the production order this document covers.
+  pieces: number;
   // The PO, remission or invoice of the registry this document comes from; empty for a file
   // uploaded directly in Order-to-Cash before the registries existed.
   registryId: string;
@@ -35,7 +38,10 @@ export type OtcOrder = {
   isRework: boolean;
   orderCreatedAt: string;
   isLegacy: boolean;
-  documents: Partial<Record<DocumentStage, OtcDocument>>;
+  // Every stage can hold several documents (partial deliveries, several invoices, several POs).
+  documents: Record<DocumentStage, OtcDocument[]>;
+  // Pieces covered per stage; a stage is complete when it covers the whole order.
+  coverage: StageCoverage;
   status: OtcStatus;
 };
 
@@ -60,6 +66,8 @@ type DocumentRow = {
   file_path: string;
   file_type: string;
   uploaded_at: string;
+  linked_at: string;
+  pieces: number;
   purchase_order_id: string | null;
   remission_id: string | null;
   invoice_id: string | null;
@@ -70,11 +78,8 @@ type DocumentRow = {
 export const otcStartDate = new Date(2026, 8, 1);
 export const legacyNotice = 'This order was processed before the OTC system was implemented (September 2026). Its administrative steps are considered complete.';
 
-export function getStatus(documents: OtcOrder['documents']): OtcStatus {
-  if (!documents['purchase-order']) return 'purchase-order';
-  if (!documents.remission) return 'remission';
-  if (!documents.invoice) return 'invoice';
-  return 'completed';
+export function emptyDocuments(): OtcOrder['documents'] {
+  return { 'purchase-order': [], remission: [], invoice: [] };
 }
 
 export async function fetchOtcOrders(organizationId: string): Promise<OtcOrder[]> {
@@ -89,7 +94,7 @@ export async function fetchOtcOrders(organizationId: string): Promise<OtcOrder[]
       .range(from, to)),
     fetchAllRows<DocumentRow>((from, to) => supabase
       .from('mes_order_to_cash_documents')
-      .select('id, production_order_id, stage, folio, file_name, file_path, file_type, uploaded_at, purchase_order_id, remission_id, invoice_id')
+      .select('id, production_order_id, stage, folio, file_name, file_path, file_type, uploaded_at, linked_at, pieces, purchase_order_id, remission_id, invoice_id')
       .eq('organization_id', organizationId)
       .order('id')
       .range(from, to)),
@@ -97,8 +102,8 @@ export async function fetchOtcOrders(organizationId: string): Promise<OtcOrder[]
 
   const documentsByOrder = new Map<string, OtcOrder['documents']>();
   documentRows.forEach((row) => {
-    const documents = documentsByOrder.get(row.production_order_id) ?? {};
-    documents[row.stage] = {
+    const documents = documentsByOrder.get(row.production_order_id) ?? emptyDocuments();
+    documents[row.stage].push({
       id: row.id,
       productionOrderId: row.production_order_id,
       stage: row.stage,
@@ -107,10 +112,14 @@ export async function fetchOtcOrders(organizationId: string): Promise<OtcOrder[]
       filePath: row.file_path,
       fileType: row.file_type,
       uploadedAt: row.uploaded_at,
+      linkedAt: row.linked_at,
+      pieces: Number(row.pieces) || 0,
       registryId: row.purchase_order_id ?? row.remission_id ?? row.invoice_id ?? '',
-    };
+    });
     documentsByOrder.set(row.production_order_id, documents);
   });
+
+  documentsByOrder.forEach((documents) => documentStageOrder.forEach((stage) => documents[stage].sort((left, right) => left.linkedAt.localeCompare(right.linkedAt))));
 
   // One production order can be split across several reception items (and vouchers);
   // Order-to-Cash tracks the order itself, so its items are folded into a single entry.
@@ -130,7 +139,7 @@ export async function fetchOtcOrders(organizationId: string): Promise<OtcOrder[]
       if (receivedAt > current.receivedAt) current.receivedAt = receivedAt;
       return;
     }
-    const documents = documentsByOrder.get(row.production_order_id) ?? {};
+    const documents = documentsByOrder.get(row.production_order_id) ?? emptyDocuments();
     const orderCreatedAt = productionOrder?.created_at || row.created_at;
     const isLegacy = new Date(orderCreatedAt) < otcStartDate;
     ordersById.set(row.production_order_id, {
@@ -148,8 +157,13 @@ export async function fetchOtcOrders(organizationId: string): Promise<OtcOrder[]
       orderCreatedAt,
       isLegacy,
       documents,
-      status: isLegacy ? 'completed' : getStatus(documents),
+      coverage: stageCoverage(documents),
+      status: 'completed',
     });
+  });
+  // The status needs the order's full quantity, which is only known once all its items are folded.
+  ordersById.forEach((order) => {
+    if (!order.isLegacy) order.status = getStatus(order.quantity, order.coverage);
   });
   return Array.from(ordersById.values()).sort((left, right) => right.receivedAt.localeCompare(left.receivedAt) || right.orderNumber.localeCompare(left.orderNumber));
 }

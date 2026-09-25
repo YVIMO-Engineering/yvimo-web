@@ -1,11 +1,11 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowLeft, Ban, CalendarDays, Check, ChevronDown, Download, FileText, Maximize2, Pencil, Plus, RefreshCw, RotateCcw, Search, ShoppingCart, Trash2, Truck, Upload, Users, X } from 'lucide-react';
+import { ArrowLeft, Ban, CalendarDays, Check, Download, FileText, Maximize2, Pencil, Plus, RefreshCw, RotateCcw, Search, ShoppingCart, Trash2, Truck, Upload, Users, X } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { useSupabaseRealtimeRefresh } from '../lib/useSupabaseRealtimeRefresh';
 import { addToCurrency, billingStatus, sumActiveQuantities, type BillingStatus } from './otcBalances';
 import { MesOrderDatePicker } from './MesWorkspaces';
-import { DocumentFrame, DocumentPreviewModal, documentAccept, errorMessage, fetchAllRows, formatCalendarDate as formatDate, formatMoneyByCurrency, formatQuantity, getDocumentMimeType, isAcceptedDocument, isPdfFile, parseNumber, removeRegistryFiles, single, todayIso, uploadRegistryFile, useSignedDocumentUrl } from './otcShared';
+import { clearFocusParam, DocumentFrame, SearchSelect, DocumentPreviewModal, documentAccept, errorMessage, fetchAllRows, formatCalendarDate as formatDate, formatMoneyByCurrency, formatQuantity, getDocumentMimeType, isAcceptedDocument, isPdfFile, parseNumber, readFocusParam, removeRegistryFiles, single, todayIso, uploadRegistryFile, useSignedDocumentUrl } from './otcShared';
 import './orderToCash.css';
 
 type RemissionStatus = 'active' | 'cancelled';
@@ -81,7 +81,7 @@ type RemissionItemRow = { id: string; remission_id: string; line_number: number;
 type PurchaseOrderRow = { id: string; customer_id: string; po_reference: string; revision_number: number; status: string; currency: string };
 type PoItemRow = { id: string; purchase_order_id: string; line_number: number; description: string; tool_ids: string[] | null; quantity: number | string; unit_price: number | string };
 type InvoiceItemRow = { remission_item_id: string; quantity: number | string; invoice: { invoice_folio: string; status: string } | Array<{ invoice_folio: string; status: string }> | null };
-type LinkedOrderRow = { remission_id: string; production_order: { order_number: string } | Array<{ order_number: string }> | null };
+type LinkedOrderRow = { remission_id: string; pieces: number; production_order: { order_number: string } | Array<{ order_number: string }> | null };
 
 type Customer = { id: string; name: string };
 
@@ -132,114 +132,6 @@ function poLineLabel(line: PoLine) {
 }
 
 type PoLineGroup = { id: string; reference: string; lines: PoLine[] };
-
-type SearchSelectGroup<Item> = { id: string; label?: string; items: Item[] };
-
-type SearchSelectProps<Item extends { id: string }> = {
-  groups: Array<SearchSelectGroup<Item>>;
-  currentId: string;
-  placeholder: string;
-  emptyText: string;
-  disabled: boolean;
-  // Text of the picked item, shown in the box while the list is closed.
-  selectedLabel: (item: Item) => string;
-  searchValues: (item: Item, group: SearchSelectGroup<Item>) => string[];
-  renderItem: (item: Item) => React.ReactNode;
-  onPick: (id: string) => void;
-};
-
-// yvimo search dropdown of the remission form: type to filter, arrows and Enter to pick. The list
-// floats under the box so it does not push the rest of the form.
-function SearchSelect<Item extends { id: string }>({ groups, currentId, placeholder, emptyText, disabled, selectedLabel, searchValues, renderItem, onPick }: SearchSelectProps<Item>) {
-  const [query, setQuery] = React.useState('');
-  const [open, setOpen] = React.useState(false);
-  const [activeIndex, setActiveIndex] = React.useState(0);
-  const listId = React.useId();
-
-  const current = React.useMemo(() => groups.flatMap((group) => group.items).find((item) => item.id === currentId) ?? null, [groups, currentId]);
-  const matchingGroups = React.useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    if (!needle) return groups.filter((group) => group.items.length);
-    return groups
-      .map((group) => ({ ...group, items: group.items.filter((item) => searchValues(item, group).some((value) => value.toLowerCase().includes(needle))) }))
-      .filter((group) => group.items.length);
-  }, [groups, query, searchValues]);
-  const matches = React.useMemo(() => matchingGroups.flatMap((group) => group.items), [matchingGroups]);
-
-  React.useEffect(() => { setActiveIndex(0); }, [query]);
-
-  const pick = (item: Item) => {
-    setOpen(false);
-    setQuery('');
-    onPick(item.id);
-  };
-
-  const currentLabel = current ? selectedLabel(current) : '';
-  let optionIndex = -1;
-  return (
-    <div className={`otc-po-picker floating${open ? ' open' : ''}`}>
-      <div className="otc-po-picker-input">
-        <Search size={15} />
-        <input
-          value={open ? query : currentLabel}
-          onChange={(event) => { setQuery(event.target.value); setOpen(true); }}
-          onFocus={() => setOpen(true)}
-          onBlur={() => { setOpen(false); setQuery(''); }}
-          onKeyDown={(event) => {
-            if (event.key === 'ArrowDown') {
-              event.preventDefault();
-              setOpen(true);
-              setActiveIndex((index) => Math.min(index + 1, matches.length - 1));
-            } else if (event.key === 'ArrowUp') {
-              event.preventDefault();
-              setActiveIndex((index) => Math.max(index - 1, 0));
-            } else if (event.key === 'Enter' && open && matches[activeIndex]) {
-              event.preventDefault();
-              pick(matches[activeIndex]);
-            } else if (event.key === 'Escape') {
-              setOpen(false);
-            }
-          }}
-          placeholder={currentLabel || placeholder}
-          disabled={disabled}
-          role="combobox"
-          aria-expanded={open}
-          aria-controls={listId}
-          aria-autocomplete="list"
-        />
-        <ChevronDown size={15} />
-      </div>
-      {open ? (
-        <ul id={listId} role="listbox" className="otc-po-picker-list">
-          {matchingGroups.map((group) => (
-            <React.Fragment key={group.id}>
-              {group.label ? <li className="otc-po-picker-group" role="presentation">{group.label}</li> : null}
-              {group.items.map((item) => {
-                optionIndex += 1;
-                const index = optionIndex;
-                return (
-                  <li
-                    role="option"
-                    aria-selected={index === activeIndex}
-                    className={`${index === activeIndex ? 'active' : ''}${item.id === currentId ? ' current' : ''}`}
-                    key={item.id}
-                    onMouseDown={(event) => event.preventDefault()}
-                    onMouseEnter={() => setActiveIndex(index)}
-                    onClick={() => pick(item)}
-                  >
-                    {renderItem(item)}
-                    {item.id === currentId ? <Check size={15} /> : null}
-                  </li>
-                );
-              })}
-            </React.Fragment>
-          ))}
-          {!matches.length ? <li className="otc-po-picker-empty">{query.trim() ? `Nothing matches "${query.trim()}".` : emptyText}</li> : null}
-        </ul>
-      ) : null}
-    </div>
-  );
-}
 
 type PoLinePickerProps = {
   groups: PoLineGroup[];
@@ -309,7 +201,8 @@ export function RemissionsWorkspace({ organizationId, onNavigate }: Props) {
   const [formError, setFormError] = React.useState('');
   const [formSaving, setFormSaving] = React.useState(false);
   // Remission to select once the list reloads, in whichever tab it lands.
-  const focusRef = React.useRef('');
+  // The remission to select once it is in the visible list: one just saved, or ?focus=<id>.
+  const focusRef = React.useRef(readFocusParam());
 
   const loadRemissions = React.useCallback(async () => {
     if (!organizationId) return;
@@ -352,7 +245,7 @@ export function RemissionsWorkspace({ organizationId, onNavigate }: Props) {
           .range(from, to)),
         fetchAllRows<LinkedOrderRow>((from, to) => supabase
           .from('mes_order_to_cash_documents')
-          .select('remission_id, production_order:mes_production_orders!production_order_id(order_number)')
+          .select('remission_id, pieces, production_order:mes_production_orders!production_order_id(order_number)')
           .eq('organization_id', organizationId)
           .not('remission_id', 'is', null)
           .order('id')
@@ -402,7 +295,8 @@ export function RemissionsWorkspace({ organizationId, onNavigate }: Props) {
       const productionOrdersByRemission = new Map<string, string[]>();
       linkedRows.forEach((row) => {
         const orderNumber = single(row.production_order)?.order_number;
-        if (orderNumber) productionOrdersByRemission.set(row.remission_id, [...(productionOrdersByRemission.get(row.remission_id) ?? []), orderNumber]);
+        // Each order shows the pieces this record covers of it.
+        if (orderNumber) productionOrdersByRemission.set(row.remission_id, [...(productionOrdersByRemission.get(row.remission_id) ?? []), `${orderNumber} · ${formatQuantity(Number(row.pieces) || 0)} pcs`]);
       });
 
       const nextRemissions = remissionRows.map((row): Remission => {
@@ -491,16 +385,23 @@ export function RemissionsWorkspace({ organizationId, onNavigate }: Props) {
     });
   }, [remissions, tab, customerFilter, search]);
 
+  // Bring the focused remission into the list; the effect below selects it once it shows.
   React.useEffect(() => {
     const target = remissions.find((remission) => remission.id === focusRef.current);
     if (!target) return;
-    focusRef.current = '';
     setTab(remissionTab(target));
-    setSelectedId(target.id);
+    setCustomerFilter((current) => (current && current !== target.customerId ? '' : current));
   }, [remissions]);
 
   // Keep the selection inside the visible tab so the detail never shows a remission the list hides.
   React.useEffect(() => {
+    const focusId = focusRef.current;
+    if (focusId && filteredRemissions.some((remission) => remission.id === focusId)) {
+      focusRef.current = '';
+      clearFocusParam();
+      setSelectedId(focusId);
+      return;
+    }
     setSelectedId((current) => (filteredRemissions.some((remission) => remission.id === current) ? current : filteredRemissions[0]?.id ?? ''));
   }, [filteredRemissions]);
 

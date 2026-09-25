@@ -4,6 +4,30 @@
 // invoices count; the database guarantees that the active remissions of a PO line never exceed
 // its quantity and that the active invoices of a remission line never exceed what it delivered.
 
+export type DocumentStage = 'purchase-order' | 'remission' | 'invoice';
+export type OtcStatus = DocumentStage | 'completed';
+export type StageCoverage = Record<DocumentStage, number>;
+
+export const documentStageOrder: DocumentStage[] = ['purchase-order', 'remission', 'invoice'];
+
+// Pieces of a production order covered per stage by its linked documents.
+export function stageCoverage(documents: Record<DocumentStage, Array<{ pieces: number }>>): StageCoverage {
+  const sum = (stage: DocumentStage) => documents[stage].reduce((total, document) => total + document.pieces, 0);
+  return { 'purchase-order': sum('purchase-order'), remission: sum('remission'), invoice: sum('invoice') };
+}
+
+// The first stage whose documents do not cover every piece of the order yet.
+export function getStatus(quantity: number, coverage: StageCoverage): OtcStatus {
+  return documentStageOrder.find((stage) => coverage[stage] < quantity) ?? 'completed';
+}
+
+// Pieces a stage may cover in total: the order's pieces for POs, and what the stage before it
+// covers for remissions and invoices (the database enforces the same bounds).
+export function stageLimit(quantity: number, coverage: StageCoverage, stage: DocumentStage) {
+  if (stage === 'purchase-order') return quantity;
+  return coverage[stage === 'remission' ? 'purchase-order' : 'remission'];
+}
+
 export type BillingStatus = 'pending' | 'partial' | 'invoiced';
 
 export type ToolUsage = { toolId: string | null; pieces: number };

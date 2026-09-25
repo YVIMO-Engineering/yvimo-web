@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { addToCurrency, assignUsageToLines, billingStatus, daysBetween, invoiceTotals, sumActiveQuantities } from './otcBalances.ts';
+import { addToCurrency, assignUsageToLines, billingStatus, daysBetween, getStatus, invoiceTotals, stageCoverage, stageLimit, sumActiveQuantities } from './otcBalances.ts';
 
 test('usage goes to the first line listing the Tool ID, case-insensitively', () => {
   const lines = [{ toolIds: ['HB-1', 'HB-2'] }, { toolIds: ['hb-2', 'HB-3'] }];
@@ -52,4 +52,27 @@ test('days between calendar dates', () => {
   assert.equal(daysBetween('2026-09-01', '2026-09-25'), 24);
   assert.equal(daysBetween('2026-09-25', '2026-09-01'), 0);
   assert.equal(daysBetween('2026-03-07', '2026-03-09'), 2);
+});
+
+test('several documents per stage add up their pieces', () => {
+  const coverage = stageCoverage({
+    'purchase-order': [{ pieces: 8 }, { pieces: 5 }],
+    remission: [{ pieces: 6 }],
+    invoice: [],
+  });
+  assert.deepEqual(coverage, { 'purchase-order': 13, remission: 6, invoice: 0 });
+});
+
+test('an order waits on the first stage that does not cover all its pieces', () => {
+  assert.equal(getStatus(13, { 'purchase-order': 8, remission: 0, invoice: 0 }), 'purchase-order');
+  assert.equal(getStatus(13, { 'purchase-order': 13, remission: 6, invoice: 6 }), 'remission');
+  assert.equal(getStatus(13, { 'purchase-order': 13, remission: 13, invoice: 12 }), 'invoice');
+  assert.equal(getStatus(13, { 'purchase-order': 13, remission: 13, invoice: 13 }), 'completed');
+});
+
+test('each stage can cover at most what the stage before it covers', () => {
+  const coverage = { 'purchase-order': 8, remission: 5, invoice: 2 };
+  assert.equal(stageLimit(13, coverage, 'purchase-order'), 13);
+  assert.equal(stageLimit(13, coverage, 'remission'), 8);
+  assert.equal(stageLimit(13, coverage, 'invoice'), 5);
 });

@@ -476,7 +476,7 @@ export function OtcReconciliationWorkspace({ organizationId, onNavigate }: Props
           <div className="otc-po-table-wrap">
             <table>
               <thead>
-                <tr><th>Production order</th><th>Client</th><th>Part</th><th>Voucher</th><th className="numeric">Received</th><th className="numeric">Age</th><th className="numeric">Pieces</th></tr>
+                <tr><th>Production order</th><th>Client</th><th>Part</th><th>Voucher</th><th className="numeric">Received</th><th className="numeric">Age</th><th className="numeric">Pieces</th><th className="numeric" title="Pieces not covered by this document yet">Uncovered</th></tr>
               </thead>
               <tbody>
                 {visibleOrders.map((order) => {
@@ -490,6 +490,7 @@ export function OtcReconciliationWorkspace({ organizationId, onNavigate }: Props
                       <td className="numeric">{formatTimestampDate(order.receivedAt)}</td>
                       <td className="numeric"><span className={`otc-po-used ${ageDays > 30 ? 'over' : ageDays > 7 ? 'partial' : ''}`}>{ageDays} d</span></td>
                       <td className="numeric">{formatQuantity(order.quantity)}</td>
+                      <td className="numeric">{formatQuantity(Math.max(order.quantity - order.coverage[orderScope], 0))}</td>
                     </tr>
                   );
                 })}
