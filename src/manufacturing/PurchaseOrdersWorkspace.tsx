@@ -16,6 +16,7 @@ type PoItem = {
   quantity: number;
   unitPrice: number;
   subtotal: number;
+  used: number;
 };
 
 type PurchaseOrder = {
@@ -41,6 +42,8 @@ type PurchaseOrder = {
   items: PoItem[];
   total: number;
   productionOrders: string[];
+  usedPieces: number;
+  unmatchedPieces: number;
 };
 
 type PurchaseOrderRow = {
@@ -79,6 +82,12 @@ type ItemRow = {
 type LinkedOrderRow = {
   purchase_order_id: string;
   production_order: { order_number: string } | Array<{ order_number: string }> | null;
+};
+
+type UsageRow = {
+  purchase_order_id: string;
+  tool_id: string | null;
+  pieces: number;
 };
 
 type Customer = { id: string; name: string; paymentTerms: string };
@@ -248,7 +257,7 @@ export function PurchaseOrdersWorkspace({ organizationId, onNavigate }: Props) {
     if (!organizationId) return;
     setLoading(true);
     try {
-      const [orderRows, itemRows, linkedRows, customerResult, toolResult] = await Promise.all([
+      const [orderRows, itemRows, linkedRows, usageRows, customerResult, toolResult] = await Promise.all([
         fetchAllRows<PurchaseOrderRow>((from, to) => supabase
           .from('mes_customer_purchase_orders')
           .select('id, customer_id, po_reference, revision_number, po_date, expiration_date, currency, buyer_name, buyer_email, requisition_number, payment_terms, notes, status, closed_at, file_name, file_path, file_type, created_at, customer:mes_customers!customer_id(customer_name)')
@@ -270,6 +279,13 @@ export function PurchaseOrdersWorkspace({ organizationId, onNavigate }: Props) {
           .not('purchase_order_id', 'is', null)
           .order('id')
           .range(from, to)),
+        fetchAllRows<UsageRow>((from, to) => supabase
+          .from('mes_customer_purchase_order_usage')
+          .select('purchase_order_id, tool_id, pieces')
+          .eq('organization_id', organizationId)
+          .order('purchase_order_id')
+          .order('tool_id')
+          .range(from, to)),
         supabase.from('mes_customers').select('id, customer_name, payment_terms, status').eq('organization_id', organizationId).order('customer_name'),
         supabase.from('mes_customer_tool_ids').select('tool_id').eq('organization_id', organizationId).order('tool_id'),
       ]);
@@ -277,7 +293,7 @@ export function PurchaseOrdersWorkspace({ organizationId, onNavigate }: Props) {
       const itemsByOrder = new Map<string, PoItem[]>();
       itemRows.forEach((row) => {
         const items = itemsByOrder.get(row.purchase_order_id) ?? [];
-        items.push({ id: row.id, lineNumber: row.line_number, description: row.description, toolIds: row.tool_ids ?? [], quantity: Number(row.quantity) || 0, unitPrice: Number(row.unit_price) || 0, subtotal: Number(row.subtotal) || 0 });
+        items.push({ id: row.id, lineNumber: row.line_number, description: row.description, toolIds: row.tool_ids ?? [], quantity: Number(row.quantity) || 0, unitPrice: Number(row.unit_price) || 0, subtotal: Number(row.subtotal) || 0, used: 0 });
         itemsByOrder.set(row.purchase_order_id, items);
       });
       const productionOrdersByPo = new Map<string, string[]>();
@@ -286,8 +302,20 @@ export function PurchaseOrdersWorkspace({ organizationId, onNavigate }: Props) {
         if (!orderNumber) return;
         productionOrdersByPo.set(row.purchase_order_id, [...(productionOrdersByPo.get(row.purchase_order_id) ?? []), orderNumber]);
       });
+      const usageByPo = new Map<string, UsageRow[]>();
+      usageRows.forEach((row) => usageByPo.set(row.purchase_order_id, [...(usageByPo.get(row.purchase_order_id) ?? []), row]));
       const nextOrders = orderRows.map((row): PurchaseOrder => {
         const items = itemsByOrder.get(row.id) ?? [];
+        // Each piece of a linked production order uses the first line that lists its Tool ID;
+        // pieces whose Tool ID is on no line are reported apart instead of being guessed.
+        let unmatchedPieces = 0;
+        (usageByPo.get(row.id) ?? []).forEach((usage) => {
+          const pieces = Number(usage.pieces) || 0;
+          const toolId = usage.tool_id?.toLowerCase();
+          const item = toolId ? items.find((entry) => entry.toolIds.some((candidate) => candidate.toLowerCase() === toolId)) : undefined;
+          if (item) item.used += pieces;
+          else unmatchedPieces += pieces;
+        });
         return {
           id: row.id,
           customerId: row.customer_id,
@@ -311,6 +339,8 @@ export function PurchaseOrdersWorkspace({ organizationId, onNavigate }: Props) {
           items,
           total: Math.round(items.reduce((sum, item) => sum + item.subtotal, 0) * 100) / 100,
           productionOrders: (productionOrdersByPo.get(row.id) ?? []).sort((left, right) => right.localeCompare(left, undefined, { numeric: true })),
+          usedPieces: items.reduce((sum, item) => sum + item.used, 0),
+          unmatchedPieces,
         };
       });
       setOrders(nextOrders);
@@ -336,6 +366,7 @@ export function PurchaseOrdersWorkspace({ organizationId, onNavigate }: Props) {
     { table: 'mes_customer_purchase_orders', filter: `organization_id=eq.${organizationId}` },
     { table: 'mes_customer_purchase_order_items', filter: `organization_id=eq.${organizationId}` },
     { table: 'mes_order_to_cash_documents', filter: `organization_id=eq.${organizationId}` },
+    { table: 'mes_production_serials', filter: `organization_id=eq.${organizationId}` },
   ]), [organizationId]);
 
   useSupabaseRealtimeRefresh({
@@ -660,7 +691,7 @@ export function PurchaseOrdersWorkspace({ organizationId, onNavigate }: Props) {
               <div className="otc-po-facts">
                 <span><b>Requisition</b>{selected.requisitionNumber || '—'}</span>
                 <span><b>Payment terms</b>{selected.paymentTerms || '—'}</span>
-                <span><b>Pieces</b>{formatQuantity(selectedQuantity)}</span>
+                <span><b>Pieces used</b>{formatQuantity(selected.usedPieces)} of {formatQuantity(selectedQuantity)}</span>
                 <span><b>Tool IDs covered</b>{selectedToolCount}</span>
               </div>
               <div className="otc-po-linked-orders">
@@ -669,6 +700,11 @@ export function PurchaseOrdersWorkspace({ organizationId, onNavigate }: Props) {
                   ? <span className="otc-tool-chips">{selected.productionOrders.map((orderNumber) => <em key={orderNumber}>{orderNumber}</em>)}</span>
                   : <small>Not linked to any production order yet. Link it from step 2 of Order-to-Cash.</small>}
               </div>
+              {selected.unmatchedPieces ? (
+                <div className="otc-po-unmatched" role="note">
+                  {formatQuantity(selected.unmatchedPieces)} {selected.unmatchedPieces === 1 ? 'piece' : 'pieces'} from the linked production orders {selected.unmatchedPieces === 1 ? 'has' : 'have'} a Tool ID that is not on any line of this PO (or no Tool ID yet), so {selected.unmatchedPieces === 1 ? 'it is' : 'they are'} not counted as used.
+                </div>
+              ) : null}
               {selected.notes ? <p className="otc-po-notes">{selected.notes}</p> : null}
 
               <div className="otc-po-body">
@@ -677,7 +713,7 @@ export function PurchaseOrdersWorkspace({ organizationId, onNavigate }: Props) {
                   <div className="otc-po-table-wrap">
                     <table>
                       <thead>
-                        <tr><th>#</th><th>Item</th><th className="numeric">Qty</th><th className="numeric">Unit price</th><th className="numeric">Subtotal</th></tr>
+                        <tr><th>#</th><th>Item</th><th className="numeric">Qty</th><th className="numeric" title="Pieces of the linked production orders that used this line">Used</th><th className="numeric">Unit price</th><th className="numeric">Subtotal</th></tr>
                       </thead>
                       <tbody>
                         {selected.items.map((item) => (
@@ -688,13 +724,18 @@ export function PurchaseOrdersWorkspace({ organizationId, onNavigate }: Props) {
                               {item.toolIds.length ? <span className="otc-tool-chips">{item.toolIds.map((toolId) => <em key={toolId}>{toolId}</em>)}</span> : null}
                             </td>
                             <td className="numeric">{formatQuantity(item.quantity)}</td>
+                            <td className="numeric">
+                              <span className={`otc-po-used ${item.used > item.quantity ? 'over' : item.used === item.quantity ? 'full' : item.used > 0 ? 'partial' : ''}`} title={item.used > item.quantity ? `${formatQuantity(item.used - item.quantity)} over the PO quantity` : `${formatQuantity(Math.max(item.quantity - item.used, 0))} remaining`}>
+                                {formatQuantity(item.used)}
+                              </span>
+                            </td>
                             <td className="numeric">{formatMoney(item.unitPrice, selected.currency)}</td>
                             <td className="numeric"><strong>{formatMoney(item.subtotal, selected.currency)}</strong></td>
                           </tr>
                         ))}
                       </tbody>
                       <tfoot>
-                        <tr><td colSpan={4}>Total</td><td className="numeric">{formatMoney(selected.total, selected.currency)}</td></tr>
+                        <tr><td colSpan={2}>Total</td><td className="numeric">{formatQuantity(selectedQuantity)}</td><td className="numeric">{formatQuantity(selected.usedPieces)}</td><td /><td className="numeric">{formatMoney(selected.total, selected.currency)}</td></tr>
                       </tfoot>
                     </table>
                   </div>
