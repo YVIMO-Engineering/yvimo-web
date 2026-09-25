@@ -768,7 +768,7 @@ const translations: Record<Exclude<LanguageCode, 'en'>, Record<string, string>> 
     'Find available records': 'Buscar expedientes libres',
     'Hide available records': 'Ocultar expedientes libres',
     'Available records:': 'Expedientes disponibles:',
-    'No records are available from 0 to 400.': 'No hay expedientes disponibles del 0 al 400.',
+    'No records are available from 0 to 1000.': 'No hay expedientes disponibles del 0 al 1000.',
     'Search patients': 'Buscar pacientes',
     'Name, CURP, or medical record number': 'Nombre, CURP o número de expediente',
     'Patient register': 'Registro de pacientes',

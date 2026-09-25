@@ -27,7 +27,7 @@ type Props = {
 const emptyForm = { fullName: '', curp: '', medicalRecordNumber: '' };
 const medicalRecordCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
 const patientsPerPage = 100;
-const maximumAvailableRecordNumber = 400;
+const maximumAvailableRecordNumber = 1000;
 
 function getBirthDateFromCurp(curp: string): string | null {
   if (!/^[A-Z]{4}\d{6}[HM][A-Z]{5}[A-Z0-9]\d$/.test(curp)) return null;
@@ -58,7 +58,7 @@ function getPatientInitial(fullName: string) {
 }
 
 function getRecordNumberInRange(value: string): number | null {
-  const match = value.trim().match(/^(?:\D*?)0*(\d{1,3})$/);
+  const match = value.trim().match(/^(?:\D*?)0*(\d{1,4})$/);
   if (!match) return null;
   const recordNumber = Number(match[1]);
   return recordNumber >= 0 && recordNumber <= maximumAvailableRecordNumber ? recordNumber : null;
@@ -319,7 +319,7 @@ export function HealthPatientsWorkspace({ organizationId, organizationName, onNa
         <section className="health-patients-header-actions">
           <button className="health-patients-add" type="button" onClick={openCreateDialog}><Plus size={18} /> {t('Add patient')}</button>
           <button className="health-patients-available" type="button" onClick={toggleAvailableRecords} disabled={loading || Boolean(loadError)} aria-expanded={showAvailableRecord}><Hash size={17} /> {t(showAvailableRecord ? 'Hide available records' : 'Find available records')}</button>
-          {showAvailableRecord && !loading && !loadError ? <div className={availableRecordNumbers.length === 0 ? 'health-patients-available-result full' : 'health-patients-available-result'} role="status">{availableRecordNumbers.length === 0 ? t('No records are available from 0 to 400.') : <><span>{t('Available records:')}</span><strong className="notranslate" translate="no">{availableRecordNumbers.join(', ')}</strong></>}</div> : null}
+          {showAvailableRecord && !loading && !loadError ? <div className={availableRecordNumbers.length === 0 ? 'health-patients-available-result full' : 'health-patients-available-result'} role="status">{availableRecordNumbers.length === 0 ? t('No records are available from 0 to 1000.') : <><span>{t('Available records:')}</span><strong className="notranslate" translate="no">{availableRecordNumbers.join(', ')}</strong></>}</div> : null}
         </section>
       </header>
 
