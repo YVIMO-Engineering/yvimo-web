@@ -837,3 +837,135 @@
   .otc-identification { grid-template-columns: 1fr; }
   .otc-progress li strong { font-size: .56rem; }
 }
+
+/* Remissions, Invoices and Reconciliation */
+.otc-status.bill-pending { background: #f59e0b; }
+.otc-status.bill-partial { background: #0284c7; }
+.otc-status.bill-invoiced { background: #059669; }
+.otc-status.doc-cancelled { background: #64748b; }
+
+.otc-cell-note { display: block; margin-top: 2px; color: #64748b; font-size: .66rem; font-weight: 500; }
+.otc-cell-note.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .6rem; overflow-wrap: anywhere; }
+.otc-identification .otc-cell-note { margin-top: 3px; }
+
+.otc-po-picker-main .otc-po-picker-match { display: inline-flex; align-items: center; gap: 4px; color: #047857; font-weight: 700; }
+
+.otc-po-items tfoot tr.otc-tfoot-minor td { background: #f8fafc; color: #475569; font-size: .74rem; font-weight: 600; }
+
+.otc-form-hint { margin: 0; color: #64748b; font-size: .78rem; }
+.otc-po-form-grid .wide-2 { grid-column: span 2; }
+
+.otc-reg-form-lines { display: grid; gap: 10px; }
+
+.otc-reg-form-line {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr) 130px 40px;
+  grid-template-areas:
+    "line source qty remove"
+    ". info info .";
+  align-items: end;
+  gap: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-left: 3px solid #14b8a6;
+  border-radius: 8px;
+  padding: 12px;
+  background: #fcfefe;
+}
+
+.otc-reg-form-line.priced {
+  grid-template-columns: 26px repeat(3, minmax(0, 1fr)) 40px;
+  grid-template-areas:
+    "line source source source remove"
+    ". qty price subtotal ."
+    ". info info info .";
+}
+
+.otc-reg-form-line .source { grid-area: source; }
+.otc-reg-form-line .quantity { grid-area: qty; }
+.otc-reg-form-line .price { grid-area: price; }
+
+.otc-reg-form-line-info { grid-area: info; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; color: #64748b; font-size: .7rem; }
+.otc-reg-form-line-info b { color: #0f172a; font-weight: 600; font-variant-numeric: tabular-nums; }
+.otc-reg-form-line-info .otc-tool-chips { margin: 0; }
+.otc-reg-form-line-info .warn { border-radius: 999px; padding: 1px 8px; background: #fffbeb; color: #b45309; font-weight: 600; }
+.otc-reg-form-line-info.over { color: #b91c1c; }
+.otc-reg-form-line-info.over b { color: #b91c1c; }
+
+.otc-reg-form-add { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.otc-reg-form-add .otc-select { width: min(100%, 260px); }
+
+.otc-reg-form-totals { display: grid; justify-items: end; gap: 2px; }
+.otc-reg-form-totals > small { color: #64748b; font-size: .68rem; font-weight: 500; letter-spacing: 0; text-transform: none; }
+.otc-reg-form-totals > small b { color: #0f172a; font-weight: 600; font-variant-numeric: tabular-nums; }
+.otc-reg-form-totals > span { display: grid; justify-items: end; gap: 2px; color: #0f172a; font-size: 1.1rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+.otc-reg-form-files { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+
+.otc-kpis { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
+
+.otc-kpi {
+  display: grid;
+  align-content: start;
+  gap: 3px;
+  min-width: 0;
+  border: 1px solid #d9e2ec;
+  border-top: 3px solid #14b8a6;
+  border-radius: 10px;
+  padding: 11px 13px 12px;
+  background: #fff;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, .05);
+}
+
+.otc-kpi.warn { border-top-color: #f59e0b; }
+.otc-kpi.good { border-top-color: #059669; }
+.otc-kpi-icon { display: inline-grid; place-items: center; width: 28px; height: 28px; margin-bottom: 4px; border-radius: 8px; background: #f0fdfa; color: #0d9488; }
+.otc-kpi.warn .otc-kpi-icon { background: #fffbeb; color: #b45309; }
+.otc-kpi.good .otc-kpi-icon { background: #ecfdf5; color: #047857; }
+.otc-kpi small { color: #64748b; font-size: .6rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+.otc-kpi strong { color: #0f172a; font-size: 1.45rem; font-weight: 700; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.otc-kpi em { color: #475569; font-size: .7rem; font-style: normal; font-weight: 500; line-height: 1.4; }
+
+.otc-segmented { display: inline-flex; border: 1px solid #cbd5e1; border-radius: 8px; padding: 2px; background: #f8fafc; }
+
+.otc-segmented button {
+  min-height: 30px;
+  border: 0;
+  border-radius: 6px;
+  padding: 0 11px;
+  background: transparent;
+  color: #475569;
+  font: inherit;
+  font-size: .7rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.otc-segmented button.active { background: #0d9488; color: #fff; }
+
+.otc-recon-table > header { flex-wrap: wrap; }
+.otc-recon-link { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; border: 0; background: transparent; color: #0f766e; font: inherit; font-size: .72rem; font-weight: 600; cursor: pointer; }
+.otc-recon-link:hover { text-decoration: underline; }
+.otc-recon-empty { margin: 0; padding: 22px 12px; color: #64748b; font-size: .78rem; text-align: center; }
+
+@media (max-width: 1500px) {
+  .otc-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (max-width: 760px) {
+  .otc-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .otc-po-form-grid .wide-2 { grid-column: auto; }
+  .otc-reg-form-files { grid-template-columns: 1fr; }
+  .otc-reg-form-line,
+  .otc-reg-form-line.priced {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-areas:
+      "line remove"
+      "source source"
+      "qty price"
+      "subtotal subtotal"
+      "info info";
+  }
+  .otc-reg-form-line .otc-po-remove { justify-self: end; }
+  .otc-reg-form-line .otc-po-subtotal { min-height: 0; padding-bottom: 0; text-align: left; }
+  .otc-reg-form-totals { justify-items: start; }
+}

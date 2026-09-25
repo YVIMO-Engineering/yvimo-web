@@ -1,87 +1,34 @@
 import React from 'react';
-import { createPortal } from 'react-dom';
-import { ArrowLeft, CalendarDays, Check, ChevronDown, ClipboardList, Download, Eye, FileCheck2, FileText, History, ImagePlus, LockKeyhole, Plus, ReceiptText, RefreshCw, Search, ShoppingCart, Truck, Upload, X } from 'lucide-react';
+import { ArrowLeft, CalendarDays, Check, ChevronDown, ClipboardList, Eye, FileCheck2, FileText, History, ImagePlus, LockKeyhole, Plus, ReceiptText, RefreshCw, Search, Truck } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { useSupabaseRealtimeRefresh } from '../lib/useSupabaseRealtimeRefresh';
+import { invoiceTotals } from './otcBalances';
+import { fetchOtcOrders, legacyNotice, type DocumentStage, type OtcDocument, type OtcOrder, type OtcStatus } from './otcOrders';
+import { DocumentPreviewModal, documentsBucket, errorMessage, fetchAllRows, formatCalendarDate, formatMoney, formatQuantity, isPdfFile, single, signedUrlSeconds } from './otcShared';
 import './orderToCash.css';
 
-type DocumentStage = 'purchase-order' | 'remission' | 'invoice';
-type OtcStatus = DocumentStage | 'completed';
 type OtcFilter = 'all' | OtcStatus;
 
-type OtcDocument = {
-  id: string;
-  productionOrderId: string;
-  stage: DocumentStage;
-  folio: string;
-  fileName: string;
-  filePath: string;
-  fileType: string;
-  uploadedAt: string;
-  purchaseOrderId: string;
-};
-
-// An active PO from the Purchase Orders registry that step 2 can link.
-type RegisteredPo = {
+// An active PO, remission or invoice from its registry that an OTC step can link.
+type RegistryCandidate = {
   id: string;
   customerId: string;
-  customerName: string;
-  poReference: string;
-  revisionNumber: number;
-  poDate: string;
-  currency: string;
-  requisitionNumber: string;
+  folio: string;
+  title: string;
+  subtitle: string;
+  detail: string;
+  amount: string;
+  search: string[];
+  // Registry ids of the previous stage this record covers (the POs a remission delivers,
+  // the remissions an invoice bills), used to put the matching records first.
+  coversIds: string[];
+  coversLabels: Record<string, string>;
   fileName: string;
   filePath: string;
   fileType: string;
-  itemCount: number;
-  toolIds: string[];
-  total: number;
 };
 
-type OtcOrder = {
-  productionOrderId: string;
-  orderNumber: string;
-  partNumber: string;
-  partName: string;
-  productionStatus: string;
-  quantity: number;
-  customerIds: string[];
-  customerNames: string[];
-  voucherNumbers: string[];
-  receivedAt: string;
-  isRework: boolean;
-  orderCreatedAt: string;
-  isLegacy: boolean;
-  documents: Partial<Record<DocumentStage, OtcDocument>>;
-  status: OtcStatus;
-};
-
-type ReceptionItemRow = {
-  production_order_id: string | null;
-  customer_id: string | null;
-  production_order_number: string | null;
-  quantity: number | null;
-  is_rework: boolean | null;
-  created_at: string;
-  mes_customers: { customer_name: string } | Array<{ customer_name: string }> | null;
-  voucher: { voucher_number: string; received_at: string | null; created_at: string } | Array<{ voucher_number: string; received_at: string | null; created_at: string }> | null;
-  production_order: { order_number: string; part_number: string | null; part_name: string | null; status: string; created_at: string } | Array<{ order_number: string; part_number: string | null; part_name: string | null; status: string; created_at: string }> | null;
-};
-
-type DocumentRow = {
-  id: string;
-  production_order_id: string;
-  stage: DocumentStage;
-  folio: string;
-  file_name: string;
-  file_path: string;
-  file_type: string;
-  uploaded_at: string;
-  purchase_order_id: string | null;
-};
-
-type RegisteredPoRow = {
+type PurchaseOrderRow = {
   id: string;
   customer_id: string;
   po_reference: string;
@@ -96,7 +43,38 @@ type RegisteredPoRow = {
   items: Array<{ subtotal: number | string; tool_ids: string[] | null }> | null;
 };
 
-type LinkTarget = { order: OtcOrder; stage: DocumentStage; existing?: OtcDocument };
+type RemissionRow = {
+  id: string;
+  customer_id: string;
+  remission_folio: string;
+  remission_date: string;
+  file_name: string;
+  file_path: string;
+  file_type: string;
+  customer: { customer_name: string } | Array<{ customer_name: string }> | null;
+  items: Array<{
+    quantity: number | string;
+    po_item: { purchase_order_id: string; purchase_order: { po_reference: string } | Array<{ po_reference: string }> | null } | Array<{ purchase_order_id: string; purchase_order: { po_reference: string } | Array<{ po_reference: string }> | null }> | null;
+  }> | null;
+};
+
+type InvoiceRow = {
+  id: string;
+  customer_id: string;
+  invoice_folio: string;
+  invoice_date: string;
+  currency: string;
+  tax_rate: number | string;
+  file_name: string;
+  file_path: string;
+  file_type: string;
+  customer: { customer_name: string } | Array<{ customer_name: string }> | null;
+  items: Array<{
+    subtotal: number | string;
+    remission_item: { remission_id: string; remission: { remission_folio: string } | Array<{ remission_folio: string }> | null } | Array<{ remission_id: string; remission: { remission_folio: string } | Array<{ remission_folio: string }> | null }> | null;
+  }> | null;
+};
+
 type Preview = { title: string; subtitle: string; url: string; isPdf: boolean };
 
 type Props = {
@@ -104,22 +82,12 @@ type Props = {
   onNavigate: (path: string) => void;
 };
 
-const documentsBucket = 'mes-order-to-cash-documents';
-const documentAccept = 'application/pdf,.pdf,image/*';
-const documentExtensions = /\.(?:pdf|jpe?g|png|webp|heic|heif|avif)$/i;
-const documentMimeTypes = new Set(['application/pdf', 'image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/heic', 'image/heif', 'image/avif']);
-const rowPageSize = 1000;
-
-// OTC went live in September 2026. Orders created before then were already billed outside
-// the system, so they count as completed instead of showing up as pending paperwork.
-const otcStartDate = new Date(2026, 8, 1);
-const legacyNotice = 'This order was processed before the OTC system was implemented (September 2026). Its administrative steps are considered complete.';
-
+const otcPath = '/workspace/manufacturing-ops/intelligence/otc';
 const steps = ['Production Order', 'Purchase Order', 'Remission', 'Invoice'];
-const documentStages: Array<{ stage: DocumentStage; label: string; folioLabel: string; description: string }> = [
-  { stage: 'purchase-order', label: 'Purchase Order', folioLabel: 'PO reference', description: 'Select the active customer purchase order that covers this production order.' },
-  { stage: 'remission', label: 'Remission', folioLabel: 'Remission folio', description: 'Link the remission issued when the pieces were delivered.' },
-  { stage: 'invoice', label: 'Invoice', folioLabel: 'Invoice folio', description: 'Link the invoice billed to the customer for this production order.' },
+const documentStages: Array<{ stage: DocumentStage; label: string; folioLabel: string; description: string; column: string; registryPath: string; placeholder: string }> = [
+  { stage: 'purchase-order', label: 'Purchase Order', folioLabel: 'PO reference', description: 'Select the active customer purchase order that covers this production order.', column: 'purchase_order_id', registryPath: `${otcPath}/purchase-orders`, placeholder: 'Search active POs by reference or Tool ID' },
+  { stage: 'remission', label: 'Remission', folioLabel: 'Remission folio', description: 'Select the remission issued when the pieces were delivered.', column: 'remission_id', registryPath: `${otcPath}/remissions`, placeholder: 'Search remissions by folio or PO' },
+  { stage: 'invoice', label: 'Invoice', folioLabel: 'Invoice folio', description: 'Select the invoice billed to the customer for this production order.', column: 'invoice_id', registryPath: `${otcPath}/invoices`, placeholder: 'Search invoices by folio or remission' },
 ];
 const statusStep: Record<OtcStatus, number> = { 'purchase-order': 1, remission: 2, invoice: 3, completed: 4 };
 const statusLabel: Record<OtcStatus, string> = {
@@ -136,35 +104,12 @@ const filters: Array<{ value: OtcFilter; label: string }> = [
   { value: 'completed', label: statusLabel.completed },
 ];
 
-function single<Row>(value: Row | Row[] | null): Row | null {
-  return Array.isArray(value) ? value[0] ?? null : value;
-}
-
-function getStatus(documents: OtcOrder['documents']): OtcStatus {
-  if (!documents['purchase-order']) return 'purchase-order';
-  if (!documents.remission) return 'remission';
-  if (!documents.invoice) return 'invoice';
-  return 'completed';
-}
-
 function previousStage(stage: DocumentStage): DocumentStage | null {
   return stage === 'remission' ? 'purchase-order' : stage === 'invoice' ? 'remission' : null;
 }
 
 function stageLabel(stage: DocumentStage) {
   return documentStages.find((entry) => entry.stage === stage)?.label ?? stage;
-}
-
-function isPdfDocument(document: { fileType: string; fileName: string }) {
-  return document.fileType === 'application/pdf' || document.fileName.toLowerCase().endsWith('.pdf');
-}
-
-function getDocumentMimeType(file: File) {
-  if (file.type && file.type !== 'application/octet-stream') return file.type.toLowerCase();
-  const extension = file.name.toLowerCase().split('.').pop();
-  if (extension === 'pdf') return 'application/pdf';
-  if (extension === 'jpg' || extension === 'jpeg') return 'image/jpeg';
-  return extension ? `image/${extension}` : 'image/jpeg';
 }
 
 function formatDate(value: string) {
@@ -177,41 +122,28 @@ function formatTimestamp(value: string) {
   return new Date(value).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
-function formatPoDate(value: string) {
-  if (!value) return 'Not specified';
-  const [year, month, day] = value.slice(0, 10).split('-').map(Number);
-  return new Date(year, month - 1, day).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-}
-
-function formatMoney(value: number, currency: string) {
-  return `${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
-}
-
 function formatProductionStatus(status: string) {
   return status ? status.charAt(0).toUpperCase() + status.slice(1) : 'Not specified';
 }
 
-async function fetchAllRows<Row>(request: (from: number, to: number) => PromiseLike<{ data: Row[] | null; error: { message: string } | null }>) {
-  const rows: Row[] = [];
-  for (let from = 0; ; from += rowPageSize) {
-    const { data, error } = await request(from, from + rowPageSize - 1);
-    if (error) throw new Error(error.message);
-    const page = data ?? [];
-    rows.push(...page);
-    if (page.length < rowPageSize) return rows;
-  }
+function uniqueList(values: string[]) {
+  return Array.from(new Set(values.filter(Boolean)));
 }
 
-type PurchaseOrderPickerProps = {
-  candidates: RegisteredPo[];
+type RegistryPickerProps = {
+  candidates: RegistryCandidate[];
   currentId: string;
+  // Registry id of the previous stage on this order; candidates covering it are marked.
+  matchId: string;
+  matchVerb: string;
+  placeholder: string;
   disabled: boolean;
-  onPick: (purchaseOrder: RegisteredPo) => void;
+  onPick: (candidate: RegistryCandidate) => void;
 };
 
-// Search dropdown of the active POs a production order can be linked to. The list opens
+// Search dropdown of the registry records a production order can be linked to. The list opens
 // inline, under the search box, so the document card never clips it.
-function PurchaseOrderPicker({ candidates, currentId, disabled, onPick }: PurchaseOrderPickerProps) {
+function RegistryPicker({ candidates, currentId, matchId, matchVerb, placeholder, disabled, onPick }: RegistryPickerProps) {
   const [query, setQuery] = React.useState('');
   const [open, setOpen] = React.useState(false);
   const [activeIndex, setActiveIndex] = React.useState(0);
@@ -219,17 +151,16 @@ function PurchaseOrderPicker({ candidates, currentId, disabled, onPick }: Purcha
 
   const matches = React.useMemo(() => {
     const needle = query.trim().toLowerCase();
-    if (!needle) return candidates;
-    return candidates.filter((purchaseOrder) => [purchaseOrder.poReference, purchaseOrder.requisitionNumber, purchaseOrder.customerName, ...purchaseOrder.toolIds]
-      .some((value) => value.toLowerCase().includes(needle)));
-  }, [candidates, query]);
+    const found = needle ? candidates.filter((candidate) => candidate.search.some((value) => value.toLowerCase().includes(needle))) : candidates;
+    return matchId ? [...found].sort((left, right) => Number(right.coversIds.includes(matchId)) - Number(left.coversIds.includes(matchId))) : found;
+  }, [candidates, query, matchId]);
 
   React.useEffect(() => { setActiveIndex(0); }, [query]);
 
-  const pick = (purchaseOrder: RegisteredPo) => {
+  const pick = (candidate: RegistryCandidate) => {
     setOpen(false);
     setQuery('');
-    onPick(purchaseOrder);
+    onPick(candidate);
   };
 
   return (
@@ -256,7 +187,7 @@ function PurchaseOrderPicker({ candidates, currentId, disabled, onPick }: Purcha
               setOpen(false);
             }
           }}
-          placeholder="Search active POs by reference or Tool ID"
+          placeholder={placeholder}
           disabled={disabled}
           role="combobox"
           aria-expanded={open}
@@ -267,26 +198,27 @@ function PurchaseOrderPicker({ candidates, currentId, disabled, onPick }: Purcha
       </label>
       {open ? (
         <ul id={listId} role="listbox" className="otc-po-picker-list">
-          {matches.map((purchaseOrder, index) => (
+          {matches.map((candidate, index) => (
             <li
               role="option"
               aria-selected={index === activeIndex}
-              className={`${index === activeIndex ? 'active' : ''}${purchaseOrder.id === currentId ? ' current' : ''}`}
-              key={purchaseOrder.id}
+              className={`${index === activeIndex ? 'active' : ''}${candidate.id === currentId ? ' current' : ''}`}
+              key={candidate.id}
               onMouseDown={(event) => event.preventDefault()}
               onMouseEnter={() => setActiveIndex(index)}
-              onClick={() => pick(purchaseOrder)}
+              onClick={() => pick(candidate)}
             >
               <span className="otc-po-picker-main">
-                <strong>{purchaseOrder.poReference}{purchaseOrder.revisionNumber ? ` · Rev ${purchaseOrder.revisionNumber}` : ''}</strong>
-                <small>{purchaseOrder.customerName} · {formatPoDate(purchaseOrder.poDate)} · {purchaseOrder.itemCount} {purchaseOrder.itemCount === 1 ? 'item' : 'items'}</small>
-                {purchaseOrder.toolIds.length ? <small className="otc-po-picker-tools">{purchaseOrder.toolIds.slice(0, 4).join(', ')}{purchaseOrder.toolIds.length > 4 ? ` +${purchaseOrder.toolIds.length - 4}` : ''}</small> : null}
+                <strong>{candidate.title}</strong>
+                <small>{candidate.subtitle}</small>
+                {candidate.detail ? <small className="otc-po-picker-tools">{candidate.detail}</small> : null}
+                {matchId && candidate.coversIds.includes(matchId) ? <small className="otc-po-picker-match"><Check size={11} /> {matchVerb} {candidate.coversLabels[matchId]}</small> : null}
               </span>
-              <em>{formatMoney(purchaseOrder.total, purchaseOrder.currency)}</em>
-              {purchaseOrder.id === currentId ? <Check size={15} /> : null}
+              <em>{candidate.amount}</em>
+              {candidate.id === currentId ? <Check size={15} /> : null}
             </li>
           ))}
-          {!matches.length ? <li className="otc-po-picker-empty">No active POs match "{query.trim()}".</li> : null}
+          {!matches.length ? <li className="otc-po-picker-empty">Nothing matches "{query.trim()}".</li> : null}
         </ul>
       ) : null}
     </div>
@@ -300,111 +232,119 @@ export function OrderToCashWorkspace({ organizationId, onNavigate }: Props) {
   const [selectedId, setSelectedId] = React.useState('');
   const [filter, setFilter] = React.useState<OtcFilter>('all');
   const [search, setSearch] = React.useState('');
-  const [linkTarget, setLinkTarget] = React.useState<LinkTarget | null>(null);
-  const [linkFolio, setLinkFolio] = React.useState('');
-  const [linkFile, setLinkFile] = React.useState<File | null>(null);
-  const [linkError, setLinkError] = React.useState('');
-  const [linkSaving, setLinkSaving] = React.useState(false);
   const [preview, setPreview] = React.useState<Preview | null>(null);
   const [previewError, setPreviewError] = React.useState('');
-  const [purchaseOrders, setPurchaseOrders] = React.useState<RegisteredPo[]>([]);
-  const [poLinking, setPoLinking] = React.useState(false);
-  const [poLinkError, setPoLinkError] = React.useState('');
-  const [changingPo, setChangingPo] = React.useState(false);
+  const [registry, setRegistry] = React.useState<Record<DocumentStage, RegistryCandidate[]>>({ 'purchase-order': [], remission: [], invoice: [] });
+  const [linkingStage, setLinkingStage] = React.useState<DocumentStage | null>(null);
+  const [linkError, setLinkError] = React.useState<{ stage: DocumentStage; message: string } | null>(null);
+  const [changingStage, setChangingStage] = React.useState<DocumentStage | null>(null);
 
   const loadOrders = React.useCallback(async () => {
     if (!organizationId) return;
     setLoading(true);
     try {
-      const [itemRows, documentRows, purchaseOrderResult] = await Promise.all([
-        fetchAllRows<ReceptionItemRow>((from, to) => supabase
-          .from('mes_customer_reception_items')
-          .select('production_order_id, customer_id, production_order_number, quantity, is_rework, created_at, mes_customers(customer_name), voucher:mes_customer_reception_vouchers!reception_voucher_id(voucher_number, received_at, created_at), production_order:mes_production_orders!production_order_id(order_number, part_number, part_name, status, created_at)')
-          .eq('organization_id', organizationId)
-          .not('production_order_id', 'is', null)
-          .order('created_at', { ascending: false })
-          .order('id')
-          .range(from, to)),
-        fetchAllRows<DocumentRow>((from, to) => supabase
-          .from('mes_order_to_cash_documents')
-          .select('id, production_order_id, stage, folio, file_name, file_path, file_type, uploaded_at, purchase_order_id')
-          .eq('organization_id', organizationId)
-          .order('id')
-          .range(from, to)),
-        supabase
+      const [nextOrders, purchaseOrderRows, remissionRows, invoiceRows] = await Promise.all([
+        fetchOtcOrders(organizationId),
+        fetchAllRows<PurchaseOrderRow>((from, to) => supabase
           .from('mes_customer_purchase_orders')
           .select('id, customer_id, po_reference, revision_number, po_date, currency, requisition_number, file_name, file_path, file_type, customer:mes_customers!customer_id(customer_name), items:mes_customer_purchase_order_items(subtotal, tool_ids)')
           .eq('organization_id', organizationId)
           .eq('status', 'active')
           .order('po_date', { ascending: false })
-          .returns<RegisteredPoRow[]>(),
+          .order('id')
+          .range(from, to)),
+        fetchAllRows<RemissionRow>((from, to) => supabase
+          .from('mes_customer_remissions')
+          .select('id, customer_id, remission_folio, remission_date, file_name, file_path, file_type, customer:mes_customers!customer_id(customer_name), items:mes_customer_remission_items(quantity, po_item:mes_customer_purchase_order_items!purchase_order_item_id(purchase_order_id, purchase_order:mes_customer_purchase_orders!purchase_order_id(po_reference)))')
+          .eq('organization_id', organizationId)
+          .eq('status', 'active')
+          .order('remission_date', { ascending: false })
+          .order('id')
+          .range(from, to)),
+        fetchAllRows<InvoiceRow>((from, to) => supabase
+          .from('mes_customer_invoices')
+          .select('id, customer_id, invoice_folio, invoice_date, currency, tax_rate, file_name, file_path, file_type, customer:mes_customers!customer_id(customer_name), items:mes_customer_invoice_items(subtotal, remission_item:mes_customer_remission_items!remission_item_id(remission_id, remission:mes_customer_remissions!remission_id(remission_folio)))')
+          .eq('organization_id', organizationId)
+          .eq('status', 'active')
+          .order('invoice_date', { ascending: false })
+          .order('id')
+          .range(from, to)),
       ]);
-      if (purchaseOrderResult.error) throw new Error(purchaseOrderResult.error.message);
-      setPurchaseOrders((purchaseOrderResult.data ?? []).map((row) => {
-        const items = row.items ?? [];
-        return {
-          id: row.id,
-          customerId: row.customer_id,
-          customerName: single(row.customer)?.customer_name ?? 'Unknown client',
-          poReference: row.po_reference,
-          revisionNumber: row.revision_number,
-          poDate: row.po_date,
-          currency: row.currency,
-          requisitionNumber: row.requisition_number,
-          fileName: row.file_name,
-          filePath: row.file_path,
-          fileType: row.file_type,
-          itemCount: items.length,
-          toolIds: Array.from(new Set(items.flatMap((item) => item.tool_ids ?? []))),
-          total: Math.round(items.reduce((sum, item) => sum + (Number(item.subtotal) || 0), 0) * 100) / 100,
-        };
-      }));
-      const documentsByOrder = new Map<string, OtcOrder['documents']>();
-      documentRows.forEach((row) => {
-        const documents = documentsByOrder.get(row.production_order_id) ?? {};
-        documents[row.stage] = { id: row.id, productionOrderId: row.production_order_id, stage: row.stage, folio: row.folio, fileName: row.file_name, filePath: row.file_path, fileType: row.file_type, uploadedAt: row.uploaded_at, purchaseOrderId: row.purchase_order_id ?? '' };
-        documentsByOrder.set(row.production_order_id, documents);
+      setRegistry({
+        'purchase-order': purchaseOrderRows.map((row) => {
+          const items = row.items ?? [];
+          const customerName = single(row.customer)?.customer_name ?? 'Unknown client';
+          const toolIds = uniqueList(items.flatMap((item) => item.tool_ids ?? []));
+          const total = Math.round(items.reduce((sum, item) => sum + (Number(item.subtotal) || 0), 0) * 100) / 100;
+          return {
+            id: row.id,
+            customerId: row.customer_id,
+            folio: row.po_reference,
+            title: `${row.po_reference}${row.revision_number ? ` · Rev ${row.revision_number}` : ''}`,
+            subtitle: `${customerName} · ${formatCalendarDate(row.po_date)} · ${items.length} ${items.length === 1 ? 'item' : 'items'}`,
+            detail: toolIds.length ? `${toolIds.slice(0, 4).join(', ')}${toolIds.length > 4 ? ` +${toolIds.length - 4}` : ''}` : '',
+            amount: formatMoney(total, row.currency),
+            search: [row.po_reference, row.requisition_number, customerName, ...toolIds],
+            coversIds: [],
+            coversLabels: {},
+            fileName: row.file_name,
+            filePath: row.file_path,
+            fileType: row.file_type,
+          };
+        }),
+        remission: remissionRows.map((row) => {
+          const items = row.items ?? [];
+          const customerName = single(row.customer)?.customer_name ?? 'Unknown client';
+          const coversLabels: Record<string, string> = {};
+          items.forEach((item) => {
+            const poItem = single(item.po_item);
+            if (poItem) coversLabels[poItem.purchase_order_id] = single(poItem.purchase_order)?.po_reference ?? 'PO';
+          });
+          const pieces = items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
+          const references = uniqueList(Object.values(coversLabels));
+          return {
+            id: row.id,
+            customerId: row.customer_id,
+            folio: row.remission_folio,
+            title: row.remission_folio,
+            subtitle: `${customerName} · ${formatCalendarDate(row.remission_date)} · ${items.length} ${items.length === 1 ? 'line' : 'lines'}`,
+            detail: references.length ? `PO ${references.join(', ')}` : '',
+            amount: `${formatQuantity(pieces)} pcs`,
+            search: [row.remission_folio, customerName, ...references],
+            coversIds: Object.keys(coversLabels),
+            coversLabels,
+            fileName: row.file_name,
+            filePath: row.file_path,
+            fileType: row.file_type,
+          };
+        }),
+        invoice: invoiceRows.map((row) => {
+          const items = row.items ?? [];
+          const customerName = single(row.customer)?.customer_name ?? 'Unknown client';
+          const coversLabels: Record<string, string> = {};
+          items.forEach((item) => {
+            const remissionItem = single(item.remission_item);
+            if (remissionItem) coversLabels[remissionItem.remission_id] = single(remissionItem.remission)?.remission_folio ?? 'Remission';
+          });
+          const folios = uniqueList(Object.values(coversLabels));
+          const totals = invoiceTotals(items.map((item) => Number(item.subtotal) || 0), Number(row.tax_rate) || 0);
+          return {
+            id: row.id,
+            customerId: row.customer_id,
+            folio: row.invoice_folio,
+            title: row.invoice_folio,
+            subtitle: `${customerName} · ${formatCalendarDate(row.invoice_date)} · ${items.length} ${items.length === 1 ? 'line' : 'lines'}`,
+            detail: folios.length ? `Remission ${folios.join(', ')}` : '',
+            amount: formatMoney(totals.total, row.currency),
+            search: [row.invoice_folio, customerName, ...folios],
+            coversIds: Object.keys(coversLabels),
+            coversLabels,
+            fileName: row.file_name,
+            filePath: row.file_path,
+            fileType: row.file_type,
+          };
+        }),
       });
-      // One production order can be split across several reception items (and vouchers);
-      // Order-to-Cash tracks the order itself, so its items are folded into a single entry.
-      const ordersById = new Map<string, OtcOrder>();
-      itemRows.forEach((row) => {
-        if (!row.production_order_id) return;
-        const productionOrder = single(row.production_order);
-        const voucher = single(row.voucher);
-        const customerName = single(row.mes_customers)?.customer_name ?? '';
-        const receivedAt = voucher ? voucher.received_at || voucher.created_at : row.created_at;
-        const current = ordersById.get(row.production_order_id);
-        if (current) {
-          current.quantity += Number(row.quantity) || 0;
-          if (row.customer_id && !current.customerIds.includes(row.customer_id)) current.customerIds.push(row.customer_id);
-          if (customerName && !current.customerNames.includes(customerName)) current.customerNames.push(customerName);
-          if (voucher && !current.voucherNumbers.includes(voucher.voucher_number)) current.voucherNumbers.push(voucher.voucher_number);
-          if (receivedAt > current.receivedAt) current.receivedAt = receivedAt;
-          return;
-        }
-        const documents = documentsByOrder.get(row.production_order_id) ?? {};
-        const orderCreatedAt = productionOrder?.created_at || row.created_at;
-        const isLegacy = new Date(orderCreatedAt) < otcStartDate;
-        ordersById.set(row.production_order_id, {
-          productionOrderId: row.production_order_id,
-          orderNumber: productionOrder?.order_number || row.production_order_number || 'Unnumbered order',
-          partNumber: productionOrder?.part_number ?? '',
-          partName: productionOrder?.part_name ?? '',
-          productionStatus: productionOrder?.status ?? '',
-          quantity: Number(row.quantity) || 0,
-          customerIds: row.customer_id ? [row.customer_id] : [],
-          customerNames: customerName ? [customerName] : [],
-          voucherNumbers: voucher ? [voucher.voucher_number] : [],
-          receivedAt,
-          isRework: Boolean(row.is_rework),
-          orderCreatedAt,
-          isLegacy,
-          documents,
-          status: isLegacy ? 'completed' : getStatus(documents),
-        });
-      });
-      const nextOrders = Array.from(ordersById.values()).sort((left, right) => right.receivedAt.localeCompare(left.receivedAt) || right.orderNumber.localeCompare(left.orderNumber));
       setOrders(nextOrders);
       setSelectedId((current) => (nextOrders.some((order) => order.productionOrderId === current) ? current : nextOrders[0]?.productionOrderId ?? ''));
       setError('');
@@ -424,6 +364,8 @@ export function OrderToCashWorkspace({ organizationId, onNavigate }: Props) {
     { table: 'mes_customer_reception_items', filter: `organization_id=eq.${organizationId}` },
     { table: 'mes_production_orders', filter: `organization_id=eq.${organizationId}` },
     { table: 'mes_customer_purchase_orders', filter: `organization_id=eq.${organizationId}` },
+    { table: 'mes_customer_remissions', filter: `organization_id=eq.${organizationId}` },
+    { table: 'mes_customer_invoices', filter: `organization_id=eq.${organizationId}` },
   ]), [organizationId]);
 
   useSupabaseRealtimeRefresh({
@@ -453,144 +395,82 @@ export function OrderToCashWorkspace({ organizationId, onNavigate }: Props) {
   const selected = orders.find((order) => order.productionOrderId === selectedId) ?? null;
 
   React.useEffect(() => {
-    setChangingPo(false);
-    setPoLinkError('');
+    setChangingStage(null);
+    setLinkError(null);
   }, [selectedId]);
 
-  const linkPurchaseOrder = async (order: OtcOrder, purchaseOrder: RegisteredPo) => {
-    const existing = order.documents['purchase-order'];
-    if (poLinking || existing?.purchaseOrderId === purchaseOrder.id) {
-      setChangingPo(false);
+  const linkRegistryDocument = async (order: OtcOrder, stage: DocumentStage, candidate: RegistryCandidate) => {
+    const existing = order.documents[stage];
+    const entry = documentStages.find((item) => item.stage === stage);
+    if (!entry || linkingStage || existing?.registryId === candidate.id) {
+      setChangingStage(null);
       return;
     }
-    setPoLinking(true);
-    setPoLinkError('');
+    setLinkingStage(stage);
+    setLinkError(null);
     try {
-      // Folio and file are copied from the registered PO by the database; they are sent too
+      // Folio and file are copied from the registry by the database; they are sent too
       // because the columns are required.
       const { error: saveError } = await supabase.from('mes_order_to_cash_documents').upsert({
         organization_id: organizationId,
         production_order_id: order.productionOrderId,
-        stage: 'purchase-order',
-        purchase_order_id: purchaseOrder.id,
-        folio: purchaseOrder.poReference,
-        file_name: purchaseOrder.fileName,
-        file_path: purchaseOrder.filePath,
-        file_type: purchaseOrder.fileType,
+        stage,
+        [entry.column]: candidate.id,
+        folio: candidate.folio,
+        file_name: candidate.fileName,
+        file_path: candidate.filePath,
+        file_type: candidate.fileType,
       }, { onConflict: 'production_order_id,stage' });
       if (saveError) throw saveError;
-      // A PO uploaded directly in OTC (before the registry) owned its file; a registered PO's
-      // file belongs to the registry and must stay.
-      if (existing && !existing.purchaseOrderId) {
+      // A document uploaded directly in OTC (before the registries) owned its file; a
+      // registry record's file belongs to the registry and must stay.
+      if (existing && !existing.registryId) {
         await supabase.storage.from(documentsBucket).remove([existing.filePath]);
       }
-      setChangingPo(false);
+      setChangingStage(null);
       await loadOrders();
     } catch (saveError) {
-      console.error('Unable to link purchase order', saveError);
-      setPoLinkError(saveError instanceof Error ? saveError.message : typeof saveError === 'object' && saveError && 'message' in saveError ? String(saveError.message) : 'Unable to link the purchase order.');
+      console.error(`Unable to link ${stage}`, saveError);
+      setLinkError({ stage, message: errorMessage(saveError, `Unable to link the ${stageLabel(stage).toLowerCase()}.`) });
     } finally {
-      setPoLinking(false);
+      setLinkingStage(null);
     }
   };
 
-  const renderPurchaseOrderPicker = (order: OtcOrder) => {
-    const candidates = purchaseOrders.filter((purchaseOrder) => order.customerIds.includes(purchaseOrder.customerId));
+  const renderRegistryPicker = (order: OtcOrder, stage: DocumentStage) => {
+    const entry = documentStages.find((item) => item.stage === stage)!;
+    const candidates = registry[stage].filter((candidate) => order.customerIds.includes(candidate.customerId));
     const clientName = order.customerNames.join(', ') || 'this client';
     if (!candidates.length) {
       return (
         <div className="otc-po-picker-none">
-          <p className="otc-document-hint">No active purchase orders for {clientName}.</p>
-          <button type="button" onClick={() => onNavigate('/workspace/manufacturing-ops/intelligence/otc/purchase-orders')}><Plus size={15} /> Register Purchase Order</button>
+          <p className="otc-document-hint">No active {entry.label.toLowerCase()}s for {clientName}.</p>
+          <button type="button" onClick={() => onNavigate(entry.registryPath)}><Plus size={15} /> Register {entry.label}</button>
         </div>
       );
     }
+    const required = previousStage(stage);
     return (
-      <PurchaseOrderPicker
+      <RegistryPicker
         candidates={candidates}
-        currentId={order.documents['purchase-order']?.purchaseOrderId ?? ''}
-        disabled={poLinking}
-        onPick={(purchaseOrder) => void linkPurchaseOrder(order, purchaseOrder)}
+        currentId={order.documents[stage]?.registryId ?? ''}
+        matchId={required ? order.documents[required]?.registryId ?? '' : ''}
+        matchVerb={stage === 'invoice' ? 'Bills' : 'Delivers'}
+        placeholder={entry.placeholder}
+        disabled={Boolean(linkingStage)}
+        onPick={(candidate) => void linkRegistryDocument(order, stage, candidate)}
       />
     );
   };
 
-  const openLink = (order: OtcOrder, stage: DocumentStage) => {
-    const existing = order.documents[stage];
-    setLinkTarget({ order, stage, existing });
-    setLinkFolio(existing?.folio ?? '');
-    setLinkFile(null);
-    setLinkError('');
-  };
-
-  const closeLink = () => {
-    if (linkSaving) return;
-    setLinkTarget(null);
-  };
-
-  const saveLink = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!linkTarget || linkSaving) return;
-    const folio = linkFolio.trim();
-    const { order, stage, existing } = linkTarget;
-    if (!folio) {
-      setLinkError(`Enter the ${stageLabel(stage).toLowerCase()} folio.`);
-      return;
-    }
-    if (!linkFile && !existing) {
-      setLinkError('Attach the document file.');
-      return;
-    }
-    if (linkFile && !documentExtensions.test(linkFile.name) && !documentMimeTypes.has(linkFile.type.toLowerCase())) {
-      setLinkError('The document must be a PDF or a photo.');
-      return;
-    }
-    setLinkSaving(true);
-    setLinkError('');
-    let uploadedPath = '';
-    try {
-      let file = existing ? { name: existing.fileName, path: existing.filePath, type: existing.fileType } : null;
-      if (linkFile) {
-        const safeFileName = linkFile.name.replace(/[^a-zA-Z0-9._-]/g, '-');
-        uploadedPath = `${organizationId}/${order.productionOrderId}/${stage}/${Date.now()}-${safeFileName}`;
-        const fileType = getDocumentMimeType(linkFile);
-        const { error: uploadError } = await supabase.storage.from(documentsBucket).upload(uploadedPath, linkFile, { contentType: fileType });
-        if (uploadError) throw uploadError;
-        file = { name: linkFile.name, path: uploadedPath, type: fileType };
-      }
-      if (!file) throw new Error('Attach the document file.');
-      const { error: saveError } = await supabase.from('mes_order_to_cash_documents').upsert({
-        organization_id: organizationId,
-        production_order_id: order.productionOrderId,
-        stage,
-        folio,
-        file_name: file.name,
-        file_path: file.path,
-        file_type: file.type,
-      }, { onConflict: 'production_order_id,stage' });
-      if (saveError) throw saveError;
-      if (existing && uploadedPath && existing.filePath !== uploadedPath) {
-        await supabase.storage.from(documentsBucket).remove([existing.filePath]);
-      }
-      setLinkTarget(null);
-      await loadOrders();
-    } catch (saveError) {
-      if (uploadedPath) await supabase.storage.from(documentsBucket).remove([uploadedPath]);
-      console.error('Unable to link Order-to-Cash document', saveError);
-      setLinkError(saveError instanceof Error ? saveError.message : 'Unable to link the document.');
-    } finally {
-      setLinkSaving(false);
-    }
-  };
-
   const openPreview = async (linkedDocument: OtcDocument) => {
     setPreviewError('');
-    const { data, error: signedUrlError } = await supabase.storage.from(documentsBucket).createSignedUrl(linkedDocument.filePath, 60 * 10);
+    const { data, error: signedUrlError } = await supabase.storage.from(documentsBucket).createSignedUrl(linkedDocument.filePath, signedUrlSeconds);
     if (signedUrlError || !data?.signedUrl) {
       setPreviewError(signedUrlError?.message || 'This document could not be opened.');
       return;
     }
-    setPreview({ title: linkedDocument.fileName, subtitle: `${stageLabel(linkedDocument.stage)} · Folio ${linkedDocument.folio}`, url: data.signedUrl, isPdf: isPdfDocument(linkedDocument) });
+    setPreview({ title: linkedDocument.fileName, subtitle: `${stageLabel(linkedDocument.stage)} · Folio ${linkedDocument.folio}`, url: data.signedUrl, isPdf: isPdfFile(linkedDocument) });
   };
 
   return (
@@ -698,6 +578,7 @@ export function OrderToCashWorkspace({ organizationId, onNavigate }: Props) {
                   const required = previousStage(entry.stage);
                   const locked = Boolean(required && !selected.documents[required]);
                   const notRequired = !linkedDocument && selected.isLegacy;
+                  const picking = !notRequired && !locked && (!linkedDocument || changingStage === entry.stage);
                   return (
                     <article className={`otc-document-card ${linkedDocument ? 'linked' : notRequired ? 'legacy' : locked ? 'locked' : 'pending'}`} key={entry.stage}>
                       <header>
@@ -705,39 +586,30 @@ export function OrderToCashWorkspace({ organizationId, onNavigate }: Props) {
                         <div><small>Step {index + 2}</small><strong>{entry.label}</strong></div>
                         <em>{linkedDocument ? 'Linked' : notRequired ? 'Not required' : locked ? 'Locked' : 'Pending'}</em>
                       </header>
-                      {entry.stage === 'purchase-order' && !notRequired && (!linkedDocument || changingPo) ? (
+                      {picking ? (
                         <>
                           <p className="otc-document-hint">{entry.description}</p>
-                          {renderPurchaseOrderPicker(selected)}
-                          {poLinking ? <p className="otc-document-hint">Linking purchase order...</p> : null}
-                          {poLinkError ? <div className="otc-feedback error" role="alert">{poLinkError}</div> : null}
-                          {linkedDocument ? <footer><button type="button" onClick={() => { setChangingPo(false); setPoLinkError(''); }} disabled={poLinking}>Cancel</button></footer> : null}
+                          {renderRegistryPicker(selected, entry.stage)}
+                          {linkingStage === entry.stage ? <p className="otc-document-hint">Linking {entry.label.toLowerCase()}...</p> : null}
+                          {linkError?.stage === entry.stage ? <div className="otc-feedback error" role="alert">{linkError.message}</div> : null}
+                          {linkedDocument ? <footer><button type="button" onClick={() => { setChangingStage(null); setLinkError(null); }} disabled={Boolean(linkingStage)}>Cancel</button></footer> : null}
                         </>
                       ) : linkedDocument ? (
                         <>
-                          <div className="otc-document-folio"><small>{entry.folioLabel}</small><strong>{linkedDocument.folio}</strong>{linkedDocument.purchaseOrderId ? <em className="otc-po-registry-tag"><ShoppingCart size={12} /> Purchase Orders registry</em> : null}</div>
+                          <div className="otc-document-folio"><small>{entry.folioLabel}</small><strong>{linkedDocument.folio}</strong>{linkedDocument.registryId ? <em className="otc-po-registry-tag"><FileCheck2 size={12} /> {entry.label}s registry</em> : null}</div>
                           <button type="button" className="otc-document-file" onClick={() => void openPreview(linkedDocument)} title={`View ${linkedDocument.fileName}`}>
-                            {isPdfDocument(linkedDocument) ? <FileText size={18} /> : <ImagePlus size={18} />}
+                            {isPdfFile(linkedDocument) ? <FileText size={18} /> : <ImagePlus size={18} />}
                             <span><strong>{linkedDocument.fileName}</strong><small>Uploaded {formatTimestamp(linkedDocument.uploadedAt)}</small></span>
                           </button>
                           <footer>
                             <button type="button" className="primary" onClick={() => void openPreview(linkedDocument)}><Eye size={15} /> View document</button>
-                            {entry.stage === 'purchase-order'
-                              ? <button type="button" onClick={() => { setChangingPo(true); setPoLinkError(''); }}><RefreshCw size={15} /> Change PO</button>
-                              : <button type="button" onClick={() => openLink(selected, entry.stage)}><RefreshCw size={15} /> Replace</button>}
+                            <button type="button" onClick={() => { setChangingStage(entry.stage); setLinkError(null); }}><RefreshCw size={15} /> Change {entry.stage === 'purchase-order' ? 'PO' : entry.label.toLowerCase()}</button>
                           </footer>
                         </>
                       ) : notRequired ? (
                         <p className="otc-document-hint"><History size={15} /> Processed before OTC. No {entry.label.toLowerCase()} is required in the system.</p>
-                      ) : locked ? (
-                        <p className="otc-document-hint"><LockKeyhole size={15} /> Link the {stageLabel(required as DocumentStage).toLowerCase()} first.</p>
                       ) : (
-                        <>
-                          <p className="otc-document-hint">{entry.description}</p>
-                          <footer>
-                            <button type="button" className="primary" onClick={() => openLink(selected, entry.stage)}><Upload size={15} /> Link {entry.label}</button>
-                          </footer>
-                        </>
+                        <p className="otc-document-hint"><LockKeyhole size={15} /> Link the {stageLabel(required as DocumentStage).toLowerCase()} first.</p>
                       )}
                     </article>
                   );
@@ -755,59 +627,7 @@ export function OrderToCashWorkspace({ organizationId, onNavigate }: Props) {
         </section>
       </div>
 
-      {linkTarget ? createPortal((
-        <div className="mes-modal-backdrop otc-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeLink(); }}>
-          <section className="mes-order-modal otc-link-modal" role="dialog" aria-modal="true" aria-labelledby="otc-link-title">
-            <button className="supplier-modal-close" type="button" onClick={closeLink} disabled={linkSaving} aria-label="Close"><X size={18} /></button>
-            <form onSubmit={saveLink}>
-              <span className="otc-link-icon"><Upload size={24} /></span>
-              <p className="eyebrow">Production Order {linkTarget.order.orderNumber}</p>
-              <h3 id="otc-link-title">{linkTarget.existing ? `Replace ${stageLabel(linkTarget.stage)}` : `Link ${stageLabel(linkTarget.stage)}`}</h3>
-              <p>{documentStages.find((entry) => entry.stage === linkTarget.stage)?.description}</p>
-              <label className="otc-link-field">
-                <span>{documentStages.find((entry) => entry.stage === linkTarget.stage)?.folioLabel} <b>*</b></span>
-                <input value={linkFolio} onChange={(event) => setLinkFolio(event.target.value)} placeholder="Document folio" autoFocus disabled={linkSaving} />
-              </label>
-              <label className={`otc-link-file${linkFile ? ' selected' : ''}`}>
-                <span>Document file {linkTarget.existing ? null : <b>*</b>}</span>
-                <span className="otc-link-file-drop">
-                  {linkFile ? <Check size={16} /> : <Upload size={16} />}
-                  <span>{linkFile?.name || (linkTarget.existing ? `Keep ${linkTarget.existing.fileName} or choose a new PDF or photo` : 'Choose a PDF or photo')}</span>
-                </span>
-                <input type="file" accept={documentAccept} disabled={linkSaving} onChange={(event) => { setLinkFile(event.target.files?.[0] ?? null); setLinkError(''); }} />
-              </label>
-              {linkError ? <div className="otc-feedback error" role="alert">{linkError}</div> : null}
-              <div className="otc-link-actions">
-                <button type="button" className="secondary" onClick={closeLink} disabled={linkSaving}>Cancel</button>
-                <button type="submit" disabled={linkSaving || !linkFolio.trim() || (!linkFile && !linkTarget.existing)}>{linkSaving ? 'Saving...' : linkTarget.existing ? 'Save changes' : `Link ${stageLabel(linkTarget.stage)}`}</button>
-              </div>
-            </form>
-          </section>
-        </div>
-      ), document.body) : null}
-
-      {preview ? createPortal((
-        <div className="supplier-modal-backdrop otc-preview-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setPreview(null); }}>
-          <div className="supplier-modal production-order-preview-modal otc-preview-modal" role="dialog" aria-modal="true" aria-labelledby="otc-preview-title">
-            <button className="supplier-modal-close" type="button" onClick={() => setPreview(null)} aria-label="Close document preview"><X size={18} /></button>
-            <div>
-              <div className="supplier-modal-header">
-                <span>{preview.subtitle}</span>
-                <strong id="otc-preview-title">{preview.title}</strong>
-              </div>
-              <div className={`supplier-document-preview production-order-preview-frame ${preview.isPdf ? 'pdf' : 'image'}`}>
-                {preview.isPdf
-                  ? <iframe src={`${preview.url}#toolbar=1&navpanes=0&scrollbar=1&view=FitH`} title={`Preview ${preview.title}`} />
-                  : <img src={preview.url} alt={preview.title} draggable={false} />}
-              </div>
-              <div className="supplier-modal-actions">
-                <a className="otc-preview-download" href={preview.url} target="_blank" rel="noreferrer"><Download size={15} /> Open in new tab</a>
-                <button type="button" onClick={() => setPreview(null)}>Close</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      ), document.body) : null}
+      {preview ? <DocumentPreviewModal subtitle={preview.subtitle} title={preview.title} url={preview.url} isPdf={preview.isPdf} onClose={() => setPreview(null)} /> : null}
     </section>
   );
 }

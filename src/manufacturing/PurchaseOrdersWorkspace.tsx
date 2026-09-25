@@ -3,10 +3,11 @@ import { createPortal } from 'react-dom';
 import { Archive, ArchiveRestore, ArrowLeft, CalendarDays, Check, Download, FileText, Maximize2, Pencil, Plus, RefreshCw, Search, ShoppingCart, Trash2, Upload, Users, X } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { useSupabaseRealtimeRefresh } from '../lib/useSupabaseRealtimeRefresh';
+import { assignUsageToLines, sumActiveQuantities } from './otcBalances';
+import { currencies, documentAccept, documentsBucket, DocumentFrame, errorMessage, fetchAllRows, formatCalendarDate as formatDate, formatMoney, formatQuantity, getDocumentMimeType, isAcceptedDocument, isPdfFile, parseNumber, signedUrlSeconds, single, todayIso, type Currency } from './otcShared';
 import './orderToCash.css';
 
 type PoStatus = 'active' | 'closed';
-type Currency = 'USD' | 'MXN' | 'EUR';
 
 type PoItem = {
   id: string;
@@ -17,6 +18,8 @@ type PoItem = {
   unitPrice: number;
   subtotal: number;
   used: number;
+  remissioned: number;
+  invoiced: number;
 };
 
 type PurchaseOrder = {
@@ -42,8 +45,11 @@ type PurchaseOrder = {
   items: PoItem[];
   total: number;
   productionOrders: string[];
+  remissions: string[];
   usedPieces: number;
   unmatchedPieces: number;
+  remissionedPieces: number;
+  invoicedPieces: number;
 };
 
 type PurchaseOrderRow = {
@@ -90,9 +96,23 @@ type UsageRow = {
   pieces: number;
 };
 
+type RemissionItemRow = {
+  id: string;
+  purchase_order_item_id: string;
+  quantity: number | string;
+  remission: { remission_folio: string; status: string } | Array<{ remission_folio: string; status: string }> | null;
+};
+
+type InvoiceItemRow = {
+  remission_item_id: string;
+  quantity: number | string;
+  invoice: { status: string } | Array<{ status: string }> | null;
+};
+
 type Customer = { id: string; name: string; paymentTerms: string };
 
-type FormItem = { key: string; description: string; toolIds: string[]; toolDraft: string; quantity: string; unitPrice: string };
+// id is the saved line's id; the database keeps it (and the remissions covering it) on save.
+type FormItem = { key: string; id: string; description: string; toolIds: string[]; toolDraft: string; quantity: string; unitPrice: string; remissioned: number };
 
 type PoForm = {
   customerId: string;
@@ -116,58 +136,10 @@ type Props = {
   onNavigate: (path: string) => void;
 };
 
-const documentsBucket = 'mes-order-to-cash-documents';
-const documentAccept = 'application/pdf,.pdf,image/*';
-const documentExtensions = /\.(?:pdf|jpe?g|png|webp|heic|heif|avif)$/i;
-const documentMimeTypes = new Set(['application/pdf', 'image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/heic', 'image/heif', 'image/avif']);
-const currencies: Currency[] = ['USD', 'MXN', 'EUR'];
-const rowPageSize = 1000;
-const signedUrlSeconds = 60 * 60;
 const tabs: Array<{ value: PoStatus; label: string }> = [
   { value: 'active', label: 'Active' },
   { value: 'closed', label: 'Closed' },
 ];
-
-function single<Row>(value: Row | Row[] | null): Row | null {
-  return Array.isArray(value) ? value[0] ?? null : value;
-}
-
-function isPdfFile(file: { fileType: string; fileName: string }) {
-  return file.fileType === 'application/pdf' || file.fileName.toLowerCase().endsWith('.pdf');
-}
-
-function getDocumentMimeType(file: File) {
-  if (file.type && file.type !== 'application/octet-stream') return file.type.toLowerCase();
-  const extension = file.name.toLowerCase().split('.').pop();
-  if (extension === 'pdf') return 'application/pdf';
-  if (extension === 'jpg' || extension === 'jpeg') return 'image/jpeg';
-  return extension ? `image/${extension}` : 'image/jpeg';
-}
-
-// PO dates are calendar days; parsing them as local dates keeps them from shifting a day.
-function formatDate(value: string) {
-  if (!value) return 'Not specified';
-  const [year, month, day] = value.slice(0, 10).split('-').map(Number);
-  return new Date(year, month - 1, day).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-}
-
-function formatMoney(value: number, currency: Currency) {
-  return `${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
-}
-
-function formatQuantity(value: number) {
-  return value.toLocaleString('en-US', { maximumFractionDigits: 3 });
-}
-
-function todayIso() {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-}
-
-function parseNumber(value: string) {
-  const parsed = Number(value.replace(/,/g, '').trim());
-  return Number.isFinite(parsed) ? parsed : NaN;
-}
 
 function splitToolIds(value: string) {
   return value.split(/[\s,;]+/).map((entry) => entry.trim()).filter(Boolean);
@@ -178,7 +150,7 @@ function hasToolId(list: string[], toolId: string) {
 }
 
 function newFormItem(): FormItem {
-  return { key: crypto.randomUUID(), description: '', toolIds: [], toolDraft: '', quantity: '1', unitPrice: '' };
+  return { key: crypto.randomUUID(), id: '', description: '', toolIds: [], toolDraft: '', quantity: '1', unitPrice: '', remissioned: 0 };
 }
 
 function emptyForm(): PoForm {
@@ -198,7 +170,7 @@ function formFromPurchaseOrder(order: PurchaseOrder): PoForm {
     requisitionNumber: order.requisitionNumber,
     paymentTerms: order.paymentTerms,
     notes: order.notes,
-    items: order.items.map((item) => ({ key: item.id, description: item.description, toolIds: [...item.toolIds], toolDraft: '', quantity: String(item.quantity), unitPrice: String(item.unitPrice) })),
+    items: order.items.map((item) => ({ key: item.id, id: item.id, description: item.description, toolIds: [...item.toolIds], toolDraft: '', quantity: String(item.quantity), unitPrice: String(item.unitPrice), remissioned: item.remissioned })),
   };
 }
 
@@ -212,23 +184,6 @@ function itemSubtotal(item: FormItem) {
   const quantity = parseNumber(item.quantity);
   const unitPrice = parseNumber(item.unitPrice);
   return Number.isFinite(quantity) && Number.isFinite(unitPrice) ? Math.round(quantity * unitPrice * 100) / 100 : 0;
-}
-
-async function fetchAllRows<Row>(request: (from: number, to: number) => PromiseLike<{ data: Row[] | null; error: { message: string } | null }>) {
-  const rows: Row[] = [];
-  for (let from = 0; ; from += rowPageSize) {
-    const { data, error } = await request(from, from + rowPageSize - 1);
-    if (error) throw new Error(error.message);
-    const page = data ?? [];
-    rows.push(...page);
-    if (page.length < rowPageSize) return rows;
-  }
-}
-
-function DocumentFrame({ url, title, isPdf }: { url: string; title: string; isPdf: boolean }) {
-  return isPdf
-    ? <iframe src={`${url}#toolbar=1&navpanes=0&scrollbar=1&view=FitH`} title={title} />
-    : <img src={url} alt={title} draggable={false} />;
 }
 
 export function PurchaseOrdersWorkspace({ organizationId, onNavigate }: Props) {
@@ -257,7 +212,7 @@ export function PurchaseOrdersWorkspace({ organizationId, onNavigate }: Props) {
     if (!organizationId) return;
     setLoading(true);
     try {
-      const [orderRows, itemRows, linkedRows, usageRows, customerResult, toolResult] = await Promise.all([
+      const [orderRows, itemRows, linkedRows, usageRows, remissionItemRows, invoiceItemRows, customerResult, toolResult] = await Promise.all([
         fetchAllRows<PurchaseOrderRow>((from, to) => supabase
           .from('mes_customer_purchase_orders')
           .select('id, customer_id, po_reference, revision_number, po_date, expiration_date, currency, buyer_name, buyer_email, requisition_number, payment_terms, notes, status, closed_at, file_name, file_path, file_type, created_at, customer:mes_customers!customer_id(customer_name)')
@@ -286,14 +241,40 @@ export function PurchaseOrdersWorkspace({ organizationId, onNavigate }: Props) {
           .order('purchase_order_id')
           .order('tool_id')
           .range(from, to)),
+        fetchAllRows<RemissionItemRow>((from, to) => supabase
+          .from('mes_customer_remission_items')
+          .select('id, purchase_order_item_id, quantity, remission:mes_customer_remissions!remission_id(remission_folio, status)')
+          .eq('organization_id', organizationId)
+          .order('id')
+          .range(from, to)),
+        fetchAllRows<InvoiceItemRow>((from, to) => supabase
+          .from('mes_customer_invoice_items')
+          .select('remission_item_id, quantity, invoice:mes_customer_invoices!invoice_id(status)')
+          .eq('organization_id', organizationId)
+          .order('id')
+          .range(from, to)),
         supabase.from('mes_customers').select('id, customer_name, payment_terms, status').eq('organization_id', organizationId).order('customer_name'),
         supabase.from('mes_customer_tool_ids').select('tool_id').eq('organization_id', organizationId).order('tool_id'),
       ]);
       if (customerResult.error) throw new Error(customerResult.error.message);
+      // Only active remissions and active invoices count toward a line.
+      const activeRemissionItems = remissionItemRows.map((row) => ({ ...row, quantity: Number(row.quantity) || 0, active: single(row.remission)?.status === 'active' }));
+      const remissionedByItem = sumActiveQuantities(activeRemissionItems, (row) => row.purchase_order_item_id, (row) => row.active);
+      const poItemByRemissionItem = new Map(activeRemissionItems.map((row) => [row.id, row.purchase_order_item_id]));
+      const invoicedByItem = sumActiveQuantities(
+        invoiceItemRows.map((row) => ({ poItemId: poItemByRemissionItem.get(row.remission_item_id) ?? '', quantity: Number(row.quantity) || 0, active: single(row.invoice)?.status === 'active' })),
+        (row) => row.poItemId,
+        (row) => row.active,
+      );
+      const remissionsByItem = new Map<string, string[]>();
+      activeRemissionItems.forEach((row) => {
+        const folio = single(row.remission)?.remission_folio;
+        if (row.active && folio) remissionsByItem.set(row.purchase_order_item_id, [...(remissionsByItem.get(row.purchase_order_item_id) ?? []), folio]);
+      });
       const itemsByOrder = new Map<string, PoItem[]>();
       itemRows.forEach((row) => {
         const items = itemsByOrder.get(row.purchase_order_id) ?? [];
-        items.push({ id: row.id, lineNumber: row.line_number, description: row.description, toolIds: row.tool_ids ?? [], quantity: Number(row.quantity) || 0, unitPrice: Number(row.unit_price) || 0, subtotal: Number(row.subtotal) || 0, used: 0 });
+        items.push({ id: row.id, lineNumber: row.line_number, description: row.description, toolIds: row.tool_ids ?? [], quantity: Number(row.quantity) || 0, unitPrice: Number(row.unit_price) || 0, subtotal: Number(row.subtotal) || 0, used: 0, remissioned: remissionedByItem.get(row.id) ?? 0, invoiced: invoicedByItem.get(row.id) ?? 0 });
         itemsByOrder.set(row.purchase_order_id, items);
       });
       const productionOrdersByPo = new Map<string, string[]>();
@@ -306,16 +287,8 @@ export function PurchaseOrdersWorkspace({ organizationId, onNavigate }: Props) {
       usageRows.forEach((row) => usageByPo.set(row.purchase_order_id, [...(usageByPo.get(row.purchase_order_id) ?? []), row]));
       const nextOrders = orderRows.map((row): PurchaseOrder => {
         const items = itemsByOrder.get(row.id) ?? [];
-        // Each piece of a linked production order uses the first line that lists its Tool ID;
-        // pieces whose Tool ID is on no line are reported apart instead of being guessed.
-        let unmatchedPieces = 0;
-        (usageByPo.get(row.id) ?? []).forEach((usage) => {
-          const pieces = Number(usage.pieces) || 0;
-          const toolId = usage.tool_id?.toLowerCase();
-          const item = toolId ? items.find((entry) => entry.toolIds.some((candidate) => candidate.toLowerCase() === toolId)) : undefined;
-          if (item) item.used += pieces;
-          else unmatchedPieces += pieces;
-        });
+        const usage = assignUsageToLines(items, (usageByPo.get(row.id) ?? []).map((entry) => ({ toolId: entry.tool_id, pieces: entry.pieces })));
+        items.forEach((item, index) => { item.used = usage.used[index]; });
         return {
           id: row.id,
           customerId: row.customer_id,
@@ -339,8 +312,11 @@ export function PurchaseOrdersWorkspace({ organizationId, onNavigate }: Props) {
           items,
           total: Math.round(items.reduce((sum, item) => sum + item.subtotal, 0) * 100) / 100,
           productionOrders: (productionOrdersByPo.get(row.id) ?? []).sort((left, right) => right.localeCompare(left, undefined, { numeric: true })),
+          remissions: Array.from(new Set(items.flatMap((item) => remissionsByItem.get(item.id) ?? []))).sort((left, right) => right.localeCompare(left, undefined, { numeric: true })),
           usedPieces: items.reduce((sum, item) => sum + item.used, 0),
-          unmatchedPieces,
+          unmatchedPieces: usage.unmatched,
+          remissionedPieces: items.reduce((sum, item) => sum + item.remissioned, 0),
+          invoicedPieces: items.reduce((sum, item) => sum + item.invoiced, 0),
         };
       });
       setOrders(nextOrders);
@@ -367,6 +343,10 @@ export function PurchaseOrdersWorkspace({ organizationId, onNavigate }: Props) {
     { table: 'mes_customer_purchase_order_items', filter: `organization_id=eq.${organizationId}` },
     { table: 'mes_order_to_cash_documents', filter: `organization_id=eq.${organizationId}` },
     { table: 'mes_production_serials', filter: `organization_id=eq.${organizationId}` },
+    { table: 'mes_customer_remissions', filter: `organization_id=eq.${organizationId}` },
+    { table: 'mes_customer_remission_items', filter: `organization_id=eq.${organizationId}` },
+    { table: 'mes_customer_invoices', filter: `organization_id=eq.${organizationId}` },
+    { table: 'mes_customer_invoice_items', filter: `organization_id=eq.${organizationId}` },
   ]), [organizationId]);
 
   useSupabaseRealtimeRefresh({
@@ -501,14 +481,15 @@ export function PurchaseOrdersWorkspace({ organizationId, onNavigate }: Props) {
     if (form.expirationDate && form.expirationDate < form.poDate) return setFormError('The expiration date cannot be before the PO date.');
     const duplicate = orders.find((order) => order.id !== editing?.id && order.customerId === form.customerId && order.poReference.toLowerCase() === poReference.toLowerCase());
     if (duplicate) return setFormError(`This client already has a PO with reference ${duplicate.poReference}.`);
-    const items = form.items.map((item) => ({ description: item.description.trim(), tool_ids: itemToolIds(item), quantity: parseNumber(item.quantity), unit_price: parseNumber(item.unitPrice) }));
+    const items = form.items.map((item) => ({ id: item.id || undefined, description: item.description.trim(), tool_ids: itemToolIds(item), quantity: parseNumber(item.quantity), unit_price: parseNumber(item.unitPrice) }));
     for (const [index, item] of items.entries()) {
       if (!item.description && !item.tool_ids.length) return setFormError(`Item ${index + 1} needs a description or at least one Tool ID.`);
       if (!(item.quantity > 0)) return setFormError(`Item ${index + 1} needs a quantity greater than zero.`);
+      if (item.quantity < form.items[index].remissioned) return setFormError(`Item ${index + 1} cannot go below the ${formatQuantity(form.items[index].remissioned)} pieces already remissioned.`);
       if (!(item.unit_price >= 0)) return setFormError(`Item ${index + 1} needs a valid unit price.`);
     }
     if (!formFile && !editing) return setFormError('Attach the purchase order file.');
-    if (formFile && !documentExtensions.test(formFile.name) && !documentMimeTypes.has(formFile.type.toLowerCase())) return setFormError('The purchase order file must be a PDF or a photo.');
+    if (formFile && !isAcceptedDocument(formFile)) return setFormError('The purchase order file must be a PDF or a photo.');
 
     setFormSaving(true);
     setFormError('');
@@ -561,7 +542,7 @@ export function PurchaseOrdersWorkspace({ organizationId, onNavigate }: Props) {
     } catch (saveError) {
       if (uploadedPath) await supabase.storage.from(documentsBucket).remove([uploadedPath]);
       console.error('Unable to save purchase order', saveError);
-      const message = saveError instanceof Error ? saveError.message : typeof saveError === 'object' && saveError && 'message' in saveError ? String(saveError.message) : 'Unable to save the purchase order.';
+      const message = errorMessage(saveError, 'Unable to save the purchase order.');
       setFormError(message.includes('mes_customer_purchase_orders_reference_uidx') ? 'This client already has a PO with that reference.' : message);
     } finally {
       setFormSaving(false);
@@ -692,6 +673,8 @@ export function PurchaseOrdersWorkspace({ organizationId, onNavigate }: Props) {
                 <span><b>Requisition</b>{selected.requisitionNumber || '—'}</span>
                 <span><b>Payment terms</b>{selected.paymentTerms || '—'}</span>
                 <span><b>Pieces used</b>{formatQuantity(selected.usedPieces)} of {formatQuantity(selectedQuantity)}</span>
+                <span><b>Remissioned</b>{formatQuantity(selected.remissionedPieces)} of {formatQuantity(selectedQuantity)}</span>
+                <span><b>Invoiced</b>{formatQuantity(selected.invoicedPieces)} of {formatQuantity(selectedQuantity)}</span>
                 <span><b>Tool IDs covered</b>{selectedToolCount}</span>
               </div>
               <div className="otc-po-linked-orders">
@@ -699,6 +682,12 @@ export function PurchaseOrdersWorkspace({ organizationId, onNavigate }: Props) {
                 {selected.productionOrders.length
                   ? <span className="otc-tool-chips">{selected.productionOrders.map((orderNumber) => <em key={orderNumber}>{orderNumber}</em>)}</span>
                   : <small>Not linked to any production order yet. Link it from step 2 of Order-to-Cash.</small>}
+              </div>
+              <div className="otc-po-linked-orders">
+                <b>Remissions</b>
+                {selected.remissions.length
+                  ? <span className="otc-tool-chips">{selected.remissions.map((folio) => <em key={folio}>{folio}</em>)}</span>
+                  : <small>No active remission delivers this PO yet.</small>}
               </div>
               {selected.unmatchedPieces ? (
                 <div className="otc-po-unmatched" role="note">
@@ -713,7 +702,7 @@ export function PurchaseOrdersWorkspace({ organizationId, onNavigate }: Props) {
                   <div className="otc-po-table-wrap">
                     <table>
                       <thead>
-                        <tr><th>#</th><th>Item</th><th className="numeric">Qty</th><th className="numeric" title="Pieces of the linked production orders that used this line">Used</th><th className="numeric">Unit price</th><th className="numeric">Subtotal</th></tr>
+                        <tr><th>#</th><th>Item</th><th className="numeric">Qty</th><th className="numeric" title="Pieces of the linked production orders that used this line">Used</th><th className="numeric" title="Pieces delivered by active remissions">Remissioned</th><th className="numeric" title="Pieces billed by active invoices">Invoiced</th><th className="numeric">Unit price</th><th className="numeric">Subtotal</th></tr>
                       </thead>
                       <tbody>
                         {selected.items.map((item) => (
@@ -729,13 +718,15 @@ export function PurchaseOrdersWorkspace({ organizationId, onNavigate }: Props) {
                                 {formatQuantity(item.used)}
                               </span>
                             </td>
+                            <td className="numeric"><span className={`otc-po-used ${item.remissioned >= item.quantity ? 'full' : item.remissioned > 0 ? 'partial' : ''}`} title={`${formatQuantity(Math.max(item.quantity - item.remissioned, 0))} to remission`}>{formatQuantity(item.remissioned)}</span></td>
+                            <td className="numeric"><span className={`otc-po-used ${item.remissioned > 0 && item.invoiced >= item.remissioned ? 'full' : item.invoiced > 0 ? 'partial' : ''}`} title={`${formatQuantity(Math.max(item.remissioned - item.invoiced, 0))} remissioned and not invoiced`}>{formatQuantity(item.invoiced)}</span></td>
                             <td className="numeric">{formatMoney(item.unitPrice, selected.currency)}</td>
                             <td className="numeric"><strong>{formatMoney(item.subtotal, selected.currency)}</strong></td>
                           </tr>
                         ))}
                       </tbody>
                       <tfoot>
-                        <tr><td colSpan={2}>Total</td><td className="numeric">{formatQuantity(selectedQuantity)}</td><td className="numeric">{formatQuantity(selected.usedPieces)}</td><td /><td className="numeric">{formatMoney(selected.total, selected.currency)}</td></tr>
+                        <tr><td colSpan={2}>Total</td><td className="numeric">{formatQuantity(selectedQuantity)}</td><td className="numeric">{formatQuantity(selected.usedPieces)}</td><td className="numeric">{formatQuantity(selected.remissionedPieces)}</td><td className="numeric">{formatQuantity(selected.invoicedPieces)}</td><td /><td className="numeric">{formatMoney(selected.total, selected.currency)}</td></tr>
                       </tfoot>
                     </table>
                   </div>
@@ -864,7 +855,7 @@ export function PurchaseOrdersWorkspace({ organizationId, onNavigate }: Props) {
                             <input inputMode="decimal" value={item.unitPrice} onChange={(event) => updateItem(item.key, { unitPrice: event.target.value })} placeholder="0.00" disabled={formSaving} />
                           </label>
                           <span className="otc-po-subtotal"><small>Subtotal</small>{formatMoney(itemSubtotal(item), form.currency)}</span>
-                          <button type="button" className="otc-po-remove" onClick={() => removeItem(item.key)} disabled={formSaving || form.items.length === 1} aria-label={`Remove item ${index + 1}`}><Trash2 size={15} /></button>
+                          <button type="button" className="otc-po-remove" onClick={() => removeItem(item.key)} disabled={formSaving || form.items.length === 1 || item.remissioned > 0} title={item.remissioned > 0 ? `${formatQuantity(item.remissioned)} pieces of this line are remissioned` : undefined} aria-label={`Remove item ${index + 1}`}><Trash2 size={15} /></button>
                           <div className="otc-link-field tools">
                             <span>Tool IDs covered</span>
                             <div className="otc-tool-input">
